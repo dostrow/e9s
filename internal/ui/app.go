@@ -1,0 +1,1276 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	e9saws "github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/config"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/ui/theme"
+	"github.com/dostrow/e9s/internal/ui/views"
+)
+
+type topMode int
+
+const (
+	modeECS topMode = iota
+	modeCloudWatch
+	modeSSM
+	modeSM
+	modeS3
+	modeLambda
+)
+
+type viewState int
+
+const (
+	viewClusters viewState = iota
+	viewServices
+	viewTasks
+	viewTaskDetail
+	viewServiceDetail
+	viewLogs
+	viewStandaloneTasks
+	viewTaskDefDiff
+	viewMetrics
+	viewSSM
+	viewEnvVars
+	viewSecrets
+	viewSecretValue
+	viewS3Buckets
+	viewS3Objects
+	viewS3Detail
+	viewLambdaList
+	viewLambdaDetail
+	viewLogGroups
+	viewLogStreams
+	viewLogSearch
+)
+
+type App struct {
+	client            *e9saws.Client
+	cfg               *config.Config
+	mode              topMode
+	state             viewState
+	prevState         viewState
+	clusterView       views.ClusterListModel
+	serviceView       views.ServiceListModel
+	taskView          views.TaskListModel
+	detailView        views.TaskDetailModel
+	serviceDetailView views.ServiceDetailModel
+	logView           views.LogViewerModel
+	standaloneView    views.StandaloneTasksModel
+	diffView          views.TaskDefDiffModel
+	metricsView       views.MetricsModel
+	envVarsView       views.EnvVarsModel
+	logGroupsView     views.LogGroupsModel
+	logStreamsView     views.LogStreamsModel
+	logSearchView     views.LogSearchModel
+	ssmView           views.SSMModel
+	secretsView       views.SecretsModel
+	secretValueView   views.SecretValueModel
+	s3BucketsView     views.S3BucketsModel
+	s3ObjectsView     views.S3ObjectsModel
+	s3DetailView      views.S3DetailModel
+	lambdaListView    views.LambdaListModel
+	lambdaDetailView  views.LambdaDetailModel
+	regionPicker      views.RegionPickerModel
+
+	// Navigation context
+	selectedCluster    *model.Cluster
+	selectedService    *model.Service
+	selectedTask       *model.Task
+	execContainerName  string
+	logSearchGroup     string
+	logSearchStream    string
+	logSearchStartMs   int64
+	logSearchEndMs     int64
+	logSaveGroup       string
+	logSaveStream      string
+	ssmEditName        string
+	ssmEditValue       string
+	smEditName         string
+	smEditValue        string
+	s3DownloadBucket   string
+	s3DownloadKey      string
+	s3DownloadIsPrefix bool
+
+	// Modal dialogs
+	confirm  ConfirmModel
+	input    InputModel
+	picker   PickerModel
+	help     HelpModel
+
+	// Mode tabs (built from config)
+	modeTabs []ModeTab
+
+	// State
+	lastRefresh  time.Time
+	refreshSec   int
+	loading      bool
+	err          error
+	flashMessage string
+	flashExpiry  time.Time
+	width        int
+	height       int
+}
+
+func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
+	app := App{
+		client:      client,
+		cfg:         cfg,
+		state:       viewClusters,
+		clusterView: views.NewClusterList(),
+		refreshSec:  refreshSec,
+	}
+
+	allModes := []struct {
+		mode    topMode
+		label   string
+		enabled bool
+	}{
+		{modeECS, "ECS", cfg.ModuleECS()},
+		{modeCloudWatch, "CW", cfg.ModuleCloudWatch()},
+		{modeSSM, "SSM", cfg.ModuleSSM()},
+		{modeSM, "SM", cfg.ModuleSM()},
+		{modeS3, "S3", cfg.ModuleS3()},
+		{modeLambda, "λ", cfg.ModuleLambda()},
+	}
+	idx := 1
+	for _, m := range allModes {
+		if m.enabled {
+			app.modeTabs = append(app.modeTabs, ModeTab{
+				Mode:  m.mode,
+				Label: m.label,
+				Key:   fmt.Sprintf("%d", idx),
+			})
+			idx++
+		}
+	}
+
+	if defaultCluster != "" {
+		app.selectedCluster = &model.Cluster{Name: defaultCluster}
+		app.state = viewServices
+		app.serviceView = views.NewServiceList(defaultCluster)
+	}
+
+	return app
+}
+
+func (a App) Init() tea.Cmd {
+	if a.state == viewServices {
+		return tea.Batch(a.loadServices(), a.tick())
+	}
+	return tea.Batch(a.loadClusters(), a.tick())
+}
+
+func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Always handle window resize
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		a.width = wsm.Width
+		a.height = wsm.Height
+		h := wsm.Height - 3
+		a.clusterView = a.clusterView.SetSize(wsm.Width, h)
+		a.serviceView = a.serviceView.SetSize(wsm.Width, h)
+		a.taskView = a.taskView.SetSize(wsm.Width, h)
+		a.detailView = a.detailView.SetSize(wsm.Width, h)
+		a.serviceDetailView = a.serviceDetailView.SetSize(wsm.Width, h)
+		a.logView = a.logView.SetSize(wsm.Width, h)
+		a.standaloneView = a.standaloneView.SetSize(wsm.Width, h)
+		a.diffView = a.diffView.SetSize(wsm.Width, h)
+		a.metricsView = a.metricsView.SetSize(wsm.Width, h)
+		a.ssmView = a.ssmView.SetSize(wsm.Width, h)
+		a.secretsView = a.secretsView.SetSize(wsm.Width, h)
+		a.secretValueView = a.secretValueView.SetSize(wsm.Width, h)
+		a.s3BucketsView = a.s3BucketsView.SetSize(wsm.Width, h)
+		a.s3ObjectsView = a.s3ObjectsView.SetSize(wsm.Width, h)
+		a.s3DetailView = a.s3DetailView.SetSize(wsm.Width, h)
+		a.lambdaListView = a.lambdaListView.SetSize(wsm.Width, h)
+		a.lambdaDetailView = a.lambdaDetailView.SetSize(wsm.Width, h)
+		a.envVarsView = a.envVarsView.SetSize(wsm.Width, h)
+		a.logGroupsView = a.logGroupsView.SetSize(wsm.Width, h)
+		a.logStreamsView = a.logStreamsView.SetSize(wsm.Width, h)
+		a.logSearchView = a.logSearchView.SetSize(wsm.Width, h)
+		return a, nil
+	}
+
+	// Handle overlays — these consume all input when active
+	if a.help.Active {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			a.help.Active = false
+			return a, nil
+		}
+	}
+	if a.regionPicker.Active {
+		switch msg.(type) {
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			a.regionPicker, cmd = a.regionPicker.Update(msg)
+			return a, cmd
+		case views.RegionSwitchMsg:
+			rm := msg.(views.RegionSwitchMsg)
+			return a, a.switchRegion(rm.Region)
+		}
+		return a, nil
+	}
+	if a.picker.Active {
+		switch msg.(type) {
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			a.picker, cmd = a.picker.Update(msg)
+			return a, cmd
+		}
+		return a, nil
+	}
+	if a.confirm.Active {
+		var cmd tea.Cmd
+		a.confirm, cmd = a.confirm.Update(msg)
+		return a, cmd
+	}
+	if a.input.Active {
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
+		return a, cmd
+	}
+
+	// If a list view is in filter mode, delegate all key input to it
+	if a.isFiltering() {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			return a.delegateToActiveView(km)
+		}
+	}
+
+	switch msg := msg.(type) {
+	// --- ECS data messages ---
+	case clustersLoadedMsg:
+		a.loading = false
+		a.lastRefresh = time.Now()
+		a.err = nil
+		a.clusterView = a.clusterView.SetClusters(msg.clusters)
+		return a, nil
+
+	case servicesLoadedMsg:
+		a.loading = false
+		a.lastRefresh = time.Now()
+		a.err = nil
+		a.serviceView = a.serviceView.SetServices(msg.services)
+		if a.state == viewServiceDetail && a.selectedService != nil {
+			for _, s := range msg.services {
+				if s.Name == a.selectedService.Name {
+					a.selectedService = &s
+					a.serviceDetailView = a.serviceDetailView.SetService(&s)
+					break
+				}
+			}
+		}
+		return a, nil
+
+	case tasksLoadedMsg:
+		a.loading = false
+		a.lastRefresh = time.Now()
+		a.err = nil
+		a.taskView = a.taskView.SetTasks(msg.tasks)
+		return a, nil
+
+	case taskDetailRefreshedMsg:
+		if msg.task != nil {
+			a.selectedTask = msg.task
+			a.detailView = views.NewTaskDetail(msg.task)
+			a.detailView = a.detailView.SetSize(a.width, a.height-3)
+			a.lastRefresh = time.Now()
+		}
+		return a, nil
+
+	case standaloneTasksLoadedMsg:
+		a.loading = false
+		a.lastRefresh = time.Now()
+		a.err = nil
+		a.standaloneView = a.standaloneView.SetTasks(msg.tasks)
+		return a, nil
+
+	case errMsg:
+		a.loading = false
+		a.err = msg.err
+		return a, nil
+
+	// --- Log messages ---
+	case logReadyMsg:
+		a.state = viewLogs
+		follow := true
+		lookback := 5 * time.Minute
+		if msg.follow != nil {
+			follow = *msg.follow
+		}
+		if msg.lookback > 0 {
+			lookback = msg.lookback
+		}
+		if msg.search != "" {
+			a.logView = views.NewLogViewerWithSearch(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback, msg.search)
+		} else {
+			a.logView = views.NewLogViewerWithOptions(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback)
+		}
+		a.logView = a.logView.SetSize(a.width, a.height-3)
+		return a, a.logView.Init()
+
+	case views.LogSearchJumpMsg:
+		var streams []string
+		if msg.Stream != "" {
+			streams = []string{msg.Stream}
+		}
+		title := fmt.Sprintf("search: %q", msg.Pattern)
+		if msg.Stream != "" {
+			title += " in " + msg.Stream
+		}
+		a.prevState = viewLogSearch
+		a.state = viewLogs
+		a.logView = views.NewLogViewerAtTimestamp(title, a.client, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = a.logView.SetSize(a.width, a.height-3)
+		return a, a.logView.Init()
+
+	case views.LogsLoadedMsg, views.LogsErrorMsg, views.LogTickMsg, views.LogsPrependedMsg:
+		if a.state == viewLogs {
+			var cmd tea.Cmd
+			a.logView, cmd = a.logView.Update(msg)
+			return a, cmd
+		}
+		return a, nil
+
+	case views.LogSearchResultsMsg:
+		if a.state == viewLogSearch {
+			var cmd tea.Cmd
+			a.logSearchView, cmd = a.logSearchView.Update(msg)
+			return a, cmd
+		}
+		return a, nil
+
+	case logGroupsLoadedMsg:
+		a.logGroupsView = a.logGroupsView.SetGroups(msg.groups)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case logStreamsLoadedMsg:
+		a.logStreamsView = a.logStreamsView.SetStreams(msg.streams)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	// --- ECS detail messages ---
+	case envVarsReadyMsg:
+		a.state = viewEnvVars
+		a.envVarsView = views.NewEnvVars(msg.title, msg.envVars)
+		a.envVarsView = a.envVarsView.SetSize(a.width, a.height-3)
+		return a, nil
+
+	case taskDefDiffReadyMsg:
+		a.state = viewTaskDefDiff
+		a.diffView = views.NewTaskDefDiff(msg.title, msg.diff)
+		a.diffView = a.diffView.SetSize(a.width, a.height-3)
+		return a, nil
+
+	case metricsLoadedMsg:
+		a.metricsView = a.metricsView.SetMetrics(msg.metrics)
+		a.metricsView = a.metricsView.SetAlarms(msg.alarms)
+		a.loading = false
+		return a, nil
+
+	case execSessionReadyMsg:
+		wrap := NewExecWrap(msg.pluginPath, msg.args)
+		return a, tea.Exec(wrap, func(err error) tea.Msg {
+			return execFinishedMsg{err: err}
+		})
+
+	case execFinishedMsg:
+		if msg.err != nil {
+			a.err = msg.err
+		}
+		return a, nil
+
+	// --- SSM messages ---
+	case ssmParamsLoadedMsg:
+		a.ssmView = a.ssmView.SetParams(msg.params)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ssmEditReadyMsg:
+		a.ssmEditName = msg.name
+		a.input = NewInput(InputSSMEditValue,
+			fmt.Sprintf("Edit %s (type: %s)", msg.name, msg.paramType),
+			msg.currentValue)
+		return a, nil
+
+	case ssmUpdatedMsg:
+		a.ssmView = a.ssmView.SetParams(msg.params)
+		a.flashMessage = fmt.Sprintf("Updated %q", msg.name)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+
+	// --- Secrets Manager messages ---
+	case smSecretsLoadedMsg:
+		a.secretsView = a.secretsView.SetSecrets(msg.secrets)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case smValueReadyMsg:
+		a.state = viewSecretValue
+		a.secretValueView = views.NewSecretValue(msg.name, msg.value, msg.tags)
+		a.secretValueView = a.secretValueView.SetSize(a.width, a.height-3)
+		return a, nil
+
+	case smEditReadyMsg:
+		a.smEditName = msg.name
+		a.input = NewInput(InputSMEditValue,
+			fmt.Sprintf("Edit secret %s", msg.name),
+			msg.currentValue)
+		return a, nil
+
+	case smUpdatedMsg:
+		a.secretsView = a.secretsView.SetSecrets(msg.secrets)
+		a.flashMessage = fmt.Sprintf("Updated %q", msg.name)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+
+	// --- Lambda messages ---
+	case lambdaFunctionsLoadedMsg:
+		a.lambdaListView = a.lambdaListView.SetFunctions(msg.functions)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	// --- S3 messages ---
+	case s3BucketsLoadedMsg:
+		a.s3BucketsView = a.s3BucketsView.SetBuckets(msg.buckets)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case s3ObjectsLoadedMsg:
+		a.s3ObjectsView = a.s3ObjectsView.SetObjects(msg.objects)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case s3DetailLoadedMsg:
+		a.state = viewS3Detail
+		a.s3DetailView = views.NewS3Detail(msg.bucket, msg.detail)
+		a.s3DetailView = a.s3DetailView.SetSize(a.width, a.height-3)
+		return a, nil
+
+	case s3DownloadDoneMsg:
+		if msg.err != nil {
+			a.err = msg.err
+		} else {
+			a.flashMessage = msg.message
+			a.flashExpiry = time.Now().Add(5 * time.Second)
+		}
+		return a, nil
+
+	// --- Shared messages ---
+	case regionSwitchedMsg:
+		a.flashMessage = fmt.Sprintf("Switched to %s", a.client.Region())
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.state = viewClusters
+		a.selectedCluster = nil
+		a.selectedService = nil
+		a.selectedTask = nil
+		a.loading = true
+		return a, a.loadClusters()
+
+	case views.RegionSwitchMsg:
+		return a, a.switchRegion(msg.Region)
+
+	case actionSuccessMsg:
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, a.refreshCurrentView()
+
+	// --- Dialog results ---
+	case ConfirmResultMsg:
+		if !msg.Confirmed {
+			return a, nil
+		}
+		switch msg.Action {
+		case ConfirmForceDeploy:
+			return a, a.doForceDeploy()
+		case ConfirmStopTask:
+			return a, a.doStopTask()
+		case ConfirmSSMUpdate:
+			return a, a.doSSMUpdate()
+		case ConfirmSMUpdate:
+			return a, a.doSMUpdate()
+		}
+		return a, nil
+
+	case InputResultMsg:
+		if msg.Canceled {
+			return a, nil
+		}
+		switch msg.Action {
+		case InputScale:
+			count, err := ParseScaleInput(msg.Value)
+			if err != nil {
+				a.err = err
+				return a, nil
+			}
+			return a, a.doScale(count)
+		case InputSSMPath:
+			return a.openSSM(msg.Value)
+		case InputSSMSaveName:
+			return a.doSaveSSMPrefix(msg.Value)
+		case InputSSMEditValue:
+			return a.confirmSSMUpdate(msg.Value)
+		case InputExecCommand:
+			return a, a.doExecWithCommand(msg.Value)
+		case InputLogGroupPrefix:
+			return a.openLogGroups(msg.Value)
+		case InputLogSearchPattern:
+			return a.startLogSearch(msg.Value)
+		case InputLogSaveName:
+			return a.doSaveLogPath(msg.Value)
+		case InputLogSaveFile:
+			return a.doSaveLogBuffer(msg.Value)
+		case InputSMFilter:
+			return a.openSecrets(msg.Value)
+		case InputSMSaveName:
+			return a.doSaveSMFilter(msg.Value)
+		case InputSMEditValue:
+			return a.confirmSMUpdate(msg.Value)
+		case InputS3Search:
+			return a.openS3Buckets(msg.Value)
+		case InputS3SaveName:
+			return a.doSaveS3Search(msg.Value)
+		case InputS3Download:
+			return a, a.doS3Download(msg.Value)
+		case InputLambdaSearch:
+			return a.openLambdaList(msg.Value)
+		case InputLambdaSaveName:
+			return a.doSaveLambdaSearch(msg.Value)
+		}
+		return a, nil
+
+	case PickerDeleteMsg:
+		return a.handlePickerDelete(msg)
+
+	case PickerResultMsg:
+		if msg.Canceled {
+			return a, nil
+		}
+		switch msg.Action {
+		case PickerExecContainer:
+			return a.doExec(msg.Value)
+		case PickerLogContainer:
+			return a, a.doLogForContainer(msg.Value)
+		case PickerEnvContainer:
+			return a, a.doShowEnvVars(msg.Value)
+		case PickerSSMPrefix:
+			if msg.Index == len(a.cfg.SSMPrefixes) {
+				a.input = NewInput(InputSSMPath, "SSM Parameter path prefix", "/")
+				return a, nil
+			}
+			return a.openSSM(a.cfg.SSMPrefixes[msg.Index].Prefix)
+		case PickerSMFilter:
+			if msg.Index == len(a.cfg.SMFilters) {
+				a.input = NewInput(InputSMFilter, "Secret name filter (substring match)", "")
+				return a, nil
+			}
+			return a.openSecrets(a.cfg.SMFilters[msg.Index].Filter)
+		case PickerS3Search:
+			if msg.Index == len(a.cfg.S3Searches) {
+				a.input = NewInput(InputS3Search, "Search buckets (substring match)", "")
+				return a, nil
+			}
+			return a.openS3Buckets(a.cfg.S3Searches[msg.Index].Filter)
+		case PickerLambdaSearch:
+			if msg.Index == len(a.cfg.LambdaSearches) {
+				a.input = NewInput(InputLambdaSearch, "Search functions (substring match, or empty for all)", "")
+				return a, nil
+			}
+			return a.openLambdaList(a.cfg.LambdaSearches[msg.Index].Filter)
+		case PickerLogPath:
+			if msg.Index == len(a.cfg.LogPaths) {
+				a.input = NewInput(InputLogGroupPrefix, "Search log groups (prefix with / or substring match)", "")
+				return a, nil
+			}
+			lp := a.cfg.LogPaths[msg.Index]
+			if lp.Stream != "" {
+				return a, a.startLogTail(lp.LogGroup, []string{lp.Stream},
+					fmt.Sprintf("%s / %s", lp.LogGroup, lp.Stream))
+			}
+			return a.openLogStreams(lp.LogGroup)
+		case PickerLogSearchTimeRange:
+			return a.handleTimeRangePick(msg.Value)
+		}
+		return a, nil
+
+	// --- Tick ---
+	case tickMsg:
+		if !a.flashExpiry.IsZero() && time.Now().After(a.flashExpiry) {
+			a.flashMessage = ""
+			a.flashExpiry = time.Time{}
+		}
+		return a, tea.Batch(a.refreshCurrentView(), a.tick())
+
+	// --- Key input ---
+	case tea.KeyMsg:
+		// Global keys
+		switch {
+		case key.Matches(msg, theme.Keys.Quit):
+			return a, tea.Quit
+		case key.Matches(msg, theme.Keys.Back):
+			return a.goBack()
+		case key.Matches(msg, theme.Keys.Refresh):
+			a.loading = true
+			return a, a.refreshCurrentView()
+		case key.Matches(msg, theme.Keys.Enter):
+			if a.state != viewLogSearch {
+				return a.drillDown()
+			}
+		case key.Matches(msg, theme.Keys.Help):
+			a.help.Active = true
+			return a, nil
+		case msg.String() == "ctrl+r":
+			a.regionPicker = views.NewRegionPicker(a.client.Region())
+			return a, nil
+		}
+
+		// Dynamic mode switching
+		for _, tab := range a.modeTabs {
+			if msg.String() == tab.Key {
+				return a.switchMode(tab.Mode)
+			}
+		}
+
+		// Context-specific keys
+		switch a.state {
+		case viewServices:
+			switch msg.String() {
+			case "r":
+				return a.promptForceDeploy()
+			case "s":
+				return a.promptScale()
+			case "d":
+				return a.showServiceDetail()
+			case "L":
+				return a.openServiceLogs()
+			case "S":
+				return a.showStandaloneTasks()
+			case "m":
+				return a.showMetrics()
+			}
+		case viewTasks:
+			switch msg.String() {
+			case "x":
+				return a.promptStopTask()
+			case "l":
+				return a.openTaskLogs()
+			case "e":
+				return a.execIntoTask()
+			}
+		case viewTaskDetail:
+			switch msg.String() {
+			case "E":
+				return a.showEnvVars()
+			}
+		case viewLogs:
+			switch msg.String() {
+			case "w":
+				return a.promptSaveLogBuffer()
+			}
+		case viewStandaloneTasks:
+			switch msg.String() {
+			case "l":
+				return a.openStandaloneTaskLogs()
+			case "x":
+				return a.promptStopStandaloneTask()
+			}
+		case viewServiceDetail:
+			switch msg.String() {
+			case "D":
+				return a.showTaskDefDiff()
+			}
+		case viewSSM:
+			switch msg.String() {
+			case "W":
+				return a.saveSSMPrefix()
+			case "e":
+				return a.editSSMParam()
+			}
+		case viewSecrets:
+			switch msg.String() {
+			case "W":
+				return a.saveSMFilter()
+			case "e":
+				return a.editSecret()
+			}
+		case viewS3Buckets:
+			switch msg.String() {
+			case "W":
+				return a.saveS3Search()
+			}
+		case viewS3Objects:
+			switch msg.String() {
+			case "i":
+				return a.showS3ObjectDetail()
+			case "D":
+				return a.promptS3Download()
+			}
+		case viewS3Detail:
+			switch msg.String() {
+			case "D":
+				return a.promptS3DownloadFromDetail()
+			}
+		case viewLambdaList:
+			switch msg.String() {
+			case "W":
+				return a.saveLambdaSearch()
+			case "l":
+				return a.tailLambdaLogs()
+			case "s":
+				return a.searchLambdaLogs()
+			}
+		case viewLambdaDetail:
+			switch msg.String() {
+			case "l":
+				return a.tailLambdaDetailLogs()
+			case "s":
+				return a.searchLambdaDetailLogs()
+			case "E":
+				return a.showLambdaEnvVars()
+			}
+		case viewLogGroups:
+			switch msg.String() {
+			case "l":
+				return a.tailLogGroup()
+			case "s":
+				return a.promptLogSearchFromGroups()
+			case "W":
+				return a.saveLogGroupPath()
+			}
+		case viewLogStreams:
+			switch msg.String() {
+			case "l":
+				return a.tailLogStream()
+			case "L":
+				return a.tailEntireLogGroup()
+			case "s":
+				return a.promptLogSearchFromStreams()
+			case "W":
+				return a.saveLogStreamPath()
+			}
+		}
+
+		return a.delegateToActiveView(msg)
+	}
+
+	return a, nil
+}
+
+// --- View Delegation ---
+
+func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
+	var cmd tea.Cmd
+	switch a.state {
+	case viewClusters:
+		a.clusterView, cmd = a.clusterView.Update(msg)
+	case viewServices:
+		a.serviceView, cmd = a.serviceView.Update(msg)
+	case viewTasks:
+		a.taskView, cmd = a.taskView.Update(msg)
+	case viewServiceDetail:
+		a.serviceDetailView, cmd = a.serviceDetailView.Update(msg)
+	case viewLogs:
+		a.logView, cmd = a.logView.Update(msg)
+	case viewStandaloneTasks:
+		a.standaloneView, cmd = a.standaloneView.Update(msg)
+	case viewTaskDefDiff:
+		a.diffView, cmd = a.diffView.Update(msg)
+	case viewSSM:
+		a.ssmView, cmd = a.ssmView.Update(msg)
+	case viewSecrets:
+		a.secretsView, cmd = a.secretsView.Update(msg)
+	case viewSecretValue:
+		a.secretValueView, cmd = a.secretValueView.Update(msg)
+	case viewS3Buckets:
+		a.s3BucketsView, cmd = a.s3BucketsView.Update(msg)
+	case viewS3Objects:
+		a.s3ObjectsView, cmd = a.s3ObjectsView.Update(msg)
+	case viewLambdaList:
+		a.lambdaListView, cmd = a.lambdaListView.Update(msg)
+	case viewEnvVars:
+		a.envVarsView, cmd = a.envVarsView.Update(msg)
+	case viewLogGroups:
+		a.logGroupsView, cmd = a.logGroupsView.Update(msg)
+	case viewLogStreams:
+		a.logStreamsView, cmd = a.logStreamsView.Update(msg)
+	case viewLogSearch:
+		a.logSearchView, cmd = a.logSearchView.Update(msg)
+	}
+	return a, cmd
+}
+
+func (a App) isFiltering() bool {
+	switch a.state {
+	case viewClusters:
+		return a.clusterView.IsFiltering()
+	case viewServices:
+		return a.serviceView.IsFiltering()
+	case viewTasks:
+		return a.taskView.IsFiltering()
+	case viewStandaloneTasks:
+		return a.standaloneView.IsFiltering()
+	case viewSSM:
+		return a.ssmView.IsFiltering()
+	case viewSecrets:
+		return a.secretsView.IsFiltering()
+	case viewS3Buckets:
+		return a.s3BucketsView.IsFiltering()
+	case viewS3Objects:
+		return a.s3ObjectsView.IsFiltering()
+	case viewLambdaList:
+		return a.lambdaListView.IsFiltering()
+	case viewEnvVars:
+		return a.envVarsView.IsFiltering()
+	case viewLogGroups:
+		return a.logGroupsView.IsFiltering()
+	case viewLogStreams:
+		return a.logStreamsView.IsFiltering()
+	case viewLogs:
+		return a.logView.IsFiltering()
+	}
+	return false
+}
+
+// --- View ---
+
+func (a App) buildBreadcrumbs() []string {
+	var crumbs []string
+	if a.selectedCluster != nil {
+		crumbs = append(crumbs, a.selectedCluster.Name)
+	}
+	if a.selectedService != nil {
+		crumbs = append(crumbs, a.selectedService.Name)
+	}
+	if a.selectedTask != nil {
+		id := a.selectedTask.TaskID
+		if len(id) > 8 {
+			id = id[:8]
+		}
+		crumbs = append(crumbs, id)
+	}
+	return crumbs
+}
+
+func (a App) View() string {
+	breadcrumbs := a.buildBreadcrumbs()
+
+	statusBar := RenderStatusBar(a.width, a.mode, a.modeTabs, breadcrumbs, a.client.Region(), a.lastRefresh, a.err)
+
+	if a.flashMessage != "" && time.Now().Before(a.flashExpiry) {
+		statusBar = RenderStatusBarWithFlash(a.width, a.mode, a.modeTabs, breadcrumbs, a.client.Region(), a.flashMessage)
+	}
+
+	// Overlays
+	if a.help.Active {
+		return statusBar + "\n" + a.help.View(a.width)
+	}
+	if a.regionPicker.Active {
+		return statusBar + "\n" + a.regionPicker.View()
+	}
+	if a.confirm.Active {
+		return statusBar + "\n" + a.confirm.View()
+	}
+	if a.picker.Active {
+		return statusBar + "\n" + a.picker.View()
+	}
+	if a.input.Active {
+		return statusBar + "\n" + a.input.View()
+	}
+
+	var content string
+	switch a.state {
+	case viewClusters:
+		content = a.clusterView.View()
+	case viewServices:
+		content = a.serviceView.View()
+	case viewTasks:
+		content = a.taskView.View()
+	case viewTaskDetail:
+		content = a.detailView.View()
+	case viewServiceDetail:
+		content = a.serviceDetailView.View()
+	case viewLogs:
+		content = a.logView.View()
+	case viewStandaloneTasks:
+		content = a.standaloneView.View()
+	case viewTaskDefDiff:
+		content = a.diffView.View()
+	case viewMetrics:
+		content = a.metricsView.View()
+	case viewSSM:
+		content = a.ssmView.View()
+	case viewSecrets:
+		content = a.secretsView.View()
+	case viewSecretValue:
+		content = a.secretValueView.View()
+	case viewS3Buckets:
+		content = a.s3BucketsView.View()
+	case viewS3Objects:
+		content = a.s3ObjectsView.View()
+	case viewS3Detail:
+		content = a.s3DetailView.View()
+	case viewLambdaList:
+		content = a.lambdaListView.View()
+	case viewLambdaDetail:
+		content = a.lambdaDetailView.View()
+	case viewEnvVars:
+		content = a.envVarsView.View()
+	case viewLogGroups:
+		content = a.logGroupsView.View()
+	case viewLogStreams:
+		content = a.logStreamsView.View()
+	case viewLogSearch:
+		content = a.logSearchView.View()
+	}
+
+	helpLine := a.helpText()
+	wrapWidth := a.width
+	if contentWidth := maxLineWidth(content); contentWidth > 0 && contentWidth < wrapWidth {
+		slack := contentWidth + contentWidth/5
+		if slack > a.width {
+			slack = a.width
+		}
+		wrapWidth = slack
+	}
+	helpRendered := theme.HelpStyle.Render(wrapText(helpLine, wrapWidth))
+
+	return statusBar + "\n" + content + "\n" + helpRendered
+}
+
+func maxLineWidth(s string) int {
+	max := 0
+	for _, line := range strings.Split(s, "\n") {
+		w := lipgloss.Width(line)
+		if w > max {
+			max = w
+		}
+	}
+	return max
+}
+
+func wrapText(s string, maxWidth int) string {
+	if maxWidth <= 0 || len(s) <= maxWidth {
+		return s
+	}
+	s = strings.TrimSpace(s)
+	parts := strings.Split(s, "  [")
+	if len(parts) <= 1 {
+		return "  " + s
+	}
+	var chunks []string
+	chunks = append(chunks, strings.TrimSpace(parts[0]))
+	for _, p := range parts[1:] {
+		chunks = append(chunks, "["+strings.TrimSpace(p))
+	}
+	var lines []string
+	line := "  "
+	for _, chunk := range chunks {
+		candidate := line + "  " + chunk
+		if line == "  " {
+			candidate = line + chunk
+		}
+		if len(candidate) > maxWidth && line != "  " {
+			lines = append(lines, line)
+			line = "  " + chunk
+		} else {
+			line = candidate
+		}
+	}
+	if line != "  " {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a App) helpText() string {
+	var contextHelp string
+	switch a.state {
+	case viewClusters:
+		contextHelp = "  [enter] services  [/] filter  [R] refresh  [ctrl+r] switch region"
+	case viewServices:
+		contextHelp = "  [enter] tasks  [d] detail  [L] logs  [r] redeploy  [s] scale  [m] metrics  [S] standalone  [/] filter  [ctrl+r] region  [esc] back"
+	case viewTasks:
+		contextHelp = "  [enter] detail  [l] logs  [x] stop  [e] exec  [/] filter  [esc] back"
+	case viewTaskDetail:
+		contextHelp = "  [E] env vars  [esc] back"
+	case viewServiceDetail:
+		contextHelp = "  [tab] switch tab  [D] task def diff  [j/k] scroll  [esc] back"
+	case viewLogs:
+		contextHelp = "  [f] toggle follow  [[] older  []] newer  [w] save to file  [t] timestamps  [/] search  [n/N] next/prev match  [g/G] top/bottom  [esc] back"
+	case viewStandaloneTasks:
+		contextHelp = "  [enter] detail  [l] logs  [x] stop  [/] filter  [esc] back"
+	case viewTaskDefDiff:
+		contextHelp = "  [j/k] scroll  [g/G] top/bottom  [esc] back"
+	case viewMetrics:
+		contextHelp = "  [R] refresh  [esc] back"
+	case viewSSM:
+		contextHelp = "  [enter] view value  [e] edit  [W] save prefix  [/] filter  [R] refresh  [esc] back"
+	case viewSecrets:
+		contextHelp = "  [enter] view value  [e] edit  [W] save filter  [/] filter  [R] refresh  [esc] back"
+	case viewSecretValue:
+		contextHelp = "  [j/k] scroll  [g/G] top/bottom  [esc] back"
+	case viewS3Buckets:
+		contextHelp = "  [enter] browse  [W] save search  [/] filter  [esc] back"
+	case viewS3Objects:
+		contextHelp = "  [enter] open  [i] detail/tags  [D] download  [/] filter  [esc] back"
+	case viewS3Detail:
+		contextHelp = "  [D] download  [esc] back"
+	case viewLambdaList:
+		contextHelp = "  [enter] detail  [l] tail logs  [s] search logs  [W] save search  [/] filter  [esc] back"
+	case viewLambdaDetail:
+		contextHelp = "  [E] env vars  [l] tail logs  [s] search logs  [esc] back"
+	case viewEnvVars:
+		contextHelp = "  [a] toggle ARNs/values  [/] filter  [esc] back"
+	case viewLogGroups:
+		contextHelp = "  [enter] streams  [l] tail group  [s] search  [W] save  [/] filter  [esc] back"
+	case viewLogStreams:
+		contextHelp = "  [enter] peek (last 1m)  [l] tail stream  [L] tail group  [s] search  [W] save  [/] filter  [esc] back"
+	case viewLogSearch:
+		contextHelp = "  [enter] jump to log  [t] toggle timestamps  [g/G] top/bottom  [esc] back"
+	default:
+		return ""
+	}
+	return contextHelp + "  [q] quit  [?] help"
+}
+
+// --- Navigation ---
+
+func (a App) drillDown() (App, tea.Cmd) {
+	switch a.state {
+	case viewClusters:
+		if c := a.clusterView.SelectedCluster(); c != nil {
+			a.selectedCluster = c
+			a.state = viewServices
+			a.serviceView = views.NewServiceList(c.Name)
+			a.loading = true
+			return a, a.loadServices()
+		}
+	case viewServices:
+		if s := a.serviceView.SelectedService(); s != nil {
+			a.selectedService = s
+			a.state = viewTasks
+			a.taskView = views.NewTaskList(s.Name)
+			a.loading = true
+			return a, a.loadTasks()
+		}
+	case viewTasks:
+		if t := a.taskView.SelectedTask(); t != nil {
+			a.selectedTask = t
+			a.state = viewTaskDetail
+			a.detailView = views.NewTaskDetail(t)
+			return a, nil
+		}
+	case viewStandaloneTasks:
+		if t := a.standaloneView.SelectedTask(); t != nil {
+			a.selectedTask = t
+			a.state = viewTaskDetail
+			a.detailView = views.NewTaskDetail(t)
+			return a, nil
+		}
+	case viewSSM:
+		if p := a.ssmView.SelectedParam(); p != nil {
+			a.flashMessage = fmt.Sprintf("%s = %s", p.Name, p.Value)
+			a.flashExpiry = time.Now().Add(10 * time.Second)
+			return a, nil
+		}
+	case viewSecrets:
+		if s := a.secretsView.SelectedSecret(); s != nil {
+			return a, a.fetchSecretValue(s.Name, s.Tags)
+		}
+	case viewS3Buckets:
+		if bkt := a.s3BucketsView.SelectedBucket(); bkt != nil {
+			return a.openS3Objects(bkt.Name, "")
+		}
+	case viewS3Objects:
+		if obj := a.s3ObjectsView.SelectedObject(); obj != nil {
+			if obj.IsPrefix {
+				return a.openS3Objects(a.s3ObjectsView.Bucket(), obj.Key)
+			}
+			return a, a.loadS3Detail(a.s3ObjectsView.Bucket(), obj.Key)
+		}
+	case viewLambdaList:
+		if fn := a.lambdaListView.SelectedFunction(); fn != nil {
+			a.state = viewLambdaDetail
+			a.lambdaDetailView = views.NewLambdaDetail(fn)
+			a.lambdaDetailView = a.lambdaDetailView.SetSize(a.width, a.height-3)
+			return a, nil
+		}
+	case viewLogGroups:
+		if g := a.logGroupsView.SelectedGroup(); g != nil {
+			return a.openLogStreams(g.Name)
+		}
+	case viewLogStreams:
+		if s := a.logStreamsView.SelectedStream(); s != nil {
+			return a.peekLogStream(s.Name)
+		}
+	}
+	return a, nil
+}
+
+func (a App) switchMode(mode topMode) (App, tea.Cmd) {
+	if mode == a.mode {
+		return a, nil
+	}
+	a.mode = mode
+	switch mode {
+	case modeECS:
+		a.state = viewClusters
+		a.selectedCluster = nil
+		a.selectedService = nil
+		a.selectedTask = nil
+		a.loading = true
+		return a, a.loadClusters()
+	case modeCloudWatch:
+		return a.promptCloudWatchBrowser()
+	case modeSSM:
+		return a.promptSSMPath()
+	case modeSM:
+		return a.promptSMFilter()
+	case modeS3:
+		return a.promptS3Browser()
+	case modeLambda:
+		return a.promptLambdaBrowser()
+	}
+	return a, nil
+}
+
+func (a App) goBack() (App, tea.Cmd) {
+	switch a.state {
+	case viewServices:
+		a.state = viewClusters
+		a.selectedCluster = nil
+		a.loading = true
+		return a, a.loadClusters()
+	case viewTasks:
+		a.state = viewServices
+		a.selectedService = nil
+		a.loading = true
+		return a, a.loadServices()
+	case viewTaskDetail:
+		if a.prevState == viewStandaloneTasks {
+			a.state = viewStandaloneTasks
+		} else {
+			a.state = viewTasks
+		}
+		a.selectedTask = nil
+		return a, nil
+	case viewServiceDetail:
+		a.state = viewServices
+		a.selectedService = nil
+		return a, nil
+	case viewLogs:
+		if a.prevState == viewLogSearch {
+			a.state = viewLogSearch
+			return a, nil
+		}
+		if a.prevState == viewLambdaList {
+			a.state = viewLambdaList
+			return a, nil
+		}
+		if a.prevState == viewLambdaDetail {
+			a.state = viewLambdaDetail
+			return a, nil
+		}
+		if a.prevState == viewLogStreams {
+			a.state = viewLogStreams
+			return a, nil
+		}
+		if a.prevState == viewLogGroups {
+			a.state = viewLogGroups
+			return a, nil
+		}
+		if a.selectedTask != nil {
+			if a.prevState == viewStandaloneTasks {
+				a.state = viewStandaloneTasks
+			} else {
+				a.state = viewTasks
+			}
+			return a, nil
+		}
+		a.state = viewServices
+		return a, nil
+	case viewStandaloneTasks:
+		a.state = viewServices
+		return a, nil
+	case viewTaskDefDiff:
+		a.state = viewServiceDetail
+		return a, nil
+	case viewMetrics:
+		a.state = viewServices
+		return a, nil
+	case viewSSM:
+		return a.switchMode(modeECS)
+	case viewSecrets:
+		return a.switchMode(modeECS)
+	case viewSecretValue:
+		a.state = viewSecrets
+		return a, nil
+	case viewS3Buckets:
+		return a.switchMode(modeECS)
+	case viewS3Objects:
+		parent := a.s3ObjectsView.ParentPrefix()
+		if parent != "" || a.s3ObjectsView.Prefix() != "" {
+			return a.openS3Objects(a.s3ObjectsView.Bucket(), parent)
+		}
+		a.state = viewS3Buckets
+		return a, nil
+	case viewS3Detail:
+		a.state = viewS3Objects
+		return a, nil
+	case viewLambdaList:
+		return a.switchMode(modeECS)
+	case viewLambdaDetail:
+		a.state = viewLambdaList
+		return a, nil
+	case viewEnvVars:
+		if a.prevState == viewLambdaDetail {
+			a.state = viewLambdaDetail
+		} else {
+			a.state = viewTaskDetail
+		}
+		return a, nil
+	case viewLogGroups:
+		return a.switchMode(modeECS)
+	case viewLogStreams:
+		if a.logGroupsView.HasData() {
+			a.state = viewLogGroups
+			return a, nil
+		}
+		return a.switchMode(modeECS)
+	case viewLogSearch:
+		if a.prevState == viewLogStreams {
+			a.state = viewLogStreams
+			return a, nil
+		}
+		if a.prevState == viewLogGroups {
+			a.state = viewLogGroups
+			return a, nil
+		}
+		if a.prevState == viewLambdaList {
+			a.state = viewLambdaList
+			return a, nil
+		}
+		if a.prevState == viewLambdaDetail {
+			a.state = viewLambdaDetail
+			return a, nil
+		}
+		return a.switchMode(modeECS)
+	}
+	return a, nil
+}
