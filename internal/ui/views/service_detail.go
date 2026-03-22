@@ -151,9 +151,7 @@ func (m ServiceDetailModel) renderEvents() string {
 		start = maxEvents - 1
 	}
 	end := start + 20
-	if end > maxEvents {
-		end = maxEvents
-	}
+	end = min(end, maxEvents)
 
 	for _, e := range m.service.Events[start:end] {
 		ts := theme.HelpStyle.Render(e.CreatedAt.Format("15:04:05"))

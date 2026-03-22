@@ -125,9 +125,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			// Adjust scroll position so viewport doesn't drift
 			if !m.follow {
 				m.scroll -= trimmed
-				if m.scroll < 0 {
-					m.scroll = 0
-				}
+				m.scroll = max(0, m.scroll)
 			}
 			m.rebuildMatchIndices()
 		}
@@ -142,9 +140,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		if m.search != "" {
 			lowerSearch := strings.ToLower(m.search)
 			startIdx := len(m.lines) - len(msg.Entries)
-			if startIdx < 0 {
-				startIdx = 0
-			}
+			startIdx = max(0, startIdx)
 			for i := startIdx; i < len(m.lines); i++ {
 				if strings.Contains(strings.ToLower(m.lines[i].message), lowerSearch) {
 					m.matchIndices = append(m.matchIndices, i)
@@ -226,9 +222,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		case key.Matches(msg, theme.Keys.Down):
 			visible := m.visibleLines()
 			maxScroll := len(m.lines) - visible
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
+			maxScroll = max(0, maxScroll)
 			m.scroll++
 			if m.scroll >= maxScroll {
 				m.scroll = maxScroll
@@ -240,15 +234,11 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		case msg.String() == "pgup":
 			m.follow = false
 			m.scroll -= m.visibleLines()
-			if m.scroll < 0 {
-				m.scroll = 0
-			}
+			m.scroll = max(0, m.scroll)
 		case msg.String() == "pgdown":
 			visible := m.visibleLines()
 			maxScroll := len(m.lines) - visible
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
+			maxScroll = max(0, maxScroll)
 			m.scroll += visible
 			if m.scroll >= maxScroll {
 				m.scroll = maxScroll
@@ -384,16 +374,10 @@ func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 	visible := m.visibleLines()
 	// Center the target in the viewport
 	m.scroll = targetLine - visible/2
-	if m.scroll < 0 {
-		m.scroll = 0
-	}
+	m.scroll = max(0, m.scroll)
 	maxScroll := len(m.lines) - visible
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if m.scroll > maxScroll {
-		m.scroll = maxScroll
-	}
+	maxScroll = max(0, maxScroll)
+	m.scroll = min(m.scroll, maxScroll)
 }
 
 func (m *LogViewerModel) scrollToMatch(matchIdx int) {
@@ -404,16 +388,10 @@ func (m *LogViewerModel) scrollToMatch(matchIdx int) {
 	visible := m.visibleLines()
 	// Center the match in the viewport
 	m.scroll = lineIdx - visible/2
-	if m.scroll < 0 {
-		m.scroll = 0
-	}
+	m.scroll = max(0, m.scroll)
 	maxScroll := len(m.lines) - visible
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if m.scroll > maxScroll {
-		m.scroll = maxScroll
-	}
+	maxScroll = max(0, maxScroll)
+	m.scroll = min(m.scroll, maxScroll)
 }
 
 func (m LogViewerModel) View() string {
@@ -453,9 +431,7 @@ func (m LogViewerModel) View() string {
 	if start > len(m.lines)-visible {
 		start = len(m.lines) - visible
 	}
-	if start < 0 {
-		start = 0
-	}
+	start = max(0, start)
 	end := start + visible
 	if end > len(m.lines) {
 		end = len(m.lines)
@@ -545,9 +521,7 @@ func (m LogViewerModel) visibleLines() int {
 func (m *LogViewerModel) scrollToBottom() {
 	visible := m.visibleLines()
 	m.scroll = len(m.lines) - visible
-	if m.scroll < 0 {
-		m.scroll = 0
-	}
+	m.scroll = max(0, m.scroll)
 }
 
 const tsWidth = 23
@@ -631,9 +605,7 @@ func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
 	// Fetch 30 seconds before the earliest line
 	endTime := m.firstTS
 	startTime := endTime - 30*1000
-	if startTime < 0 {
-		startTime = 0
-	}
+	startTime = max(0, startTime)
 
 	return func() tea.Msg {
 		var entries []aws.LogEntry

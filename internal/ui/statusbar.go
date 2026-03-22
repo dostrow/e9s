@@ -48,10 +48,7 @@ func renderBar(width int, active topMode, tabs []ModeTab, breadcrumbs []string, 
 		right = fmt.Sprintf("↻ %s ago", ago)
 	}
 
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(1, width-lipgloss.Width(left)-lipgloss.Width(right)-2)
 	content := left + fmt.Sprintf("%*s", gap, "") + right
 
 	return style.Render(content)
@@ -64,17 +61,17 @@ func renderModeTabs(active topMode, tabs []ModeTab) string {
 	inactiveStyle := lipgloss.NewStyle().
 		Foreground(theme.ColorDim)
 
-	result := ""
+	var b strings.Builder
 	for i, t := range tabs {
 		label := t.Key + ":" + t.Label
 		if t.Mode == active {
-			result += activeStyle.Render("[" + label + "]")
+			b.WriteString(activeStyle.Render("[" + label + "]"))
 		} else {
-			result += inactiveStyle.Render("[" + label + "]")
+			b.WriteString(inactiveStyle.Render("[" + label + "]"))
 		}
 		if i < len(tabs)-1 {
-			result += " "
+			b.WriteString(" ")
 		}
 	}
-	return result
+	return b.String()
 }

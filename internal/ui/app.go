@@ -943,9 +943,7 @@ func (a App) View() string {
 	wrapWidth := a.width
 	if contentWidth := maxLineWidth(content); contentWidth > 0 && contentWidth < wrapWidth {
 		slack := contentWidth + contentWidth/5
-		if slack > a.width {
-			slack = a.width
-		}
+		slack = min(slack, a.width)
 		wrapWidth = slack
 	}
 	helpRendered := theme.HelpStyle.Render(wrapText(helpLine, wrapWidth))
@@ -954,14 +952,11 @@ func (a App) View() string {
 }
 
 func maxLineWidth(s string) int {
-	max := 0
-	for _, line := range strings.Split(s, "\n") {
-		w := lipgloss.Width(line)
-		if w > max {
-			max = w
-		}
+	widest := 0
+	for line := range strings.SplitSeq(s, "\n") {
+		widest = max(widest, lipgloss.Width(line))
 	}
-	return max
+	return widest
 }
 
 func wrapText(s string, maxWidth int) string {

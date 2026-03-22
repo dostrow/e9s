@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -68,18 +70,19 @@ func (m HelpModel) View(width int) string {
 		{"?", "Toggle this help"},
 	}
 
-	content := ""
+	var b strings.Builder
 	for _, l := range lines {
 		if l.key == "" && l.desc == "" {
-			content += "\n"
+			b.WriteString("\n")
 			continue
 		}
 		if l.desc == "" {
-			content += theme.TitleStyle.Render(l.key) + "\n"
+			b.WriteString(theme.TitleStyle.Render(l.key) + "\n")
 			continue
 		}
-		content += keyStyle.Render(l.key) + descStyle.Render(l.desc) + "\n"
+		b.WriteString(keyStyle.Render(l.key) + descStyle.Render(l.desc) + "\n")
 	}
+	content := b.String()
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

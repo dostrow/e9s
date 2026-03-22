@@ -329,9 +329,7 @@ func (c *Client) SearchLogs(ctx context.Context, logGroup string, streams []stri
 	for remaining > 0 {
 		// Set limit per page to min(remaining, 100)
 		pageLimit := remaining
-		if pageLimit > 100 {
-			pageLimit = 100
-		}
+		pageLimit = min(pageLimit, 100)
 		input.Limit = intPtr(int32(pageLimit))
 		input.NextToken = nextToken
 

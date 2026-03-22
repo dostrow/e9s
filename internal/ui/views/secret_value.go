@@ -55,14 +55,10 @@ func (m SecretValueModel) Update(msg tea.Msg) (SecretValueModel, tea.Cmd) {
 			}
 		case msg.String() == "pgup":
 			m.scroll -= m.visibleLines()
-			if m.scroll < 0 {
-				m.scroll = 0
-			}
+			m.scroll = max(0, m.scroll)
 		case msg.String() == "pgdown":
 			m.scroll += m.visibleLines()
-			if m.scroll > m.maxScroll() {
-				m.scroll = m.maxScroll()
-			}
+			m.scroll = min(m.scroll, m.maxScroll())
 		case msg.String() == "g":
 			m.scroll = 0
 		case msg.String() == "G":
@@ -99,9 +95,7 @@ func (m SecretValueModel) View() string {
 
 	start := m.scroll
 	end := start + visible
-	if end > totalLines {
-		end = totalLines
-	}
+	end = min(end, totalLines)
 
 	for _, line := range m.lines[start:end] {
 		// Syntax color JSON keys

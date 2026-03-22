@@ -36,11 +36,7 @@ func NewTable(columns []Column) *Table {
 		pad:      1,
 	}
 	for i, c := range columns {
-		w := lipgloss.Width(c.Title)
-		if c.MinWidth > w {
-			w = c.MinWidth
-		}
-		t.colWidth[i] = w
+		t.colWidth[i] = max(lipgloss.Width(c.Title), c.MinWidth)
 	}
 	return t
 }
@@ -79,16 +75,12 @@ func (t *Table) Render(cursorIdx int, indent string, maxRows int) string {
 	if maxRows > 0 && len(t.rows) > maxRows {
 		// Scroll so cursor is visible, preferring cursor near the middle
 		startRow = cursorIdx - maxRows/2
-		if startRow < 0 {
-			startRow = 0
-		}
+		startRow = max(0, startRow)
 		endRow = startRow + maxRows
 		if endRow > len(t.rows) {
 			endRow = len(t.rows)
 			startRow = endRow - maxRows
-			if startRow < 0 {
-				startRow = 0
-			}
+			startRow = max(0, startRow)
 		}
 	}
 

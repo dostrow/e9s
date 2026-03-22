@@ -64,9 +64,7 @@ func (m TaskDefDiffModel) View() string {
 	if start > len(lines)-visible {
 		start = len(lines) - visible
 	}
-	if start < 0 {
-		start = 0
-	}
+	start = max(0, start)
 	end := start + visible
 	if end > len(lines) {
 		end = len(lines)

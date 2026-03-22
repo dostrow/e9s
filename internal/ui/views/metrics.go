@@ -98,12 +98,8 @@ func renderBar(pct float64, maxPct float64, barWidth int) string {
 		barWidth = 40
 	}
 	filled := int(pct / maxPct * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
-	if filled < 0 {
-		filled = 0
-	}
+	filled = min(filled, barWidth)
+	filled = max(0, filled)
 	empty := barWidth - filled
 
 	color := theme.ColorGreen
