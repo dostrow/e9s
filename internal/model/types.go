@@ -1,3 +1,4 @@
+// Package model defines the core ECS data types and transforms from AWS SDK types.
 package model
 
 import "time"

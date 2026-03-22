@@ -1,3 +1,4 @@
+// Package ui implements the bubbletea TUI application, views, and modal dialogs.
 package ui
 
 import (
@@ -207,13 +208,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if a.regionPicker.Active {
-		switch msg.(type) {
+		switch rm := msg.(type) {
 		case tea.KeyMsg:
 			var cmd tea.Cmd
-			a.regionPicker, cmd = a.regionPicker.Update(msg)
+			a.regionPicker, cmd = a.regionPicker.Update(rm)
 			return a, cmd
 		case views.RegionSwitchMsg:
-			rm := msg.(views.RegionSwitchMsg)
 			return a, a.switchRegion(rm.Region)
 		}
 		return a, nil

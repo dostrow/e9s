@@ -1,3 +1,4 @@
+// Package aws provides AWS SDK client wrappers for ECS, CloudWatch, SSM, Secrets Manager, S3, and Lambda.
 package aws
 
 import (

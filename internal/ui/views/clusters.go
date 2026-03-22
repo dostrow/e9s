@@ -1,3 +1,4 @@
+// Package views implements the individual bubbletea view models for each screen.
 package views
 
 import (

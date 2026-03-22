@@ -219,7 +219,6 @@ type LogStreamInfo struct {
 	Name           string
 	LastEventTime  int64
 	FirstEventTime int64
-	StoredBytes    int64
 }
 
 // ListLogGroups returns log groups matching a search term.
@@ -287,21 +286,17 @@ func (c *Client) ListLogStreams(ctx context.Context, logGroup, prefix string) ([
 			if s.LogStreamName != nil {
 				name = *s.LogStreamName
 			}
-			var lastEvent, firstEvent, stored int64
+			var lastEvent, firstEvent int64
 			if s.LastEventTimestamp != nil {
 				lastEvent = *s.LastEventTimestamp
 			}
 			if s.FirstEventTimestamp != nil {
 				firstEvent = *s.FirstEventTimestamp
 			}
-			if s.StoredBytes != nil {
-				stored = *s.StoredBytes
-			}
 			streams = append(streams, LogStreamInfo{
 				Name:           name,
 				LastEventTime:  lastEvent,
 				FirstEventTime: firstEvent,
-				StoredBytes:    stored,
 			})
 		}
 		pages++

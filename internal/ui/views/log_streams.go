@@ -96,7 +96,6 @@ func (m LogStreamsModel) View() string {
 	tbl := components.NewTable([]components.Column{
 		{Title: "STREAM"},
 		{Title: "LAST EVENT"},
-		{Title: "SIZE", RightAlign: true},
 	})
 
 	for _, s := range filtered {
@@ -108,7 +107,6 @@ func (m LogStreamsModel) View() string {
 		tbl.AddRow(
 			components.Plain(s.Name),
 			components.Plain(lastEvent),
-			components.Plain(formatBytes(s.StoredBytes)),
 		)
 	}
 

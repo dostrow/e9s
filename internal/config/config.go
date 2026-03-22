@@ -1,3 +1,4 @@
+// Package config handles loading and saving the ~/.e9s.yaml configuration file.
 package config
 
 import (

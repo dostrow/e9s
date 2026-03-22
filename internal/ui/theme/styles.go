@@ -1,3 +1,4 @@
+// Package theme defines ANSI-adaptive colors and lipgloss styles for the TUI.
 package theme
 
 import "github.com/charmbracelet/lipgloss"
@@ -14,10 +15,11 @@ var (
 	ColorMagenta = lipgloss.Color("13") // bright magenta
 	ColorDim     = lipgloss.Color("8")  // bright black (gray)
 	ColorWhite   = lipgloss.Color("15") // bright white
+	ColorMauve   = lipgloss.Color("4")  // bright mauve
 
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ColorCyan)
+			Foreground(ColorMauve)
 
 	StatusBarStyle = lipgloss.NewStyle().
 			Foreground(ColorDim).

@@ -26,7 +26,6 @@ func RenderStatusBarWithFlash(width int, active topMode, tabs []ModeTab, breadcr
 func renderBar(width int, active topMode, tabs []ModeTab, breadcrumbs []string, region, flash string, err error, lastRefresh time.Time) string {
 	style := lipgloss.NewStyle().
 		Width(width).
-		Background(lipgloss.Color("0")).
 		Foreground(theme.ColorDim).
 		Padding(0, 1)
 
@@ -61,7 +60,7 @@ func renderBar(width int, active topMode, tabs []ModeTab, breadcrumbs []string, 
 func renderModeTabs(active topMode, tabs []ModeTab) string {
 	activeStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(theme.ColorCyan)
+		Foreground(theme.ColorMauve)
 	inactiveStyle := lipgloss.NewStyle().
 		Foreground(theme.ColorDim)
 

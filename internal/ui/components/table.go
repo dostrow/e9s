@@ -1,3 +1,4 @@
+// Package components provides reusable UI components like the auto-sizing grid table.
 package components
 
 import (

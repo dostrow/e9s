@@ -1,3 +1,4 @@
+// e9s is an interactive terminal UI for managing AWS infrastructure.
 package main
 
 import (

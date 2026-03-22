@@ -23,7 +23,6 @@ type logReadyMsg struct {
 	streams  []string
 	follow   *bool         // nil = default (true), false = paused
 	lookback time.Duration // 0 = default (5min)
-	startTS  int64         // absolute start timestamp in ms (overrides lookback if > 0)
 	search   string        // pre-set search pattern
 }
 type execFinishedMsg struct{ err error }

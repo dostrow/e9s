@@ -69,11 +69,8 @@ func (m TaskDetailModel) View() string {
 			)
 		}
 
-		// Table render returns trailing newlines; split into lines
 		tableStr := tbl.Render(-1, "", 0)
-		for _, l := range strings.Split(strings.TrimRight(tableStr, "\n"), "\n") {
-			lines = append(lines, l)
-		}
+		lines = append(lines, strings.Split(strings.TrimRight(tableStr, "\n"), "\n")...)
 
 		for _, c := range t.Containers {
 			if c.ExitCode != nil || c.Reason != "" {
