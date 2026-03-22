@@ -88,6 +88,7 @@ type App struct {
 	selectedTask       *model.Task
 	execContainerName  string
 	logSearchGroup     string
+	logSearchGroups    []string // multi-group search
 	logSearchStream    string
 	logSearchStartMs   int64
 	logSearchEndMs     int64
@@ -1033,7 +1034,7 @@ func (a App) helpText() string {
 	case viewEnvVars:
 		contextHelp = "  [a] toggle ARNs/values  [/] filter  [esc] back"
 	case viewLogGroups:
-		contextHelp = "  [enter] streams  [l] tail group  [s] search  [W] save  [/] filter  [esc] back"
+		contextHelp = "  [enter] streams  [space] select  [l] tail group  [s] search selected  [W] save  [/] filter  [esc] back"
 	case viewLogStreams:
 		contextHelp = "  [enter] peek (last 1m)  [l] tail stream  [L] tail group  [s] search  [W] save  [/] filter  [esc] back"
 	case viewLogSearch:

@@ -358,6 +358,49 @@ func (c *Client) SearchLogs(ctx context.Context, logGroup string, streams []stri
 	return entries, nil
 }
 
+// SearchMultiGroupLogs searches across multiple log groups and merges results sorted by timestamp.
+func (c *Client) SearchMultiGroupLogs(ctx context.Context, logGroups []string, pattern string, startTimeMs, endTimeMs int64, maxResults int) ([]LogEntry, error) {
+	perGroup := maxResults / len(logGroups)
+	if perGroup < 10 {
+		perGroup = 10
+	}
+
+	var allEntries []LogEntry
+	for _, lg := range logGroups {
+		entries, err := c.SearchLogs(ctx, lg, nil, pattern, startTimeMs, endTimeMs, perGroup)
+		if err != nil {
+			// Add what we have and note the error in a synthetic entry
+			allEntries = append(allEntries, LogEntry{
+				Timestamp: startTimeMs,
+				Message:   fmt.Sprintf("[error searching %s: %v]", lg, err),
+				Stream:    lg,
+			})
+			continue
+		}
+		// Tag entries with their log group for identification
+		for i := range entries {
+			if entries[i].Stream == "" {
+				entries[i].Stream = lg
+			} else {
+				entries[i].Stream = lg + "/" + entries[i].Stream
+			}
+		}
+		allEntries = append(allEntries, entries...)
+	}
+
+	// Sort by timestamp
+	sort.Slice(allEntries, func(i, j int) bool {
+		return allEntries[i].Timestamp < allEntries[j].Timestamp
+	})
+
+	// Cap at maxResults
+	if len(allEntries) > maxResults {
+		allEntries = allEntries[:maxResults]
+	}
+
+	return allEntries, nil
+}
+
 // FetchLogsAroundTimestamp fetches logs from a stream around a given timestamp
 // for context display.
 func (c *Client) FetchLogsAroundTimestamp(ctx context.Context, logGroup, stream string, timestampMs int64, contextLines int) ([]LogEntry, error) {

@@ -1,3 +1,4 @@
+// Package views implements the individual bubbletea view models for each screen.
 package views
 
 import (
@@ -7,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
@@ -14,6 +16,7 @@ import (
 
 type LogGroupsModel struct {
 	groups      []aws.LogGroupInfo
+	selected    map[string]bool // multi-select by group name
 	cursor      int
 	filter      string
 	filtering   bool
@@ -23,7 +26,9 @@ type LogGroupsModel struct {
 }
 
 func NewLogGroups() LogGroupsModel {
-	return LogGroupsModel{}
+	return LogGroupsModel{
+		selected: make(map[string]bool),
+	}
 }
 
 func (m LogGroupsModel) Update(msg tea.Msg) (LogGroupsModel, tea.Cmd) {
@@ -55,6 +60,17 @@ func (m LogGroupsModel) Update(msg tea.Msg) (LogGroupsModel, tea.Cmd) {
 			if m.cursor < len(filtered)-1 {
 				m.cursor++
 			}
+		case msg.String() == " ":
+			// Toggle selection on current item
+			filtered := m.filteredGroups()
+			if m.cursor < len(filtered) {
+				name := filtered[m.cursor].Name
+				if m.selected[name] {
+					delete(m.selected, name)
+				} else {
+					m.selected[name] = true
+				}
+			}
 		case key.Matches(msg, theme.Keys.Filter):
 			m.filtering = true
 			m.filterInput = textinput.New()
@@ -75,6 +91,9 @@ func (m LogGroupsModel) View() string {
 
 	title := fmt.Sprintf("  Log Groups (%d)", len(filtered))
 	b.WriteString(theme.TitleStyle.Render(title))
+	if len(m.selected) > 0 {
+		b.WriteString(theme.HealthStyle("deploying").Render(fmt.Sprintf("  %d selected", len(m.selected))))
+	}
 	if m.filter != "" {
 		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  filter: %q", m.filter)))
 	}
@@ -91,12 +110,20 @@ func (m LogGroupsModel) View() string {
 	}
 
 	tbl := components.NewTable([]components.Column{
+		{Title: ""},
 		{Title: "LOG GROUP"},
 		{Title: "SIZE", RightAlign: true},
 	})
 
+	checkStyle := lipgloss.NewStyle().Foreground(theme.ColorGreen)
+
 	for _, g := range filtered {
+		check := " "
+		if m.selected[g.Name] {
+			check = checkStyle.Render("✓")
+		}
 		tbl.AddRow(
+			components.Cell{Content: check},
 			components.Plain(g.Name),
 			components.Plain(formatBytes(g.StoredBytes)),
 		)
@@ -136,6 +163,27 @@ func (m LogGroupsModel) SelectedGroup() *aws.LogGroupInfo {
 	}
 	g := filtered[m.cursor]
 	return &g
+}
+
+// SelectedGroups returns all multi-selected group names.
+// If none are selected, returns just the cursor item.
+func (m LogGroupsModel) SelectedGroups() []string {
+	if len(m.selected) > 0 {
+		names := make([]string, 0, len(m.selected))
+		for name := range m.selected {
+			names = append(names, name)
+		}
+		return names
+	}
+	if g := m.SelectedGroup(); g != nil {
+		return []string{g.Name}
+	}
+	return nil
+}
+
+// SelectionCount returns the number of multi-selected groups.
+func (m LogGroupsModel) SelectionCount() int {
+	return len(m.selected)
 }
 
 func (m LogGroupsModel) HasData() bool {

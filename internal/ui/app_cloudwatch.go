@@ -118,12 +118,13 @@ func (a App) startLogTail(logGroup string, streams []string, title string) tea.C
 // --- Log Search ---
 
 func (a App) promptLogSearchFromGroups() (App, tea.Cmd) {
-	g := a.logGroupsView.SelectedGroup()
-	if g == nil {
+	groups := a.logGroupsView.SelectedGroups()
+	if len(groups) == 0 {
 		return a, nil
 	}
 	a.prevState = viewLogGroups
-	a.logSearchGroup = g.Name
+	a.logSearchGroups = groups
+	a.logSearchGroup = groups[0] // primary group for display
 	a.logSearchStream = ""
 	return a.promptLogSearchTimeRange()
 }
@@ -135,6 +136,7 @@ func (a App) promptLogSearchFromStreams() (App, tea.Cmd) {
 	}
 	a.prevState = viewLogStreams
 	a.logSearchGroup = a.logStreamsView.LogGroup()
+	a.logSearchGroups = []string{a.logSearchGroup}
 	a.logSearchStream = s.Name
 	return a.promptLogSearchTimeRange()
 }
@@ -173,16 +175,29 @@ func (a App) handleTimeRangePick(value string) (App, tea.Cmd) {
 
 func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	a.state = viewLogSearch
-	a.logSearchView = views.NewLogSearch(a.logSearchGroup, a.logSearchStream, pattern)
+
+	// Build display title
+	searchScope := a.logSearchGroup
+	if len(a.logSearchGroups) > 1 {
+		searchScope = fmt.Sprintf("%d groups", len(a.logSearchGroups))
+	}
+	a.logSearchView = views.NewLogSearch(searchScope, a.logSearchStream, pattern)
 	a.logSearchView = a.logSearchView.SetSize(a.width, a.height-3)
 
 	client := a.client
+	groups := a.logSearchGroups
 	group := a.logSearchGroup
 	stream := a.logSearchStream
 	startMs := a.logSearchStartMs
 	endMs := a.logSearchEndMs
 
 	return a, func() tea.Msg {
+		if len(groups) > 1 {
+			// Multi-group search
+			results, err := client.SearchMultiGroupLogs(context.Background(), groups, pattern, startMs, endMs, 500)
+			return views.LogSearchResultsMsg{Results: results, Err: err}
+		}
+		// Single group search
 		var streams []string
 		if stream != "" {
 			streams = []string{stream}
