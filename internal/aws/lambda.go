@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -111,56 +112,17 @@ func transformLambdaConfig(f lambdaTypes.FunctionConfiguration) LambdaFunction {
 }
 
 func sortEnvVars(vars []EnvVar) {
-	for i := 0; i < len(vars); i++ {
-		for j := i + 1; j < len(vars); j++ {
-			if vars[i].Name > vars[j].Name {
-				vars[i], vars[j] = vars[j], vars[i]
-			}
+	slices.SortFunc(vars, func(a, b EnvVar) int {
+		if a.Name < b.Name {
+			return -1
 		}
-	}
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
 }
 
 func containsLower(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 &&
-		containsFold(s, substr)
-}
-
-func containsFold(s, substr string) bool {
-	// Simple case-insensitive contains
-	ls := make([]byte, len(s))
-	lsub := make([]byte, len(substr))
-	for i := range s {
-		if s[i] >= 'A' && s[i] <= 'Z' {
-			ls[i] = s[i] + 32
-		} else {
-			ls[i] = s[i]
-		}
-	}
-	for i := range substr {
-		if substr[i] >= 'A' && substr[i] <= 'Z' {
-			lsub[i] = substr[i] + 32
-		} else {
-			lsub[i] = substr[i]
-		}
-	}
-	return bytesContains(ls, lsub)
-}
-
-func bytesContains(s, sub []byte) bool {
-	if len(sub) > len(s) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(sub); i++ {
-		match := true
-		for j := range sub {
-			if s[i+j] != sub[j] {
-				match = false
-				break
-			}
-		}
-		if match {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

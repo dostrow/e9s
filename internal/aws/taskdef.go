@@ -113,15 +113,15 @@ func (c *Client) GetTaskDefinition(ctx context.Context, taskDef string) (*TaskDe
 func DiffTaskDefinitions(old, new *TaskDefSummary) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("--- %s:%d\n", old.Family, old.Revision))
-	b.WriteString(fmt.Sprintf("+++ %s:%d\n", new.Family, new.Revision))
+	fmt.Fprintf(&b, "--- %s:%d\n", old.Family, old.Revision)
+	fmt.Fprintf(&b, "+++ %s:%d\n", new.Family, new.Revision)
 	b.WriteString("\n")
 
 	if old.CPU != new.CPU {
-		b.WriteString(fmt.Sprintf("  CPU: %s → %s\n", old.CPU, new.CPU))
+		fmt.Fprintf(&b, "  CPU: %s → %s\n", old.CPU, new.CPU)
 	}
 	if old.Memory != new.Memory {
-		b.WriteString(fmt.Sprintf("  Memory: %s → %s\n", old.Memory, new.Memory))
+		fmt.Fprintf(&b, "  Memory: %s → %s\n", old.Memory, new.Memory)
 	}
 
 	// Index old containers by name
@@ -133,8 +133,8 @@ func DiffTaskDefinitions(old, new *TaskDefSummary) string {
 	for _, nc := range new.Containers {
 		oc, exists := oldMap[nc.Name]
 		if !exists {
-			b.WriteString(fmt.Sprintf("\n  + Container added: %s\n", nc.Name))
-			b.WriteString(fmt.Sprintf("    Image: %s\n", nc.Image))
+			fmt.Fprintf(&b, "\n  + Container added: %s\n", nc.Name)
+			fmt.Fprintf(&b, "    Image: %s\n", nc.Image)
 			continue
 		}
 		delete(oldMap, nc.Name)
@@ -142,22 +142,22 @@ func DiffTaskDefinitions(old, new *TaskDefSummary) string {
 		header := false
 		writeHeader := func() {
 			if !header {
-				b.WriteString(fmt.Sprintf("\n  Container: %s\n", nc.Name))
+				fmt.Fprintf(&b, "\n  Container: %s\n", nc.Name)
 				header = true
 			}
 		}
 
 		if oc.Image != nc.Image {
 			writeHeader()
-			b.WriteString(fmt.Sprintf("    Image: %s → %s\n", oc.Image, nc.Image))
+			fmt.Fprintf(&b, "    Image: %s → %s\n", oc.Image, nc.Image)
 		}
 		if oc.CPU != nc.CPU {
 			writeHeader()
-			b.WriteString(fmt.Sprintf("    CPU: %d → %d\n", oc.CPU, nc.CPU))
+			fmt.Fprintf(&b, "    CPU: %d → %d\n", oc.CPU, nc.CPU)
 		}
 		if oc.Memory != nc.Memory {
 			writeHeader()
-			b.WriteString(fmt.Sprintf("    Memory: %d → %d\n", oc.Memory, nc.Memory))
+			fmt.Fprintf(&b, "    Memory: %d → %d\n", oc.Memory, nc.Memory)
 		}
 
 		// Diff env var keys
@@ -166,19 +166,19 @@ func DiffTaskDefinitions(old, new *TaskDefSummary) string {
 		for k := range newEnv {
 			if !oldEnv[k] {
 				writeHeader()
-				b.WriteString(fmt.Sprintf("    + Env: %s\n", k))
+				fmt.Fprintf(&b, "    + Env: %s\n", k)
 			}
 		}
 		for k := range oldEnv {
 			if !newEnv[k] {
 				writeHeader()
-				b.WriteString(fmt.Sprintf("    - Env: %s\n", k))
+				fmt.Fprintf(&b, "    - Env: %s\n", k)
 			}
 		}
 	}
 
 	for name := range oldMap {
-		b.WriteString(fmt.Sprintf("\n  - Container removed: %s\n", name))
+		fmt.Fprintf(&b, "\n  - Container removed: %s\n", name)
 	}
 
 	result := b.String()
@@ -234,10 +234,7 @@ func (c *Client) ResolveEnvVars(ctx context.Context, envVars []EnvVar) []EnvVar 
 
 func (c *Client) resolveSSMBatch(ctx context.Context, names []string, index map[string][]int, resolved []EnvVar) {
 	for i := 0; i < len(names); i += 10 {
-		end := i + 10
-		if end > len(names) {
-			end = len(names)
-		}
+		end := min(i+10, len(names))
 		batch := names[i:end]
 
 		out, err := c.SSM.GetParameters(ctx, &ssmSvc.GetParametersInput{
@@ -318,7 +315,7 @@ func parseSecretARN(valueFrom string) (string, string) {
 }
 
 func extractJSONKey(jsonStr, key string) (string, error) {
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
 		return "", err
 	}
@@ -333,8 +330,8 @@ func extractJSONKey(jsonStr, key string) (string, error) {
 // ARN format: arn:aws:ssm:region:account:parameter/path/to/param
 func extractSSMParamName(arnOrName string) string {
 	if strings.HasPrefix(arnOrName, "arn:") {
-		if idx := strings.Index(arnOrName, ":parameter"); idx != -1 {
-			return arnOrName[idx+len(":parameter"):]
+		if _, after, ok := strings.Cut(arnOrName, ":parameter"); ok {
+			return after
 		}
 	}
 	return arnOrName

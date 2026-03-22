@@ -62,6 +62,7 @@ type Config struct {
 	LogPaths        []LogPathEntry `yaml:"log_paths"`
 }
 
+// DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	c := Config{}
 	c.Defaults.RefreshInterval = 5
@@ -71,6 +72,7 @@ func DefaultConfig() Config {
 	return c
 }
 
+// Load reads the config from ~/.e9s.yaml, falling back to defaults.
 func Load() Config {
 	cfg := DefaultConfig()
 
@@ -100,6 +102,7 @@ func Load() Config {
 	return cfg
 }
 
+// Save writes the config to ~/.e9s.yaml.
 func (c *Config) Save() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -164,6 +167,7 @@ func (c *Config) AddSMFilter(name, filter string) bool {
 	return true
 }
 
+// AddLambdaSearch adds or updates a saved Lambda search filter.
 func (c *Config) AddLambdaSearch(name, filter string) bool {
 	for i, s := range c.LambdaSearches {
 		if s.Name == name {
@@ -175,6 +179,7 @@ func (c *Config) AddLambdaSearch(name, filter string) bool {
 	return true
 }
 
+// RemoveLambdaSearch removes a saved Lambda search by name.
 func (c *Config) RemoveLambdaSearch(name string) {
 	for i, s := range c.LambdaSearches {
 		if s.Name == name {
@@ -184,6 +189,7 @@ func (c *Config) RemoveLambdaSearch(name string) {
 	}
 }
 
+// AddS3Search adds or updates a saved S3 bucket search.
 func (c *Config) AddS3Search(name, filter string) bool {
 	for i, s := range c.S3Searches {
 		if s.Name == name {
@@ -195,6 +201,7 @@ func (c *Config) AddS3Search(name, filter string) bool {
 	return true
 }
 
+// RemoveS3Search removes a saved S3 search by name.
 func (c *Config) RemoveS3Search(name string) {
 	for i, s := range c.S3Searches {
 		if s.Name == name {
@@ -214,7 +221,6 @@ func (c *Config) RemoveSMFilter(name string) {
 	}
 }
 
-// AddLogPath adds or updates a saved log path.
 // RemoveLogPath removes a saved log path by name.
 func (c *Config) RemoveLogPath(name string) {
 	for i, p := range c.LogPaths {
@@ -225,6 +231,7 @@ func (c *Config) RemoveLogPath(name string) {
 	}
 }
 
+// AddLogPath adds or updates a saved log path.
 func (c *Config) AddLogPath(name, logGroup, stream string) bool {
 	for i, p := range c.LogPaths {
 		if p.Name == name {

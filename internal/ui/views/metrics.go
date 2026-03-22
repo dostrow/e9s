@@ -35,14 +35,14 @@ func (m MetricsModel) View() string {
 
 	b.WriteString(theme.TitleStyle.Render("  CPU Utilization"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Average:", renderBar(m.metrics.CPUAvg, 50, m.width-20)))
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Maximum:", renderBar(m.metrics.CPUMax, 50, m.width-20)))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderBar(m.metrics.CPUAvg, 50, m.width-20))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderBar(m.metrics.CPUMax, 50, m.width-20))
 	b.WriteString("\n")
 
 	b.WriteString(theme.TitleStyle.Render("  Memory Utilization"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Average:", renderBar(m.metrics.MemAvg, 50, m.width-20)))
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Maximum:", renderBar(m.metrics.MemMax, 50, m.width-20)))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderBar(m.metrics.MemAvg, 50, m.width-20))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderBar(m.metrics.MemMax, 50, m.width-20))
 	b.WriteString("\n")
 
 	if len(m.alarms) > 0 {

@@ -418,7 +418,7 @@ func (m LogViewerModel) View() string {
 		}
 		b.WriteString(theme.HelpStyle.Render(matchInfo))
 	}
-	b.WriteString(fmt.Sprintf("  [%d lines]", len(m.lines)))
+	fmt.Fprintf(&b, "  [%d lines]", len(m.lines))
 	b.WriteString("\n\n")
 
 	if m.searching {
@@ -472,7 +472,7 @@ func (m LogViewerModel) View() string {
 			marker = "» "
 		}
 
-		b.WriteString(fmt.Sprintf("%s%s  %s\n", marker, tsStr, firstLine))
+		fmt.Fprintf(&b, "%s%s  %s\n", marker, tsStr, firstLine)
 		for _, cont := range msgLines[1:] {
 			if m.search != "" {
 				cont = highlightSearch(cont, m.search)

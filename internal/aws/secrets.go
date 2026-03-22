@@ -68,7 +68,7 @@ func (c *Client) ListSecrets(ctx context.Context, nameFilter string) ([]Secret, 
 	return secrets, nil
 }
 
-// GetSecretValue fetches the current value of a secret.
+// GetSecretValueByName fetches the current value of a secret.
 func (c *Client) GetSecretValueByName(ctx context.Context, secretName string) (*SecretValue, error) {
 	out, err := c.SM.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
 		SecretId: &secretName,

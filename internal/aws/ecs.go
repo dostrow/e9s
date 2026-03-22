@@ -57,10 +57,7 @@ func (c *Client) ListServices(ctx context.Context, clusterARN string) ([]model.S
 	// DescribeServices accepts max 10 at a time
 	var services []model.Service
 	for i := 0; i < len(serviceARNs); i += 10 {
-		end := i + 10
-		if end > len(serviceARNs) {
-			end = len(serviceARNs)
-		}
+		end := min(i+10, len(serviceARNs))
 		desc, err := c.ECS.DescribeServices(ctx, &ecs.DescribeServicesInput{
 			Cluster:  &clusterARN,
 			Services: serviceARNs[i:end],
@@ -100,10 +97,7 @@ func (c *Client) ListTasks(ctx context.Context, clusterARN, serviceName string) 
 	// DescribeTasks accepts max 100 at a time
 	var tasks []model.Task
 	for i := 0; i < len(taskARNs); i += 100 {
-		end := i + 100
-		if end > len(taskARNs) {
-			end = len(taskARNs)
-		}
+		end := min(i+100, len(taskARNs))
 		desc, err := c.ECS.DescribeTasks(ctx, &ecs.DescribeTasksInput{
 			Cluster: &clusterARN,
 			Tasks:   taskARNs[i:end],

@@ -113,7 +113,7 @@ func (m LogSearchModel) View() string {
 		scope += " / " + m.stream
 	}
 	b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  in %s", scope)))
-	b.WriteString(fmt.Sprintf("  [%d results]", len(m.results)))
+	fmt.Fprintf(&b, "  [%d results]", len(m.results))
 	b.WriteString("\n\n")
 
 	if m.loading {
@@ -163,7 +163,7 @@ func (m LogSearchModel) View() string {
 			streamLabel = theme.HelpStyle.Render(fmt.Sprintf("[%s] ", short))
 		}
 
-		b.WriteString(fmt.Sprintf("%s%s  %s%s\n", cursor, tsStr, streamLabel, highlighted))
+		fmt.Fprintf(&b, "%s%s  %s%s\n", cursor, tsStr, streamLabel, highlighted)
 	}
 
 	if len(m.results) > visible {

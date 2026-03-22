@@ -68,13 +68,13 @@ func (m ServiceDetailModel) View() string {
 	b.WriteString(theme.TitleStyle.Render(title))
 	b.WriteString("\n\n")
 
-	b.WriteString(fmt.Sprintf("  %-20s %s\n", "Status:", theme.StatusStyle(s.Status).Render(s.Status)))
-	b.WriteString(fmt.Sprintf("  %-20s %s\n", "Health:", theme.HealthStyle(s.HealthStatus).Render(s.HealthStatus)))
-	b.WriteString(fmt.Sprintf("  %-20s %d / %d (pending: %d)\n", "Tasks:", s.RunningCount, s.DesiredCount, s.PendingCount))
-	b.WriteString(fmt.Sprintf("  %-20s %s\n", "Task Definition:", s.TaskDefinition))
-	b.WriteString(fmt.Sprintf("  %-20s %s\n", "Launch Type:", s.LaunchType))
+	fmt.Fprintf(&b, "  %-20s %s\n", "Status:", theme.StatusStyle(s.Status).Render(s.Status))
+	fmt.Fprintf(&b, "  %-20s %s\n", "Health:", theme.HealthStyle(s.HealthStatus).Render(s.HealthStatus))
+	fmt.Fprintf(&b, "  %-20s %d / %d (pending: %d)\n", "Tasks:", s.RunningCount, s.DesiredCount, s.PendingCount)
+	fmt.Fprintf(&b, "  %-20s %s\n", "Task Definition:", s.TaskDefinition)
+	fmt.Fprintf(&b, "  %-20s %s\n", "Launch Type:", s.LaunchType)
 	if !s.CreatedAt.IsZero() {
-		b.WriteString(fmt.Sprintf("  %-20s %s (%s ago)\n", "Created:", s.CreatedAt.Format("2006-01-02 15:04:05"), formatAge(s.CreatedAt)))
+		fmt.Fprintf(&b, "  %-20s %s (%s ago)\n", "Created:", s.CreatedAt.Format("2006-01-02 15:04:05"), formatAge(s.CreatedAt))
 	}
 	b.WriteString("\n")
 
@@ -155,7 +155,7 @@ func (m ServiceDetailModel) renderEvents() string {
 
 	for _, e := range m.service.Events[start:end] {
 		ts := theme.HelpStyle.Render(e.CreatedAt.Format("15:04:05"))
-		b.WriteString(fmt.Sprintf("  %s  %s\n", ts, e.Message))
+		fmt.Fprintf(&b, "  %s  %s\n", ts, e.Message)
 	}
 
 	if end < maxEvents {

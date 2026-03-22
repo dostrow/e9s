@@ -31,13 +31,13 @@ func (m S3DetailModel) View() string {
 	b.WriteString(theme.TitleStyle.Render(title))
 	b.WriteString("\n\n")
 
-	b.WriteString(fmt.Sprintf("  %-18s %s\n", "Key:", d.Key))
-	b.WriteString(fmt.Sprintf("  %-18s %s\n", "Size:", formatBytesS3(d.Size)))
-	b.WriteString(fmt.Sprintf("  %-18s %s\n", "Content Type:", d.ContentType))
-	b.WriteString(fmt.Sprintf("  %-18s %s\n", "ETag:", d.ETag))
-	b.WriteString(fmt.Sprintf("  %-18s %s\n", "Storage Class:", d.StorageClass))
+	fmt.Fprintf(&b, "  %-18s %s\n", "Key:", d.Key)
+	fmt.Fprintf(&b, "  %-18s %s\n", "Size:", formatBytesS3(d.Size))
+	fmt.Fprintf(&b, "  %-18s %s\n", "Content Type:", d.ContentType)
+	fmt.Fprintf(&b, "  %-18s %s\n", "ETag:", d.ETag)
+	fmt.Fprintf(&b, "  %-18s %s\n", "Storage Class:", d.StorageClass)
 	if !d.LastModified.IsZero() {
-		b.WriteString(fmt.Sprintf("  %-18s %s (%s ago)\n", "Last Modified:", d.LastModified.Format("2006-01-02 15:04:05"), formatAge(d.LastModified)))
+		fmt.Fprintf(&b, "  %-18s %s (%s ago)\n", "Last Modified:", d.LastModified.Format("2006-01-02 15:04:05"), formatAge(d.LastModified))
 	}
 
 	if len(d.Tags) > 0 {
