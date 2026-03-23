@@ -253,6 +253,25 @@ func (c *Client) ExecutePartiQL(ctx context.Context, statement string) ([]Dynamo
 	return items, nil
 }
 
+// GetDynamoItem fetches a single item by its key.
+func (c *Client) GetDynamoItem(ctx context.Context, tableName string, keyAV map[string]dbtypes.AttributeValue) (*DynamoItem, error) {
+	out, err := c.DynamoDB.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: &tableName,
+		Key:       keyAV,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if out.Item == nil {
+		return nil, nil
+	}
+	var item DynamoItem
+	if err := attributevalue.UnmarshalMap(out.Item, &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 // UpdateDynamoField updates a single attribute on an item identified by its key.
 func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyItem map[string]dbtypes.AttributeValue, attrName, newValue string) error {
 	// Try to detect the value type and build the appropriate AttributeValue

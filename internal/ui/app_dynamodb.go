@@ -236,6 +236,30 @@ func (a App) doSaveDynamoQuery(name string) (App, tea.Cmd) {
 	return a, nil
 }
 
+// --- Refresh Detail ---
+
+func (a App) refreshDynamoDetail() tea.Cmd {
+	client := a.client
+	tableName := a.dynamoDetailView.TableName()
+	keyNames := a.dynamoDetailView.KeyNames()
+	item := a.dynamoDetailView.Item()
+	if item == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		keyAV, err := aws.BuildKeyFromItem(*item, keyNames)
+		if err != nil {
+			return errMsg{err}
+		}
+		refreshed, err := client.GetDynamoItem(context.Background(), tableName, keyAV)
+		if err != nil {
+			return errMsg{err}
+		}
+		return dynamoItemRefreshedMsg{item: refreshed}
+	}
+}
+
 // --- Field Edit ---
 
 func (a App) editDynamoField() (App, tea.Cmd) {

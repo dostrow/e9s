@@ -104,6 +104,9 @@ type dynamoPartiQLResultMsg struct {
 	err   error
 }
 
+type dynamoItemRefreshedMsg struct {
+	item *e9saws.DynamoItem
+}
 type dynamoFieldEditedMsg struct {
 	tableName string
 	keyNames  []string

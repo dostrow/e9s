@@ -515,6 +515,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case dynamoItemRefreshedMsg:
+		if msg.item != nil {
+			a.dynamoDetailView = views.NewDynamoItemDetail(
+				a.dynamoDetailView.TableName(), a.dynamoKeyNames, msg.item)
+			a.dynamoDetailView = a.dynamoDetailView.SetSize(a.width, a.height-3)
+		}
+		return a, nil
+
 	case dynamoFieldEditedMsg:
 		// User finished editing in $EDITOR, confirm the write
 		a.dynamoEditField = msg.fieldName
@@ -532,9 +540,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dynamoWriteDoneMsg:
 		if msg.err != nil {
 			a.err = msg.err
-		} else {
-			a.flashMessage = msg.message
-			a.flashExpiry = time.Now().Add(5 * time.Second)
+			return a, nil
+		}
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		// Re-fetch the item to refresh the detail view
+		if a.state == viewDynamoItemDetail && a.dynamoDetailView.Item() != nil {
+			return a, a.refreshDynamoDetail()
 		}
 		return a, nil
 
