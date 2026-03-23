@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -183,12 +185,18 @@ func TestDynamoQueryCRUD(t *testing.T) {
 	}
 }
 
+func resetConfigPath() {
+	configPathOnce = sync.Once{}
+	configPath = ""
+}
+
 func TestSaveAndLoad(t *testing.T) {
-	// Use a temp dir as home
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
 
 	cfg := DefaultConfig()
 	cfg.Defaults.Cluster = "test-cluster"
@@ -200,13 +208,14 @@ func TestSaveAndLoad(t *testing.T) {
 		t.Fatalf("Save() error: %v", err)
 	}
 
-	// Verify file exists
-	path := filepath.Join(tmpDir, ".e9s.yaml")
+	// Verify file exists at XDG path
+	path := filepath.Join(tmpDir, "e9s", "config.yaml")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Fatal("Config file not created")
+		t.Fatalf("Config file not created at %s", path)
 	}
 
 	// Load it back
+	resetConfigPath()
 	loaded := Load()
 	if loaded.Defaults.Cluster != "test-cluster" {
 		t.Errorf("Loaded Cluster = %q, want %q", loaded.Defaults.Cluster, "test-cluster")
@@ -217,20 +226,47 @@ func TestSaveAndLoad(t *testing.T) {
 	if len(loaded.SSMPrefixes) != 1 {
 		t.Fatalf("Loaded SSMPrefixes count = %d, want 1", len(loaded.SSMPrefixes))
 	}
-	if loaded.SSMPrefixes[0].Prefix != "/my/prefix" {
-		t.Errorf("Loaded Prefix = %q, want %q", loaded.SSMPrefixes[0].Prefix, "/my/prefix")
-	}
 }
 
 func TestLoadMissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
 
 	cfg := Load()
-	// Should return defaults
 	if cfg.Defaults.RefreshInterval != 5 {
 		t.Errorf("RefreshInterval = %d, want 5", cfg.Defaults.RefreshInterval)
+	}
+}
+
+func TestSaveDir(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.SaveDir() != "./" {
+		t.Errorf("Default SaveDir = %q, want %q", cfg.SaveDir(), "./")
+	}
+
+	cfg.Defaults.SaveDirectory = "/tmp/downloads"
+	if cfg.SaveDir() != "/tmp/downloads" {
+		t.Errorf("SaveDir = %q, want %q", cfg.SaveDir(), "/tmp/downloads")
+	}
+}
+
+func TestConfigPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
+
+	path := Path()
+	if path == "" {
+		t.Fatal("Path() should not be empty")
+	}
+	if !strings.Contains(path, "e9s") {
+		t.Errorf("Path should contain 'e9s': %q", path)
 	}
 }

@@ -133,10 +133,11 @@ type App struct {
 	refreshSec   int
 	loading      bool
 	err          error
-	flashMessage string
-	flashExpiry  time.Time
-	width        int
-	height       int
+	flashMessage   string
+	flashExpiry    time.Time
+	configModTime  time.Time // last known config file mod time
+	width          int
+	height         int
 }
 
 func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
@@ -172,6 +173,8 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 			idx++
 		}
 	}
+
+	app.configModTime = config.ModTime()
 
 	// Determine startup mode
 	defaultMode := resolveDefaultMode(cfg.Defaults.DefaultMode)
@@ -844,10 +847,40 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	// --- Tick ---
+	case configEditedMsg:
+		// Config was edited in $EDITOR — reload it
+		newCfg := config.Reload()
+		a.cfg = &newCfg
+		a.configModTime = config.ModTime()
+		a.flashMessage = "Config reloaded"
+		a.flashExpiry = time.Now().Add(3 * time.Second)
+		return a, nil
+
+	case configCheckMsg:
+		// Periodic hot-reload check
+		modTime := config.ModTime()
+		if !modTime.IsZero() && modTime.After(a.configModTime) {
+			newCfg := config.Reload()
+			a.cfg = &newCfg
+			a.configModTime = modTime
+			a.flashMessage = "Config reloaded (file changed)"
+			a.flashExpiry = time.Now().Add(3 * time.Second)
+		}
+		return a, nil
+
 	case tickMsg:
 		if !a.flashExpiry.IsZero() && time.Now().After(a.flashExpiry) {
 			a.flashMessage = ""
 			a.flashExpiry = time.Time{}
+		}
+		// Check for config changes every tick
+		modTime := config.ModTime()
+		if !modTime.IsZero() && modTime.After(a.configModTime) {
+			newCfg := config.Reload()
+			a.cfg = &newCfg
+			a.configModTime = modTime
+			a.flashMessage = "Config reloaded"
+			a.flashExpiry = time.Now().Add(3 * time.Second)
 		}
 		return a, tea.Batch(a.refreshCurrentView(), a.tick())
 
@@ -875,6 +908,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "`":
 			a.modeSwitcher = NewModeSwitcher(a.modeTabs, a.mode)
 			return a, nil
+		case msg.String() == "ctrl+,":
+			return a.openConfigEditor()
 		}
 
 		// Number keys 1-9: quick select and drill down on list views
@@ -1325,7 +1360,7 @@ func (a App) helpText() string {
 	default:
 		return ""
 	}
-	return contextHelp + "  [`] mode  [q] quit  [?] help"
+	return contextHelp + "  [`] mode  [ctrl+,] config  [q] quit  [?] help"
 }
 
 // --- Navigation ---

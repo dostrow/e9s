@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -443,7 +444,7 @@ func (a App) openServiceLogs() (App, tea.Cmd) {
 // --- Log Buffer Save ---
 
 func (a App) promptSaveLogBuffer() (App, tea.Cmd) {
-	defaultName := "e9s-logs.txt"
+	defaultName := filepath.Join(a.cfg.SaveDir(), "e9s-logs.txt")
 	a.input = NewInput(InputLogSaveFile, fmt.Sprintf("Save %d lines to file", len(a.logView.ExportLines())), defaultName)
 	return a, nil
 }

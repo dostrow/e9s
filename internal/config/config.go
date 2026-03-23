@@ -1,11 +1,21 @@
-// Package config handles loading and saving the ~/.e9s.yaml configuration file.
+// Package config handles loading and saving the e9s configuration file.
+// Uses XDG_CONFIG_HOME (~/.config/e9s/config.yaml) on Linux/macOS,
+// %APPDATA%\e9s\config.yaml on Windows, with fallback to ~/.e9s.yaml.
 package config
 
 import (
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+// configPath is the resolved path to the config file.
+var (
+	configPath     string
+	configPathOnce sync.Once
 )
 
 type LogPathEntry struct {
@@ -50,7 +60,8 @@ type Config struct {
 		Region          string `yaml:"region"`
 		Profile         string `yaml:"profile"`
 		RefreshInterval int    `yaml:"refresh_interval"`
-		DefaultMode     string `yaml:"default_mode"` // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
+		DefaultMode     string `yaml:"default_mode"`      // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
+		SaveDirectory   string `yaml:"save_directory"`    // default directory for file save dialogs
 	} `yaml:"defaults"`
 	Display struct {
 		TimestampFormat string `yaml:"timestamp_format"` // "relative" or "absolute"
@@ -86,40 +97,117 @@ func DefaultConfig() Config {
 	return c
 }
 
-// Load reads the config from ~/.e9s.yaml, falling back to defaults.
+// resolveConfigPath determines the config file path using XDG conventions.
+// Priority: XDG_CONFIG_HOME/e9s/config.yaml > ~/.config/e9s/config.yaml > ~/.e9s.yaml (legacy)
+func resolveConfigPath() string {
+	configPathOnce.Do(func() {
+		// Check XDG config dir (cross-platform: ~/.config on Linux/macOS, %APPDATA% on Windows)
+		if xdgDir, err := os.UserConfigDir(); err == nil {
+			xdgPath := filepath.Join(xdgDir, "e9s", "config.yaml")
+			if _, err := os.Stat(xdgPath); err == nil {
+				configPath = xdgPath
+				return
+			}
+			// Check if legacy path exists for migration
+			if home, err := os.UserHomeDir(); err == nil {
+				legacyPath := filepath.Join(home, ".e9s.yaml")
+				if _, err := os.Stat(legacyPath); err == nil {
+					// Migrate: copy legacy to XDG location
+					if data, err := os.ReadFile(legacyPath); err == nil {
+						dir := filepath.Dir(xdgPath)
+						if err := os.MkdirAll(dir, 0755); err == nil {
+							if err := os.WriteFile(xdgPath, data, 0644); err == nil {
+								// Migration successful — remove legacy file
+								_ = os.Remove(legacyPath)
+								configPath = xdgPath
+								return
+							}
+						}
+					}
+					// Migration failed — use legacy path
+					configPath = legacyPath
+					return
+				}
+			}
+			// No existing config — use XDG path for new config
+			configPath = xdgPath
+			return
+		}
+		// Fallback to legacy path
+		if home, err := os.UserHomeDir(); err == nil {
+			configPath = filepath.Join(home, ".e9s.yaml")
+		}
+	})
+	return configPath
+}
+
+// Path returns the resolved config file path.
+func Path() string {
+	return resolveConfigPath()
+}
+
+// Load reads the config file, falling back to defaults.
 func Load() Config {
 	cfg := DefaultConfig()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
+	path := resolveConfigPath()
+	if path == "" {
 		return cfg
 	}
 
-	path := filepath.Join(home, ".e9s.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return cfg
 	}
 
 	_ = yaml.Unmarshal(data, &cfg)
-
-	if cfg.Defaults.RefreshInterval <= 0 {
-		cfg.Defaults.RefreshInterval = 5
-	}
-	if cfg.Display.MaxEvents <= 0 {
-		cfg.Display.MaxEvents = 50
-	}
-	if cfg.Display.MaxLogLines <= 0 {
-		cfg.Display.MaxLogLines = 1000
-	}
-
+	cfg.applyDefaults()
 	return cfg
 }
 
-// Save writes the config to ~/.e9s.yaml.
-func (c *Config) Save() error {
-	home, err := os.UserHomeDir()
+// Reload re-reads the config file from disk, returning a fresh Config.
+func Reload() Config {
+	// Reset the path cache to pick up any changes
+	cfg := DefaultConfig()
+
+	path := resolveConfigPath()
+	if path == "" {
+		return cfg
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
+		return cfg
+	}
+
+	_ = yaml.Unmarshal(data, &cfg)
+	cfg.applyDefaults()
+	return cfg
+}
+
+// ModTime returns the last modification time of the config file.
+func ModTime() time.Time {
+	path := resolveConfigPath()
+	if path == "" {
+		return time.Time{}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+// Save writes the config to the resolved config file path.
+func (c *Config) Save() error {
+	path := resolveConfigPath()
+	if path == "" {
+		return os.ErrNotExist
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
@@ -128,8 +216,27 @@ func (c *Config) Save() error {
 		return err
 	}
 
-	path := filepath.Join(home, ".e9s.yaml")
 	return os.WriteFile(path, data, 0644)
+}
+
+func (c *Config) applyDefaults() {
+	if c.Defaults.RefreshInterval <= 0 {
+		c.Defaults.RefreshInterval = 5
+	}
+	if c.Display.MaxEvents <= 0 {
+		c.Display.MaxEvents = 50
+	}
+	if c.Display.MaxLogLines <= 0 {
+		c.Display.MaxLogLines = 1000
+	}
+}
+
+// SaveDir returns the configured save directory, or "./" as default.
+func (c *Config) SaveDir() string {
+	if c.Defaults.SaveDirectory != "" {
+		return c.Defaults.SaveDirectory
+	}
+	return "./"
 }
 
 // AddSSMPrefix adds or updates an SSM prefix entry. Returns true if it was new.

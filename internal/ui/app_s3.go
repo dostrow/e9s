@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -88,13 +89,13 @@ func (a App) promptS3Download() (App, tea.Cmd) {
 	a.s3DownloadKey = obj.Key
 	a.s3DownloadIsPrefix = obj.IsPrefix
 	if obj.IsPrefix {
-		a.input = NewInput(InputS3Download, fmt.Sprintf("Download s3://%s/%s to directory", a.s3DownloadBucket, obj.Key), "./")
+		a.input = NewInput(InputS3Download, fmt.Sprintf("Download s3://%s/%s to directory", a.s3DownloadBucket, obj.Key), a.cfg.SaveDir())
 	} else {
 		name := obj.Key
 		if idx := strings.LastIndex(name, "/"); idx >= 0 {
 			name = name[idx+1:]
 		}
-		a.input = NewInput(InputS3Download, fmt.Sprintf("Download %s to", name), "./"+name)
+		a.input = NewInput(InputS3Download, fmt.Sprintf("Download %s to", name), filepath.Join(a.cfg.SaveDir(), name))
 	}
 	return a, nil
 }
@@ -133,7 +134,7 @@ func (a App) promptS3DownloadFromDetail() (App, tea.Cmd) {
 	if idx := strings.LastIndex(name, "/"); idx >= 0 {
 		name = name[idx+1:]
 	}
-	a.input = NewInput(InputS3Download, fmt.Sprintf("Download %s to", name), "./"+name)
+	a.input = NewInput(InputS3Download, fmt.Sprintf("Download %s to", name), filepath.Join(a.cfg.SaveDir(), name))
 	return a, nil
 }
 

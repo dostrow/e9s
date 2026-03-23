@@ -6,7 +6,32 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/config"
 )
+
+// --- Config Editor ---
+
+func (a App) openConfigEditor() (App, tea.Cmd) {
+	path := config.Path()
+	if path == "" {
+		a.err = fmt.Errorf("could not determine config file path")
+		return a, nil
+	}
+
+	// Ensure the file exists with current config
+	if err := a.cfg.Save(); err != nil {
+		a.err = err
+		return a, nil
+	}
+
+	editor := NewEditorCmd(path)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		if err != nil {
+			return errMsg{err}
+		}
+		return configEditedMsg{}
+	})
+}
 
 // --- Multi-Region ---
 
