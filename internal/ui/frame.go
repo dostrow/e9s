@@ -86,8 +86,13 @@ func renderFrame(width, height int, infoBar, content, actionBar, modeLabel strin
 	// Separator: ├──────────┤
 	b.WriteString(lT + strings.Repeat(hLine, innerWidth) + rT + "\n")
 
-	// Action bar: │ actions... │
-	actionPadded := padToWidth(" "+actionBar, innerWidth)
+	// Action bar: │   centered actions   │
+	actionVisual := lipgloss.Width(actionBar)
+	leftPad := (innerWidth - actionVisual) / 2
+	if leftPad < 1 {
+		leftPad = 1
+	}
+	actionPadded := padToWidth(strings.Repeat(" ", leftPad)+actionBar, innerWidth)
 	b.WriteString(vLine + actionPadded + vLine + "\n")
 
 	// Bottom border with mode label: ╰── ECS ──╯

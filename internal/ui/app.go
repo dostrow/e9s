@@ -1358,7 +1358,8 @@ func (a App) View() string {
 
 	// Overlay modal dialogs on top of the frame
 	if a.help.Active {
-		return renderOverlay(fullView, a.help.View(a.width-10), a.width, a.height)
+		helpContent := RenderHelp(a.contextHelpLines(), a.width-10)
+		return renderOverlay(fullView, helpContent, a.width, a.height)
 	}
 	if a.modeSwitcher.Active {
 		return renderOverlay(fullView, a.modeSwitcher.View(), a.width, a.height)
@@ -1422,68 +1423,265 @@ func wrapText(s string, maxWidth int) string {
 }
 
 func (a App) helpText() string {
-	var contextHelp string
+	// Slim footer: primary action + esc + quit + help
+	primary := ""
 	switch a.state {
 	case viewClusters:
-		contextHelp = "  [enter] services  [/] filter  [R] refresh  [ctrl+r] switch region"
+		primary = "[enter] services"
 	case viewServices:
-		contextHelp = "  [enter] tasks  [d] detail  [L] logs  [r] redeploy  [s] scale  [m] metrics  [S] standalone  [/] filter  [ctrl+r] region  [esc] back"
-	case viewTasks:
-		contextHelp = "  [enter] detail  [l] logs  [x] stop  [e] exec  [/] filter  [esc] back"
+		primary = "[enter] tasks"
+	case viewTasks, viewStandaloneTasks:
+		primary = "[enter] detail"
 	case viewTaskDetail:
-		contextHelp = "  [E] env vars  [esc] back"
+		primary = "[E] env vars"
 	case viewServiceDetail:
-		contextHelp = "  [tab] switch tab  [D] task def diff  [j/k] scroll  [esc] back"
+		primary = "[tab] switch tab"
 	case viewLogs:
-		contextHelp = "  [f] toggle follow  [[] older  []] newer  [w] save  [y] copy  [o] open in editor  [t] timestamps  [/] search  [n/N] next/prev match  [g/G] top/bottom  [esc] back"
-	case viewStandaloneTasks:
-		contextHelp = "  [enter] detail  [l] logs  [x] stop  [/] filter  [esc] back"
-	case viewTaskDefDiff:
-		contextHelp = "  [j/k] scroll  [g/G] top/bottom  [esc] back"
+		primary = "[f] follow"
+	case viewTaskDefDiff, viewSecretValue:
+		primary = "[j/k] scroll"
 	case viewMetrics:
-		contextHelp = "  [R] refresh  [esc] back"
-	case viewSSM:
-		contextHelp = "  [enter] view value  [e] edit  [W] save prefix  [/] filter  [R] refresh  [esc] back"
-	case viewSecrets:
-		contextHelp = "  [enter] view value  [e] edit  [W] save filter  [/] filter  [R] refresh  [esc] back"
-	case viewSecretValue:
-		contextHelp = "  [j/k] scroll  [g/G] top/bottom  [esc] back"
-	case viewS3Buckets:
-		contextHelp = "  [enter] browse  [W] save search  [/] filter  [esc] back"
+		primary = "[R] refresh"
+	case viewSSM, viewSecrets:
+		primary = "[enter] view"
+	case viewS3Buckets, viewDynamoTables, viewSQSQueues, viewLambdaList, viewLogGroups:
+		primary = "[enter] select"
 	case viewS3Objects:
-		contextHelp = "  [enter] open  [i] detail/tags  [D] download  [/] filter  [esc] back"
+		primary = "[enter] open"
 	case viewS3Detail:
-		contextHelp = "  [D] download  [esc] back"
-	case viewLambdaList:
-		contextHelp = "  [enter] detail  [l] tail logs  [s] search logs  [W] save search  [/] filter  [esc] back"
+		primary = "[D] download"
 	case viewLambdaDetail:
-		contextHelp = "  [E] env vars  [l] tail logs  [s] search logs  [esc] back"
-	case viewDynamoTables:
-		contextHelp = "  [enter] browse  [W] save table  [/] filter  [esc] back"
+		primary = "[E] env vars"
 	case viewDynamoItems:
-		contextHelp = "  [enter] detail  [f] filter scan  [p] PartiQL  [W] save query  [esc] back"
+		primary = "[enter] detail"
 	case viewDynamoItemDetail:
-		contextHelp = "  [e] edit field  [c] clone item  [j/k] scroll  [g/G] top/bottom  [esc] back"
-	case viewSQSQueues:
-		contextHelp = "  [enter] detail  [W] save queue  [/] filter  [esc] back"
+		primary = "[e] edit"
 	case viewSQSDetail:
-		contextHelp = "  [m] messages  [s] send message  [d] dead letter queue  [R] refresh  [esc] back"
+		primary = "[m] messages"
 	case viewSQSMessages:
-		contextHelp = "  [enter] detail  [p] poll  [s] send  [x] delete  [X] clear all  [esc] back"
+		primary = "[p] poll"
 	case viewSQSMessageDetail:
-		contextHelp = "  [c] clone & send  [x] delete  [j/k] scroll  [g/G] top/bottom  [esc] back"
+		primary = "[c] clone & send"
 	case viewEnvVars:
-		contextHelp = "  [a] toggle ARNs/values  [/] filter  [esc] back"
-	case viewLogGroups:
-		contextHelp = "  [enter] streams  [space] select  [l] tail group  [s] search selected  [W] save  [/] filter  [esc] back"
+		primary = "[a] toggle ARNs"
 	case viewLogStreams:
-		contextHelp = "  [enter] peek (last 1m)  [l] tail stream  [L] tail group  [s] search  [W] save  [/] filter  [esc] back"
+		primary = "[enter] peek"
 	case viewLogSearch:
-		contextHelp = "  [enter] jump to log  [t] toggle timestamps  [g/G] top/bottom  [esc] back"
-	default:
-		return ""
+		primary = "[enter] jump"
 	}
-	return contextHelp + "  [`] mode  [ctrl+e] config  [q] quit  [?] help"
+	if primary != "" {
+		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
+	}
+	return "  [esc] back  [q] quit  [?] help"
+}
+
+// contextHelpLines returns the full keybinding list for the current view,
+// used by the help overlay.
+func (a App) contextHelpLines() []struct{ key, desc string } {
+	type kv = struct{ key, desc string }
+
+	global := []kv{
+		{"`", "Switch mode"},
+		{"ctrl+e", "Edit config"},
+		{"ctrl+r", "Switch AWS region"},
+		{"R", "Refresh data"},
+		{"/", "Filter/search"},
+		{"esc", "Go back"},
+		{"q", "Quit"},
+		{"?", "Toggle this help"},
+	}
+
+	var context []kv
+	switch a.state {
+	case viewClusters:
+		context = []kv{
+			{"enter", "Browse services"},
+			{"1-9", "Quick select"},
+			{"/", "Filter"},
+			{"R", "Refresh"},
+		}
+	case viewServices:
+		context = []kv{
+			{"enter", "Browse tasks"},
+			{"d", "Service detail (deployments + events)"},
+			{"L", "Tail logs (all tasks)"},
+			{"r", "Force new deployment"},
+			{"s", "Scale service"},
+			{"m", "CPU/memory metrics + alarms"},
+			{"S", "Standalone tasks (non-service)"},
+		}
+	case viewTasks:
+		context = []kv{
+			{"enter", "Task detail"},
+			{"l", "Tail logs"},
+			{"x", "Stop task"},
+			{"e", "ECS Exec (shell into container)"},
+		}
+	case viewTaskDetail:
+		context = []kv{
+			{"E", "View environment variables"},
+		}
+	case viewServiceDetail:
+		context = []kv{
+			{"tab", "Switch between Deployments and Events"},
+			{"D", "Task definition diff"},
+			{"j/k", "Scroll"},
+		}
+	case viewLogs:
+		context = []kv{
+			{"f", "Toggle follow mode"},
+			{"t", "Cycle timestamps (relative/local/UTC)"},
+			{"/", "Search — jump with n/N"},
+			{"n/N", "Next/previous match"},
+			{"[/]", "Load older/newer logs"},
+			{"w", "Save buffer to file"},
+			{"y", "Copy buffer to clipboard"},
+			{"o", "Open buffer in $EDITOR"},
+			{"g/G", "Jump to top/bottom"},
+			{"PgUp/PgDn", "Scroll by page"},
+		}
+	case viewStandaloneTasks:
+		context = []kv{
+			{"enter", "Task detail"},
+			{"l", "Tail logs"},
+			{"x", "Stop task"},
+		}
+	case viewTaskDefDiff:
+		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewMetrics:
+		context = []kv{
+			{"R", "Refresh metrics"},
+		}
+	case viewSSM:
+		context = []kv{
+			{"enter", "View parameter value"},
+			{"e", "Edit parameter value"},
+			{"W", "Save prefix for quick access"},
+		}
+	case viewSecrets:
+		context = []kv{
+			{"enter", "View secret value"},
+			{"e", "Edit secret value"},
+			{"W", "Save filter for quick access"},
+		}
+	case viewSecretValue:
+		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewS3Buckets:
+		context = []kv{
+			{"enter", "Browse bucket"},
+			{"W", "Save search"},
+		}
+	case viewS3Objects:
+		context = []kv{
+			{"enter", "Open folder / view detail"},
+			{"i", "View detail + tags"},
+			{"D", "Download object or folder"},
+		}
+	case viewS3Detail:
+		context = []kv{
+			{"D", "Download"},
+		}
+	case viewLambdaList:
+		context = []kv{
+			{"enter", "Function detail"},
+			{"l", "Tail function logs"},
+			{"s", "Search function logs"},
+			{"W", "Save search"},
+		}
+	case viewLambdaDetail:
+		context = []kv{
+			{"E", "View environment variables"},
+			{"l", "Tail logs"},
+			{"s", "Search logs"},
+		}
+	case viewDynamoTables:
+		context = []kv{
+			{"enter", "Browse table"},
+			{"W", "Save table"},
+		}
+	case viewDynamoItems:
+		context = []kv{
+			{"enter", "View item detail"},
+			{"f", "Filter scan (attribute + operator + value)"},
+			{"p", "PartiQL query"},
+			{"W", "Save PartiQL query"},
+		}
+	case viewDynamoItemDetail:
+		context = []kv{
+			{"e", "Edit field value"},
+			{"c", "Clone item"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewSQSQueues:
+		context = []kv{
+			{"enter", "Queue detail"},
+			{"W", "Save queue"},
+		}
+	case viewSQSDetail:
+		context = []kv{
+			{"m", "Browse messages"},
+			{"s", "Send new message"},
+			{"d", "Navigate to dead letter queue"},
+			{"R", "Refresh stats"},
+		}
+	case viewSQSMessages:
+		context = []kv{
+			{"enter", "Message detail"},
+			{"p", "Poll for messages"},
+			{"s", "Send new message"},
+			{"x", "Delete message"},
+			{"X", "Clear message list"},
+		}
+	case viewSQSMessageDetail:
+		context = []kv{
+			{"c", "Clone & send"},
+			{"x", "Delete message"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewEnvVars:
+		context = []kv{
+			{"a", "Toggle ARN/resolved values"},
+		}
+	case viewLogGroups:
+		context = []kv{
+			{"enter", "Browse streams"},
+			{"space", "Multi-select for search"},
+			{"l", "Tail entire log group"},
+			{"s", "Search selected groups"},
+			{"W", "Save log path"},
+		}
+	case viewLogStreams:
+		context = []kv{
+			{"enter", "Peek (last 1 min, paused)"},
+			{"l", "Tail stream"},
+			{"L", "Tail entire log group"},
+			{"s", "Search stream"},
+			{"W", "Save log path"},
+		}
+	case viewLogSearch:
+		context = []kv{
+			{"enter", "Jump to log at timestamp"},
+			{"t", "Toggle timestamps"},
+			{"g/G", "Top/bottom"},
+		}
+	}
+
+	// Combine: context first, then separator, then global
+	var all []kv
+	if len(context) > 0 {
+		all = append(all, context...)
+		all = append(all, kv{"", ""})
+	}
+	all = append(all, global...)
+	return all
 }
 
 // --- Navigation ---
