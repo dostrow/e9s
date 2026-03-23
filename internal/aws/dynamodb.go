@@ -253,6 +253,110 @@ func (c *Client) ExecutePartiQL(ctx context.Context, statement string) ([]Dynamo
 	return items, nil
 }
 
+// UpdateDynamoField updates a single attribute on an item identified by its key.
+func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyItem map[string]dbtypes.AttributeValue, attrName, newValue string) error {
+	// Try to detect the value type and build the appropriate AttributeValue
+	av := inferAttributeValue(newValue)
+
+	expr := "SET #attr = :val"
+	input := &dynamodb.UpdateItemInput{
+		TableName: &tableName,
+		Key:       keyItem,
+		UpdateExpression: &expr,
+		ExpressionAttributeNames: map[string]string{
+			"#attr": attrName,
+		},
+		ExpressionAttributeValues: map[string]dbtypes.AttributeValue{
+			":val": av,
+		},
+	}
+
+	_, err := c.DynamoDB.UpdateItem(ctx, input)
+	return err
+}
+
+// PutDynamoItem writes an item to a table (creates or replaces).
+func (c *Client) PutDynamoItem(ctx context.Context, tableName string, item DynamoItem) error {
+	av, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return fmt.Errorf("marshal item: %w", err)
+	}
+	_, err = c.DynamoDB.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &tableName,
+		Item:      av,
+	})
+	return err
+}
+
+// BuildKeyFromItem extracts the key attributes from an item given the key schema.
+func BuildKeyFromItem(item DynamoItem, keyNames []string) (map[string]dbtypes.AttributeValue, error) {
+	keyItem := DynamoItem{}
+	for _, k := range keyNames {
+		v, ok := item[k]
+		if !ok {
+			return nil, fmt.Errorf("key attribute %q not found in item", k)
+		}
+		keyItem[k] = v
+	}
+	return attributevalue.MarshalMap(keyItem)
+}
+
+// ParseDynamoItemFromJSON parses a JSON string back into a DynamoItem.
+func ParseDynamoItemFromJSON(jsonStr string) (DynamoItem, error) {
+	var item DynamoItem
+	if err := json.Unmarshal([]byte(jsonStr), &item); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+	return item, nil
+}
+
+// inferAttributeValue tries to detect the type of a string value and
+// return the appropriate DynamoDB AttributeValue.
+func inferAttributeValue(s string) dbtypes.AttributeValue {
+	// Try JSON object/array
+	s = strings.TrimSpace(s)
+	if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
+		(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {
+		var m interface{}
+		if err := json.Unmarshal([]byte(s), &m); err == nil {
+			if av, err := attributevalue.Marshal(m); err == nil {
+				return av
+			}
+		}
+	}
+
+	// Try boolean
+	if s == "true" {
+		return &dbtypes.AttributeValueMemberBOOL{Value: true}
+	}
+	if s == "false" {
+		return &dbtypes.AttributeValueMemberBOOL{Value: false}
+	}
+
+	// Try number (integer or float)
+	isNum := true
+	hasDot := false
+	for i, c := range s {
+		if c == '-' && i == 0 {
+			continue
+		}
+		if c == '.' && !hasDot {
+			hasDot = true
+			continue
+		}
+		if c < '0' || c > '9' {
+			isNum = false
+			break
+		}
+	}
+	if isNum && len(s) > 0 && s != "-" {
+		return &dbtypes.AttributeValueMemberN{Value: s}
+	}
+
+	// Default to string
+	return &dbtypes.AttributeValueMemberS{Value: s}
+}
+
 // DynamoItemToJSON converts a DynamoItem to pretty-printed JSON.
 func DynamoItemToJSON(item DynamoItem) string {
 	b, err := json.MarshalIndent(item, "", "  ")

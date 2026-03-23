@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -233,4 +234,134 @@ func (a App) doSaveDynamoQuery(name string) (App, tea.Cmd) {
 	a.flashMessage = fmt.Sprintf("Saved PartiQL query as %q", name)
 	a.flashExpiry = time.Now().Add(5 * time.Second)
 	return a, nil
+}
+
+// --- Field Edit ---
+
+func (a App) editDynamoField() (App, tea.Cmd) {
+	fieldName, fieldValue, isKey := a.dynamoDetailView.SelectedField()
+	if fieldName == "" {
+		return a, nil
+	}
+	if isKey {
+		a.err = fmt.Errorf("%q is a key attribute and cannot be edited — use clone instead", fieldName)
+		return a, nil
+	}
+
+	// Write current value to temp file
+	tmpFile, err := os.CreateTemp("", "e9s-dynamo-*.txt")
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	tmpPath := tmpFile.Name()
+	_, _ = tmpFile.WriteString(fieldValue)
+	tmpFile.Close()
+
+	item := a.dynamoDetailView.Item()
+	tableName := a.dynamoDetailView.TableName()
+	keyNames := a.dynamoDetailView.KeyNames()
+
+	editor := NewEditorCmd(tmpPath)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		defer os.Remove(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		newValue := string(data)
+		return dynamoFieldEditedMsg{
+			tableName: tableName,
+			keyNames:  keyNames,
+			item:      item,
+			fieldName: fieldName,
+			newValue:  newValue,
+		}
+	})
+}
+
+func (a App) doDynamoFieldEdit() tea.Cmd {
+	client := a.client
+	tableName := a.dynamoDetailView.TableName()
+	keyNames := a.dynamoDetailView.KeyNames()
+	item := a.dynamoEditItem
+	fieldName := a.dynamoEditField
+	newValue := a.dynamoEditValue
+
+	return func() tea.Msg {
+		if item == nil {
+			return errMsg{fmt.Errorf("no item to edit")}
+		}
+		keyAV, err := aws.BuildKeyFromItem(*item, keyNames)
+		if err != nil {
+			return errMsg{err}
+		}
+		err = client.UpdateDynamoField(context.Background(), tableName, keyAV, fieldName, newValue)
+		if err != nil {
+			return dynamoWriteDoneMsg{err: err}
+		}
+		return dynamoWriteDoneMsg{message: fmt.Sprintf("Updated %q", fieldName)}
+	}
+}
+
+// --- Clone Item ---
+
+func (a App) cloneDynamoItem() (App, tea.Cmd) {
+	item := a.dynamoDetailView.Item()
+	if item == nil {
+		return a, nil
+	}
+
+	jsonStr := aws.DynamoItemToJSON(*item)
+
+	tmpFile, err := os.CreateTemp("", "e9s-dynamo-clone-*.json")
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	tmpPath := tmpFile.Name()
+	_, _ = tmpFile.WriteString(jsonStr)
+	tmpFile.Close()
+
+	tableName := a.dynamoDetailView.TableName()
+
+	editor := NewEditorCmd(tmpPath)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		defer os.Remove(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		newItem, err := aws.ParseDynamoItemFromJSON(string(data))
+		if err != nil {
+			return errMsg{err}
+		}
+		return dynamoItemClonedMsg{
+			tableName: tableName,
+			newItem:   newItem,
+		}
+	})
+}
+
+func (a App) doDynamoClone() tea.Cmd {
+	client := a.client
+	tableName := a.dynamoDetailView.TableName()
+	item := a.dynamoCloneItem
+
+	return func() tea.Msg {
+		if item == nil {
+			return errMsg{fmt.Errorf("no item to clone")}
+		}
+		err := client.PutDynamoItem(context.Background(), tableName, *item)
+		if err != nil {
+			return dynamoWriteDoneMsg{err: err}
+		}
+		return dynamoWriteDoneMsg{message: "Item created successfully"}
+	}
 }

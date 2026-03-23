@@ -3,6 +3,8 @@ package aws
 import (
 	"strings"
 	"testing"
+
+	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 func TestDiffTaskDefinitions_NoDifferences(t *testing.T) {
@@ -187,5 +189,85 @@ func TestDynamoItemToJSON(t *testing.T) {
 	}
 	if !strings.Contains(json, `"age"`) {
 		t.Errorf("Expected age in JSON: %s", json)
+	}
+}
+
+func TestInferAttributeValue(t *testing.T) {
+	tests := []struct {
+		name string
+		input string
+		wantType string
+	}{
+		{"string", "hello", "S"},
+		{"number int", "42", "N"},
+		{"number float", "3.14", "N"},
+		{"negative number", "-5", "N"},
+		{"bool true", "true", "BOOL"},
+		{"bool false", "false", "BOOL"},
+		{"json object", `{"key":"val"}`, "M"},
+		{"json array", `[1,2,3]`, "L"},
+		{"empty string", "", "S"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			av := inferAttributeValue(tt.input)
+			switch tt.wantType {
+			case "S":
+				if _, ok := av.(*dbtypes.AttributeValueMemberS); !ok {
+					t.Errorf("expected S type for %q, got %T", tt.input, av)
+				}
+			case "N":
+				if _, ok := av.(*dbtypes.AttributeValueMemberN); !ok {
+					t.Errorf("expected N type for %q, got %T", tt.input, av)
+				}
+			case "BOOL":
+				if _, ok := av.(*dbtypes.AttributeValueMemberBOOL); !ok {
+					t.Errorf("expected BOOL type for %q, got %T", tt.input, av)
+				}
+			case "M":
+				if _, ok := av.(*dbtypes.AttributeValueMemberM); !ok {
+					t.Errorf("expected M type for %q, got %T", tt.input, av)
+				}
+			case "L":
+				if _, ok := av.(*dbtypes.AttributeValueMemberL); !ok {
+					t.Errorf("expected L type for %q, got %T", tt.input, av)
+				}
+			}
+		})
+	}
+}
+
+func TestParseDynamoItemFromJSON(t *testing.T) {
+	item, err := ParseDynamoItemFromJSON(`{"id": "123", "name": "Alice"}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if item["id"] != "123" {
+		t.Errorf("id = %v, want %q", item["id"], "123")
+	}
+	if item["name"] != "Alice" {
+		t.Errorf("name = %v, want %q", item["name"], "Alice")
+	}
+
+	_, err = ParseDynamoItemFromJSON("not json")
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestBuildKeyFromItem(t *testing.T) {
+	item := DynamoItem{"PK": "user1", "SK": "profile", "data": "hello"}
+
+	keyAV, err := BuildKeyFromItem(item, []string{"PK", "SK"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(keyAV) != 2 {
+		t.Errorf("key attributes count = %d, want 2", len(keyAV))
+	}
+
+	_, err = BuildKeyFromItem(item, []string{"PK", "missing"})
+	if err == nil {
+		t.Error("expected error for missing key attribute")
 	}
 }

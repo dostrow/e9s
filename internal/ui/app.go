@@ -113,6 +113,10 @@ type App struct {
 	dynamoFilterOp     string
 	dynamoFilterExpr   bool
 	dynamoLastPartiQL  string
+	dynamoEditField    string
+	dynamoEditValue    string
+	dynamoEditItem     *e9saws.DynamoItem
+	dynamoCloneItem    *e9saws.DynamoItem
 
 	// Modal dialogs
 	confirm  ConfirmModel
@@ -511,6 +515,29 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case dynamoFieldEditedMsg:
+		// User finished editing in $EDITOR, confirm the write
+		a.dynamoEditField = msg.fieldName
+		a.dynamoEditValue = msg.newValue
+		a.dynamoEditItem = msg.item
+		a.confirm = NewConfirm(ConfirmDynamoFieldEdit,
+			fmt.Sprintf("Update field %q on this item?", msg.fieldName))
+		return a, nil
+
+	case dynamoItemClonedMsg:
+		a.dynamoCloneItem = &msg.newItem
+		a.confirm = NewConfirm(ConfirmDynamoClone, "Create this new item?")
+		return a, nil
+
+	case dynamoWriteDoneMsg:
+		if msg.err != nil {
+			a.err = msg.err
+		} else {
+			a.flashMessage = msg.message
+			a.flashExpiry = time.Now().Add(5 * time.Second)
+		}
+		return a, nil
+
 	case dynamoPartiQLResultMsg:
 		a.loading = false
 		if msg.err != nil {
@@ -590,6 +617,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doSSMUpdate()
 		case ConfirmSMUpdate:
 			return a, a.doSMUpdate()
+		case ConfirmDynamoFieldEdit:
+			return a, a.doDynamoFieldEdit()
+		case ConfirmDynamoClone:
+			return a, a.doDynamoClone()
 		}
 		return a, nil
 
@@ -854,6 +885,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.promptDynamoPartiQL()
 			case "W":
 				return a.saveDynamoQuery()
+			}
+		case viewDynamoItemDetail:
+			switch msg.String() {
+			case "e":
+				return a.editDynamoField()
+			case "c":
+				return a.cloneDynamoItem()
 			}
 		case viewLambdaList:
 			switch msg.String() {
@@ -1178,7 +1216,7 @@ func (a App) helpText() string {
 	case viewDynamoItems:
 		contextHelp = "  [enter] detail  [f] filter scan  [p] PartiQL  [W] save query  [esc] back"
 	case viewDynamoItemDetail:
-		contextHelp = "  [j/k] scroll  [g/G] top/bottom  [esc] back"
+		contextHelp = "  [e] edit field  [c] clone item  [j/k] scroll  [g/G] top/bottom  [esc] back"
 	case viewEnvVars:
 		contextHelp = "  [a] toggle ARNs/values  [/] filter  [esc] back"
 	case viewLogGroups:
@@ -1256,7 +1294,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 	case viewDynamoItems:
 		if item := a.dynamoItemsView.SelectedItem(); item != nil {
 			a.state = viewDynamoItemDetail
-			a.dynamoDetailView = views.NewDynamoItemDetail(a.dynamoItemsView.TableName(), item)
+			a.dynamoDetailView = views.NewDynamoItemDetail(a.dynamoItemsView.TableName(), a.dynamoKeyNames, item)
 			a.dynamoDetailView = a.dynamoDetailView.SetSize(a.width, a.height-3)
 			return a, nil
 		}

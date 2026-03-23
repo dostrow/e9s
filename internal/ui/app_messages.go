@@ -104,6 +104,22 @@ type dynamoPartiQLResultMsg struct {
 	err   error
 }
 
+type dynamoFieldEditedMsg struct {
+	tableName string
+	keyNames  []string
+	item      *e9saws.DynamoItem
+	fieldName string
+	newValue  string
+}
+type dynamoItemClonedMsg struct {
+	tableName string
+	newItem   e9saws.DynamoItem
+}
+type dynamoWriteDoneMsg struct {
+	message string
+	err     error
+}
+
 // --- Lambda Messages ---
 
 type lambdaFunctionsLoadedMsg struct{ functions []e9saws.LambdaFunction }

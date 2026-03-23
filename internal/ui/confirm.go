@@ -16,6 +16,8 @@ const (
 	ConfirmStopTask
 	ConfirmSSMUpdate
 	ConfirmSMUpdate
+	ConfirmDynamoFieldEdit
+	ConfirmDynamoClone
 )
 
 type ConfirmModel struct {
