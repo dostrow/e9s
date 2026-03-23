@@ -135,3 +135,4 @@ type logStreamsLoadedMsg struct{ streams []e9saws.LogStreamInfo }
 // --- Shared Messages ---
 
 type regionSwitchedMsg struct{}
+type showModeSwitcherMsg struct{}

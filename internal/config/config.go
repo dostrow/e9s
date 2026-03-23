@@ -50,6 +50,7 @@ type Config struct {
 		Region          string `yaml:"region"`
 		Profile         string `yaml:"profile"`
 		RefreshInterval int    `yaml:"refresh_interval"`
+		DefaultMode     string `yaml:"default_mode"` // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
 	} `yaml:"defaults"`
 	Display struct {
 		TimestampFormat string `yaml:"timestamp_format"` // "relative" or "absolute"

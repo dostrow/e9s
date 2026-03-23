@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,9 +22,21 @@ type ModeSwitcherModel struct {
 	current topMode
 }
 
+// ModeSaveDefaultMsg is sent when the user wants to save the current mode as default.
+type ModeSaveDefaultMsg struct {
+	Mode topMode
+}
+
 func NewModeSwitcher(tabs []ModeTab, current topMode) ModeSwitcherModel {
+	// Sort alphabetically by display name
+	sorted := make([]ModeTab, len(tabs))
+	copy(sorted, tabs)
+	sort.Slice(sorted, func(i, j int) bool {
+		return modeDisplayName(sorted[i].Mode) < modeDisplayName(sorted[j].Mode)
+	})
+
 	cursor := 0
-	for i, t := range tabs {
+	for i, t := range sorted {
 		if t.Mode == current {
 			cursor = i
 			break
@@ -31,7 +44,7 @@ func NewModeSwitcher(tabs []ModeTab, current topMode) ModeSwitcherModel {
 	}
 	return ModeSwitcherModel{
 		Active:  true,
-		tabs:    tabs,
+		tabs:    sorted,
 		cursor:  cursor,
 		current: current,
 	}
@@ -58,6 +71,12 @@ func (m ModeSwitcherModel) Update(msg tea.Msg) (ModeSwitcherModel, tea.Cmd) {
 			mode := m.tabs[m.cursor].Mode
 			return m, func() tea.Msg {
 				return ModeSwitchSelectedMsg{Mode: mode}
+			}
+		case "d":
+			// Save current selection as default
+			mode := m.tabs[m.cursor].Mode
+			return m, func() tea.Msg {
+				return ModeSaveDefaultMsg{Mode: mode}
 			}
 		case "esc", "`":
 			m.Active = false
@@ -94,7 +113,7 @@ func (m ModeSwitcherModel) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(theme.HelpStyle.Render("\n[enter] select  [esc] cancel"))
+	b.WriteString(theme.HelpStyle.Render("\n[enter] select  [d] set default  [esc] cancel"))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

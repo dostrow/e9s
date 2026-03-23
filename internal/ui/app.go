@@ -173,20 +173,61 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		}
 	}
 
+	// Determine startup mode
+	defaultMode := resolveDefaultMode(cfg.Defaults.DefaultMode)
+
 	if defaultCluster != "" {
+		// CLI flag overrides — go straight to ECS services
 		app.selectedCluster = &model.Cluster{Name: defaultCluster}
 		app.state = viewServices
 		app.serviceView = views.NewServiceList(defaultCluster)
+	} else if defaultMode != nil {
+		// Config default mode — will be applied in Init
+		app.mode = *defaultMode
 	}
 
 	return app
 }
 
+// resolveDefaultMode maps a config string to a topMode, or nil for picker.
+func resolveDefaultMode(s string) *topMode {
+	modes := map[string]topMode{
+		"ECS": modeECS, "ecs": modeECS,
+		"CW": modeCloudWatch, "cw": modeCloudWatch, "cloudwatch": modeCloudWatch, "CloudWatch": modeCloudWatch,
+		"SSM": modeSSM, "ssm": modeSSM,
+		"SM": modeSM, "sm": modeSM, "secrets": modeSM,
+		"S3": modeS3, "s3": modeS3,
+		"Lambda": modeLambda, "lambda": modeLambda,
+		"DynamoDB": modeDynamoDB, "dynamodb": modeDynamoDB, "DDB": modeDynamoDB, "ddb": modeDynamoDB,
+	}
+	if m, ok := modes[s]; ok {
+		return &m
+	}
+	return nil
+}
+
 func (a App) Init() tea.Cmd {
+	// If a cluster was specified via CLI, go to services
 	if a.state == viewServices {
 		return tea.Batch(a.loadServices(), a.tick())
 	}
-	return tea.Batch(a.loadClusters(), a.tick())
+
+	// If a default mode is configured, switch to it
+	if a.cfg.Defaults.DefaultMode != "" {
+		if m := resolveDefaultMode(a.cfg.Defaults.DefaultMode); m != nil {
+			// switchMode will be called on the first Update via a command
+			mode := *m
+			return tea.Batch(a.tick(), func() tea.Msg {
+				return ModeSwitchSelectedMsg{Mode: mode}
+			})
+		}
+	}
+
+	// No default mode — show the mode switcher on first render
+	// (Init can't set modal state with value receiver, so we use a startup message)
+	return tea.Batch(a.tick(), func() tea.Msg {
+		return showModeSwitcherMsg{}
+	})
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -235,8 +276,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.modeSwitcher, cmd = a.modeSwitcher.Update(msg)
 			return a, cmd
+		case ModeSaveDefaultMsg, ModeSwitchSelectedMsg:
+			// Let these pass through to the main handler
+		default:
+			return a, nil
 		}
-		return a, nil
 	}
 	if a.regionPicker.Active {
 		switch rm := msg.(type) {
@@ -616,6 +660,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedTask = nil
 		a.loading = true
 		return a, a.loadClusters()
+
+	case showModeSwitcherMsg:
+		a.modeSwitcher = NewModeSwitcher(a.modeTabs, a.mode)
+		return a, nil
+
+	case ModeSaveDefaultMsg:
+		modeName := modeDisplayName(msg.Mode)
+		a.cfg.Defaults.DefaultMode = modeName
+		if err := a.cfg.Save(); err != nil {
+			a.err = err
+		} else {
+			a.flashMessage = fmt.Sprintf("Default mode set to %s", modeName)
+			a.flashExpiry = time.Now().Add(3 * time.Second)
+		}
+		// Also switch to it
+		a.modeSwitcher.Active = false
+		return a.switchMode(msg.Mode)
 
 	case ModeSwitchSelectedMsg:
 		return a.switchMode(msg.Mode)
