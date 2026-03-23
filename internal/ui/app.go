@@ -1612,8 +1612,16 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 	return a, nil
 }
 
+func (a App) showModePicker() (App, tea.Cmd) {
+	a.modeSwitcher = NewModeSwitcher(a.modeTabs, a.mode)
+	return a, nil
+}
+
 func (a App) goBack() (App, tea.Cmd) {
 	switch a.state {
+	case viewClusters:
+		// Root of ECS — show mode picker
+		return a.showModePicker()
 	case viewServices:
 		a.state = viewClusters
 		a.selectedCluster = nil
@@ -1677,14 +1685,14 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewServices
 		return a, nil
 	case viewSSM:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewSecrets:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewSecretValue:
 		a.state = viewSecrets
 		return a, nil
 	case viewS3Buckets:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewS3Objects:
 		parent := a.s3ObjectsView.ParentPrefix()
 		if parent != "" || a.s3ObjectsView.Prefix() != "" {
@@ -1696,12 +1704,12 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewS3Objects
 		return a, nil
 	case viewLambdaList:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewLambdaDetail:
 		a.state = viewLambdaList
 		return a, nil
 	case viewSQSQueues:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewSQSDetail:
 		a.state = viewSQSQueues
 		return a, nil
@@ -1712,7 +1720,7 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewSQSMessages
 		return a, nil
 	case viewDynamoTables:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewDynamoItems:
 		a.state = viewDynamoTables
 		return a, nil
@@ -1727,13 +1735,13 @@ func (a App) goBack() (App, tea.Cmd) {
 		}
 		return a, nil
 	case viewLogGroups:
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewLogStreams:
 		if a.logGroupsView.HasData() {
 			a.state = viewLogGroups
 			return a, nil
 		}
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	case viewLogSearch:
 		if a.prevState == viewLogStreams {
 			a.state = viewLogStreams
@@ -1751,7 +1759,7 @@ func (a App) goBack() (App, tea.Cmd) {
 			a.state = viewLambdaDetail
 			return a, nil
 		}
-		return a.switchMode(modeECS)
+		return a.showModePicker()
 	}
 	return a, nil
 }
