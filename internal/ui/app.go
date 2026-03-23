@@ -1025,6 +1025,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "w":
 				return a.promptSaveLogBuffer()
+			case "y":
+				return a.copyLogBufferToClipboard()
+			case "o":
+				return a.openLogBufferInEditor()
 			}
 		case viewStandaloneTasks:
 			switch msg.String() {
@@ -1431,7 +1435,7 @@ func (a App) helpText() string {
 	case viewServiceDetail:
 		contextHelp = "  [tab] switch tab  [D] task def diff  [j/k] scroll  [esc] back"
 	case viewLogs:
-		contextHelp = "  [f] toggle follow  [[] older  []] newer  [w] save to file  [t] timestamps  [/] search  [n/N] next/prev match  [g/G] top/bottom  [esc] back"
+		contextHelp = "  [f] toggle follow  [[] older  []] newer  [w] save  [y] copy  [o] open in editor  [t] timestamps  [/] search  [n/N] next/prev match  [g/G] top/bottom  [esc] back"
 	case viewStandaloneTasks:
 		contextHelp = "  [enter] detail  [l] logs  [x] stop  [/] filter  [esc] back"
 	case viewTaskDefDiff:

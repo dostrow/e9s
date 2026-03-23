@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
+
 	tea "github.com/charmbracelet/bubbletea"
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
@@ -447,6 +449,51 @@ func (a App) promptSaveLogBuffer() (App, tea.Cmd) {
 	defaultName := filepath.Join(a.cfg.SaveDir(), "e9s-logs.txt")
 	a.input = NewInput(InputLogSaveFile, fmt.Sprintf("Save %d lines to file", len(a.logView.ExportLines())), defaultName)
 	return a, nil
+}
+
+func (a App) copyLogBufferToClipboard() (App, tea.Cmd) {
+	lines := a.logView.ExportLines()
+	if len(lines) == 0 {
+		a.err = fmt.Errorf("no log lines to copy")
+		return a, nil
+	}
+	content := strings.Join(lines, "\n") + "\n"
+
+	if err := clipboard.WriteAll(content); err != nil {
+		a.err = fmt.Errorf("clipboard: %w", err)
+		return a, nil
+	}
+
+	a.flashMessage = fmt.Sprintf("Copied %d lines to clipboard", len(lines))
+	a.flashExpiry = time.Now().Add(3 * time.Second)
+	return a, nil
+}
+
+func (a App) openLogBufferInEditor() (App, tea.Cmd) {
+	lines := a.logView.ExportLines()
+	if len(lines) == 0 {
+		a.err = fmt.Errorf("no log lines to open")
+		return a, nil
+	}
+	content := strings.Join(lines, "\n") + "\n"
+
+	tmpFile, err := os.CreateTemp("", "e9s-logs-*.txt")
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	tmpPath := tmpFile.Name()
+	_, _ = tmpFile.WriteString(content)
+	tmpFile.Close()
+
+	editor := NewEditorCmd(tmpPath)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		// Don't remove the temp file — user might want to save-as from the editor
+		if err != nil {
+			return errMsg{err}
+		}
+		return actionSuccessMsg{"Editor closed"}
+	})
 }
 
 func (a App) doSaveLogBuffer(filename string) (App, tea.Cmd) {
