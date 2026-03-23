@@ -64,7 +64,7 @@ func (m HelpModel) View(width int) string {
 		{"W", "Save log path"},
 		{"", ""},
 		{"Global", ""},
-		{"1/2/3", "Switch mode: ECS / CW / SSM"},
+		{"`", "Switch mode"},
 		{"ctrl+r", "Switch AWS region"},
 		{"q", "Quit"},
 		{"?", "Toggle this help"},

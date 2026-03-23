@@ -69,6 +69,15 @@ func (m ClusterListModel) Update(msg tea.Msg) (ClusterListModel, tea.Cmd) {
 			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
+		default:
+			// Number keys 1-9 for quick select
+			if s := msg.String(); len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+				idx := int(s[0] - '1')
+				filtered := m.filteredClusters()
+				if idx < len(filtered) {
+					m.cursor = idx
+				}
+			}
 		}
 	}
 	return m, nil

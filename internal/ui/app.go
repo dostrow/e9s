@@ -119,10 +119,11 @@ type App struct {
 	dynamoCloneItem    *e9saws.DynamoItem
 
 	// Modal dialogs
-	confirm  ConfirmModel
-	input    InputModel
-	picker   PickerModel
-	help     HelpModel
+	confirm       ConfirmModel
+	input         InputModel
+	picker        PickerModel
+	help          HelpModel
+	modeSwitcher  ModeSwitcherModel
 
 	// Mode tabs (built from config)
 	modeTabs []ModeTab
@@ -227,6 +228,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.help.Active = false
 			return a, nil
 		}
+	}
+	if a.modeSwitcher.Active {
+		switch msg.(type) {
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			a.modeSwitcher, cmd = a.modeSwitcher.Update(msg)
+			return a, cmd
+		}
+		return a, nil
 	}
 	if a.regionPicker.Active {
 		switch rm := msg.(type) {
@@ -607,6 +617,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = true
 		return a, a.loadClusters()
 
+	case ModeSwitchSelectedMsg:
+		return a.switchMode(msg.Mode)
+
 	case views.RegionSwitchMsg:
 		return a, a.switchRegion(msg.Region)
 
@@ -796,13 +809,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "ctrl+r":
 			a.regionPicker = views.NewRegionPicker(a.client.Region())
 			return a, nil
-		}
-
-		// Dynamic mode switching
-		for _, tab := range a.modeTabs {
-			if msg.String() == tab.Key {
-				return a.switchMode(tab.Mode)
-			}
+		case msg.String() == "`":
+			a.modeSwitcher = NewModeSwitcher(a.modeTabs, a.mode)
+			return a, nil
 		}
 
 		// Context-specific keys
@@ -1056,14 +1065,9 @@ func (a App) buildBreadcrumbs() []string {
 
 func (a App) View() string {
 	breadcrumbs := a.buildBreadcrumbs()
+	infoBar := buildInfoBar(breadcrumbs, a.client.Region(), a.lastRefresh,
+		a.flashMessage, a.flashExpiry, a.err)
 
-	statusBar := RenderStatusBar(a.width, a.mode, a.modeTabs, breadcrumbs, a.client.Region(), a.lastRefresh, a.err)
-
-	if a.flashMessage != "" && time.Now().Before(a.flashExpiry) {
-		statusBar = RenderStatusBarWithFlash(a.width, a.mode, a.modeTabs, breadcrumbs, a.client.Region(), a.flashMessage)
-	}
-
-	// Always render the background content
 	var content string
 	switch a.state {
 	case viewClusters:
@@ -1117,19 +1121,18 @@ func (a App) View() string {
 	}
 
 	helpLine := a.helpText()
-	wrapWidth := a.width
-	if contentWidth := maxLineWidth(content); contentWidth > 0 && contentWidth < wrapWidth {
-		slack := contentWidth + contentWidth/5
-		slack = min(slack, a.width)
-		wrapWidth = slack
-	}
-	helpRendered := theme.HelpStyle.Render(wrapText(helpLine, wrapWidth))
+	// Wrap help to frame inner width (width - 4 for borders and padding)
+	actionBar := wrapText(helpLine, a.width-4)
 
-	fullView := statusBar + "\n" + content + "\n" + helpRendered
+	modeLabel := modeShortName(a.mode)
+	fullView := renderFrame(a.width, a.height, infoBar, content, actionBar, modeLabel)
 
-	// Overlay modal dialogs on top of the background
+	// Overlay modal dialogs on top of the frame
 	if a.help.Active {
-		return renderOverlay(fullView, a.help.View(a.width), a.width, a.height)
+		return renderOverlay(fullView, a.help.View(a.width-10), a.width, a.height)
+	}
+	if a.modeSwitcher.Active {
+		return renderOverlay(fullView, a.modeSwitcher.View(), a.width, a.height)
 	}
 	if a.regionPicker.Active {
 		return renderOverlay(fullView, a.regionPicker.View(), a.width, a.height)
@@ -1243,7 +1246,7 @@ func (a App) helpText() string {
 	default:
 		return ""
 	}
-	return contextHelp + "  [q] quit  [?] help"
+	return contextHelp + "  [`] mode  [q] quit  [?] help"
 }
 
 // --- Navigation ---
