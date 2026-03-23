@@ -108,6 +108,7 @@ type App struct {
 	s3DownloadBucket   string
 	s3DownloadKey      string
 	s3DownloadIsPrefix bool
+	dynamoKeyNames     []string
 	dynamoFilterAttr   string
 	dynamoFilterOp     string
 	dynamoFilterExpr   bool
@@ -493,7 +494,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case dynamoScanReadyMsg:
+		a.dynamoKeyNames = msg.keyNames
+		a.dynamoItemsView = views.NewDynamoItems(msg.tableName, msg.keyNames)
+		a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
+		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, msg.hasMore)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
 	case dynamoItemsLoadedMsg:
+		a.dynamoItemsView = views.NewDynamoItems(a.dynamoItemsView.TableName(), a.dynamoKeyNames)
+		a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, msg.hasMore)
 		a.loading = false
 		a.lastRefresh = time.Now()
@@ -505,6 +517,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = msg.err
 			return a, nil
 		}
+		a.dynamoItemsView = views.NewDynamoItems(a.dynamoItemsView.TableName(), a.dynamoKeyNames)
+		a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, false)
 		return a, nil
 

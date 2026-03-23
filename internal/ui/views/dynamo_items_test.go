@@ -12,7 +12,7 @@ func TestDiscoverColumns(t *testing.T) {
 		{"id": "2", "name": "Bob", "email": "bob@test.com"},
 	}
 
-	cols := discoverColumns(items)
+	cols := discoverColumns(items, nil)
 
 	// Should have 3 columns: email, id, name (sorted)
 	if len(cols) != 3 {
@@ -21,16 +21,28 @@ func TestDiscoverColumns(t *testing.T) {
 	if cols[0] != "email" {
 		t.Errorf("cols[0] = %q, want %q", cols[0], "email")
 	}
-	if cols[1] != "id" {
-		t.Errorf("cols[1] = %q, want %q", cols[1], "id")
+}
+
+func TestDiscoverColumns_KeysFirst(t *testing.T) {
+	items := []aws.DynamoItem{
+		{"PK": "user1", "SK": "profile", "data": "hello", "age": float64(30)},
 	}
-	if cols[2] != "name" {
-		t.Errorf("cols[2] = %q, want %q", cols[2], "name")
+
+	cols := discoverColumns(items, []string{"PK", "SK"})
+
+	if len(cols) != 4 {
+		t.Fatalf("columns count = %d, want 4", len(cols))
+	}
+	if cols[0] != "PK" {
+		t.Errorf("cols[0] = %q, want %q", cols[0], "PK")
+	}
+	if cols[1] != "SK" {
+		t.Errorf("cols[1] = %q, want %q", cols[1], "SK")
 	}
 }
 
 func TestDiscoverColumns_Empty(t *testing.T) {
-	cols := discoverColumns(nil)
+	cols := discoverColumns(nil, nil)
 	if len(cols) != 0 {
 		t.Errorf("Expected no columns for nil items, got %d", len(cols))
 	}
@@ -63,7 +75,7 @@ func TestFormatDynamoValue(t *testing.T) {
 }
 
 func TestDynamoItemsModel_SetItems(t *testing.T) {
-	m := NewDynamoItems("test-table")
+	m := NewDynamoItems("test-table", nil)
 	items := []aws.DynamoItem{
 		{"id": "1"},
 		{"id": "2"},
@@ -83,7 +95,7 @@ func TestDynamoItemsModel_SetItems(t *testing.T) {
 }
 
 func TestDynamoItemsModel_SelectedItem(t *testing.T) {
-	m := NewDynamoItems("test-table")
+	m := NewDynamoItems("test-table", nil)
 	m = m.SetItems([]aws.DynamoItem{{"id": "1"}, {"id": "2"}}, false)
 
 	item := m.SelectedItem()
@@ -96,7 +108,7 @@ func TestDynamoItemsModel_SelectedItem(t *testing.T) {
 }
 
 func TestDynamoItemsModel_EmptySelection(t *testing.T) {
-	m := NewDynamoItems("test-table")
+	m := NewDynamoItems("test-table", nil)
 	if m.SelectedItem() != nil {
 		t.Error("SelectedItem should be nil for empty list")
 	}

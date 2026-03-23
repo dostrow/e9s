@@ -46,32 +46,32 @@ func (a App) openDynamoTables(filter string) (App, tea.Cmd) {
 
 func (a App) openDynamoTableDirect(tableName string) (App, tea.Cmd) {
 	a.mode = modeDynamoDB
-	a.state = viewDynamoItems
-	a.dynamoItemsView = views.NewDynamoItems(tableName)
-	a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
-	a.loading = true
-	client := a.client
-	return a, func() tea.Msg {
-		result, err := client.ScanDynamoTable(context.Background(), tableName, 50, nil)
-		if err != nil {
-			return errMsg{err}
-		}
-		return dynamoItemsLoadedMsg{items: result.Items, hasMore: len(result.LastEvaluatedKey) > 0}
-	}
+	return a.scanDynamoTable(tableName)
 }
 
 func (a App) scanDynamoTable(tableName string) (App, tea.Cmd) {
 	a.state = viewDynamoItems
-	a.dynamoItemsView = views.NewDynamoItems(tableName)
-	a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 	a.loading = true
 	client := a.client
 	return a, func() tea.Msg {
+		// Fetch key schema first
+		desc, err := client.DescribeDynamoTable(context.Background(), tableName)
+		var keyNames []string
+		if err == nil {
+			for _, k := range desc.KeySchema {
+				keyNames = append(keyNames, k.Name)
+			}
+		}
 		result, err := client.ScanDynamoTable(context.Background(), tableName, 50, nil)
 		if err != nil {
 			return errMsg{err}
 		}
-		return dynamoItemsLoadedMsg{items: result.Items, hasMore: len(result.LastEvaluatedKey) > 0}
+		return dynamoScanReadyMsg{
+			tableName: tableName,
+			keyNames:  keyNames,
+			items:     result.Items,
+			hasMore:   len(result.LastEvaluatedKey) > 0,
+		}
 	}
 }
 
@@ -151,12 +151,12 @@ func (a App) executeDynamoFilter(value string) (App, tea.Cmd) {
 	op := a.dynamoFilterOp
 	isFunc := a.dynamoFilterExpr
 
-	a.dynamoItemsView = views.NewDynamoItems(tableName)
-	a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 	a.loading = true
 	client := a.client
+	keyNames := a.dynamoKeyNames
 
 	return a, func() tea.Msg {
+		_ = keyNames // used in message
 		var result *aws.DynamoScanResult
 		var err error
 		if isFunc {
@@ -207,8 +207,6 @@ func (a App) promptDynamoPartiQL() (App, tea.Cmd) {
 
 func (a App) executeDynamoPartiQL(statement string) (App, tea.Cmd) {
 	a.dynamoLastPartiQL = statement
-	a.dynamoItemsView = views.NewDynamoItems(a.dynamoItemsView.TableName())
-	a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 	a.loading = true
 	client := a.client
 	return a, func() tea.Msg {

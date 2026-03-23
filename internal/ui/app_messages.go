@@ -89,6 +89,12 @@ type s3DownloadDoneMsg struct {
 // --- DynamoDB Messages ---
 
 type dynamoTablesLoadedMsg struct{ tables []string }
+type dynamoScanReadyMsg struct {
+	tableName string
+	keyNames  []string
+	items     []e9saws.DynamoItem
+	hasMore   bool
+}
 type dynamoItemsLoadedMsg struct {
 	items   []e9saws.DynamoItem
 	hasMore bool

@@ -15,6 +15,7 @@ import (
 
 type DynamoItemsModel struct {
 	tableName string
+	keyNames  []string // partition key, then sort key (for column ordering)
 	items     []aws.DynamoItem
 	columns   []string // discovered attribute names
 	cursor    int
@@ -23,8 +24,8 @@ type DynamoItemsModel struct {
 	height    int
 }
 
-func NewDynamoItems(tableName string) DynamoItemsModel {
-	return DynamoItemsModel{tableName: tableName}
+func NewDynamoItems(tableName string, keyNames []string) DynamoItemsModel {
+	return DynamoItemsModel{tableName: tableName, keyNames: keyNames}
 }
 
 func (m DynamoItemsModel) Update(msg tea.Msg) (DynamoItemsModel, tea.Cmd) {
@@ -59,10 +60,10 @@ func (m DynamoItemsModel) View() string {
 		return b.String()
 	}
 
-	// Build table columns from discovered attributes
+	// Build table columns from discovered attributes, keys first
 	cols := m.columns
 	if len(cols) == 0 {
-		cols = discoverColumns(m.items)
+		cols = discoverColumns(m.items, m.keyNames)
 	}
 
 	tblCols := make([]components.Column, len(cols))
@@ -87,18 +88,33 @@ func (m DynamoItemsModel) View() string {
 	return b.String()
 }
 
-func discoverColumns(items []aws.DynamoItem) []string {
+func discoverColumns(items []aws.DynamoItem, keyNames []string) []string {
 	seen := map[string]bool{}
-	var cols []string
+	var rest []string
 	for _, item := range items {
 		for k := range item {
 			if !seen[k] {
 				seen[k] = true
-				cols = append(cols, k)
+				rest = append(rest, k)
 			}
 		}
 	}
-	sort.Strings(cols)
+	sort.Strings(rest)
+
+	// Put key columns first in order, then the rest
+	keySet := map[string]bool{}
+	var cols []string
+	for _, k := range keyNames {
+		if seen[k] {
+			cols = append(cols, k)
+			keySet[k] = true
+		}
+	}
+	for _, c := range rest {
+		if !keySet[c] {
+			cols = append(cols, c)
+		}
+	}
 	return cols
 }
 
@@ -137,7 +153,7 @@ func formatDynamoValue(v interface{}) string {
 func (m DynamoItemsModel) SetItems(items []aws.DynamoItem, hasMore bool) DynamoItemsModel {
 	m.items = items
 	m.hasMore = hasMore
-	m.columns = discoverColumns(items)
+	m.columns = discoverColumns(items, m.keyNames)
 	if m.cursor >= len(items) && len(items) > 0 {
 		m.cursor = len(items) - 1
 	}
@@ -147,7 +163,7 @@ func (m DynamoItemsModel) SetItems(items []aws.DynamoItem, hasMore bool) DynamoI
 func (m DynamoItemsModel) AppendItems(items []aws.DynamoItem, hasMore bool) DynamoItemsModel {
 	m.items = append(m.items, items...)
 	m.hasMore = hasMore
-	m.columns = discoverColumns(m.items)
+	m.columns = discoverColumns(m.items, m.keyNames)
 	return m
 }
 
