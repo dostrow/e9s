@@ -526,13 +526,13 @@ func (m *LogViewerModel) scrollToBottom() {
 	m.scroll = max(0, m.scroll)
 }
 
-const tsWidth = 23
+const tsWidth = 24
 
 func (m LogViewerModel) formatTimestamp(ts int64) string {
 	t := time.UnixMilli(ts)
 	switch m.tsMode {
 	case 1:
-		return t.Local().Format("2006-01-02 15:04:05.000")
+		return fmt.Sprintf("%-*s", tsWidth, t.Local().Format("2006-01-02 15:04:05.000"))
 	case 2:
 		return t.UTC().Format("2006-01-02 15:04:05.000") + "Z"
 	default:
