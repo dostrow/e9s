@@ -54,18 +54,20 @@ func renderFrame(width, height int, infoBar, content, actionBar, modeLabel strin
 
 	contentLines := strings.Split(content, "\n")
 	totalLines := len(contentLines)
-	hasScrollbar := totalLines > contentHeight && contentHeight > 2
 
-	// Calculate scrollbar position
-	var scrollStart, scrollLen int
-	if hasScrollbar {
-		scrollLen = max(1, contentHeight*contentHeight/totalLines)
-		// Estimate scroll position from which lines are visible
-		scrollStart = 0 // content is already windowed by the views
-	}
-
-	scrollTrack := lipgloss.NewStyle().Foreground(theme.ColorDim).Render("░")
+	// Always reserve 1 char for scrollbar gutter (views already account for this)
+	contentWidth := innerWidth - 1
+	scrollTrack := lipgloss.NewStyle().Foreground(theme.ColorDim).Render(" ")
 	scrollThumb := lipgloss.NewStyle().Foreground(theme.ColorMauve).Render("█")
+
+	// Calculate scrollbar position if content overflows
+	hasThumb := totalLines > contentHeight && contentHeight > 2
+	var scrollStart, scrollLen int
+	if hasThumb {
+		scrollLen = max(1, contentHeight*contentHeight/totalLines)
+		scrollStart = 0
+		scrollTrack = lipgloss.NewStyle().Foreground(theme.ColorDim).Render("░")
+	}
 
 	for i := 0; i < contentHeight; i++ {
 		line := ""
@@ -73,17 +75,12 @@ func renderFrame(width, height int, infoBar, content, actionBar, modeLabel strin
 			line = contentLines[i]
 		}
 
-		if hasScrollbar {
-			padded := padToWidth(line, innerWidth-1)
-			scrollChar := scrollTrack
-			if i >= scrollStart && i < scrollStart+scrollLen {
-				scrollChar = scrollThumb
-			}
-			b.WriteString(vLine + padded + scrollChar + vLine + "\n")
-		} else {
-			padded := padToWidth(line, innerWidth)
-			b.WriteString(vLine + padded + vLine + "\n")
+		padded := padToWidth(line, contentWidth)
+		scrollChar := scrollTrack
+		if hasThumb && i >= scrollStart && i < scrollStart+scrollLen {
+			scrollChar = scrollThumb
 		}
+		b.WriteString(vLine + padded + scrollChar + vLine + "\n")
 	}
 
 	// Separator: ├──────────┤
