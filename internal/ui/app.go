@@ -117,7 +117,8 @@ type App struct {
 	s3DownloadBucket   string
 	s3DownloadKey      string
 	s3DownloadIsPrefix bool
-	dynamoKeyNames     []string
+	dynamoKeyNames []string
+	dynamoLastKey  any // stores map[string]dbtypes.AttributeValue for pagination
 	dynamoFilterAttr   string
 	dynamoFilterOp     string
 	dynamoFilterExpr   bool
@@ -576,6 +577,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dynamoScanReadyMsg:
 		a.dynamoKeyNames = msg.keyNames
+		a.dynamoLastKey = msg.lastKey
 		a.dynamoItemsView = views.NewDynamoItems(msg.tableName, msg.keyNames)
 		a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, msg.hasMore)
@@ -584,9 +586,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case dynamoItemsLoadedMsg:
+		a.dynamoLastKey = msg.lastKey
 		a.dynamoItemsView = views.NewDynamoItems(a.dynamoItemsView.TableName(), a.dynamoKeyNames)
 		a.dynamoItemsView = a.dynamoItemsView.SetSize(a.width, a.height-3)
 		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, msg.hasMore)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case dynamoPageLoadedMsg:
+		a.dynamoLastKey = msg.lastKey
+		a.dynamoItemsView = a.dynamoItemsView.AppendItems(msg.items, msg.hasMore)
 		a.loading = false
 		a.lastRefresh = time.Now()
 		return a, nil
@@ -972,6 +982,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case msg.String() == "ctrl+e":
 			return a.openConfigEditor()
+		case msg.String() == "ctrl+p":
+			return a.reopenModePicker()
 		}
 
 		// Number keys 1-9: quick select and drill down on list views
@@ -1086,6 +1098,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.promptDynamoPartiQL()
 			case "W":
 				return a.saveDynamoQuery()
+			case "]":
+				return a.loadDynamoNextPage()
 			}
 		case viewDynamoItemDetail:
 			switch msg.String() {
@@ -1482,6 +1496,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 
 	global := []kv{
 		{"`", "Switch mode"},
+		{"ctrl+p", "Reopen mode picker"},
 		{"ctrl+e", "Edit config"},
 		{"ctrl+r", "Switch AWS region"},
 		{"R", "Refresh data"},
@@ -1610,6 +1625,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "View item detail"},
 			{"f", "Filter scan (attribute + operator + value)"},
 			{"p", "PartiQL query"},
+			{"]", "Load next page"},
 			{"W", "Save PartiQL query"},
 		}
 	case viewDynamoItemDetail:
@@ -1779,6 +1795,34 @@ func (a App) drillDown() (App, tea.Cmd) {
 		if s := a.logStreamsView.SelectedStream(); s != nil {
 			return a.peekLogStream(s.Name)
 		}
+	}
+	return a, nil
+}
+
+// reopenModePicker re-launches the current mode's entry picker/prompt.
+func (a App) reopenModePicker() (App, tea.Cmd) {
+	switch a.mode {
+	case modeECS:
+		a.state = viewClusters
+		a.selectedCluster = nil
+		a.selectedService = nil
+		a.selectedTask = nil
+		a.loading = true
+		return a, a.loadClusters()
+	case modeCloudWatch:
+		return a.promptCloudWatchBrowser()
+	case modeSSM:
+		return a.promptSSMPath()
+	case modeSM:
+		return a.promptSMFilter()
+	case modeS3:
+		return a.promptS3Browser()
+	case modeLambda:
+		return a.promptLambdaBrowser()
+	case modeDynamoDB:
+		return a.promptDynamoBrowser()
+	case modeSQS:
+		return a.promptSQSBrowser()
 	}
 	return a, nil
 }

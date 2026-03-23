@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -72,6 +73,31 @@ func (a App) scanDynamoTable(tableName string) (App, tea.Cmd) {
 			keyNames:  keyNames,
 			items:     result.Items,
 			hasMore:   len(result.LastEvaluatedKey) > 0,
+			lastKey:   result.LastEvaluatedKey,
+		}
+	}
+}
+
+func (a App) loadDynamoNextPage() (App, tea.Cmd) {
+	if !a.dynamoItemsView.HasMore() || a.dynamoLastKey == nil {
+		return a, nil
+	}
+	startKey, ok := a.dynamoLastKey.(map[string]dbtypes.AttributeValue)
+	if !ok {
+		return a, nil
+	}
+	tableName := a.dynamoItemsView.TableName()
+	a.loading = true
+	client := a.client
+	return a, func() tea.Msg {
+		result, err := client.ScanDynamoTable(context.Background(), tableName, 50, startKey)
+		if err != nil {
+			return errMsg{err}
+		}
+		return dynamoPageLoadedMsg{
+			items:   result.Items,
+			hasMore: len(result.LastEvaluatedKey) > 0,
+			lastKey: result.LastEvaluatedKey,
 		}
 	}
 }
@@ -177,7 +203,7 @@ func (a App) executeDynamoFilter(value string) (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		return dynamoItemsLoadedMsg{items: result.Items, hasMore: len(result.LastEvaluatedKey) > 0}
+		return dynamoItemsLoadedMsg{items: result.Items, hasMore: len(result.LastEvaluatedKey) > 0, lastKey: result.LastEvaluatedKey}
 	}
 }
 

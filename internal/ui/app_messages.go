@@ -94,10 +94,17 @@ type dynamoScanReadyMsg struct {
 	keyNames  []string
 	items     []e9saws.DynamoItem
 	hasMore   bool
+	lastKey   any
 }
 type dynamoItemsLoadedMsg struct {
 	items   []e9saws.DynamoItem
 	hasMore bool
+	lastKey any
+}
+type dynamoPageLoadedMsg struct {
+	items   []e9saws.DynamoItem
+	hasMore bool
+	lastKey any
 }
 type dynamoPartiQLResultMsg struct {
 	items []e9saws.DynamoItem
