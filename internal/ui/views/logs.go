@@ -116,7 +116,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			m.lines = append(m.lines, logLine{
 				timestamp: e.Timestamp,
 				stream:    e.Stream,
-				message:   strings.TrimRight(e.Message, "\n"),
+				message:   sanitizeLogMessage(e.Message),
 			})
 		}
 		if len(m.lines) > maxLogLines {
@@ -178,7 +178,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			older = append(older, logLine{
 				timestamp: e.Timestamp,
 				stream:    e.Stream,
-				message:   strings.TrimRight(e.Message, "\n"),
+				message:   sanitizeLogMessage(e.Message),
 			})
 		}
 		// Prepend and adjust scroll so viewport stays on the same content
@@ -444,10 +444,14 @@ func (m LogViewerModel) View() string {
 		}
 	}
 
-	indent := "  " + strings.Repeat(" ", tsWidth) + "  "
+	// The prefix for the first line of a log entry:
+	// marker(2) + timestamp(tsWidth) + gap(2) = tsWidth + 4
+	prefixWidth := tsWidth + 4
+	indent := strings.Repeat(" ", prefixWidth)
 
-	// Available width for message text (frame borders + marker + timestamp + gap)
-	msgWidth := m.width - 29
+	// Available width for message text
+	// m.width is the frame content area (already minus borders and scrollbar)
+	msgWidth := m.width - prefixWidth
 	if msgWidth < 20 {
 		msgWidth = 20
 	}
@@ -457,13 +461,12 @@ func (m LogViewerModel) View() string {
 		ts := m.formatTimestamp(line.timestamp)
 		tsStr := theme.HelpStyle.Render(ts)
 
-		// Mark the current match with a marker
 		marker := "  "
 		if i == currentMatchLine {
 			marker = "» "
 		}
 
-		// Split on embedded newlines, then wrap each to fit the frame
+		// Split on embedded newlines, then wrap each segment to fit
 		msgLines := strings.Split(line.message, "\n")
 		for li, msgLine := range msgLines {
 			wrapped := wrapPlainText(msgLine, msgWidth)
@@ -474,7 +477,7 @@ func (m LogViewerModel) View() string {
 				if li == 0 && wi == 0 {
 					fmt.Fprintf(&b, "%s%s  %s\n", marker, tsStr, wLine)
 				} else {
-					b.WriteString(indent + wLine + "\n")
+					fmt.Fprintf(&b, "%s%s\n", indent, wLine)
 				}
 			}
 		}
@@ -685,12 +688,32 @@ func (m LogViewerModel) ExportLines() []string {
 	return out
 }
 
-// wrapPlainText splits a plain text string into lines that fit within maxWidth.
+// sanitizeLogMessage cleans a log message for TUI display.
+// Strips carriage returns, control characters, and trailing whitespace.
+func sanitizeLogMessage(s string) string {
+	s = strings.TrimRight(s, "\n\r ")
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.ReplaceAll(s, "\t", "    ")
+	// Strip other control characters (except newline)
+	var b strings.Builder
+	for _, r := range s {
+		if r == '\n' || r >= 32 {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// wrapPlainText splits a plain text string into lines that fit within maxWidth runes.
 func wrapPlainText(s string, maxWidth int) []string {
-	if maxWidth <= 0 || len(s) <= maxWidth {
+	if maxWidth <= 0 {
 		return []string{s}
 	}
 	runes := []rune(s)
+	if len(runes) <= maxWidth {
+		return []string{s}
+	}
 	var lines []string
 	for len(runes) > 0 {
 		end := min(maxWidth, len(runes))
