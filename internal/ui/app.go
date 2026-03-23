@@ -1863,7 +1863,7 @@ func (a App) goBack() (App, tea.Cmd) {
 			a.state = viewLogStreams
 			return a, nil
 		}
-		if a.prevState == viewLogGroups {
+		if a.prevState == viewLogGroups && a.logGroupsView.HasData() {
 			a.state = viewLogGroups
 			return a, nil
 		}
@@ -1949,7 +1949,7 @@ func (a App) goBack() (App, tea.Cmd) {
 			a.state = viewLogStreams
 			return a, nil
 		}
-		if a.prevState == viewLogGroups {
+		if a.prevState == viewLogGroups && a.logGroupsView.HasData() {
 			a.state = viewLogGroups
 			return a, nil
 		}
