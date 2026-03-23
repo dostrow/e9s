@@ -20,6 +20,8 @@ const (
 	ConfirmDynamoClone
 	ConfirmSQSDelete
 	ConfirmSQSSend
+	ConfirmCBStartBuild
+	ConfirmCBStopBuild
 )
 
 type ConfirmModel struct {

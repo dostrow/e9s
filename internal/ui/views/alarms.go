@@ -2,8 +2,8 @@ package views
 
 import (
 	"fmt"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -21,6 +21,7 @@ type AlarmsModel struct {
 	filter      string
 	filtering   bool
 	filterInput textinput.Model
+	utcTime     bool
 	width       int
 	height      int
 }
@@ -62,6 +63,8 @@ func (m AlarmsModel) Update(msg tea.Msg) (AlarmsModel, tea.Cmd) {
 		case msg.String() == "pgdown":
 			filtered := m.filteredAlarms()
 			m.cursor = min(m.cursor+m.visibleRows(), max(0, len(filtered)-1))
+		case msg.String() == "t":
+			m.utcTime = !m.utcTime
 		case key.Matches(msg, theme.Keys.Filter):
 			m.filtering = true
 			m.filterInput = textinput.New()
@@ -108,13 +111,18 @@ func (m AlarmsModel) View() string {
 	})
 	for _, a := range filtered {
 		stateCell := stateStyledCell(a.State)
-		ago := time.Since(a.StateUpdatedAt).Truncate(time.Second)
+		var ts string
+		if m.utcTime {
+			ts = a.StateUpdatedAt.UTC().Format("2006-01-02 15:04:05 UTC")
+		} else {
+			ts = a.StateUpdatedAt.Local().Format("2006-01-02 15:04:05")
+		}
 		tbl.AddRow(
 			stateCell,
 			components.Plain(a.Name),
 			components.Plain(a.MetricName),
 			components.Plain(a.Namespace),
-			components.Plain(ago.String()),
+			components.Plain(ts),
 		)
 	}
 	b.WriteString(tbl.Render(m.cursor, "", m.visibleRows()))
@@ -151,6 +159,9 @@ func (m AlarmsModel) filteredAlarms() []aws.CWAlarm {
 }
 
 func (m AlarmsModel) SetAlarms(alarms []aws.CWAlarm) AlarmsModel {
+	sort.Slice(alarms, func(i, j int) bool {
+		return alarms[i].StateUpdatedAt.After(alarms[j].StateUpdatedAt)
+	})
 	m.alarms = alarms
 	filtered := m.filteredAlarms()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {

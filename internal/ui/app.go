@@ -28,6 +28,7 @@ const (
 	modeLambda
 	modeDynamoDB
 	modeSQS
+	modeCodeBuild
 )
 
 type viewState int
@@ -63,6 +64,9 @@ const (
 	viewLogSearch
 	viewAlarms
 	viewAlarmDetail
+	viewCBProjects
+	viewCBBuilds
+	viewCBBuildDetail
 )
 
 type App struct {
@@ -101,6 +105,9 @@ type App struct {
 	sqsMsgDetailView  views.SQSMessageDetailModel
 	alarmsView        views.AlarmsModel
 	alarmDetailView   views.AlarmDetailModel
+	cbProjectsView    views.CBProjectsModel
+	cbBuildsView      views.CBBuildsModel
+	cbBuildDetailView views.CBBuildDetailModel
 	regionPicker      views.RegionPickerModel
 
 	// Navigation context
@@ -130,6 +137,7 @@ type App struct {
 	dynamoLastPartiQL  string
 	sqsSendQueueURL    string
 	sqsSendTemplate    *e9saws.SQSSendTemplate
+	cbTriggerProject   string
 	dynamoEditField    string
 	dynamoEditValue    string
 	dynamoEditItem     *e9saws.DynamoItem
@@ -180,6 +188,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeLambda, "λ", cfg.ModuleLambda()},
 		{modeDynamoDB, "DDB", cfg.ModuleDynamoDB()},
 		{modeSQS, "SQS", cfg.ModuleSQS()},
+		{modeCodeBuild, "CB", cfg.ModuleCodeBuild()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -224,6 +233,7 @@ func resolveDefaultMode(s string) *topMode {
 		"Lambda": modeLambda, "lambda": modeLambda,
 		"DynamoDB": modeDynamoDB, "dynamodb": modeDynamoDB, "DDB": modeDynamoDB, "ddb": modeDynamoDB,
 		"SQS": modeSQS, "sqs": modeSQS,
+		"CodeBuild": modeCodeBuild, "codebuild": modeCodeBuild, "CB": modeCodeBuild, "cb": modeCodeBuild,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -289,6 +299,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sqsMsgDetailView = a.sqsMsgDetailView.SetSize(w, h)
 		a.alarmsView = a.alarmsView.SetSize(w, h)
 		a.alarmDetailView = a.alarmDetailView.SetSize(w, h)
+		a.cbProjectsView = a.cbProjectsView.SetSize(w, h)
+		a.cbBuildsView = a.cbBuildsView.SetSize(w, h)
+		a.cbBuildDetailView = a.cbBuildDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -744,6 +757,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	// --- CodeBuild messages ---
+	case cbProjectsLoadedMsg:
+		a.cbProjectsView = a.cbProjectsView.SetProjects(msg.projects)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case cbBuildsLoadedMsg:
+		a.cbBuildsView = a.cbBuildsView.SetBuilds(msg.builds)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case cbBuildDetailLoadedMsg:
+		a.cbBuildDetailView = views.NewCBBuildDetail(msg.detail)
+		a.cbBuildDetailView = a.cbBuildDetailView.SetSize(a.width-3, a.height-6)
+		a.state = viewCBBuildDetail
+		a.loading = false
+		return a, nil
+
+	case cbBuildStartedMsg:
+		return a.handleCBBuildStarted(msg)
+
+	case cbBuildStoppedMsg:
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.loading = false
+		if a.state == viewCBBuildDetail {
+			return a, a.refreshCBBuildDetail()
+		}
+		return a, nil
+
 	// --- Shared messages ---
 	case regionSwitchedMsg:
 		a.flashMessage = fmt.Sprintf("Switched to %s", a.client.Region())
@@ -807,6 +852,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.sqsSendTemplate != nil {
 				return a, a.doSendSQSMessage(a.sqsSendQueueURL, a.sqsSendTemplate)
 			}
+		case ConfirmCBStartBuild:
+			return a, a.doStartCBBuild()
+		case ConfirmCBStopBuild:
+			return a, a.doStopCBBuild()
 		}
 		return a, nil
 
@@ -1224,6 +1273,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "S":
 				return a.promptSetAlarmState()
 			}
+		case viewCBProjects:
+			switch msg.String() {
+			case "b":
+				return a.triggerCBBuild()
+			}
+		case viewCBBuilds:
+			switch msg.String() {
+			case "b":
+				return a.triggerCBBuild()
+			}
+		case viewCBBuildDetail:
+			switch msg.String() {
+			case "l":
+				return a.viewCBBuildLogs()
+			case "b":
+				return a.triggerCBBuild()
+			case "x":
+				return a.stopCBBuild()
+			}
 		}
 
 		return a.delegateToActiveView(msg)
@@ -1287,6 +1355,12 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.alarmsView, cmd = a.alarmsView.Update(msg)
 	case viewAlarmDetail:
 		a.alarmDetailView, cmd = a.alarmDetailView.Update(msg)
+	case viewCBProjects:
+		a.cbProjectsView, cmd = a.cbProjectsView.Update(msg)
+	case viewCBBuilds:
+		a.cbBuildsView, cmd = a.cbBuildsView.Update(msg)
+	case viewCBBuildDetail:
+		a.cbBuildDetailView, cmd = a.cbBuildDetailView.Update(msg)
 	}
 	return a, cmd
 }
@@ -1325,6 +1399,8 @@ func (a App) isFiltering() bool {
 		return a.logView.IsFiltering()
 	case viewAlarms:
 		return a.alarmsView.IsFiltering()
+	case viewCBProjects:
+		return a.cbProjectsView.IsFiltering()
 	}
 	return false
 }
@@ -1416,6 +1492,12 @@ func (a App) View() string {
 		content = a.alarmsView.View()
 	case viewAlarmDetail:
 		content = a.alarmDetailView.View()
+	case viewCBProjects:
+		content = a.cbProjectsView.View()
+	case viewCBBuilds:
+		content = a.cbBuildsView.View()
+	case viewCBBuildDetail:
+		content = a.cbBuildDetailView.View()
 	}
 
 	helpLine := a.helpText()
@@ -1541,6 +1623,12 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewAlarmDetail:
 		primary = "[a] toggle actions"
+	case viewCBProjects:
+		primary = "[enter] builds"
+	case viewCBBuilds:
+		primary = "[enter] detail"
+	case viewCBBuildDetail:
+		primary = "[l] view logs"
 	}
 	if primary != "" {
 		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
@@ -1750,12 +1838,33 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewAlarms:
 		context = []kv{
 			{"enter", "View alarm detail"},
+			{"t", "Toggle local/UTC timestamps"},
 			{"/", "Filter alarms"},
 		}
 	case viewAlarmDetail:
 		context = []kv{
 			{"a", "Enable/disable alarm actions"},
 			{"S", "Set alarm state (testing)"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewCBProjects:
+		context = []kv{
+			{"enter", "View builds"},
+			{"b", "Start new build"},
+			{"/", "Filter projects"},
+		}
+	case viewCBBuilds:
+		context = []kv{
+			{"enter", "View build detail"},
+			{"b", "Start new build"},
+			{"t", "Toggle local/UTC timestamps"},
+		}
+	case viewCBBuildDetail:
+		context = []kv{
+			{"l", "View build logs"},
+			{"b", "Start new build"},
+			{"x", "Stop build (if in progress)"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -1868,6 +1977,12 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewAlarms:
 		return a.openAlarmDetail()
+	case viewCBProjects:
+		if p := a.cbProjectsView.SelectedProject(); p != nil {
+			return a.openCBBuilds(p.Name)
+		}
+	case viewCBBuilds:
+		return a.openCBBuildDetail()
 	}
 	return a, nil
 }
@@ -1898,6 +2013,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.promptDynamoBrowser()
 	case modeSQS:
 		return a.promptSQSBrowser()
+	case modeCodeBuild:
+		return a.openCBProjects()
 	}
 	return a, nil
 }
@@ -1931,6 +2048,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.promptDynamoBrowser()
 	case modeSQS:
 		return a.promptSQSBrowser()
+	case modeCodeBuild:
+		return a.openCBProjects()
 	}
 	return a, nil
 }
@@ -1978,6 +2097,10 @@ func (a App) goBack() (App, tea.Cmd) {
 		}
 		if a.prevState == viewLambdaDetail {
 			a.state = viewLambdaDetail
+			return a, nil
+		}
+		if a.prevState == viewCBBuildDetail {
+			a.state = viewCBBuildDetail
 			return a, nil
 		}
 		if a.prevState == viewLogStreams {
@@ -2087,6 +2210,14 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a.showModePicker()
 	case viewAlarmDetail:
 		a.state = viewAlarms
+		return a, nil
+	case viewCBProjects:
+		return a.showModePicker()
+	case viewCBBuilds:
+		a.state = viewCBProjects
+		return a, nil
+	case viewCBBuildDetail:
+		a.state = viewCBBuilds
 		return a, nil
 	}
 	return a, nil

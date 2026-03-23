@@ -544,6 +544,12 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshAlarms()
 	case viewAlarmDetail:
 		return a.refreshAlarmDetail()
+	case viewCBProjects:
+		return a.refreshCBProjects()
+	case viewCBBuilds:
+		return a.refreshCBBuilds()
+	case viewCBBuildDetail:
+		return a.refreshCBBuildDetail()
 	default:
 		return nil
 	}

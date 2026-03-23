@@ -162,6 +162,14 @@ type alarmActionDoneMsg struct {
 	alarmName string
 }
 
+// --- CodeBuild Messages ---
+
+type cbProjectsLoadedMsg struct{ projects []e9saws.CBProject }
+type cbBuildsLoadedMsg struct{ builds []e9saws.CBBuild }
+type cbBuildDetailLoadedMsg struct{ detail *e9saws.CBBuildDetail }
+type cbBuildStartedMsg struct{ message string }
+type cbBuildStoppedMsg struct{ message string }
+
 // --- Shared Messages ---
 
 type regionSwitchedMsg struct{}
