@@ -16,7 +16,7 @@ import (
 func (a App) promptSQSBrowser() (App, tea.Cmd) {
 	saved := a.cfg.SQSQueues
 	if len(saved) == 0 {
-		a.input = NewInput(InputSQSSearch, "Search queues (prefix match)", "")
+		a.input = NewInput(InputSQSSearch, "Search queues (substring match, or empty for all)", "")
 		return a, nil
 	}
 	items := make([]string, 0, len(saved)+1)

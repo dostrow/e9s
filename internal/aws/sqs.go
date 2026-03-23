@@ -55,13 +55,13 @@ type SQSAttr struct {
 }
 
 // ListQueues returns SQS queue names and URLs, optionally filtered.
+// ListSQSQueues returns SQS queues. The SQS API only supports prefix matching,
+// so for substring searches we fetch all queues and filter client-side.
 func (c *Client) ListSQSQueues(ctx context.Context, filter string) ([]SQSQueue, error) {
 	input := &sqs.ListQueuesInput{}
-	if filter != "" {
-		input.QueueNamePrefix = &filter
-	}
 
 	var queues []SQSQueue
+	lf := strings.ToLower(filter)
 	paginator := sqs.NewListQueuesPaginator(c.SQS, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -70,7 +70,9 @@ func (c *Client) ListSQSQueues(ctx context.Context, filter string) ([]SQSQueue, 
 		}
 		for _, url := range page.QueueUrls {
 			name := queueNameFromURL(url)
-			queues = append(queues, SQSQueue{Name: name, URL: url})
+			if filter == "" || strings.Contains(strings.ToLower(name), lf) {
+				queues = append(queues, SQSQueue{Name: name, URL: url})
+			}
 		}
 	}
 	return queues, nil

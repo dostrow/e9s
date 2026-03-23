@@ -868,7 +868,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openLambdaList(a.cfg.LambdaSearches[msg.Index].Filter)
 		case PickerSQSQueue:
 			if msg.Index == len(a.cfg.SQSQueues) {
-				a.input = NewInput(InputSQSSearch, "Search queues (prefix match)", "")
+				a.input = NewInput(InputSQSSearch, "Search queues (substring match, or empty for all)", "")
 				return a, nil
 			}
 			q := a.cfg.SQSQueues[msg.Index]
