@@ -1287,6 +1287,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "l":
 				return a.viewCBBuildLogs()
+			case "s":
+				return a.searchCBBuildLogs()
 			case "b":
 				return a.triggerCBBuild()
 			case "x":
@@ -1862,7 +1864,8 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		}
 	case viewCBBuildDetail:
 		context = []kv{
-			{"l", "View build logs"},
+			{"l", "View build logs (buffer)"},
+			{"s", "Search build logs (full)"},
 			{"b", "Start new build"},
 			{"x", "Stop build (if in progress)"},
 			{"j/k", "Scroll"},

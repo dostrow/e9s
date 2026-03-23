@@ -117,23 +117,57 @@ func (a App) doStopCBBuild() tea.Cmd {
 }
 
 func (a App) viewCBBuildLogs() (App, tea.Cmd) {
-	logGroup := a.cbBuildDetailView.LogGroup()
-	logStream := a.cbBuildDetailView.LogStream()
+	detail := a.cbBuildDetailView.Detail()
+	if detail == nil {
+		return a, nil
+	}
+	logGroup := detail.LogGroupName
+	logStream := detail.LogStreamName
 	if logGroup == "" || logStream == "" {
 		a.err = fmt.Errorf("no log information available for this build")
 		return a, nil
 	}
 	a.prevState = viewCBBuildDetail
-	f := false
+
+	// For completed builds, fetch logs from the build start time.
+	// For in-progress builds, use follow mode.
+	inProgress := detail.Status == "IN_PROGRESS"
+	follow := inProgress
+	lookback := time.Since(detail.StartTime) + time.Minute // pad 1 min
 	return a, func() tea.Msg {
 		return logReadyMsg{
-			title:    fmt.Sprintf("Build #%d logs", a.cbBuildDetailView.Detail().BuildNumber),
+			title:    fmt.Sprintf("Build #%d logs", detail.BuildNumber),
 			logGroup: logGroup,
 			streams:  []string{logStream},
-			follow:   &f,
-			lookback: 0,
+			follow:   &follow,
+			lookback: lookback,
 		}
 	}
+}
+
+func (a App) searchCBBuildLogs() (App, tea.Cmd) {
+	detail := a.cbBuildDetailView.Detail()
+	if detail == nil {
+		return a, nil
+	}
+	logGroup := detail.LogGroupName
+	logStream := detail.LogStreamName
+	if logGroup == "" {
+		a.err = fmt.Errorf("no log information available for this build")
+		return a, nil
+	}
+	a.prevState = viewCBBuildDetail
+	a.logSearchGroup = logGroup
+	a.logSearchGroups = []string{logGroup}
+	a.logSearchStream = logStream
+	a.logSearchStartMs = detail.StartTime.Add(-time.Minute).UnixMilli()
+	if detail.EndTime.IsZero() {
+		a.logSearchEndMs = time.Now().UnixMilli()
+	} else {
+		a.logSearchEndMs = detail.EndTime.Add(time.Minute).UnixMilli()
+	}
+	a.input = NewInput(InputLogSearchPattern, "Search build logs (CloudWatch filter syntax)", "")
+	return a, nil
 }
 
 func (a App) refreshCBBuilds() tea.Cmd {
