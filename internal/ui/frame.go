@@ -102,7 +102,10 @@ func renderFrame(width, height int, infoBar, content, actionBar, modeLabel strin
 	// Bottom border with mode label: ╰── ECS ──╯
 	modeStr := ""
 	if modeLabel != "" {
-		modeStr = "── " + lipgloss.NewStyle().Bold(true).Foreground(theme.ColorMauve).Render(modeLabel) + " "
+		prefix := lipgloss.NewStyle().Foreground(borderColor).Render("── ")
+		label := lipgloss.NewStyle().Bold(true).Foreground(theme.ColorMauve).Render(modeLabel)
+		suffix := lipgloss.NewStyle().Foreground(borderColor).Render(" ")
+		modeStr = prefix + label + suffix
 	}
 	modeVisualWidth := lipgloss.Width(modeStr)
 	remaining := innerWidth - modeVisualWidth
