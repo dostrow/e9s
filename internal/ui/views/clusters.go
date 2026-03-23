@@ -69,15 +69,6 @@ func (m ClusterListModel) Update(msg tea.Msg) (ClusterListModel, tea.Cmd) {
 			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
-		default:
-			// Number keys 1-9 for quick select
-			if s := msg.String(); len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
-				idx := int(s[0] - '1')
-				filtered := m.filteredClusters()
-				if idx < len(filtered) {
-					m.cursor = idx
-				}
-			}
 		}
 	}
 	return m, nil
@@ -158,6 +149,22 @@ func (m ClusterListModel) SelectedCluster() *model.Cluster {
 	}
 	c := filtered[m.cursor]
 	return &c
+}
+
+// SelectIndex returns the item at the given index in the filtered list, or nil.
+func (m ClusterListModel) SelectIndex(idx int) *model.Cluster {
+	filtered := m.filteredClusters()
+	if idx < 0 || idx >= len(filtered) {
+		return nil
+	}
+	c := filtered[idx]
+	return &c
+}
+
+// WithCursor returns a copy with the cursor set to the given index.
+func (m ClusterListModel) WithCursor(idx int) ClusterListModel {
+	m.cursor = idx
+	return m
 }
 
 func (m ClusterListModel) IsFiltering() bool {

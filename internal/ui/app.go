@@ -814,6 +814,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// Number keys 1-9: quick select and drill down on list views
+		if s := msg.String(); len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+			idx := int(s[0] - '1')
+			switch a.state {
+			case viewClusters:
+				if c := a.clusterView.SelectIndex(idx); c != nil {
+					a.clusterView = a.clusterView.WithCursor(idx)
+					a.selectedCluster = c
+					a.state = viewServices
+					a.serviceView = views.NewServiceList(c.Name)
+					a.loading = true
+					return a, a.loadServices()
+				}
+			}
+		}
+
 		// Context-specific keys
 		switch a.state {
 		case viewServices:
