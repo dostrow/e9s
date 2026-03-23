@@ -26,6 +26,8 @@ const (
 	PickerDynamoQuery
 	PickerDynamoFilterOp
 	PickerSQSQueue
+	PickerCWAlarmState
+	PickerSetAlarmState
 )
 
 type PickerModel struct {

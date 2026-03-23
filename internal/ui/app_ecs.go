@@ -540,6 +540,10 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.loadStandaloneTasks()
 	case viewMetrics:
 		return a.loadMetrics()
+	case viewAlarms:
+		return a.refreshAlarms()
+	case viewAlarmDetail:
+		return a.refreshAlarmDetail()
 	default:
 		return nil
 	}

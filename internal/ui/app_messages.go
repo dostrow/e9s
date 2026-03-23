@@ -148,10 +148,19 @@ type sqsSendReadyMsg struct {
 
 type lambdaFunctionsLoadedMsg struct{ functions []e9saws.LambdaFunction }
 
-// --- CloudWatch Messages ---
+// --- CloudWatch Logs Messages ---
 
 type logGroupsLoadedMsg struct{ groups []e9saws.LogGroupInfo }
 type logStreamsLoadedMsg struct{ streams []e9saws.LogStreamInfo }
+
+// --- CloudWatch Alarms Messages ---
+
+type alarmsLoadedMsg struct{ alarms []e9saws.CWAlarm }
+type alarmDetailLoadedMsg struct{ detail *e9saws.CWAlarmDetail }
+type alarmActionDoneMsg struct {
+	message   string
+	alarmName string
+}
 
 // --- Shared Messages ---
 

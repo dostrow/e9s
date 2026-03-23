@@ -37,7 +37,8 @@ func TestModeDisplayName(t *testing.T) {
 		want string
 	}{
 		{modeECS, "ECS"},
-		{modeCloudWatch, "CloudWatch"},
+		{modeCWLogs, "CloudWatch Logs"},
+		{modeCWAlarms, "CloudWatch Alarms"},
 		{modeSSM, "SSM"},
 		{modeSM, "Secrets Manager"},
 		{modeS3, "S3"},
@@ -87,9 +88,11 @@ func TestResolveDefaultMode(t *testing.T) {
 	}{
 		{"ECS", ptr(modeECS)},
 		{"ecs", ptr(modeECS)},
-		{"CloudWatch", ptr(modeCloudWatch)},
-		{"CW", ptr(modeCloudWatch)},
-		{"cw", ptr(modeCloudWatch)},
+		{"CloudWatch", ptr(modeCWLogs)},
+		{"CW", ptr(modeCWLogs)},
+		{"cw", ptr(modeCWLogs)},
+		{"CWA", ptr(modeCWAlarms)},
+		{"cwa", ptr(modeCWAlarms)},
 		{"SSM", ptr(modeSSM)},
 		{"DDB", ptr(modeDynamoDB)},
 		{"dynamodb", ptr(modeDynamoDB)},

@@ -31,8 +31,11 @@ func TestModuleDefaults(t *testing.T) {
 	if !cfg.ModuleECS() {
 		t.Error("ModuleECS should default to true")
 	}
-	if !cfg.ModuleCloudWatch() {
-		t.Error("ModuleCloudWatch should default to true")
+	if !cfg.ModuleCWLogs() {
+		t.Error("ModuleCWLogs should default to true")
+	}
+	if !cfg.ModuleCWAlarms() {
+		t.Error("ModuleCWAlarms should default to true")
 	}
 	if !cfg.ModuleSSM() {
 		t.Error("ModuleSSM should default to true")

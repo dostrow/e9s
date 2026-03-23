@@ -37,7 +37,7 @@ func (a App) promptCloudWatchBrowser() (App, tea.Cmd) {
 }
 
 func (a App) openLogGroups(prefix string) (App, tea.Cmd) {
-	a.mode = modeCloudWatch
+	a.mode = modeCWLogs
 	a.state = viewLogGroups
 	a.logGroupsView = views.NewLogGroups()
 	a.logGroupsView = a.logGroupsView.SetSize(a.width, a.height-3)
@@ -53,7 +53,7 @@ func (a App) openLogGroups(prefix string) (App, tea.Cmd) {
 }
 
 func (a App) openLogStreams(logGroup string) (App, tea.Cmd) {
-	a.mode = modeCloudWatch
+	a.mode = modeCWLogs
 	a.state = viewLogStreams
 	a.logStreamsView = views.NewLogStreams(logGroup)
 	a.logStreamsView = a.logStreamsView.SetSize(a.width, a.height-3)

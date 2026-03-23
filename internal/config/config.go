@@ -74,14 +74,16 @@ type Config struct {
 		MaxLogLines     int    `yaml:"max_log_lines"`
 	} `yaml:"display"`
 	Modules struct {
-		ECS        *bool `yaml:"ecs"`
-		CloudWatch *bool `yaml:"cloudwatch"`
-		SSM        *bool `yaml:"ssm"`
-		SM         *bool `yaml:"sm"`
-		S3         *bool `yaml:"s3"`
-		Lambda     *bool `yaml:"lambda"`
-		DynamoDB   *bool `yaml:"dynamodb"`
-		SQS        *bool `yaml:"sqs"`
+		ECS             *bool `yaml:"ecs"`
+		CloudWatch      *bool `yaml:"cloudwatch"`       // legacy: maps to CWLogs
+		CWLogs          *bool `yaml:"cloudwatch_logs"`
+		CWAlarms        *bool `yaml:"cloudwatch_alarms"`
+		SSM             *bool `yaml:"ssm"`
+		SM              *bool `yaml:"sm"`
+		S3              *bool `yaml:"s3"`
+		Lambda          *bool `yaml:"lambda"`
+		DynamoDB        *bool `yaml:"dynamodb"`
+		SQS             *bool `yaml:"sqs"`
 	} `yaml:"modules"`
 	ExcludeServices []string `yaml:"exclude_services"`
 	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
@@ -301,7 +303,13 @@ func (c *Config) ModuleLambda() bool      { return boolDefault(c.Modules.Lambda,
 func (c *Config) ModuleDynamoDB() bool    { return boolDefault(c.Modules.DynamoDB, true) }
 func (c *Config) ModuleSQS() bool         { return boolDefault(c.Modules.SQS, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
-func (c *Config) ModuleCloudWatch() bool  { return boolDefault(c.Modules.CloudWatch, true) }
+func (c *Config) ModuleCWLogs() bool {
+	if c.Modules.CWLogs != nil {
+		return *c.Modules.CWLogs
+	}
+	return boolDefault(c.Modules.CloudWatch, true) // legacy fallback
+}
+func (c *Config) ModuleCWAlarms() bool { return boolDefault(c.Modules.CWAlarms, true) }
 func (c *Config) ModuleSSM() bool         { return boolDefault(c.Modules.SSM, true) }
 func (c *Config) ModuleSM() bool          { return boolDefault(c.Modules.SM, true) }
 

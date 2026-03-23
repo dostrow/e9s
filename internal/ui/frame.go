@@ -158,14 +158,15 @@ func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, fl
 // modeDisplayName returns the full display name for a mode.
 func modeDisplayName(mode topMode) string {
 	names := map[topMode]string{
-		modeECS:        "ECS",
-		modeCloudWatch: "CloudWatch",
-		modeSSM:        "SSM",
-		modeSM:         "Secrets Manager",
-		modeS3:         "S3",
-		modeLambda:     "Lambda",
-		modeDynamoDB:   "DynamoDB",
-		modeSQS:        "SQS",
+		modeECS:      "ECS",
+		modeCWLogs:   "CloudWatch Logs",
+		modeCWAlarms: "CloudWatch Alarms",
+		modeSSM:      "SSM",
+		modeSM:       "Secrets Manager",
+		modeS3:       "S3",
+		modeLambda:   "Lambda",
+		modeDynamoDB: "DynamoDB",
+		modeSQS:      "SQS",
 	}
 	if name, ok := names[mode]; ok {
 		return name
@@ -176,14 +177,15 @@ func modeDisplayName(mode topMode) string {
 // modeShortName returns the short label for the bottom-left corner.
 func modeShortName(mode topMode) string {
 	names := map[topMode]string{
-		modeECS:        "ECS",
-		modeCloudWatch: "CW",
-		modeSSM:        "SSM",
-		modeSM:         "SM",
-		modeS3:         "S3",
-		modeLambda:     "λ",
-		modeDynamoDB:   "DDB",
-		modeSQS:        "SQS",
+		modeECS:      "ECS",
+		modeCWLogs:   "CWL",
+		modeCWAlarms: "CWA",
+		modeSSM:      "SSM",
+		modeSM:       "SM",
+		modeS3:       "S3",
+		modeLambda:   "λ",
+		modeDynamoDB: "DDB",
+		modeSQS:      "SQS",
 	}
 	if name, ok := names[mode]; ok {
 		return name

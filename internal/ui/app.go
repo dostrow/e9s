@@ -20,7 +20,8 @@ type topMode int
 
 const (
 	modeECS topMode = iota
-	modeCloudWatch
+	modeCWLogs
+	modeCWAlarms
 	modeSSM
 	modeSM
 	modeS3
@@ -60,6 +61,8 @@ const (
 	viewLogGroups
 	viewLogStreams
 	viewLogSearch
+	viewAlarms
+	viewAlarmDetail
 )
 
 type App struct {
@@ -96,6 +99,8 @@ type App struct {
 	sqsDetailView     views.SQSDetailModel
 	sqsMessagesView   views.SQSMessagesModel
 	sqsMsgDetailView  views.SQSMessageDetailModel
+	alarmsView        views.AlarmsModel
+	alarmDetailView   views.AlarmDetailModel
 	regionPicker      views.RegionPickerModel
 
 	// Navigation context
@@ -167,7 +172,8 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		enabled bool
 	}{
 		{modeECS, "ECS", cfg.ModuleECS()},
-		{modeCloudWatch, "CW", cfg.ModuleCloudWatch()},
+		{modeCWLogs, "CWL", cfg.ModuleCWLogs()},
+		{modeCWAlarms, "CWA", cfg.ModuleCWAlarms()},
 		{modeSSM, "SSM", cfg.ModuleSSM()},
 		{modeSM, "SM", cfg.ModuleSM()},
 		{modeS3, "S3", cfg.ModuleS3()},
@@ -209,7 +215,9 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 func resolveDefaultMode(s string) *topMode {
 	modes := map[string]topMode{
 		"ECS": modeECS, "ecs": modeECS,
-		"CW": modeCloudWatch, "cw": modeCloudWatch, "cloudwatch": modeCloudWatch, "CloudWatch": modeCloudWatch,
+		"CWL": modeCWLogs, "cwl": modeCWLogs, "cloudwatch-logs": modeCWLogs, "CloudWatch Logs": modeCWLogs,
+		"CW": modeCWLogs, "cw": modeCWLogs, "cloudwatch": modeCWLogs, "CloudWatch": modeCWLogs,
+		"CWA": modeCWAlarms, "cwa": modeCWAlarms, "cloudwatch-alarms": modeCWAlarms, "CloudWatch Alarms": modeCWAlarms,
 		"SSM": modeSSM, "ssm": modeSSM,
 		"SM": modeSM, "sm": modeSM, "secrets": modeSM,
 		"S3": modeS3, "s3": modeS3,
@@ -279,6 +287,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sqsDetailView = a.sqsDetailView.SetSize(w, h)
 		a.sqsMessagesView = a.sqsMessagesView.SetSize(w, h)
 		a.sqsMsgDetailView = a.sqsMsgDetailView.SetSize(w, h)
+		a.alarmsView = a.alarmsView.SetSize(w, h)
+		a.alarmDetailView = a.alarmDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -710,6 +720,30 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	// --- CloudWatch Alarms messages ---
+	case alarmsLoadedMsg:
+		a.alarmsView = a.alarmsView.SetAlarms(msg.alarms)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case alarmDetailLoadedMsg:
+		a.alarmDetailView = views.NewAlarmDetail(msg.detail)
+		a.alarmDetailView = a.alarmDetailView.SetSize(a.width-3, a.height-6)
+		a.state = viewAlarmDetail
+		a.loading = false
+		return a, nil
+
+	case alarmActionDoneMsg:
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.loading = false
+		// Refresh detail if we're on it
+		if a.state == viewAlarmDetail {
+			return a, a.refreshAlarmDetail()
+		}
+		return a, nil
+
 	// --- Shared messages ---
 	case regionSwitchedMsg:
 		a.flashMessage = fmt.Sprintf("Switched to %s", a.client.Region())
@@ -915,6 +949,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openLogStreams(lp.LogGroup)
 		case PickerLogSearchTimeRange:
 			return a.handleTimeRangePick(msg.Value)
+		case PickerCWAlarmState:
+			return a.handleCWAlarmStatePick(msg.Value)
+		case PickerSetAlarmState:
+			return a.handleSetAlarmStatePick(msg.Value)
 		}
 		return a, nil
 
@@ -1179,6 +1217,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "W":
 				return a.saveLogStreamPath()
 			}
+		case viewAlarmDetail:
+			switch msg.String() {
+			case "a":
+				return a.toggleAlarmActions()
+			case "S":
+				return a.promptSetAlarmState()
+			}
 		}
 
 		return a.delegateToActiveView(msg)
@@ -1238,6 +1283,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.logStreamsView, cmd = a.logStreamsView.Update(msg)
 	case viewLogSearch:
 		a.logSearchView, cmd = a.logSearchView.Update(msg)
+	case viewAlarms:
+		a.alarmsView, cmd = a.alarmsView.Update(msg)
+	case viewAlarmDetail:
+		a.alarmDetailView, cmd = a.alarmDetailView.Update(msg)
 	}
 	return a, cmd
 }
@@ -1274,6 +1323,8 @@ func (a App) isFiltering() bool {
 		return a.logStreamsView.IsFiltering()
 	case viewLogs:
 		return a.logView.IsFiltering()
+	case viewAlarms:
+		return a.alarmsView.IsFiltering()
 	}
 	return false
 }
@@ -1361,6 +1412,10 @@ func (a App) View() string {
 		content = a.logStreamsView.View()
 	case viewLogSearch:
 		content = a.logSearchView.View()
+	case viewAlarms:
+		content = a.alarmsView.View()
+	case viewAlarmDetail:
+		content = a.alarmDetailView.View()
 	}
 
 	helpLine := a.helpText()
@@ -1482,6 +1537,10 @@ func (a App) helpText() string {
 		primary = "[enter] peek"
 	case viewLogSearch:
 		primary = "[enter] jump"
+	case viewAlarms:
+		primary = "[enter] detail"
+	case viewAlarmDetail:
+		primary = "[a] toggle actions"
 	}
 	if primary != "" {
 		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
@@ -1688,6 +1747,18 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"t", "Toggle timestamps"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewAlarms:
+		context = []kv{
+			{"enter", "View alarm detail"},
+			{"/", "Filter alarms"},
+		}
+	case viewAlarmDetail:
+		context = []kv{
+			{"a", "Enable/disable alarm actions"},
+			{"S", "Set alarm state (testing)"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
 	}
 
 	// Combine: context first, then separator, then global
@@ -1795,6 +1866,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 		if s := a.logStreamsView.SelectedStream(); s != nil {
 			return a.peekLogStream(s.Name)
 		}
+	case viewAlarms:
+		return a.openAlarmDetail()
 	}
 	return a, nil
 }
@@ -1809,8 +1882,10 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		a.selectedTask = nil
 		a.loading = true
 		return a, a.loadClusters()
-	case modeCloudWatch:
+	case modeCWLogs:
 		return a.promptCloudWatchBrowser()
+	case modeCWAlarms:
+		return a.promptCWAlarmsBrowser()
 	case modeSSM:
 		return a.promptSSMPath()
 	case modeSM:
@@ -1840,8 +1915,10 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		a.selectedTask = nil
 		a.loading = true
 		return a, a.loadClusters()
-	case modeCloudWatch:
+	case modeCWLogs:
 		return a.promptCloudWatchBrowser()
+	case modeCWAlarms:
+		return a.promptCWAlarmsBrowser()
 	case modeSSM:
 		return a.promptSSMPath()
 	case modeSM:
@@ -2006,6 +2083,11 @@ func (a App) goBack() (App, tea.Cmd) {
 			return a, nil
 		}
 		return a.showModePicker()
+	case viewAlarms:
+		return a.showModePicker()
+	case viewAlarmDetail:
+		a.state = viewAlarms
+		return a, nil
 	}
 	return a, nil
 }

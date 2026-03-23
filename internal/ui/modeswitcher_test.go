@@ -8,14 +8,14 @@ func TestNewModeSwitcher_SortsAlphabetically(t *testing.T) {
 	tabs := []ModeTab{
 		{Mode: modeS3, Label: "S3"},
 		{Mode: modeECS, Label: "ECS"},
-		{Mode: modeCloudWatch, Label: "CW"},
+		{Mode: modeCWLogs, Label: "CWL"},
 		{Mode: modeDynamoDB, Label: "DDB"},
 	}
 
 	ms := NewModeSwitcher(tabs, modeECS)
 
-	// Should be sorted: CloudWatch, DynamoDB, ECS, S3
-	expected := []topMode{modeCloudWatch, modeDynamoDB, modeECS, modeS3}
+	// Should be sorted: CloudWatch Logs, DynamoDB, ECS, S3
+	expected := []topMode{modeCWLogs, modeDynamoDB, modeECS, modeS3}
 	for i, want := range expected {
 		if ms.tabs[i].Mode != want {
 			t.Errorf("tabs[%d].Mode = %v, want %v (%s)",
