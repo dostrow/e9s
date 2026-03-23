@@ -59,6 +59,11 @@ func (m S3ObjectsModel) Update(msg tea.Msg) (S3ObjectsModel, tea.Cmd) {
 			if m.cursor < len(filtered)-1 {
 				m.cursor++
 			}
+		case msg.String() == "pgup":
+			m.cursor = max(0, m.cursor-m.visibleRows())
+		case msg.String() == "pgdown":
+			filtered := m.filteredObjects()
+			m.cursor = min(m.cursor+m.visibleRows(), max(0, len(filtered)-1))
 		case key.Matches(msg, theme.Keys.Filter):
 			m.filtering = true
 			m.filterInput = textinput.New()

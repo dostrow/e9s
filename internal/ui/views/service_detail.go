@@ -44,6 +44,10 @@ func (m ServiceDetailModel) Update(msg tea.Msg) (ServiceDetailModel, tea.Cmd) {
 			}
 		case key.Matches(msg, theme.Keys.Down):
 			m.scroll++
+		case msg.String() == "pgup":
+			m.scroll = max(0, m.scroll-15)
+		case msg.String() == "pgdown":
+			m.scroll += 15
 		case msg.String() == "tab":
 			if m.tab == tabDeployments {
 				m.tab = tabEvents

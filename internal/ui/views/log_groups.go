@@ -71,6 +71,11 @@ func (m LogGroupsModel) Update(msg tea.Msg) (LogGroupsModel, tea.Cmd) {
 					m.selected[name] = true
 				}
 			}
+		case msg.String() == "pgup":
+			m.cursor = max(0, m.cursor-m.visibleRows())
+		case msg.String() == "pgdown":
+			filtered := m.filteredGroups()
+			m.cursor = min(m.cursor+m.visibleRows(), max(0, len(filtered)-1))
 		case key.Matches(msg, theme.Keys.Filter):
 			m.filtering = true
 			m.filterInput = textinput.New()

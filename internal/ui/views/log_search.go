@@ -124,6 +124,12 @@ func (m LogSearchModel) Update(msg tea.Msg) (LogSearchModel, tea.Cmd) {
 				m.cursor++
 				m.adjustScroll()
 			}
+		case msg.String() == "pgup":
+			m.cursor = max(0, m.cursor-m.visibleLines())
+			m.adjustScroll()
+		case msg.String() == "pgdown":
+			m.cursor = min(m.cursor+m.visibleLines(), max(0, len(m.results)-1))
+			m.adjustScroll()
 		case msg.String() == "t", msg.String() == "T":
 			m.tsMode = (m.tsMode + 1) % 2
 		case msg.String() == "g":

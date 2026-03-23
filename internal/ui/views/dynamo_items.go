@@ -41,6 +41,10 @@ func (m DynamoItemsModel) Update(msg tea.Msg) (DynamoItemsModel, tea.Cmd) {
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
 			}
+		case msg.String() == "pgup":
+			m.cursor = max(0, m.cursor-m.visibleRows())
+		case msg.String() == "pgdown":
+			m.cursor = min(m.cursor+m.visibleRows(), max(0, len(m.items)-1))
 		}
 	}
 	return m, nil
