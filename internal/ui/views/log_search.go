@@ -96,13 +96,18 @@ func (m LogSearchModel) Update(msg tea.Msg) (LogSearchModel, tea.Cmd) {
 		case key.Matches(msg, theme.Keys.Enter):
 			if len(m.results) > 0 && m.cursor < len(m.results) {
 				entry := m.results[m.cursor]
+				logGroup := m.logGroup
 				stream := m.stream
+
 				if stream == "" {
-					stream = entry.Stream
+					// For multi-group results, entry.Stream is "group/stream"
+					// We need to split it back into the actual group and stream
+					logGroup, stream = splitGroupStream(entry.Stream, m.logGroup)
 				}
+
 				return m, func() tea.Msg {
 					return LogSearchJumpMsg{
-						LogGroup:  m.logGroup,
+						LogGroup:  logGroup,
 						Stream:    stream,
 						Timestamp: entry.Timestamp,
 						Pattern:   m.pattern,
@@ -186,9 +191,10 @@ func (m LogSearchModel) View() string {
 		streamLabel := ""
 		if entry.Stream != "" && m.stream == "" {
 			// Show stream name when viewing group-level results
-			short := entry.Stream
-			if len(short) > 30 {
-				short = "..." + short[len(short)-27:]
+			// Replace "|" separator with " / " for display
+			short := strings.ReplaceAll(entry.Stream, "|", " / ")
+			if len(short) > 40 {
+				short = "..." + short[len(short)-37:]
 			}
 			streamLabel = theme.HelpStyle.Render(fmt.Sprintf("[%s] ", short))
 		}
@@ -270,6 +276,21 @@ func highlightPattern(msg, pattern string) string {
 
 	highlighted := theme.ErrorStyle.Render(match) // red+bold for visibility
 	return before + highlighted + after
+}
+
+// splitGroupStream splits a "group|stream" composite back into group and stream.
+// If no "|" is found, falls back to using the provided defaultGroup and the
+// full value as the stream.
+func splitGroupStream(composite, defaultGroup string) (string, string) {
+	if idx := strings.Index(composite, "|"); idx != -1 {
+		return composite[:idx], composite[idx+1:]
+	}
+	// No pipe — might be just a group name (no stream) or a plain stream
+	if strings.HasPrefix(composite, "/") {
+		// Looks like a log group path — use it as the group, no specific stream
+		return composite, ""
+	}
+	return defaultGroup, composite
 }
 
 func (m LogSearchModel) Pattern() string {

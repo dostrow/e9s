@@ -377,12 +377,12 @@ func (c *Client) SearchMultiGroupLogs(ctx context.Context, logGroups []string, p
 			})
 			continue
 		}
-		// Tag entries with their log group for identification
+		// Tag entries with "group|stream" for identification
 		for i := range entries {
 			if entries[i].Stream == "" {
 				entries[i].Stream = lg
 			} else {
-				entries[i].Stream = lg + "/" + entries[i].Stream
+				entries[i].Stream = lg + "|" + entries[i].Stream
 			}
 		}
 		allEntries = append(allEntries, entries...)

@@ -229,12 +229,12 @@ func searchNextGroup(client *e9saws.Client, groups []string, idx int, pattern, s
 			}
 		}
 
-		// Tag entries with group name
+		// Tag entries with "group|stream" so we can split them back on jump
 		for i := range results {
 			if results[i].Stream == "" {
 				results[i].Stream = group
 			} else {
-				results[i].Stream = group + "/" + results[i].Stream
+				results[i].Stream = group + "|" + results[i].Stream
 			}
 		}
 
