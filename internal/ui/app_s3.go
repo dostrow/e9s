@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -101,12 +102,27 @@ func (a App) promptS3Download() (App, tea.Cmd) {
 }
 
 func (a App) doS3Download(destPath string) tea.Cmd {
+	destPath = strings.TrimSpace(destPath)
+	if destPath == "" {
+		return func() tea.Msg {
+			return s3DownloadDoneMsg{err: fmt.Errorf("no path specified")}
+		}
+	}
 	client := a.client
 	bucket := a.s3DownloadBucket
 	key := a.s3DownloadKey
 	isPrefix := a.s3DownloadIsPrefix
 
 	return func() tea.Msg {
+		// Ensure parent directory exists
+		dir := destPath
+		if !isPrefix {
+			dir = filepath.Dir(destPath)
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return s3DownloadDoneMsg{err: fmt.Errorf("cannot create directory %s: %w", dir, err)}
+		}
+
 		if isPrefix {
 			count, err := client.DownloadPrefix(context.Background(), bucket, key, destPath)
 			if err != nil {

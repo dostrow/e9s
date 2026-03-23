@@ -450,6 +450,19 @@ func (a App) promptSaveLogBuffer() (App, tea.Cmd) {
 }
 
 func (a App) doSaveLogBuffer(filename string) (App, tea.Cmd) {
+	filename = strings.TrimSpace(filename)
+	if filename == "" {
+		a.err = fmt.Errorf("no filename specified")
+		return a, nil
+	}
+
+	// Ensure parent directory exists
+	dir := filepath.Dir(filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		a.err = fmt.Errorf("cannot create directory %s: %w", dir, err)
+		return a, nil
+	}
+
 	lines := a.logView.ExportLines()
 	content := strings.Join(lines, "\n") + "\n"
 

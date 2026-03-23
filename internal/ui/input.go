@@ -52,12 +52,15 @@ type InputResultMsg struct {
 	Canceled bool
 }
 
-func NewInput(action InputAction, label, placeholder string) InputModel {
+func NewInput(action InputAction, label, defaultValue string) InputModel {
 	ti := textinput.New()
-	ti.Placeholder = placeholder
 	ti.Focus()
 	ti.CharLimit = 200
 	ti.Width = 40
+	if defaultValue != "" {
+		ti.SetValue(defaultValue)
+		ti.CursorEnd()
+	}
 
 	return InputModel{
 		Active: true,
