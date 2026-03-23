@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -176,7 +178,6 @@ func (a App) handleTimeRangePick(value string) (App, tea.Cmd) {
 func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	a.state = viewLogSearch
 
-	// Build display title
 	searchScope := a.logSearchGroup
 	if len(a.logSearchGroups) > 1 {
 		searchScope = fmt.Sprintf("%d groups", len(a.logSearchGroups))
@@ -186,25 +187,125 @@ func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 
 	client := a.client
 	groups := a.logSearchGroups
-	group := a.logSearchGroup
 	stream := a.logSearchStream
 	startMs := a.logSearchStartMs
 	endMs := a.logSearchEndMs
 
-	return a, func() tea.Msg {
-		if len(groups) > 1 {
-			// Multi-group search
-			results, err := client.SearchMultiGroupLogs(context.Background(), groups, pattern, startMs, endMs, 500)
-			return views.LogSearchResultsMsg{Results: results, Err: err}
-		}
-		// Single group search
+	if len(groups) > 1 {
+		// Multi-group: search each group sequentially, streaming results
+		return a, searchNextGroup(client, groups, 0, pattern, stream, startMs, endMs)
+	}
+
+	// Single group: paginated streaming search
+	return a, searchGroupPaginated(client, groups[0], stream, pattern, startMs, endMs, nil, 500, true)
+}
+
+// searchNextGroup searches one group and chains to the next via partial messages.
+func searchNextGroup(client *e9saws.Client, groups []string, idx int, pattern, stream string, startMs, endMs int64) tea.Cmd {
+	return func() tea.Msg {
+		group := groups[idx]
+		isLast := idx == len(groups)-1
+
 		var streams []string
 		if stream != "" {
 			streams = []string{stream}
 		}
-		results, err := client.SearchLogs(context.Background(), group, streams, pattern, startMs, endMs, 500)
-		return views.LogSearchResultsMsg{Results: results, Err: err}
+
+		perGroup := 500 / len(groups)
+		if perGroup < 50 {
+			perGroup = 50
+		}
+
+		results, err := client.SearchLogs(context.Background(), group, streams, pattern, startMs, endMs, perGroup)
+		if err != nil {
+			return views.LogSearchPartialMsg{
+				Results: []e9saws.LogEntry{{
+					Timestamp: startMs,
+					Message:   fmt.Sprintf("[error searching %s: %v]", group, err),
+					Stream:    group,
+				}},
+				Done:   isLast,
+				Source: group,
+			}
+		}
+
+		// Tag entries with group name
+		for i := range results {
+			if results[i].Stream == "" {
+				results[i].Stream = group
+			} else {
+				results[i].Stream = group + "/" + results[i].Stream
+			}
+		}
+
+		return views.LogSearchPartialMsg{
+			Results: results,
+			Done:    isLast,
+			Source:  group,
+		}
 	}
+}
+
+// searchGroupPaginated searches a single group page by page, streaming results.
+func searchGroupPaginated(client *e9saws.Client, group, stream, pattern string, startMs, endMs int64, nextToken *string, remaining int, isFirst bool) tea.Cmd {
+	return func() tea.Msg {
+		input := &cloudwatchlogs.FilterLogEventsInput{
+			LogGroupName:  &group,
+			FilterPattern: &pattern,
+		}
+		if stream != "" {
+			input.LogStreamNames = []string{stream}
+		}
+		if startMs > 0 {
+			input.StartTime = &startMs
+		}
+		if endMs > 0 {
+			input.EndTime = &endMs
+		}
+		pageLimit := min(remaining, 100)
+		limit := int32(pageLimit)
+		input.Limit = &limit
+		input.NextToken = nextToken
+
+		page, err := client.Logs.FilterLogEvents(context.Background(), input)
+		if err != nil {
+			return views.LogSearchResultsMsg{Err: err}
+		}
+
+		var entries []e9saws.LogEntry
+		for _, ev := range page.Events {
+			entries = append(entries, e9saws.LogEntry{
+				Timestamp: derefInt64Ptr(ev.Timestamp),
+				Message:   derefStrPtr(ev.Message),
+				Stream:    derefStrPtr(ev.LogStreamName),
+			})
+		}
+
+		remaining -= len(entries)
+		done := page.NextToken == nil || remaining <= 0
+
+		return views.LogSearchPartialMsg{
+			Results:   entries,
+			Done:      done,
+			Source:    group,
+			NextToken: page.NextToken,
+			Remaining: remaining,
+		}
+	}
+}
+
+func derefInt64Ptr(p *int64) int64 {
+	if p != nil {
+		return *p
+	}
+	return 0
+}
+
+func derefStrPtr(p *string) string {
+	if p != nil {
+		return *p
+	}
+	return ""
 }
 
 // --- Log Path Saving ---

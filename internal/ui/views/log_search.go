@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,10 +12,24 @@ import (
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
-// LogSearchResultsMsg is sent when search results arrive.
+// LogSearchResultsMsg is sent when all search results have arrived (legacy / final).
 type LogSearchResultsMsg struct {
 	Results []aws.LogEntry
 	Err     error
+}
+
+// LogSearchPartialMsg delivers a batch of results incrementally.
+type LogSearchPartialMsg struct {
+	Results   []aws.LogEntry
+	Done      bool   // true if this is the last batch
+	Source    string // e.g. log group name for multi-group
+	NextToken *string // for pagination chaining (nil if done)
+	Remaining int     // remaining results to fetch
+}
+
+// LogSearchErrorMsg reports a non-fatal error during search (e.g. one group failed).
+type LogSearchErrorMsg struct {
+	Message string
 }
 
 // LogSearchJumpMsg is sent when the user selects a search result to jump to.
@@ -51,12 +66,29 @@ func NewLogSearch(logGroup, stream, pattern string) LogSearchModel {
 func (m LogSearchModel) Update(msg tea.Msg) (LogSearchModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case LogSearchResultsMsg:
+		// Legacy full-results message
 		m.loading = false
 		if msg.Err != nil {
 			m.err = msg.Err
 			return m, nil
 		}
 		m.results = msg.Results
+		return m, nil
+
+	case LogSearchPartialMsg:
+		m.results = append(m.results, msg.Results...)
+		// Sort by timestamp as results arrive
+		sort.Slice(m.results, func(i, j int) bool {
+			return m.results[i].Timestamp < m.results[j].Timestamp
+		})
+		if msg.Done {
+			m.loading = false
+		}
+		return m, nil
+
+	case LogSearchErrorMsg:
+		// Non-fatal — show as a flash but keep searching
+		m.err = fmt.Errorf("%s", msg.Message)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -114,16 +146,14 @@ func (m LogSearchModel) View() string {
 	}
 	b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  in %s", scope)))
 	fmt.Fprintf(&b, "  [%d results]", len(m.results))
+	if m.loading {
+		b.WriteString(theme.HealthStyle("deploying").Render("  searching..."))
+	}
 	b.WriteString("\n\n")
 
-	if m.loading {
-		b.WriteString(theme.HelpStyle.Render("  Searching..."))
-		return b.String()
-	}
-
 	if m.err != nil {
-		b.WriteString(theme.ErrorStyle.Render(fmt.Sprintf("  Error: %v", m.err)))
-		return b.String()
+		b.WriteString(theme.ErrorStyle.Render(fmt.Sprintf("  %v", m.err)))
+		b.WriteString("\n\n")
 	}
 
 	if len(m.results) == 0 {
@@ -240,6 +270,10 @@ func highlightPattern(msg, pattern string) string {
 
 	highlighted := theme.ErrorStyle.Render(match) // red+bold for visibility
 	return before + highlighted + after
+}
+
+func (m LogSearchModel) Pattern() string {
+	return m.pattern
 }
 
 func (m LogSearchModel) SetSize(w, h int) LogSearchModel {
