@@ -155,5 +155,5 @@ func (m PickerModel) View() string {
 		Padding(1, 3).
 		Render(b.String())
 
-	return "\n" + box + "\n"
+	return box
 }

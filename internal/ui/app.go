@@ -1063,23 +1063,7 @@ func (a App) View() string {
 		statusBar = RenderStatusBarWithFlash(a.width, a.mode, a.modeTabs, breadcrumbs, a.client.Region(), a.flashMessage)
 	}
 
-	// Overlays
-	if a.help.Active {
-		return statusBar + "\n" + a.help.View(a.width)
-	}
-	if a.regionPicker.Active {
-		return statusBar + "\n" + a.regionPicker.View()
-	}
-	if a.confirm.Active {
-		return statusBar + "\n" + a.confirm.View()
-	}
-	if a.picker.Active {
-		return statusBar + "\n" + a.picker.View()
-	}
-	if a.input.Active {
-		return statusBar + "\n" + a.input.View()
-	}
-
+	// Always render the background content
 	var content string
 	switch a.state {
 	case viewClusters:
@@ -1141,7 +1125,26 @@ func (a App) View() string {
 	}
 	helpRendered := theme.HelpStyle.Render(wrapText(helpLine, wrapWidth))
 
-	return statusBar + "\n" + content + "\n" + helpRendered
+	fullView := statusBar + "\n" + content + "\n" + helpRendered
+
+	// Overlay modal dialogs on top of the background
+	if a.help.Active {
+		return renderOverlay(fullView, a.help.View(a.width), a.width, a.height)
+	}
+	if a.regionPicker.Active {
+		return renderOverlay(fullView, a.regionPicker.View(), a.width, a.height)
+	}
+	if a.confirm.Active {
+		return renderOverlay(fullView, a.confirm.View(), a.width, a.height)
+	}
+	if a.picker.Active {
+		return renderOverlay(fullView, a.picker.View(), a.width, a.height)
+	}
+	if a.input.Active {
+		return renderOverlay(fullView, a.input.View(), a.width, a.height)
+	}
+
+	return fullView
 }
 
 func maxLineWidth(s string) int {

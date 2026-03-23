@@ -104,7 +104,7 @@ func (m InputModel) View() string {
 		Padding(1, 3).
 		Render(fmt.Sprintf("%s\n\n%s\n\n[enter] confirm  [esc] cancel", m.Label, m.input.View()))
 
-	return "\n" + box + "\n"
+	return box
 }
 
 func ParseScaleInput(value string) (int, error) {

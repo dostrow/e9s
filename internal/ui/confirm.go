@@ -65,7 +65,7 @@ func (m ConfirmModel) View() string {
 		Padding(1, 3).
 		Render(fmt.Sprintf("%s\n\n[y] Yes  [n] No", m.Message))
 
-	return "\n" + box + "\n"
+	return box
 }
 
 func NewConfirm(action ConfirmAction, message string) ConfirmModel {
