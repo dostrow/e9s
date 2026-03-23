@@ -18,6 +18,8 @@ const (
 	ConfirmSMUpdate
 	ConfirmDynamoFieldEdit
 	ConfirmDynamoClone
+	ConfirmSQSDelete
+	ConfirmSQSSend
 )
 
 type ConfirmModel struct {

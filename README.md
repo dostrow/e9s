@@ -1,4 +1,4 @@
-# e9s
+# e9s - ElasticMS The Elastic Management System
 
 An interactive terminal UI for managing AWS infrastructure — ECS, CloudWatch Logs, SSM Parameter Store, Secrets Manager, S3, and Lambda — from a single tool.
 
@@ -163,95 +163,95 @@ e9s -p production -r us-east-2 -c my-cluster
 
 ### Global
 
-| Key | Action |
-|-----|--------|
-| `1`–`6` | Switch module (ECS, CW, SSM, SM, S3, λ) |
-| `j`/`k` or `↑`/`↓` | Navigate up/down |
-| `Enter` | Drill into selected item |
-| `Esc` | Go back to parent view |
-| `q` | Quit from anywhere |
-| `/` | Filter/search |
-| `R` | Refresh data |
-| `Ctrl+R` | Switch AWS region |
-| `?` | Help overlay |
+| Key                | Action                                  |
+| ------------------ | --------------------------------------- |
+| `1`–`6`            | Switch module (ECS, CW, SSM, SM, S3, λ) |
+| `j`/`k` or `↑`/`↓` | Navigate up/down                        |
+| `Enter`            | Drill into selected item                |
+| `Esc`              | Go back to parent view                  |
+| `q`                | Quit from anywhere                      |
+| `/`                | Filter/search                           |
+| `R`                | Refresh data                            |
+| `Ctrl+R`           | Switch AWS region                       |
+| `?`                | Help overlay                            |
 
 ### ECS — Service List
 
-| Key | Action |
-|-----|--------|
+| Key | Action                                   |
+| --- | ---------------------------------------- |
 | `r` | Force new deployment (with confirmation) |
-| `s` | Scale — prompt for desired count |
-| `d` | Service detail (deployments + events) |
-| `L` | Tail logs for entire service |
-| `m` | CPU/memory metrics + alarms |
-| `S` | Standalone tasks (non-service) |
+| `s` | Scale — prompt for desired count         |
+| `d` | Service detail (deployments + events)    |
+| `L` | Tail logs for entire service             |
+| `m` | CPU/memory metrics + alarms              |
+| `S` | Standalone tasks (non-service)           |
 
 ### ECS — Task List
 
-| Key | Action |
-|-----|--------|
-| `l` | Tail logs for selected task |
-| `x` | Stop task (with confirmation) |
+| Key | Action                          |
+| --- | ------------------------------- |
+| `l` | Tail logs for selected task     |
+| `x` | Stop task (with confirmation)   |
 | `e` | ECS Exec (shell into container) |
 
 ### ECS — Task/Lambda Detail
 
-| Key | Action |
-|-----|--------|
+| Key | Action                                              |
+| --- | --------------------------------------------------- |
 | `E` | View environment variables (with SSM/SM resolution) |
 
 ### Log Viewer
 
-| Key | Action |
-|-----|--------|
-| `f` | Toggle follow mode (auto-scroll) |
-| `t` | Cycle timestamps: relative → local → UTC |
-| `/` | Search — jump to matches with `n`/`N` |
-| `[`/`]` | Load older/newer log chunks |
-| `w` | Save buffer to file |
-| `g`/`G` | Jump to top/bottom |
-| `PgUp`/`PgDn` | Scroll by page |
+| Key           | Action                                   |
+| ------------- | ---------------------------------------- |
+| `f`           | Toggle follow mode (auto-scroll)         |
+| `t`           | Cycle timestamps: relative → local → UTC |
+| `/`           | Search — jump to matches with `n`/`N`    |
+| `[`/`]`       | Load older/newer log chunks              |
+| `w`           | Save buffer to file                      |
+| `g`/`G`       | Jump to top/bottom                       |
+| `PgUp`/`PgDn` | Scroll by page                           |
 
 ### CloudWatch — Log Groups/Streams
 
-| Key | Action |
-|-----|--------|
-| `l` | Tail selected stream/group |
-| `L` | Tail entire log group |
+| Key | Action                             |
+| --- | ---------------------------------- |
+| `l` | Tail selected stream/group         |
+| `L` | Tail entire log group              |
 | `s` | Search logs (time range + pattern) |
-| `W` | Save log path |
+| `W` | Save log path                      |
 
 ### SSM / Secrets Manager
 
-| Key | Action |
-|-----|--------|
+| Key     | Action                                              |
+| ------- | --------------------------------------------------- |
 | `Enter` | View value (SM shows pretty-printed JSON with tags) |
-| `e` | Edit value (with confirmation) |
-| `W` | Save prefix/filter |
+| `e`     | Edit value (with confirmation)                      |
+| `W`     | Save prefix/filter                                  |
 
 ### S3
 
-| Key | Action |
-|-----|--------|
+| Key     | Action                                  |
+| ------- | --------------------------------------- |
 | `Enter` | Browse into folder / view object detail |
-| `i` | View object detail + tags |
-| `D` | Download object or folder |
-| `W` | Save bucket search |
+| `i`     | View object detail + tags               |
+| `D`     | Download object or folder               |
+| `W`     | Save bucket search                      |
 
 ### Lambda
 
-| Key | Action |
-|-----|--------|
-| `Enter` | View function detail |
-| `l` | Tail function logs |
-| `s` | Search function logs |
-| `E` | View environment variables (from detail) |
-| `W` | Save search |
+| Key     | Action                                   |
+| ------- | ---------------------------------------- |
+| `Enter` | View function detail                     |
+| `l`     | Tail function logs                       |
+| `s`     | Search function logs                     |
+| `E`     | View environment variables (from detail) |
+| `W`     | Save search                              |
 
 ### All Pickers (saved items)
 
-| Key | Action |
-|-----|--------|
+| Key | Action                      |
+| --- | --------------------------- |
 | `d` | Delete selected saved entry |
 
 ## Configuration
@@ -266,7 +266,7 @@ defaults:
   refresh_interval: 5
 
 display:
-  timestamp_format: relative  # "relative" or "absolute"
+  timestamp_format: relative # "relative" or "absolute"
   max_events: 50
   max_log_lines: 1000
 
@@ -295,18 +295,18 @@ CLI flags override config file values.
 
 Your IAM identity needs permissions for whichever features you use:
 
-| Feature | API Calls |
-|---------|-----------|
-| ECS browse | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` |
-| ECS operations | `ecs:UpdateService`, `ecs:StopTask` |
-| ECS Exec | `ecs:ExecuteCommand`, `ssmmessages:*` |
-| Task definitions | `ecs:DescribeTaskDefinition` |
-| CloudWatch Logs | `logs:DescribeLogGroups`, `logs:DescribeLogStreams`, `logs:FilterLogEvents` |
-| CloudWatch Metrics | `cloudwatch:GetMetricData`, `cloudwatch:DescribeAlarms` |
-| SSM parameters | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter` |
-| Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue` |
-| S3 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging` |
-| Lambda | `lambda:ListFunctions`, `lambda:GetFunction` |
+| Feature            | API Calls                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| ECS browse         | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` |
+| ECS operations     | `ecs:UpdateService`, `ecs:StopTask`                                                                                          |
+| ECS Exec           | `ecs:ExecuteCommand`, `ssmmessages:*`                                                                                        |
+| Task definitions   | `ecs:DescribeTaskDefinition`                                                                                                 |
+| CloudWatch Logs    | `logs:DescribeLogGroups`, `logs:DescribeLogStreams`, `logs:FilterLogEvents`                                                  |
+| CloudWatch Metrics | `cloudwatch:GetMetricData`, `cloudwatch:DescribeAlarms`                                                                      |
+| SSM parameters     | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter`                                       |
+| Secrets Manager    | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue`                               |
+| S3                 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging`                                 |
+| Lambda             | `lambda:ListFunctions`, `lambda:GetFunction`                                                                                 |
 
 ## Project Structure
 

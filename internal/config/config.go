@@ -24,6 +24,11 @@ type LogPathEntry struct {
 	Stream   string `yaml:"stream,omitempty"` // optional — empty means all streams
 }
 
+type SQSQueueEntry struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
+}
+
 type DynamoTable struct {
 	Name  string `yaml:"name"`
 	Table string `yaml:"table"`
@@ -76,6 +81,7 @@ type Config struct {
 		S3         *bool `yaml:"s3"`
 		Lambda     *bool `yaml:"lambda"`
 		DynamoDB   *bool `yaml:"dynamodb"`
+		SQS        *bool `yaml:"sqs"`
 	} `yaml:"modules"`
 	ExcludeServices []string `yaml:"exclude_services"`
 	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
@@ -84,6 +90,7 @@ type Config struct {
 	LambdaSearches  []LambdaSearch `yaml:"lambda_searches"`
 	DynamoTables    []DynamoTable  `yaml:"dynamo_tables"`
 	DynamoQueries   []DynamoQuery  `yaml:"dynamo_queries"`
+	SQSQueues       []SQSQueueEntry `yaml:"sqs_queues"`
 	LogPaths        []LogPathEntry `yaml:"log_paths"`
 }
 
@@ -292,6 +299,7 @@ func boolDefault(b *bool, def bool) bool {
 func (c *Config) ModuleS3() bool          { return boolDefault(c.Modules.S3, true) }
 func (c *Config) ModuleLambda() bool      { return boolDefault(c.Modules.Lambda, true) }
 func (c *Config) ModuleDynamoDB() bool    { return boolDefault(c.Modules.DynamoDB, true) }
+func (c *Config) ModuleSQS() bool         { return boolDefault(c.Modules.SQS, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCloudWatch() bool  { return boolDefault(c.Modules.CloudWatch, true) }
 func (c *Config) ModuleSSM() bool         { return boolDefault(c.Modules.SSM, true) }
@@ -307,6 +315,28 @@ func (c *Config) AddSMFilter(name, filter string) bool {
 	}
 	c.SMFilters = append(c.SMFilters, SMFilter{Name: name, Filter: filter})
 	return true
+}
+
+// AddSQSQueue adds or updates a saved SQS queue.
+func (c *Config) AddSQSQueue(name, url string) bool {
+	for i, q := range c.SQSQueues {
+		if q.Name == name {
+			c.SQSQueues[i].URL = url
+			return false
+		}
+	}
+	c.SQSQueues = append(c.SQSQueues, SQSQueueEntry{Name: name, URL: url})
+	return true
+}
+
+// RemoveSQSQueue removes a saved SQS queue by name.
+func (c *Config) RemoveSQSQueue(name string) {
+	for i, q := range c.SQSQueues {
+		if q.Name == name {
+			c.SQSQueues = append(c.SQSQueues[:i], c.SQSQueues[i+1:]...)
+			return
+		}
+	}
 }
 
 // AddDynamoTable adds or updates a saved DynamoDB table.

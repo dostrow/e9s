@@ -37,6 +37,8 @@ const (
 	InputDynamoFilterValue
 	InputDynamoPartiQL
 	InputDynamoQuerySaveName
+	InputSQSSearch
+	InputSQSSaveName
 )
 
 type InputModel struct {

@@ -123,6 +123,16 @@ type dynamoWriteDoneMsg struct {
 	err     error
 }
 
+// --- SQS Messages ---
+
+type sqsQueuesLoadedMsg struct{ queues []e9saws.SQSQueue }
+type sqsStatsLoadedMsg struct{ stats *e9saws.SQSQueueStats }
+type sqsMessagesReceivedMsg struct{ messages []e9saws.SQSMessage }
+type sqsSendReadyMsg struct {
+	queueURL string
+	template *e9saws.SQSSendTemplate
+}
+
 // --- Lambda Messages ---
 
 type lambdaFunctionsLoadedMsg struct{ functions []e9saws.LambdaFunction }

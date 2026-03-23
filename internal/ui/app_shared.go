@@ -122,6 +122,18 @@ func (a App) handlePickerDelete(msg PickerDeleteMsg) (App, tea.Cmd) {
 			a.flashExpiry = time.Now().Add(3 * time.Second)
 			return a.promptDynamoPartiQL()
 		}
+	case PickerSQSQueue:
+		if msg.Index < len(a.cfg.SQSQueues) {
+			name := a.cfg.SQSQueues[msg.Index].Name
+			a.cfg.RemoveSQSQueue(name)
+			if err := a.cfg.Save(); err != nil {
+				a.err = err
+				return a, nil
+			}
+			a.flashMessage = fmt.Sprintf("Deleted SQS queue %q", name)
+			a.flashExpiry = time.Now().Add(3 * time.Second)
+			return a.promptSQSBrowser()
+		}
 	case PickerS3Search:
 		if msg.Index < len(a.cfg.S3Searches) {
 			name := a.cfg.S3Searches[msg.Index].Name

@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
@@ -25,6 +26,7 @@ type Client struct {
 	S3     *s3.Client
 	Lambda   *lambda.Client
 	DynamoDB *dynamodb.Client
+	SQS      *sqs.Client
 	cfg    awscfg.Config
 	region string
 }
@@ -53,6 +55,7 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		S3:     s3.NewFromConfig(cfg),
 		Lambda:   lambda.NewFromConfig(cfg),
 		DynamoDB: dynamodb.NewFromConfig(cfg),
+		SQS:      sqs.NewFromConfig(cfg),
 		cfg:    cfg,
 		region: cfg.Region,
 	}, nil
@@ -77,6 +80,7 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	c.S3 = s3.NewFromConfig(cfg)
 	c.Lambda = lambda.NewFromConfig(cfg)
 	c.DynamoDB = dynamodb.NewFromConfig(cfg)
+	c.SQS = sqs.NewFromConfig(cfg)
 	c.cfg = cfg
 	c.region = region
 	return nil

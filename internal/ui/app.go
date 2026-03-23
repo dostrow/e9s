@@ -26,6 +26,7 @@ const (
 	modeS3
 	modeLambda
 	modeDynamoDB
+	modeSQS
 )
 
 type viewState int
@@ -52,6 +53,10 @@ const (
 	viewDynamoTables
 	viewDynamoItems
 	viewDynamoItemDetail
+	viewSQSQueues
+	viewSQSDetail
+	viewSQSMessages
+	viewSQSMessageDetail
 	viewLogGroups
 	viewLogStreams
 	viewLogSearch
@@ -87,6 +92,10 @@ type App struct {
 	dynamoTablesView  views.DynamoTablesModel
 	dynamoItemsView   views.DynamoItemsModel
 	dynamoDetailView  views.DynamoItemDetailModel
+	sqsQueuesView     views.SQSQueuesModel
+	sqsDetailView     views.SQSDetailModel
+	sqsMessagesView   views.SQSMessagesModel
+	sqsMsgDetailView  views.SQSMessageDetailModel
 	regionPicker      views.RegionPickerModel
 
 	// Navigation context
@@ -113,6 +122,8 @@ type App struct {
 	dynamoFilterOp     string
 	dynamoFilterExpr   bool
 	dynamoLastPartiQL  string
+	sqsSendQueueURL    string
+	sqsSendTemplate    *e9saws.SQSSendTemplate
 	dynamoEditField    string
 	dynamoEditValue    string
 	dynamoEditItem     *e9saws.DynamoItem
@@ -161,6 +172,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeS3, "S3", cfg.ModuleS3()},
 		{modeLambda, "λ", cfg.ModuleLambda()},
 		{modeDynamoDB, "DDB", cfg.ModuleDynamoDB()},
+		{modeSQS, "SQS", cfg.ModuleSQS()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -202,6 +214,7 @@ func resolveDefaultMode(s string) *topMode {
 		"S3": modeS3, "s3": modeS3,
 		"Lambda": modeLambda, "lambda": modeLambda,
 		"DynamoDB": modeDynamoDB, "dynamodb": modeDynamoDB, "DDB": modeDynamoDB, "ddb": modeDynamoDB,
+		"SQS": modeSQS, "sqs": modeSQS,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -261,6 +274,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.dynamoTablesView = a.dynamoTablesView.SetSize(w, h)
 		a.dynamoItemsView = a.dynamoItemsView.SetSize(w, h)
 		a.dynamoDetailView = a.dynamoDetailView.SetSize(w, h)
+		a.sqsQueuesView = a.sqsQueuesView.SetSize(w, h)
+		a.sqsDetailView = a.sqsDetailView.SetSize(w, h)
+		a.sqsMessagesView = a.sqsMessagesView.SetSize(w, h)
+		a.sqsMsgDetailView = a.sqsMsgDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -620,6 +637,31 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, false)
 		return a, nil
 
+	// --- SQS messages ---
+	case sqsQueuesLoadedMsg:
+		a.sqsQueuesView = a.sqsQueuesView.SetQueues(msg.queues)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case sqsStatsLoadedMsg:
+		a.sqsDetailView = a.sqsDetailView.SetStats(msg.stats)
+		a.loading = false
+		return a, nil
+
+	case sqsMessagesReceivedMsg:
+		a.sqsMessagesView = a.sqsMessagesView.SetMessages(msg.messages)
+		a.loading = false
+		a.flashMessage = fmt.Sprintf("Received %d messages", len(msg.messages))
+		a.flashExpiry = time.Now().Add(3 * time.Second)
+		return a, nil
+
+	case sqsSendReadyMsg:
+		a.confirm = NewConfirm(ConfirmSQSSend, "Send this message?")
+		a.sqsSendQueueURL = msg.queueURL
+		a.sqsSendTemplate = msg.template
+		return a, nil
+
 	// --- Lambda messages ---
 	case lambdaFunctionsLoadedMsg:
 		a.lambdaListView = a.lambdaListView.SetFunctions(msg.functions)
@@ -712,6 +754,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doDynamoFieldEdit()
 		case ConfirmDynamoClone:
 			return a, a.doDynamoClone()
+		case ConfirmSQSDelete:
+			return a, a.doDeleteSQSMessage()
+		case ConfirmSQSSend:
+			if a.sqsSendTemplate != nil {
+				return a, a.doSendSQSMessage(a.sqsSendQueueURL, a.sqsSendTemplate)
+			}
 		}
 		return a, nil
 
@@ -773,6 +821,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.executeDynamoPartiQL(msg.Value)
 		case InputDynamoQuerySaveName:
 			return a.doSaveDynamoQuery(msg.Value)
+		case InputSQSSearch:
+			return a.openSQSQueues(msg.Value)
+		case InputSQSSaveName:
+			return a.doSaveSQSQueue(msg.Value)
 		}
 		return a, nil
 
@@ -814,6 +866,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			return a.openLambdaList(a.cfg.LambdaSearches[msg.Index].Filter)
+		case PickerSQSQueue:
+			if msg.Index == len(a.cfg.SQSQueues) {
+				a.input = NewInput(InputSQSSearch, "Search queues (prefix match)", "")
+				return a, nil
+			}
+			q := a.cfg.SQSQueues[msg.Index]
+			return a.openSQSDetail(q.Name, q.URL)
 		case PickerDynamoTable:
 			if msg.Index == len(a.cfg.DynamoTables) {
 				a.input = NewInput(InputDynamoSearch, "Search tables (substring match, or empty for all)", "")
@@ -1028,6 +1087,37 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "c":
 				return a.cloneDynamoItem()
 			}
+		case viewSQSQueues:
+			switch msg.String() {
+			case "W":
+				return a.saveSQSQueue()
+			}
+		case viewSQSDetail:
+			switch msg.String() {
+			case "m":
+				return a.openSQSMessages()
+			case "s":
+				return a.sendSQSMessage()
+			}
+		case viewSQSMessages:
+			switch msg.String() {
+			case "p":
+				return a.pollSQSMessages()
+			case "x":
+				return a.deleteSQSMessage()
+			case "s":
+				return a.sendSQSMessage()
+			case "X":
+				a.sqsMessagesView = a.sqsMessagesView.ClearMessages()
+				return a, nil
+			}
+		case viewSQSMessageDetail:
+			switch msg.String() {
+			case "x":
+				return a.deleteSQSMessage()
+			case "c":
+				return a.cloneSQSMessage()
+			}
 		case viewLambdaList:
 			switch msg.String() {
 			case "W":
@@ -1111,6 +1201,12 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.dynamoItemsView, cmd = a.dynamoItemsView.Update(msg)
 	case viewDynamoItemDetail:
 		a.dynamoDetailView, cmd = a.dynamoDetailView.Update(msg)
+	case viewSQSQueues:
+		a.sqsQueuesView, cmd = a.sqsQueuesView.Update(msg)
+	case viewSQSMessages:
+		a.sqsMessagesView, cmd = a.sqsMessagesView.Update(msg)
+	case viewSQSMessageDetail:
+		a.sqsMsgDetailView, cmd = a.sqsMsgDetailView.Update(msg)
 	case viewEnvVars:
 		a.envVarsView, cmd = a.envVarsView.Update(msg)
 	case viewLogGroups:
@@ -1145,6 +1241,8 @@ func (a App) isFiltering() bool {
 		return a.lambdaListView.IsFiltering()
 	case viewDynamoTables:
 		return a.dynamoTablesView.IsFiltering()
+	case viewSQSQueues:
+		return a.sqsQueuesView.IsFiltering()
 	case viewEnvVars:
 		return a.envVarsView.IsFiltering()
 	case viewLogGroups:
@@ -1224,6 +1322,14 @@ func (a App) View() string {
 		content = a.dynamoItemsView.View()
 	case viewDynamoItemDetail:
 		content = a.dynamoDetailView.View()
+	case viewSQSQueues:
+		content = a.sqsQueuesView.View()
+	case viewSQSDetail:
+		content = a.sqsDetailView.View()
+	case viewSQSMessages:
+		content = a.sqsMessagesView.View()
+	case viewSQSMessageDetail:
+		content = a.sqsMsgDetailView.View()
 	case viewEnvVars:
 		content = a.envVarsView.View()
 	case viewLogGroups:
@@ -1349,6 +1455,14 @@ func (a App) helpText() string {
 		contextHelp = "  [enter] detail  [f] filter scan  [p] PartiQL  [W] save query  [esc] back"
 	case viewDynamoItemDetail:
 		contextHelp = "  [e] edit field  [c] clone item  [j/k] scroll  [g/G] top/bottom  [esc] back"
+	case viewSQSQueues:
+		contextHelp = "  [enter] detail  [W] save queue  [/] filter  [esc] back"
+	case viewSQSDetail:
+		contextHelp = "  [m] messages  [s] send message  [R] refresh  [esc] back"
+	case viewSQSMessages:
+		contextHelp = "  [enter] detail  [p] poll  [s] send  [x] delete  [X] clear all  [esc] back"
+	case viewSQSMessageDetail:
+		contextHelp = "  [c] clone & send  [x] delete  [j/k] scroll  [g/G] top/bottom  [esc] back"
 	case viewEnvVars:
 		contextHelp = "  [a] toggle ARNs/values  [/] filter  [esc] back"
 	case viewLogGroups:
@@ -1418,6 +1532,19 @@ func (a App) drillDown() (App, tea.Cmd) {
 			}
 			return a, a.loadS3Detail(a.s3ObjectsView.Bucket(), obj.Key)
 		}
+	case viewSQSQueues:
+		if q := a.sqsQueuesView.SelectedQueue(); q != nil {
+			return a.openSQSDetail(q.Name, q.URL)
+		}
+	case viewSQSMessages:
+		if msg := a.sqsMessagesView.SelectedMessage(); msg != nil {
+			a.state = viewSQSMessageDetail
+			qn := a.sqsMessagesView.QueueName()
+			qu := a.sqsMessagesView.QueueURL()
+			a.sqsMsgDetailView = views.NewSQSMessageDetail(qn, qu, msg)
+			a.sqsMsgDetailView = a.sqsMsgDetailView.SetSize(a.width-3, a.height-6)
+			return a, nil
+		}
 	case viewDynamoTables:
 		table := a.dynamoTablesView.SelectedTable()
 		if table != "" {
@@ -1474,6 +1601,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.promptLambdaBrowser()
 	case modeDynamoDB:
 		return a.promptDynamoBrowser()
+	case modeSQS:
+		return a.promptSQSBrowser()
 	}
 	return a, nil
 }
@@ -1565,6 +1694,17 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a.switchMode(modeECS)
 	case viewLambdaDetail:
 		a.state = viewLambdaList
+		return a, nil
+	case viewSQSQueues:
+		return a.switchMode(modeECS)
+	case viewSQSDetail:
+		a.state = viewSQSQueues
+		return a, nil
+	case viewSQSMessages:
+		a.state = viewSQSDetail
+		return a, nil
+	case viewSQSMessageDetail:
+		a.state = viewSQSMessages
 		return a, nil
 	case viewDynamoTables:
 		return a.switchMode(modeECS)
