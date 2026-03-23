@@ -108,7 +108,11 @@ func formatDynamoValue(v interface{}) string {
 	}
 	switch val := v.(type) {
 	case string:
-		return val
+		// Collapse multi-line values to single line for table display
+		s := strings.ReplaceAll(val, "\n", "\\n")
+		s = strings.ReplaceAll(s, "\r", "")
+		s = strings.ReplaceAll(s, "\t", " ")
+		return s
 	case float64:
 		if val == float64(int64(val)) {
 			return fmt.Sprintf("%d", int64(val))

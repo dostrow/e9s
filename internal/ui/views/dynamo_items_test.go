@@ -44,6 +44,7 @@ func TestFormatDynamoValue(t *testing.T) {
 	}{
 		{"nil", nil, ""},
 		{"string", "hello", "hello"},
+		{"multiline string", "line1\nline2\nline3", `line1\nline2\nline3`},
 		{"integer float", float64(42), "42"},
 		{"decimal float", float64(3.14), "3.14"},
 		{"bool true", true, "true"},
