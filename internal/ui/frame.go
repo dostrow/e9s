@@ -51,7 +51,14 @@ func renderFrame(width, height int, infoBar, content, actionBar, modeLabel strin
 	// Content area - fill available height
 	// Height budget: top border(1) + info(1) + sep(1) + sep(1) + action(1) + bottom(1) = 6 chrome lines
 	contentHeight := height - 6
-	contentLines := strings.Split(content, "\n")
+
+	// Wrap long content lines to fit within the frame
+	rawLines := strings.Split(content, "\n")
+	var contentLines []string
+	for _, line := range rawLines {
+		wrapped := wrapLineToWidth(line, innerWidth)
+		contentLines = append(contentLines, wrapped...)
+	}
 	totalLines := len(contentLines)
 	hasScrollbar := totalLines > contentHeight && contentHeight > 2
 
@@ -105,6 +112,32 @@ func renderFrame(width, height int, infoBar, content, actionBar, modeLabel strin
 	b.WriteString(bl + modeStr + strings.Repeat(hLine, remaining) + br)
 
 	return b.String()
+}
+
+// wrapLineToWidth splits a line that exceeds the given visual width into
+// multiple lines. Handles ANSI-styled text by measuring visual width.
+func wrapLineToWidth(line string, maxWidth int) []string {
+	if maxWidth <= 0 {
+		return []string{line}
+	}
+	visual := lipgloss.Width(line)
+	if visual <= maxWidth {
+		return []string{line}
+	}
+
+	// For lines with ANSI codes, work on the plain text and rebuild
+	// This is a simple character-based wrap (not word-aware) since
+	// log lines may not have natural word boundaries
+	plain := stripAnsi(line)
+	runes := []rune(plain)
+
+	var lines []string
+	for len(runes) > 0 {
+		end := min(maxWidth, len(runes))
+		lines = append(lines, string(runes[:end]))
+		runes = runes[end:]
+	}
+	return lines
 }
 
 // padToWidth pads a string with spaces to reach exactly the given visual width.
