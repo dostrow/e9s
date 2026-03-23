@@ -656,6 +656,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(3 * time.Second)
 		return a, nil
 
+	case sqsDLQResolvedMsg:
+		return a.openSQSDetail(msg.name, msg.url)
+
 	case sqsSendReadyMsg:
 		a.confirm = NewConfirm(ConfirmSQSSend, "Send this message?")
 		a.sqsSendQueueURL = msg.queueURL
@@ -1098,6 +1101,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.openSQSMessages()
 			case "s":
 				return a.sendSQSMessage()
+			case "d":
+				return a.openSQSDLQ()
 			}
 		case viewSQSMessages:
 			switch msg.String() {
@@ -1458,7 +1463,7 @@ func (a App) helpText() string {
 	case viewSQSQueues:
 		contextHelp = "  [enter] detail  [W] save queue  [/] filter  [esc] back"
 	case viewSQSDetail:
-		contextHelp = "  [m] messages  [s] send message  [R] refresh  [esc] back"
+		contextHelp = "  [m] messages  [s] send message  [d] dead letter queue  [R] refresh  [esc] back"
 	case viewSQSMessages:
 		contextHelp = "  [enter] detail  [p] poll  [s] send  [x] delete  [X] clear all  [esc] back"
 	case viewSQSMessageDetail:

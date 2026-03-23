@@ -86,6 +86,28 @@ func (a App) doSaveSQSQueue(name string) (App, tea.Cmd) {
 	return a, nil
 }
 
+// --- Dead Letter Queue ---
+
+func (a App) openSQSDLQ() (App, tea.Cmd) {
+	stats := a.sqsDetailView.Stats()
+	if stats == nil || stats.DeadLetterTargetARN == "" {
+		a.err = fmt.Errorf("no dead letter queue configured")
+		return a, nil
+	}
+
+	dlqName := aws.QueueNameFromARN(stats.DeadLetterTargetARN)
+	client := a.client
+	a.loading = true
+
+	return a, func() tea.Msg {
+		url, err := client.GetQueueURL(context.Background(), dlqName)
+		if err != nil {
+			return errMsg{err}
+		}
+		return sqsDLQResolvedMsg{name: dlqName, url: url}
+	}
+}
+
 // --- Message Polling ---
 
 func (a App) openSQSMessages() (App, tea.Cmd) {

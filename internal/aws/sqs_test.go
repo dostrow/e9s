@@ -89,6 +89,23 @@ func TestParseSendTemplate_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestQueueNameFromARN(t *testing.T) {
+	tests := []struct {
+		arn  string
+		want string
+	}{
+		{"arn:aws:sqs:us-east-1:123456789012:my-dlq", "my-dlq"},
+		{"arn:aws:sqs:us-east-1:123456789012:my-queue.fifo", "my-queue.fifo"},
+		{"not-an-arn", "not-an-arn"},
+	}
+	for _, tt := range tests {
+		got := QueueNameFromARN(tt.arn)
+		if got != tt.want {
+			t.Errorf("QueueNameFromARN(%q) = %q, want %q", tt.arn, got, tt.want)
+		}
+	}
+}
+
 func TestAtoi(t *testing.T) {
 	if atoi("42") != 42 {
 		t.Error("atoi(42) failed")

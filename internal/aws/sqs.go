@@ -252,6 +252,30 @@ func ParseSendTemplate(jsonStr string) (*SQSSendTemplate, error) {
 	return &tmpl, nil
 }
 
+// GetQueueURL resolves a queue name to its URL.
+func (c *Client) GetQueueURL(ctx context.Context, queueName string) (string, error) {
+	out, err := c.SQS.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{
+		QueueName: &queueName,
+	})
+	if err != nil {
+		return "", err
+	}
+	if out.QueueUrl == nil {
+		return "", fmt.Errorf("queue %q not found", queueName)
+	}
+	return *out.QueueUrl, nil
+}
+
+// QueueNameFromARN extracts the queue name from an SQS ARN.
+func QueueNameFromARN(arn string) string {
+	// ARN format: arn:aws:sqs:region:account:queue-name
+	parts := strings.Split(arn, ":")
+	if len(parts) >= 6 {
+		return parts[5]
+	}
+	return arn
+}
+
 func queueNameFromURL(url string) string {
 	parts := strings.Split(url, "/")
 	if len(parts) > 0 {

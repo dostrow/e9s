@@ -128,6 +128,10 @@ type dynamoWriteDoneMsg struct {
 type sqsQueuesLoadedMsg struct{ queues []e9saws.SQSQueue }
 type sqsStatsLoadedMsg struct{ stats *e9saws.SQSQueueStats }
 type sqsMessagesReceivedMsg struct{ messages []e9saws.SQSMessage }
+type sqsDLQResolvedMsg struct {
+	name string
+	url  string
+}
 type sqsSendReadyMsg struct {
 	queueURL string
 	template *e9saws.SQSSendTemplate
