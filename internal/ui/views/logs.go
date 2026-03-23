@@ -446,18 +446,16 @@ func (m LogViewerModel) View() string {
 
 	indent := "  " + strings.Repeat(" ", tsWidth) + "  "
 
+	// Available width for message text (frame borders + marker + timestamp + gap)
+	msgWidth := m.width - 29
+	if msgWidth < 20 {
+		msgWidth = 20
+	}
+
 	for i := start; i < end; i++ {
 		line := m.lines[i]
 		ts := m.formatTimestamp(line.timestamp)
 		tsStr := theme.HelpStyle.Render(ts)
-
-		msgLines := strings.Split(line.message, "\n")
-		firstLine := msgLines[0]
-
-		// Highlight search matches on all lines
-		if m.search != "" {
-			firstLine = highlightSearch(firstLine, m.search)
-		}
 
 		// Mark the current match with a marker
 		marker := "  "
@@ -465,12 +463,20 @@ func (m LogViewerModel) View() string {
 			marker = "» "
 		}
 
-		fmt.Fprintf(&b, "%s%s  %s\n", marker, tsStr, firstLine)
-		for _, cont := range msgLines[1:] {
-			if m.search != "" {
-				cont = highlightSearch(cont, m.search)
+		// Split on embedded newlines, then wrap each to fit the frame
+		msgLines := strings.Split(line.message, "\n")
+		for li, msgLine := range msgLines {
+			wrapped := wrapPlainText(msgLine, msgWidth)
+			for wi, wLine := range wrapped {
+				if m.search != "" {
+					wLine = highlightSearch(wLine, m.search)
+				}
+				if li == 0 && wi == 0 {
+					fmt.Fprintf(&b, "%s%s  %s\n", marker, tsStr, wLine)
+				} else {
+					b.WriteString(indent + wLine + "\n")
+				}
 			}
-			b.WriteString(indent + cont + "\n")
 		}
 	}
 
@@ -677,6 +683,24 @@ func (m LogViewerModel) ExportLines() []string {
 		}
 	}
 	return out
+}
+
+// wrapPlainText splits a plain text string into lines that fit within maxWidth.
+func wrapPlainText(s string, maxWidth int) []string {
+	if maxWidth <= 0 || len(s) <= maxWidth {
+		return []string{s}
+	}
+	runes := []rune(s)
+	var lines []string
+	for len(runes) > 0 {
+		end := min(maxWidth, len(runes))
+		lines = append(lines, string(runes[:end]))
+		runes = runes[end:]
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
 }
 
 func (m LogViewerModel) IsFiltering() bool {
