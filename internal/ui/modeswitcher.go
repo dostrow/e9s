@@ -78,6 +78,8 @@ func (m ModeSwitcherModel) Update(msg tea.Msg) (ModeSwitcherModel, tea.Cmd) {
 			return m, func() tea.Msg {
 				return ModeSaveDefaultMsg{Mode: mode}
 			}
+		case "q":
+			return m, tea.Quit
 		case "esc", "`":
 			m.Active = false
 			return m, nil
@@ -113,7 +115,7 @@ func (m ModeSwitcherModel) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(theme.HelpStyle.Render("\n[enter] select  [d] set default  [esc] cancel"))
+	b.WriteString(theme.HelpStyle.Render("\n[enter] select  [d] set default  [esc] cancel  [q] quit"))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
