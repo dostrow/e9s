@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
@@ -76,10 +77,11 @@ func (m DynamoItemsModel) View() string {
 		cells := make([]components.Cell, len(cols))
 		for i, col := range cols {
 			val := formatDynamoValue(item[col])
-			if len(val) > 40 {
-				val = val[:40] + ".."
+			if len(val) > 50 {
+				cells[i] = components.Styled("[enter for detail]", lipgloss.NewStyle().Foreground(theme.ColorDim).Italic(true))
+			} else {
+				cells[i] = components.Plain(val)
 			}
-			cells[i] = components.Plain(val)
 		}
 		tbl.AddRow(cells...)
 	}
