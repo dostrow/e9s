@@ -427,15 +427,8 @@ func (m LogViewerModel) View() string {
 
 	visible := m.visibleLines()
 
-	start := m.scroll
-	if start > len(m.lines)-visible {
-		start = len(m.lines) - visible
-	}
-	start = max(0, start)
-	end := start + visible
-	if end > len(m.lines) {
-		end = len(m.lines)
-	}
+	start := max(0, min(m.scroll, len(m.lines)-visible))
+	end := min(start+visible, len(m.lines))
 
 	if len(m.lines) == 0 {
 		b.WriteString(theme.HelpStyle.Render("  Waiting for logs..."))

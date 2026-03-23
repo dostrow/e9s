@@ -141,10 +141,7 @@ func (m ServiceDetailModel) renderEvents() string {
 
 	var b strings.Builder
 
-	maxEvents := 50
-	if len(m.service.Events) < maxEvents {
-		maxEvents = len(m.service.Events)
-	}
+	maxEvents := min(50, len(m.service.Events))
 
 	start := m.scroll
 	if start >= maxEvents {

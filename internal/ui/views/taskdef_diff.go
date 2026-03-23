@@ -60,15 +60,8 @@ func (m TaskDefDiffModel) View() string {
 		visible = 20
 	}
 
-	start := m.scroll
-	if start > len(lines)-visible {
-		start = len(lines) - visible
-	}
-	start = max(0, start)
-	end := start + visible
-	if end > len(lines) {
-		end = len(lines)
-	}
+	start := max(0, min(m.scroll, len(lines)-visible))
+	end := min(start+visible, len(lines))
 
 	for _, line := range lines[start:end] {
 		styled := styleDiffLine(line)

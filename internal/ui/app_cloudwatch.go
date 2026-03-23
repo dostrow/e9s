@@ -197,7 +197,7 @@ func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	}
 
 	// Single group: paginated streaming search
-	return a, searchGroupPaginated(client, groups[0], stream, pattern, startMs, endMs, nil, 500, true)
+	return a, searchGroupPaginated(client, groups[0], stream, pattern, startMs, endMs, nil, 500)
 }
 
 // searchNextGroup searches one group and chains to the next via partial messages.
@@ -211,10 +211,7 @@ func searchNextGroup(client *e9saws.Client, groups []string, idx int, pattern, s
 			streams = []string{stream}
 		}
 
-		perGroup := 500 / len(groups)
-		if perGroup < 50 {
-			perGroup = 50
-		}
+		perGroup := max(50, 500/len(groups))
 
 		results, err := client.SearchLogs(context.Background(), group, streams, pattern, startMs, endMs, perGroup)
 		if err != nil {
@@ -247,7 +244,7 @@ func searchNextGroup(client *e9saws.Client, groups []string, idx int, pattern, s
 }
 
 // searchGroupPaginated searches a single group page by page, streaming results.
-func searchGroupPaginated(client *e9saws.Client, group, stream, pattern string, startMs, endMs int64, nextToken *string, remaining int, isFirst bool) tea.Cmd {
+func searchGroupPaginated(client *e9saws.Client, group, stream, pattern string, startMs, endMs int64, nextToken *string, remaining int) tea.Cmd {
 	return func() tea.Msg {
 		input := &cloudwatchlogs.FilterLogEventsInput{
 			LogGroupName:  &group,

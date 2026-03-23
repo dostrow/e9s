@@ -375,7 +375,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !msg.Done && len(a.logSearchGroups) <= 1 && msg.NextToken != nil {
 				nextCmd := searchGroupPaginated(a.client, msg.Source, a.logSearchStream,
 					a.logSearchView.Pattern(), a.logSearchStartMs, a.logSearchEndMs,
-					msg.NextToken, msg.Remaining, false)
+					msg.NextToken, msg.Remaining)
 				return a, tea.Batch(viewCmd, nextCmd)
 			}
 			return a, viewCmd

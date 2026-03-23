@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -29,11 +30,14 @@ func (m LambdaDetailModel) View() string {
 	lines = append(lines, theme.TitleStyle.Render(fmt.Sprintf("  Lambda: %s", fn.Name)))
 	lines = append(lines, "")
 
-	stateStyle := theme.StatusStyle(fn.State)
-	if fn.State == "Active" {
+	var stateStyle lipgloss.Style
+	switch fn.State {
+	case "Active":
 		stateStyle = theme.HealthStyle("healthy")
-	} else if fn.State == "Failed" {
+	case "Failed":
 		stateStyle = theme.HealthStyle("unhealthy")
+	default:
+		stateStyle = theme.StatusStyle(fn.State)
 	}
 
 	lines = append(lines, fmt.Sprintf("  %-18s %s", "State:", stateStyle.Render(fn.State)))

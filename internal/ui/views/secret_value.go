@@ -80,9 +80,9 @@ func (m SecretValueModel) View() string {
 		b.WriteString(theme.TitleStyle.Render("  Tags"))
 		b.WriteString("\n")
 		for k, v := range m.tags {
-			b.WriteString(fmt.Sprintf("    %s = %s\n",
+			fmt.Fprintf(&b, "    %s = %s\n",
 				theme.HeaderStyle.Render(k),
-				v))
+				v)
 		}
 		b.WriteString("\n")
 	}

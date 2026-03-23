@@ -45,8 +45,8 @@ func (m S3DetailModel) View() string {
 		b.WriteString(theme.TitleStyle.Render("  Tags"))
 		b.WriteString("\n\n")
 		for k, v := range d.Tags {
-			b.WriteString(fmt.Sprintf("    %s = %s\n",
-				theme.HeaderStyle.Render(k), v))
+			fmt.Fprintf(&b, "    %s = %s\n",
+				theme.HeaderStyle.Render(k), v)
 		}
 	}
 

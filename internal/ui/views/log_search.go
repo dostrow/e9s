@@ -168,10 +168,7 @@ func (m LogSearchModel) View() string {
 
 	visible := m.visibleLines()
 	start := m.scroll
-	end := start + visible
-	if end > len(m.results) {
-		end = len(m.results)
-	}
+	end := min(start+visible, len(m.results))
 
 	for i := start; i < end; i++ {
 		entry := m.results[i]
@@ -282,8 +279,8 @@ func highlightPattern(msg, pattern string) string {
 // If no "|" is found, falls back to using the provided defaultGroup and the
 // full value as the stream.
 func splitGroupStream(composite, defaultGroup string) (string, string) {
-	if idx := strings.Index(composite, "|"); idx != -1 {
-		return composite[:idx], composite[idx+1:]
+	if group, stream, ok := strings.Cut(composite, "|"); ok {
+		return group, stream
 	}
 	// No pipe — might be just a group name (no stream) or a plain stream
 	if strings.HasPrefix(composite, "/") {
