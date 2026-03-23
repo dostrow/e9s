@@ -908,7 +908,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "`":
 			a.modeSwitcher = NewModeSwitcher(a.modeTabs, a.mode)
 			return a, nil
-		case msg.String() == "ctrl+,":
+		case msg.String() == "ctrl+e":
 			return a.openConfigEditor()
 		}
 
@@ -1360,7 +1360,7 @@ func (a App) helpText() string {
 	default:
 		return ""
 	}
-	return contextHelp + "  [`] mode  [ctrl+,] config  [q] quit  [?] help"
+	return contextHelp + "  [`] mode  [ctrl+e] config  [q] quit  [?] help"
 }
 
 // --- Navigation ---

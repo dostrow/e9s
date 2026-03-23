@@ -98,44 +98,61 @@ func DefaultConfig() Config {
 }
 
 // resolveConfigPath determines the config file path using XDG conventions.
-// Priority: XDG_CONFIG_HOME/e9s/config.yaml > ~/.config/e9s/config.yaml > ~/.e9s.yaml (legacy)
+// Priority: existing XDG path > existing legacy path > new XDG path
 func resolveConfigPath() string {
 	configPathOnce.Do(func() {
-		// Check XDG config dir (cross-platform: ~/.config on Linux/macOS, %APPDATA% on Windows)
+		var xdgPath, legacyPath string
+
+		// Determine XDG path
 		if xdgDir, err := os.UserConfigDir(); err == nil {
-			xdgPath := filepath.Join(xdgDir, "e9s", "config.yaml")
+			xdgPath = filepath.Join(xdgDir, "e9s", "config.yaml")
+		}
+
+		// Determine legacy path
+		if home, err := os.UserHomeDir(); err == nil {
+			legacyPath = filepath.Join(home, ".e9s.yaml")
+		}
+
+		// 1. If XDG config already exists, use it
+		if xdgPath != "" {
 			if _, err := os.Stat(xdgPath); err == nil {
 				configPath = xdgPath
 				return
 			}
-			// Check if legacy path exists for migration
-			if home, err := os.UserHomeDir(); err == nil {
-				legacyPath := filepath.Join(home, ".e9s.yaml")
-				if _, err := os.Stat(legacyPath); err == nil {
-					// Migrate: copy legacy to XDG location
-					if data, err := os.ReadFile(legacyPath); err == nil {
-						dir := filepath.Dir(xdgPath)
-						if err := os.MkdirAll(dir, 0755); err == nil {
+		}
+
+		// 2. If legacy config exists, migrate to XDG if possible
+		if legacyPath != "" {
+			if _, err := os.Stat(legacyPath); err == nil {
+				if xdgPath != "" {
+					// Try to migrate
+					dir := filepath.Dir(xdgPath)
+					if err := os.MkdirAll(dir, 0755); err == nil {
+						if data, err := os.ReadFile(legacyPath); err == nil {
 							if err := os.WriteFile(xdgPath, data, 0644); err == nil {
-								// Migration successful — remove legacy file
-								_ = os.Remove(legacyPath)
+								// Verify the new file exists and matches before removing legacy
+								if newData, err := os.ReadFile(xdgPath); err == nil && len(newData) == len(data) {
+									_ = os.Remove(legacyPath)
+								}
 								configPath = xdgPath
 								return
 							}
 						}
 					}
-					// Migration failed — use legacy path
-					configPath = legacyPath
-					return
 				}
+				// Migration failed or no XDG — use legacy
+				configPath = legacyPath
+				return
 			}
-			// No existing config — use XDG path for new config
+		}
+
+		// 3. No existing config — prefer XDG for new files
+		if xdgPath != "" {
 			configPath = xdgPath
 			return
 		}
-		// Fallback to legacy path
-		if home, err := os.UserHomeDir(); err == nil {
-			configPath = filepath.Join(home, ".e9s.yaml")
+		if legacyPath != "" {
+			configPath = legacyPath
 		}
 	})
 	return configPath
@@ -147,6 +164,7 @@ func Path() string {
 }
 
 // Load reads the config file, falling back to defaults.
+// Creates a default config file if none exists.
 func Load() Config {
 	cfg := DefaultConfig()
 
@@ -157,6 +175,8 @@ func Load() Config {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		// No config file — create one with defaults
+		_ = cfg.Save()
 		return cfg
 	}
 

@@ -65,7 +65,7 @@ func (m HelpModel) View(width int) string {
 		{"", ""},
 		{"Global", ""},
 		{"`", "Switch mode"},
-		{"ctrl+,", "Edit config"},
+		{"ctrl+e", "Edit config"},
 		{"ctrl+r", "Switch AWS region"},
 		{"q", "Quit"},
 		{"?", "Toggle this help"},
