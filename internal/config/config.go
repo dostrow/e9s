@@ -14,6 +14,16 @@ type LogPathEntry struct {
 	Stream   string `yaml:"stream,omitempty"` // optional — empty means all streams
 }
 
+type DynamoTable struct {
+	Name  string `yaml:"name"`
+	Table string `yaml:"table"`
+}
+
+type DynamoQuery struct {
+	Name      string `yaml:"name"`
+	Statement string `yaml:"statement"`
+}
+
 type LambdaSearch struct {
 	Name   string `yaml:"name"`
 	Filter string `yaml:"filter"`
@@ -53,12 +63,15 @@ type Config struct {
 		SM         *bool `yaml:"sm"`
 		S3         *bool `yaml:"s3"`
 		Lambda     *bool `yaml:"lambda"`
+		DynamoDB   *bool `yaml:"dynamodb"`
 	} `yaml:"modules"`
 	ExcludeServices []string `yaml:"exclude_services"`
 	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
 	SMFilters       []SMFilter     `yaml:"sm_filters"`
 	S3Searches      []S3Search     `yaml:"s3_searches"`
 	LambdaSearches  []LambdaSearch `yaml:"lambda_searches"`
+	DynamoTables    []DynamoTable  `yaml:"dynamo_tables"`
+	DynamoQueries   []DynamoQuery  `yaml:"dynamo_queries"`
 	LogPaths        []LogPathEntry `yaml:"log_paths"`
 }
 
@@ -150,6 +163,7 @@ func boolDefault(b *bool, def bool) bool {
 
 func (c *Config) ModuleS3() bool          { return boolDefault(c.Modules.S3, true) }
 func (c *Config) ModuleLambda() bool      { return boolDefault(c.Modules.Lambda, true) }
+func (c *Config) ModuleDynamoDB() bool    { return boolDefault(c.Modules.DynamoDB, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCloudWatch() bool  { return boolDefault(c.Modules.CloudWatch, true) }
 func (c *Config) ModuleSSM() bool         { return boolDefault(c.Modules.SSM, true) }
@@ -165,6 +179,50 @@ func (c *Config) AddSMFilter(name, filter string) bool {
 	}
 	c.SMFilters = append(c.SMFilters, SMFilter{Name: name, Filter: filter})
 	return true
+}
+
+// AddDynamoTable adds or updates a saved DynamoDB table.
+func (c *Config) AddDynamoTable(name, table string) bool {
+	for i, t := range c.DynamoTables {
+		if t.Name == name {
+			c.DynamoTables[i].Table = table
+			return false
+		}
+	}
+	c.DynamoTables = append(c.DynamoTables, DynamoTable{Name: name, Table: table})
+	return true
+}
+
+// RemoveDynamoTable removes a saved DynamoDB table by name.
+func (c *Config) RemoveDynamoTable(name string) {
+	for i, t := range c.DynamoTables {
+		if t.Name == name {
+			c.DynamoTables = append(c.DynamoTables[:i], c.DynamoTables[i+1:]...)
+			return
+		}
+	}
+}
+
+// AddDynamoQuery adds or updates a saved PartiQL query.
+func (c *Config) AddDynamoQuery(name, statement string) bool {
+	for i, q := range c.DynamoQueries {
+		if q.Name == name {
+			c.DynamoQueries[i].Statement = statement
+			return false
+		}
+	}
+	c.DynamoQueries = append(c.DynamoQueries, DynamoQuery{Name: name, Statement: statement})
+	return true
+}
+
+// RemoveDynamoQuery removes a saved PartiQL query by name.
+func (c *Config) RemoveDynamoQuery(name string) {
+	for i, q := range c.DynamoQueries {
+		if q.Name == name {
+			c.DynamoQueries = append(c.DynamoQueries[:i], c.DynamoQueries[i+1:]...)
+			return
+		}
+	}
 }
 
 // AddLambdaSearch adds or updates a saved Lambda search filter.

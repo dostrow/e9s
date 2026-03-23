@@ -86,6 +86,18 @@ type s3DownloadDoneMsg struct {
 	err     error
 }
 
+// --- DynamoDB Messages ---
+
+type dynamoTablesLoadedMsg struct{ tables []string }
+type dynamoItemsLoadedMsg struct {
+	items   []e9saws.DynamoItem
+	hasMore bool
+}
+type dynamoPartiQLResultMsg struct {
+	items []e9saws.DynamoItem
+	err   error
+}
+
 // --- Lambda Messages ---
 
 type lambdaFunctionsLoadedMsg struct{ functions []e9saws.LambdaFunction }

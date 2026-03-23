@@ -22,6 +22,9 @@ const (
 	PickerSMFilter
 	PickerS3Search
 	PickerLambdaSearch
+	PickerDynamoTable
+	PickerDynamoQuery
+	PickerDynamoFilterOp
 )
 
 type PickerModel struct {

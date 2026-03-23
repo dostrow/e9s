@@ -31,6 +31,12 @@ const (
 	InputS3Download
 	InputLambdaSearch
 	InputLambdaSaveName
+	InputDynamoSearch
+	InputDynamoSaveName
+	InputDynamoFilterAttr
+	InputDynamoFilterValue
+	InputDynamoPartiQL
+	InputDynamoQuerySaveName
 )
 
 type InputModel struct {

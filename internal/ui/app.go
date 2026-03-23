@@ -25,6 +25,7 @@ const (
 	modeSM
 	modeS3
 	modeLambda
+	modeDynamoDB
 )
 
 type viewState int
@@ -48,6 +49,9 @@ const (
 	viewS3Detail
 	viewLambdaList
 	viewLambdaDetail
+	viewDynamoTables
+	viewDynamoItems
+	viewDynamoItemDetail
 	viewLogGroups
 	viewLogStreams
 	viewLogSearch
@@ -80,6 +84,9 @@ type App struct {
 	s3DetailView      views.S3DetailModel
 	lambdaListView    views.LambdaListModel
 	lambdaDetailView  views.LambdaDetailModel
+	dynamoTablesView  views.DynamoTablesModel
+	dynamoItemsView   views.DynamoItemsModel
+	dynamoDetailView  views.DynamoItemDetailModel
 	regionPicker      views.RegionPickerModel
 
 	// Navigation context
@@ -101,6 +108,10 @@ type App struct {
 	s3DownloadBucket   string
 	s3DownloadKey      string
 	s3DownloadIsPrefix bool
+	dynamoFilterAttr   string
+	dynamoFilterOp     string
+	dynamoFilterExpr   bool
+	dynamoLastPartiQL  string
 
 	// Modal dialogs
 	confirm  ConfirmModel
@@ -142,6 +153,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeSM, "SM", cfg.ModuleSM()},
 		{modeS3, "S3", cfg.ModuleS3()},
 		{modeLambda, "λ", cfg.ModuleLambda()},
+		{modeDynamoDB, "DDB", cfg.ModuleDynamoDB()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -194,6 +206,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.s3DetailView = a.s3DetailView.SetSize(wsm.Width, h)
 		a.lambdaListView = a.lambdaListView.SetSize(wsm.Width, h)
 		a.lambdaDetailView = a.lambdaDetailView.SetSize(wsm.Width, h)
+		a.dynamoTablesView = a.dynamoTablesView.SetSize(wsm.Width, h)
+		a.dynamoItemsView = a.dynamoItemsView.SetSize(wsm.Width, h)
+		a.dynamoDetailView = a.dynamoDetailView.SetSize(wsm.Width, h)
 		a.envVarsView = a.envVarsView.SetSize(wsm.Width, h)
 		a.logGroupsView = a.logGroupsView.SetSize(wsm.Width, h)
 		a.logStreamsView = a.logStreamsView.SetSize(wsm.Width, h)
@@ -471,6 +486,28 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, nil
 
+	// --- DynamoDB messages ---
+	case dynamoTablesLoadedMsg:
+		a.dynamoTablesView = a.dynamoTablesView.SetTables(msg.tables)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case dynamoItemsLoadedMsg:
+		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, msg.hasMore)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case dynamoPartiQLResultMsg:
+		a.loading = false
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.dynamoItemsView = a.dynamoItemsView.SetItems(msg.items, false)
+		return a, nil
+
 	// --- Lambda messages ---
 	case lambdaFunctionsLoadedMsg:
 		a.lambdaListView = a.lambdaListView.SetFunctions(msg.functions)
@@ -586,6 +623,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openLambdaList(msg.Value)
 		case InputLambdaSaveName:
 			return a.doSaveLambdaSearch(msg.Value)
+		case InputDynamoSearch:
+			return a.openDynamoTables(msg.Value)
+		case InputDynamoSaveName:
+			return a.doSaveDynamoTable(msg.Value)
+		case InputDynamoFilterAttr:
+			a.dynamoFilterAttr = msg.Value
+			a.dynamoFilterExpr = false
+			return a.promptDynamoFilterOp()
+		case InputDynamoFilterValue:
+			return a.executeDynamoFilter(msg.Value)
+		case InputDynamoPartiQL:
+			return a.executeDynamoPartiQL(msg.Value)
+		case InputDynamoQuerySaveName:
+			return a.doSaveDynamoQuery(msg.Value)
 		}
 		return a, nil
 
@@ -627,6 +678,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			return a.openLambdaList(a.cfg.LambdaSearches[msg.Index].Filter)
+		case PickerDynamoTable:
+			if msg.Index == len(a.cfg.DynamoTables) {
+				a.input = NewInput(InputDynamoSearch, "Search tables (substring match, or empty for all)", "")
+				return a, nil
+			}
+			return a.openDynamoTableDirect(a.cfg.DynamoTables[msg.Index].Table)
+		case PickerDynamoQuery:
+			if msg.Index == len(a.cfg.DynamoQueries) {
+				tableName := a.dynamoItemsView.TableName()
+				a.input = NewInput(InputDynamoPartiQL, "PartiQL statement",
+					fmt.Sprintf("SELECT * FROM \"%s\" WHERE ", tableName))
+				return a, nil
+			}
+			return a.executeDynamoPartiQL(a.cfg.DynamoQueries[msg.Index].Statement)
+		case PickerDynamoFilterOp:
+			return a.handleDynamoFilterOp(msg.Value)
 		case PickerLogPath:
 			if msg.Index == len(a.cfg.LogPaths) {
 				a.input = NewInput(InputLogGroupPrefix, "Search log groups (prefix with / or substring match)", "")
@@ -760,6 +827,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "D":
 				return a.promptS3DownloadFromDetail()
 			}
+		case viewDynamoTables:
+			switch msg.String() {
+			case "W":
+				return a.saveDynamoTable()
+			}
+		case viewDynamoItems:
+			switch msg.String() {
+			case "f":
+				return a.promptDynamoFilter()
+			case "p":
+				return a.promptDynamoPartiQL()
+			case "W":
+				return a.saveDynamoQuery()
+			}
 		case viewLambdaList:
 			switch msg.String() {
 			case "W":
@@ -837,6 +918,12 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.s3ObjectsView, cmd = a.s3ObjectsView.Update(msg)
 	case viewLambdaList:
 		a.lambdaListView, cmd = a.lambdaListView.Update(msg)
+	case viewDynamoTables:
+		a.dynamoTablesView, cmd = a.dynamoTablesView.Update(msg)
+	case viewDynamoItems:
+		a.dynamoItemsView, cmd = a.dynamoItemsView.Update(msg)
+	case viewDynamoItemDetail:
+		a.dynamoDetailView, cmd = a.dynamoDetailView.Update(msg)
 	case viewEnvVars:
 		a.envVarsView, cmd = a.envVarsView.Update(msg)
 	case viewLogGroups:
@@ -869,6 +956,8 @@ func (a App) isFiltering() bool {
 		return a.s3ObjectsView.IsFiltering()
 	case viewLambdaList:
 		return a.lambdaListView.IsFiltering()
+	case viewDynamoTables:
+		return a.dynamoTablesView.IsFiltering()
 	case viewEnvVars:
 		return a.envVarsView.IsFiltering()
 	case viewLogGroups:
@@ -963,6 +1052,12 @@ func (a App) View() string {
 		content = a.lambdaListView.View()
 	case viewLambdaDetail:
 		content = a.lambdaDetailView.View()
+	case viewDynamoTables:
+		content = a.dynamoTablesView.View()
+	case viewDynamoItems:
+		content = a.dynamoItemsView.View()
+	case viewDynamoItemDetail:
+		content = a.dynamoDetailView.View()
 	case viewEnvVars:
 		content = a.envVarsView.View()
 	case viewLogGroups:
@@ -1064,6 +1159,12 @@ func (a App) helpText() string {
 		contextHelp = "  [enter] detail  [l] tail logs  [s] search logs  [W] save search  [/] filter  [esc] back"
 	case viewLambdaDetail:
 		contextHelp = "  [E] env vars  [l] tail logs  [s] search logs  [esc] back"
+	case viewDynamoTables:
+		contextHelp = "  [enter] browse  [W] save table  [/] filter  [esc] back"
+	case viewDynamoItems:
+		contextHelp = "  [enter] detail  [f] filter scan  [p] PartiQL  [W] save query  [esc] back"
+	case viewDynamoItemDetail:
+		contextHelp = "  [j/k] scroll  [g/G] top/bottom  [esc] back"
 	case viewEnvVars:
 		contextHelp = "  [a] toggle ARNs/values  [/] filter  [esc] back"
 	case viewLogGroups:
@@ -1133,6 +1234,18 @@ func (a App) drillDown() (App, tea.Cmd) {
 			}
 			return a, a.loadS3Detail(a.s3ObjectsView.Bucket(), obj.Key)
 		}
+	case viewDynamoTables:
+		table := a.dynamoTablesView.SelectedTable()
+		if table != "" {
+			return a.scanDynamoTable(table)
+		}
+	case viewDynamoItems:
+		if item := a.dynamoItemsView.SelectedItem(); item != nil {
+			a.state = viewDynamoItemDetail
+			a.dynamoDetailView = views.NewDynamoItemDetail(a.dynamoItemsView.TableName(), item)
+			a.dynamoDetailView = a.dynamoDetailView.SetSize(a.width, a.height-3)
+			return a, nil
+		}
 	case viewLambdaList:
 		if fn := a.lambdaListView.SelectedFunction(); fn != nil {
 			a.state = viewLambdaDetail
@@ -1175,6 +1288,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.promptS3Browser()
 	case modeLambda:
 		return a.promptLambdaBrowser()
+	case modeDynamoDB:
+		return a.promptDynamoBrowser()
 	}
 	return a, nil
 }
@@ -1266,6 +1381,14 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a.switchMode(modeECS)
 	case viewLambdaDetail:
 		a.state = viewLambdaList
+		return a, nil
+	case viewDynamoTables:
+		return a.switchMode(modeECS)
+	case viewDynamoItems:
+		a.state = viewDynamoTables
+		return a, nil
+	case viewDynamoItemDetail:
+		a.state = viewDynamoItems
 		return a, nil
 	case viewEnvVars:
 		if a.prevState == viewLambdaDetail {

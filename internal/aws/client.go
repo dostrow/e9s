@@ -7,6 +7,7 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -22,7 +23,8 @@ type Client struct {
 	SSM    *ssm.Client
 	SM     *secretsmanager.Client
 	S3     *s3.Client
-	Lambda *lambda.Client
+	Lambda   *lambda.Client
+	DynamoDB *dynamodb.Client
 	cfg    awscfg.Config
 	region string
 }
@@ -49,7 +51,8 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		SSM:    ssm.NewFromConfig(cfg),
 		SM:     secretsmanager.NewFromConfig(cfg),
 		S3:     s3.NewFromConfig(cfg),
-		Lambda: lambda.NewFromConfig(cfg),
+		Lambda:   lambda.NewFromConfig(cfg),
+		DynamoDB: dynamodb.NewFromConfig(cfg),
 		cfg:    cfg,
 		region: cfg.Region,
 	}, nil
@@ -73,6 +76,7 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	c.SM = secretsmanager.NewFromConfig(cfg)
 	c.S3 = s3.NewFromConfig(cfg)
 	c.Lambda = lambda.NewFromConfig(cfg)
+	c.DynamoDB = dynamodb.NewFromConfig(cfg)
 	c.cfg = cfg
 	c.region = region
 	return nil

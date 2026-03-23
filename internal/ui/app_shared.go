@@ -73,6 +73,30 @@ func (a App) handlePickerDelete(msg PickerDeleteMsg) (App, tea.Cmd) {
 			a.flashExpiry = time.Now().Add(3 * time.Second)
 			return a.promptLambdaBrowser()
 		}
+	case PickerDynamoTable:
+		if msg.Index < len(a.cfg.DynamoTables) {
+			name := a.cfg.DynamoTables[msg.Index].Name
+			a.cfg.RemoveDynamoTable(name)
+			if err := a.cfg.Save(); err != nil {
+				a.err = err
+				return a, nil
+			}
+			a.flashMessage = fmt.Sprintf("Deleted DynamoDB table %q", name)
+			a.flashExpiry = time.Now().Add(3 * time.Second)
+			return a.promptDynamoBrowser()
+		}
+	case PickerDynamoQuery:
+		if msg.Index < len(a.cfg.DynamoQueries) {
+			name := a.cfg.DynamoQueries[msg.Index].Name
+			a.cfg.RemoveDynamoQuery(name)
+			if err := a.cfg.Save(); err != nil {
+				a.err = err
+				return a, nil
+			}
+			a.flashMessage = fmt.Sprintf("Deleted PartiQL query %q", name)
+			a.flashExpiry = time.Now().Add(3 * time.Second)
+			return a.promptDynamoPartiQL()
+		}
 	case PickerS3Search:
 		if msg.Index < len(a.cfg.S3Searches) {
 			name := a.cfg.S3Searches[msg.Index].Name
