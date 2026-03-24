@@ -2,10 +2,10 @@ package aws
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
-	secretsmanagertypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 )
 
 type Secret struct {
@@ -23,19 +23,13 @@ type SecretValue struct {
 }
 
 // ListSecrets fetches secrets, optionally filtered by name substring.
+// Fetches all secrets and filters client-side for true substring matching
+// (the AWS API only supports prefix matching).
 func (c *Client) ListSecrets(ctx context.Context, nameFilter string) ([]Secret, error) {
 	input := &secretsmanager.ListSecretsInput{}
-	if nameFilter != "" {
-		filters := []secretsmanagertypes.Filter{
-			{
-				Key:    secretsmanagertypes.FilterNameStringTypeName,
-				Values: []string{nameFilter},
-			},
-		}
-		input.Filters = filters
-	}
 
 	var secrets []Secret
+	lf := strings.ToLower(nameFilter)
 	paginator := secretsmanager.NewListSecretsPaginator(c.SM, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -43,8 +37,12 @@ func (c *Client) ListSecrets(ctx context.Context, nameFilter string) ([]Secret, 
 			return nil, err
 		}
 		for _, s := range page.SecretList {
+			name := derefStrAws(s.Name)
+			if lf != "" && !strings.Contains(strings.ToLower(name), lf) {
+				continue
+			}
 			sec := Secret{
-				Name: derefStrAws(s.Name),
+				Name: name,
 				ARN:  derefStrAws(s.ARN),
 				Tags: make(map[string]string),
 			}
