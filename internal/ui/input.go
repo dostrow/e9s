@@ -39,6 +39,8 @@ const (
 	InputDynamoQuerySaveName
 	InputSQSSearch
 	InputSQSSaveName
+	InputLogSearchFrom
+	InputLogSearchTo
 )
 
 type InputModel struct {

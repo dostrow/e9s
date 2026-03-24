@@ -151,11 +151,19 @@ func (a App) promptLogSearchTimeRange() (App, tea.Cmd) {
 		"Last 24 hours",
 		"Last 3 days",
 		"Last 7 days",
+		"Custom range...",
 	})
 	return a, nil
 }
 
 func (a App) handleTimeRangePick(value string) (App, tea.Cmd) {
+	if value == "Custom range..." {
+		now := time.Now().UTC()
+		defaultFrom := now.Add(-1 * time.Hour).Format("2006-01-02 15:04")
+		a.input = NewInput(InputLogSearchFrom, "From (YYYY-MM-DD HH:MM, UTC)", defaultFrom)
+		return a, nil
+	}
+
 	durations := map[string]time.Duration{
 		"Last 15 minutes": 15 * time.Minute,
 		"Last 1 hour":     1 * time.Hour,
@@ -173,6 +181,22 @@ func (a App) handleTimeRangePick(value string) (App, tea.Cmd) {
 
 	a.input = NewInput(InputLogSearchPattern, "Search pattern (CloudWatch filter syntax)", "")
 	return a, nil
+}
+
+func parseUTCTimestamp(s string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02 15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid timestamp %q — use YYYY-MM-DD HH:MM", s)
 }
 
 func (a App) startLogSearch(pattern string) (App, tea.Cmd) {

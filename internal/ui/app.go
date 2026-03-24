@@ -883,6 +883,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openLogGroups(msg.Value)
 		case InputLogSearchPattern:
 			return a.startLogSearch(msg.Value)
+		case InputLogSearchFrom:
+			t, err := parseUTCTimestamp(msg.Value)
+			if err != nil {
+				a.err = err
+				return a, nil
+			}
+			a.logSearchStartMs = t.UnixMilli()
+			now := time.Now().UTC()
+			defaultTo := now.Format("2006-01-02 15:04")
+			a.input = NewInput(InputLogSearchTo, "To (YYYY-MM-DD HH:MM, UTC)", defaultTo)
+			return a, nil
+		case InputLogSearchTo:
+			t, err := parseUTCTimestamp(msg.Value)
+			if err != nil {
+				a.err = err
+				return a, nil
+			}
+			a.logSearchEndMs = t.UnixMilli()
+			a.input = NewInput(InputLogSearchPattern, "Search pattern (CloudWatch filter syntax)", "")
+			return a, nil
 		case InputLogSaveName:
 			return a.doSaveLogPath(msg.Value)
 		case InputLogSaveFile:
