@@ -22,6 +22,7 @@ type LambdaListModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewLambdaList(searchTerm string) LambdaListModel {
@@ -96,7 +97,11 @@ func (m LambdaListModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No functions found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No functions found"))
+		}
 		return b.String()
 	}
 
@@ -159,6 +164,7 @@ func (m LambdaListModel) filteredFunctions() []aws.LambdaFunction {
 
 func (m LambdaListModel) SetFunctions(functions []aws.LambdaFunction) LambdaListModel {
 	m.functions = functions
+	m.loaded = true
 	filtered := m.filteredFunctions()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

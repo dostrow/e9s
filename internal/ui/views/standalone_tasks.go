@@ -20,6 +20,7 @@ type StandaloneTasksModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewStandaloneTasks() StandaloneTasksModel {
@@ -91,7 +92,11 @@ func (m StandaloneTasksModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No standalone tasks found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No standalone tasks found"))
+		}
 		return b.String()
 	}
 
@@ -144,6 +149,7 @@ func (m StandaloneTasksModel) filteredTasks() []model.Task {
 }
 
 func (m StandaloneTasksModel) SetTasks(tasks []model.Task) StandaloneTasksModel {
+	m.loaded = true
 	var standalone []model.Task
 	for _, t := range tasks {
 		if !strings.HasPrefix(t.Group, "service:") {

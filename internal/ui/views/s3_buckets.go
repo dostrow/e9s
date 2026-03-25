@@ -21,6 +21,7 @@ type S3BucketsModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewS3Buckets(searchTerm string) S3BucketsModel {
@@ -95,7 +96,11 @@ func (m S3BucketsModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No buckets found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No buckets found"))
+		}
 		return b.String()
 	}
 
@@ -135,6 +140,7 @@ func (m S3BucketsModel) filteredBuckets() []aws.S3Bucket {
 
 func (m S3BucketsModel) SetBuckets(buckets []aws.S3Bucket) S3BucketsModel {
 	m.buckets = buckets
+	m.loaded = true
 	filtered := m.filteredBuckets()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

@@ -20,6 +20,7 @@ type DynamoTablesModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewDynamoTables(searchTerm string) DynamoTablesModel {
@@ -94,7 +95,11 @@ func (m DynamoTablesModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No tables found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No tables found"))
+		}
 		return b.String()
 	}
 
@@ -126,6 +131,7 @@ func (m DynamoTablesModel) filteredTables() []string {
 
 func (m DynamoTablesModel) SetTables(tables []string) DynamoTablesModel {
 	m.tables = tables
+	m.loaded = true
 	filtered := m.filteredTables()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

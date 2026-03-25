@@ -23,6 +23,7 @@ type LogGroupsModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewLogGroups() LogGroupsModel {
@@ -110,7 +111,11 @@ func (m LogGroupsModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No log groups found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No log groups found"))
+		}
 		return b.String()
 	}
 
@@ -154,6 +159,7 @@ func (m LogGroupsModel) filteredGroups() []aws.LogGroupInfo {
 
 func (m LogGroupsModel) SetGroups(groups []aws.LogGroupInfo) LogGroupsModel {
 	m.groups = groups
+	m.loaded = true
 	filtered := m.filteredGroups()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

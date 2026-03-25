@@ -21,6 +21,7 @@ type SQSQueuesModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewSQSQueues(searchTerm string) SQSQueuesModel {
@@ -93,7 +94,11 @@ func (m SQSQueuesModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No queues found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No queues found"))
+		}
 		return b.String()
 	}
 
@@ -123,6 +128,7 @@ func (m SQSQueuesModel) filteredQueues() []aws.SQSQueue {
 
 func (m SQSQueuesModel) SetQueues(queues []aws.SQSQueue) SQSQueuesModel {
 	m.queues = queues
+	m.loaded = true
 	filtered := m.filteredQueues()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

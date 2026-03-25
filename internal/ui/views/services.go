@@ -22,6 +22,7 @@ type ServiceListModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewServiceList(clusterName string) ServiceListModel {
@@ -97,7 +98,11 @@ func (m ServiceListModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No services found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No services found"))
+		}
 		return b.String()
 	}
 
@@ -143,6 +148,7 @@ func (m ServiceListModel) filteredServices() []model.Service {
 
 func (m ServiceListModel) SetServices(services []model.Service) ServiceListModel {
 	m.services = services
+	m.loaded = true
 	filtered := m.filteredServices()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

@@ -24,6 +24,7 @@ type AlarmsModel struct {
 	utcTime     bool
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewAlarms(stateFilter string) AlarmsModel {
@@ -98,7 +99,11 @@ func (m AlarmsModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No alarms found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No alarms found"))
+		}
 		return b.String()
 	}
 
@@ -163,6 +168,7 @@ func (m AlarmsModel) SetAlarms(alarms []aws.CWAlarm) AlarmsModel {
 		return alarms[i].StateUpdatedAt.After(alarms[j].StateUpdatedAt)
 	})
 	m.alarms = alarms
+	m.loaded = true
 	filtered := m.filteredAlarms()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

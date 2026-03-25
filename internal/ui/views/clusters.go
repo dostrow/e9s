@@ -21,6 +21,7 @@ type ClusterListModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewClusterList() ClusterListModel {
@@ -96,7 +97,11 @@ func (m ClusterListModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No clusters found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No clusters found"))
+		}
 		return b.String()
 	}
 
@@ -140,6 +145,7 @@ func (m ClusterListModel) filteredClusters() []model.Cluster {
 
 func (m ClusterListModel) SetClusters(clusters []model.Cluster) ClusterListModel {
 	m.clusters = clusters
+	m.loaded = true
 	filtered := m.filteredClusters()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

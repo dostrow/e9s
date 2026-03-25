@@ -19,6 +19,7 @@ type CBBuildsModel struct {
 	utcTime     bool
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewCBBuilds(projectName string) CBBuildsModel {
@@ -56,7 +57,11 @@ func (m CBBuildsModel) View() string {
 	b.WriteString("\n\n")
 
 	if len(m.builds) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No builds found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No builds found"))
+		}
 		return b.String()
 	}
 
@@ -122,6 +127,7 @@ func buildStatusCell(status string) components.Cell {
 
 func (m CBBuildsModel) SetBuilds(builds []aws.CBBuild) CBBuildsModel {
 	m.builds = builds
+	m.loaded = true
 	if m.cursor >= len(builds) && len(builds) > 0 {
 		m.cursor = len(builds) - 1
 	}

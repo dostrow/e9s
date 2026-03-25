@@ -22,6 +22,7 @@ type LogStreamsModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewLogStreams(logGroup string) LogStreamsModel {
@@ -94,7 +95,11 @@ func (m LogStreamsModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No log streams found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No log streams found"))
+		}
 		return b.String()
 	}
 
@@ -135,6 +140,7 @@ func (m LogStreamsModel) filteredStreams() []aws.LogStreamInfo {
 
 func (m LogStreamsModel) SetStreams(streams []aws.LogStreamInfo) LogStreamsModel {
 	m.streams = streams
+	m.loaded = true
 	filtered := m.filteredStreams()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

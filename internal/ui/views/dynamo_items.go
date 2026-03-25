@@ -23,6 +23,7 @@ type DynamoItemsModel struct {
 	hasMore   bool // whether there are more pages
 	width     int
 	height    int
+	loaded    bool
 }
 
 func NewDynamoItems(tableName string, keyNames []string) DynamoItemsModel {
@@ -61,7 +62,11 @@ func (m DynamoItemsModel) View() string {
 	b.WriteString("\n\n")
 
 	if len(m.items) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No items found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No items found"))
+		}
 		return b.String()
 	}
 
@@ -158,6 +163,7 @@ func formatDynamoValue(v interface{}) string {
 
 func (m DynamoItemsModel) SetItems(items []aws.DynamoItem, hasMore bool) DynamoItemsModel {
 	m.items = items
+	m.loaded = true
 	m.hasMore = hasMore
 	m.columns = discoverColumns(items, m.keyNames)
 	if m.cursor >= len(items) && len(items) > 0 {

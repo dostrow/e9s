@@ -21,6 +21,7 @@ type SecretsModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewSecrets(nameFilter string) SecretsModel {
@@ -95,7 +96,11 @@ func (m SecretsModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No secrets found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No secrets found"))
+		}
 		return b.String()
 	}
 
@@ -144,6 +149,7 @@ func (m SecretsModel) filteredSecrets() []aws.Secret {
 
 func (m SecretsModel) SetSecrets(secrets []aws.Secret) SecretsModel {
 	m.secrets = secrets
+	m.loaded = true
 	filtered := m.filteredSecrets()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1

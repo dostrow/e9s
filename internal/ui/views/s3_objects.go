@@ -24,6 +24,7 @@ type S3ObjectsModel struct {
 	filterInput textinput.Model
 	width       int
 	height      int
+	loaded      bool
 }
 
 func NewS3Objects(bucket, prefix string) S3ObjectsModel {
@@ -95,7 +96,11 @@ func (m S3ObjectsModel) View() string {
 	b.WriteString("\n")
 
 	if len(filtered) == 0 {
-		b.WriteString(theme.HelpStyle.Render("  No objects found"))
+		if !m.loaded {
+			b.WriteString(theme.HelpStyle.Render("  Loading..."))
+		} else {
+			b.WriteString(theme.HelpStyle.Render("  No objects found"))
+		}
 		return b.String()
 	}
 
@@ -171,6 +176,7 @@ func (m S3ObjectsModel) filteredObjects() []aws.S3Object {
 
 func (m S3ObjectsModel) SetObjects(objects []aws.S3Object) S3ObjectsModel {
 	m.objects = objects
+	m.loaded = true
 	filtered := m.filteredObjects()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1
