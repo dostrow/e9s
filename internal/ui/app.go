@@ -1284,6 +1284,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "s":
 				return a.promptLogSearchFromGroups()
 			case "W":
+				if a.logGroupsView.SelectionCount() > 1 {
+					groups := a.logGroupsView.SelectedGroups()
+					a.logSearchGroups = groups
+					return a.saveLogSearchGroups()
+				}
 				return a.saveLogGroupPath()
 			}
 		case viewLogStreams:
@@ -1296,10 +1301,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.promptLogSearchFromStreams()
 			case "W":
 				return a.saveLogStreamPath()
-			}
-		case viewLogSearch:
-			if msg.String() == "W" && len(a.logSearchGroups) > 1 {
-				return a.saveLogSearchGroups()
 			}
 		case viewAlarmDetail:
 			switch msg.String() {
@@ -1856,7 +1857,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"space", "Multi-select for search"},
 			{"l", "Tail entire log group"},
 			{"s", "Search selected groups"},
-			{"W", "Save log path"},
+			{"W", "Save log path / group selection"},
 		}
 	case viewLogStreams:
 		context = []kv{
@@ -1870,7 +1871,6 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Jump to log at timestamp"},
 			{"t", "Toggle timestamps"},
-			{"W", "Save group selection"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewAlarms:
