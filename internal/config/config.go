@@ -19,9 +19,10 @@ var (
 )
 
 type LogPathEntry struct {
-	Name     string `yaml:"name"`
-	LogGroup string `yaml:"log_group"`
-	Stream   string `yaml:"stream,omitempty"` // optional — empty means all streams
+	Name      string   `yaml:"name"`
+	LogGroup  string   `yaml:"log_group"`
+	LogGroups []string `yaml:"log_groups,omitempty"` // multi-group search
+	Stream    string   `yaml:"stream,omitempty"`     // optional — empty means all streams
 }
 
 type SQSQueueEntry struct {
@@ -462,10 +463,29 @@ func (c *Config) AddLogPath(name, logGroup, stream string) bool {
 	for i, p := range c.LogPaths {
 		if p.Name == name {
 			c.LogPaths[i].LogGroup = logGroup
+			c.LogPaths[i].LogGroups = nil
 			c.LogPaths[i].Stream = stream
 			return false
 		}
 	}
 	c.LogPaths = append(c.LogPaths, LogPathEntry{Name: name, LogGroup: logGroup, Stream: stream})
+	return true
+}
+
+// AddLogPathMultiGroup adds or updates a saved multi-group log path.
+func (c *Config) AddLogPathMultiGroup(name string, groups []string) bool {
+	for i, p := range c.LogPaths {
+		if p.Name == name {
+			c.LogPaths[i].LogGroup = groups[0]
+			c.LogPaths[i].LogGroups = groups
+			c.LogPaths[i].Stream = ""
+			return false
+		}
+	}
+	c.LogPaths = append(c.LogPaths, LogPathEntry{
+		Name:      name,
+		LogGroup:  groups[0],
+		LogGroups: groups,
+	})
 	return true
 }

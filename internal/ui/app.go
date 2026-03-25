@@ -904,6 +904,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logSearchEndMs = t.UnixMilli()
 			a.input = NewInput(InputLogSearchPattern, "Search pattern (CloudWatch filter syntax)", "")
 			return a, nil
+		case InputLogSearchGroupsSave:
+			return a.doSaveLogSearchGroups(msg.Value)
 		case InputLogSaveName:
 			return a.doSaveLogPath(msg.Value)
 		case InputLogSaveFile:
@@ -1012,6 +1014,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			lp := a.cfg.LogPaths[msg.Index]
+			if len(lp.LogGroups) > 1 {
+				// Multi-group saved entry — go straight to search
+				a.prevState = viewLogGroups
+				a.logSearchGroups = lp.LogGroups
+				a.logSearchGroup = lp.LogGroups[0]
+				a.logSearchStream = ""
+				return a.promptLogSearchTimeRange()
+			}
 			if lp.Stream != "" {
 				return a, a.startLogTail(lp.LogGroup, []string{lp.Stream},
 					fmt.Sprintf("%s / %s", lp.LogGroup, lp.Stream))
@@ -1286,6 +1296,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.promptLogSearchFromStreams()
 			case "W":
 				return a.saveLogStreamPath()
+			}
+		case viewLogSearch:
+			if msg.String() == "W" && len(a.logSearchGroups) > 1 {
+				return a.saveLogSearchGroups()
 			}
 		case viewAlarmDetail:
 			switch msg.String() {
@@ -1856,6 +1870,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Jump to log at timestamp"},
 			{"t", "Toggle timestamps"},
+			{"W", "Save group selection"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewAlarms:

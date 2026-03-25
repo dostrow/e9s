@@ -24,7 +24,9 @@ func (a App) promptCloudWatchBrowser() (App, tea.Cmd) {
 	items := make([]string, 0, len(saved)+1)
 	for _, p := range saved {
 		label := p.Name
-		if p.Stream != "" {
+		if len(p.LogGroups) > 1 {
+			label += fmt.Sprintf("  (%d groups)", len(p.LogGroups))
+		} else if p.Stream != "" {
 			label += fmt.Sprintf("  (%s / %s)", p.LogGroup, p.Stream)
 		} else {
 			label += fmt.Sprintf("  (%s)", p.LogGroup)
@@ -180,7 +182,7 @@ func (a App) handleTimeRangePick(value string) (App, tea.Cmd) {
 	a.logSearchStartMs = time.Now().Add(-d).UnixMilli()
 	a.logSearchEndMs = time.Now().UnixMilli()
 
-	a.input = NewInput(InputLogSearchPattern, "Search pattern (CloudWatch filter syntax)", "")
+	a.input = NewInput(InputLogSearchPattern, "Search pattern (auto-quoted for literal match; use {$.field = \"val\"} for JSON)", "")
 	return a, nil
 }
 
@@ -383,6 +385,27 @@ func (a App) saveLogStreamPath() (App, tea.Cmd) {
 	a.logSaveStream = s.Name
 	label := fmt.Sprintf("%s / %s", a.logSaveGroup, s.Name)
 	a.input = NewInput(InputLogSaveName, fmt.Sprintf("Save %q — enter a name", label), "")
+	return a, nil
+}
+
+func (a App) saveLogSearchGroups() (App, tea.Cmd) {
+	groups := a.logSearchGroups
+	if len(groups) == 0 {
+		return a, nil
+	}
+	label := fmt.Sprintf("Save %d log groups — enter a name", len(groups))
+	a.input = NewInput(InputLogSearchGroupsSave, label, "")
+	return a, nil
+}
+
+func (a App) doSaveLogSearchGroups(name string) (App, tea.Cmd) {
+	a.cfg.AddLogPathMultiGroup(name, a.logSearchGroups)
+	if err := a.cfg.Save(); err != nil {
+		a.err = err
+		return a, nil
+	}
+	a.flashMessage = fmt.Sprintf("Saved %d log groups as %q", len(a.logSearchGroups), name)
+	a.flashExpiry = time.Now().Add(5 * time.Second)
 	return a, nil
 }
 

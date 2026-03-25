@@ -41,6 +41,7 @@ const (
 	InputSQSSaveName
 	InputLogSearchFrom
 	InputLogSearchTo
+	InputLogSearchGroupsSave
 )
 
 type InputModel struct {
