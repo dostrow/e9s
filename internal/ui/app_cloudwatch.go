@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -199,6 +200,33 @@ func parseUTCTimestamp(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid timestamp %q — use YYYY-MM-DD HH:MM", s)
 }
 
+// quoteFilterPattern ensures a pattern is valid CloudWatch filter syntax.
+//
+// CloudWatch filter syntax: "text" for literal match, { $.field = "val" }
+// for JSON pattern, [w1, w2] for space-delimited matching.
+//
+// For plain text searches, we wrap in quotes. CloudWatch can't nest quotes
+// in literal patterns, so interior quotes are stripped — the literal match
+// still finds the text in log lines that contain quotes around it.
+func quoteFilterPattern(pattern string) string {
+	if pattern == "" {
+		return pattern
+	}
+	first := pattern[0]
+	// JSON or space-delimited filter expressions — pass through
+	if first == '{' || first == '[' {
+		return pattern
+	}
+	// Already a single properly-quoted literal (starts and ends with " with no interior quotes)
+	if first == '"' && len(pattern) > 1 && pattern[len(pattern)-1] == '"' &&
+		!strings.Contains(pattern[1:len(pattern)-1], `"`) {
+		return pattern
+	}
+	// Strip any quotes and wrap for literal matching
+	cleaned := strings.ReplaceAll(pattern, `"`, ``)
+	return `"` + cleaned + `"`
+}
+
 func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	a.state = viewLogSearch
 
@@ -209,19 +237,23 @@ func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	a.logSearchView = views.NewLogSearch(searchScope, a.logSearchStream, pattern)
 	a.logSearchView = a.logSearchView.SetSize(a.width, a.height-3)
 
+	// Auto-quote for literal matching if needed
+	a.logSearchFilter = quoteFilterPattern(pattern)
+
 	client := a.client
 	groups := a.logSearchGroups
 	stream := a.logSearchStream
 	startMs := a.logSearchStartMs
 	endMs := a.logSearchEndMs
+	filter := a.logSearchFilter
 
 	if len(groups) > 1 {
 		// Multi-group: search each group sequentially, streaming results
-		return a, searchNextGroup(client, groups, 0, pattern, stream, startMs, endMs)
+		return a, searchNextGroup(client, groups, 0, filter, stream, startMs, endMs)
 	}
 
 	// Single group: paginated streaming search
-	return a, searchGroupPaginated(client, groups[0], stream, pattern, startMs, endMs, nil, 500)
+	return a, searchGroupPaginated(client, groups[0], stream, filter, startMs, endMs, nil, 500)
 }
 
 // searchNextGroup searches one group and chains to the next via partial messages.

@@ -120,6 +120,7 @@ type App struct {
 	logSearchStream    string
 	logSearchStartMs   int64
 	logSearchEndMs     int64
+	logSearchFilter    string // quoted/processed filter pattern for CW API
 	logSaveGroup       string
 	logSaveStream      string
 	ssmEditName        string
@@ -486,7 +487,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if nextIdx > 0 && nextIdx < len(a.logSearchGroups) {
 					nextCmd := searchNextGroup(a.client, a.logSearchGroups, nextIdx,
-						a.logSearchView.Pattern(), a.logSearchStream,
+						a.logSearchFilter, a.logSearchStream,
 						a.logSearchStartMs, a.logSearchEndMs)
 					return a, tea.Batch(viewCmd, nextCmd)
 				}
@@ -494,7 +495,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// For single-group paginated search, chain next page if not done
 			if !msg.Done && len(a.logSearchGroups) <= 1 && msg.NextToken != nil {
 				nextCmd := searchGroupPaginated(a.client, msg.Source, a.logSearchStream,
-					a.logSearchView.Pattern(), a.logSearchStartMs, a.logSearchEndMs,
+					a.logSearchFilter, a.logSearchStartMs, a.logSearchEndMs,
 					msg.NextToken, msg.Remaining)
 				return a, tea.Batch(viewCmd, nextCmd)
 			}
