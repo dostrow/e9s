@@ -31,6 +31,7 @@ const (
 	modeCodeBuild
 	modeEC2
 	modeECR
+	modeTofu
 	modeRoute53
 )
 
@@ -76,6 +77,10 @@ const (
 	viewECRRepos
 	viewECRImages
 	viewECRFindings
+	viewTofuResources
+	viewTofuStateDetail
+	viewTofuPlan
+	viewTofuPlanDetail
 	viewR53Zones
 	viewR53Records
 	viewR53RecordDetail
@@ -126,7 +131,11 @@ type App struct {
 	ecrReposView      views.ECRReposModel
 	ecrImagesView     views.ECRImagesModel
 	ecrFindingsView   views.ECRFindingsModel
-	r53ZonesView      views.R53ZonesModel
+	tofuResourcesView   views.TofuResourcesModel
+	tofuStateDetailView views.TofuStateDetailModel
+	tofuPlanView        views.TofuPlanModel
+	tofuPlanDetailView  views.TofuPlanDetailModel
+	r53ZonesView        views.R53ZonesModel
 	r53RecordsView    views.R53RecordsModel
 	r53DetailView     views.R53RecordDetailModel
 	regionPicker      views.RegionPickerModel
@@ -160,6 +169,7 @@ type App struct {
 	sqsSendQueueURL    string
 	sqsSendTemplate    *e9saws.SQSSendTemplate
 	cbTriggerProject   string
+	tofuDir            string
 	r53EditZoneID      string
 	r53EditRecord      *e9saws.R53Record
 	r53EditOriginal    *e9saws.R53Record
@@ -219,6 +229,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeCodeBuild, "CB", cfg.ModuleCodeBuild()},
 		{modeEC2, "EC2i", cfg.ModuleEC2()},
 		{modeECR, "ECR", cfg.ModuleECR()},
+		{modeTofu, "TF", cfg.ModuleTofu()},
 		{modeRoute53, "R53", cfg.ModuleRoute53()},
 	}
 	idx := 1
@@ -267,6 +278,7 @@ func resolveDefaultMode(s string) *topMode {
 		"CodeBuild": modeCodeBuild, "codebuild": modeCodeBuild, "CB": modeCodeBuild, "cb": modeCodeBuild,
 		"EC2": modeEC2, "ec2": modeEC2, "EC2i": modeEC2, "ec2i": modeEC2,
 		"ECR": modeECR, "ecr": modeECR,
+		"Tofu": modeTofu, "tofu": modeTofu, "TF": modeTofu, "tf": modeTofu, "terraform": modeTofu, "opentofu": modeTofu,
 		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
 	}
 	if m, ok := modes[s]; ok {
@@ -342,6 +354,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ecrReposView = a.ecrReposView.SetSize(w, h)
 		a.ecrImagesView = a.ecrImagesView.SetSize(w, h)
 		a.ecrFindingsView = a.ecrFindingsView.SetSize(w, h)
+		a.tofuResourcesView = a.tofuResourcesView.SetSize(w, h)
+		a.tofuStateDetailView = a.tofuStateDetailView.SetSize(w, h)
+		a.tofuPlanView = a.tofuPlanView.SetSize(w, h)
+		a.tofuPlanDetailView = a.tofuPlanDetailView.SetSize(w, h)
 		a.r53ZonesView = a.r53ZonesView.SetSize(w, h)
 		a.r53RecordsView = a.r53RecordsView.SetSize(w, h)
 		a.r53DetailView = a.r53DetailView.SetSize(w, h)
@@ -891,6 +907,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ecrActionDoneMsg:
 		return a.handleECRAction(msg)
 
+	// --- OpenTofu messages ---
+	case tofuResourcesLoadedMsg:
+		a.tofuResourcesView = a.tofuResourcesView.SetResources(msg.resources)
+		a.loading = false
+		return a, nil
+
+	case tofuStateDetailMsg:
+		a.tofuStateDetailView = a.tofuStateDetailView.SetOutput(msg.output)
+		a.loading = false
+		return a, nil
+
+	case tofuPlanLoadedMsg:
+		a.tofuPlanView = a.tofuPlanView.SetPlan(msg.plan)
+		a.loading = false
+		return a, nil
+
+	case tofuApplyDoneMsg:
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		// Refresh state after apply
+		if a.state == viewTofuResources || a.state == viewTofuPlan {
+			a.loading = true
+			return a, a.refreshTofuResources()
+		}
+		return a, nil
+
+	case tofuInitDoneMsg:
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.loading = false
+		return a, nil
+
 	// --- Route53 messages ---
 	case r53ZonesLoadedMsg:
 		a.r53ZonesView = a.r53ZonesView.SetZones(msg.zones)
@@ -1055,6 +1103,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logSearchEndMs = t.UnixMilli()
 			a.input = NewInput(InputLogSearchPattern, "Search pattern (CloudWatch filter syntax)", "")
 			return a, nil
+		case InputTofuDir:
+			return a.openTofuResources(msg.Value)
+		case InputTofuSaveName:
+			return a.doSaveTofuDir(msg.Value)
 		case InputLogSearchGroupsSave:
 			return a.doSaveLogSearchGroups(msg.Value)
 		case InputLogSaveName:
@@ -1182,6 +1234,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.handleTimeRangePick(msg.Value)
 		case PickerCWAlarmState:
 			return a.handleCWAlarmStatePick(msg.Value)
+		case PickerTofuDir:
+			if msg.Index == len(a.cfg.TofuDirs) {
+				a.input = NewInput(InputTofuDir, "OpenTofu directory path", "")
+				return a, nil
+			}
+			td := a.cfg.TofuDirs[msg.Index]
+			return a.openTofuResources(td.Dir)
 		case PickerSetAlarmState:
 			return a.handleSetAlarmStatePick(msg.Value)
 		}
@@ -1487,6 +1546,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "x":
 				return a.stopCBBuild()
 			}
+		case viewTofuResources:
+			switch msg.String() {
+			case "p":
+				return a.runTofuPlan()
+			case "a":
+				return a.runTofuApply()
+			case "i":
+				return a.runTofuInit()
+			case "W":
+				return a.saveTofuDir()
+			}
+		case viewTofuPlan:
+			switch msg.String() {
+			case "a":
+				return a.runTofuApply()
+			}
 		case viewECRImages:
 			switch msg.String() {
 			case "s":
@@ -1593,6 +1668,14 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.cbBuildsView, cmd = a.cbBuildsView.Update(msg)
 	case viewCBBuildDetail:
 		a.cbBuildDetailView, cmd = a.cbBuildDetailView.Update(msg)
+	case viewTofuResources:
+		a.tofuResourcesView, cmd = a.tofuResourcesView.Update(msg)
+	case viewTofuStateDetail:
+		a.tofuStateDetailView, cmd = a.tofuStateDetailView.Update(msg)
+	case viewTofuPlan:
+		a.tofuPlanView, cmd = a.tofuPlanView.Update(msg)
+	case viewTofuPlanDetail:
+		a.tofuPlanDetailView, cmd = a.tofuPlanDetailView.Update(msg)
 	case viewECRRepos:
 		a.ecrReposView, cmd = a.ecrReposView.Update(msg)
 	case viewECRImages:
@@ -1653,6 +1736,10 @@ func (a App) isFiltering() bool {
 		return a.cbProjectsView.IsFiltering()
 	case viewEC2Instances:
 		return a.ec2InstancesView.IsFiltering()
+	case viewTofuResources:
+		return a.tofuResourcesView.IsFiltering()
+	case viewTofuPlan:
+		return a.tofuPlanView.IsFiltering()
 	case viewECRRepos:
 		return a.ecrReposView.IsFiltering()
 	case viewECRImages:
@@ -1760,6 +1847,14 @@ func (a App) View() string {
 		content = a.cbBuildsView.View()
 	case viewCBBuildDetail:
 		content = a.cbBuildDetailView.View()
+	case viewTofuResources:
+		content = a.tofuResourcesView.View()
+	case viewTofuStateDetail:
+		content = a.tofuStateDetailView.View()
+	case viewTofuPlan:
+		content = a.tofuPlanView.View()
+	case viewTofuPlanDetail:
+		content = a.tofuPlanDetailView.View()
 	case viewECRRepos:
 		content = a.ecrReposView.View()
 	case viewECRImages:
@@ -1909,6 +2004,14 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewCBBuildDetail:
 		primary = "[l] view logs"
+	case viewTofuResources:
+		primary = "[p] plan"
+	case viewTofuStateDetail:
+		primary = "[j/k] scroll"
+	case viewTofuPlan:
+		primary = "[enter] detail"
+	case viewTofuPlanDetail:
+		primary = "[j/k] scroll"
 	case viewECRRepos:
 		primary = "[enter] images"
 	case viewECRImages:
@@ -2170,6 +2273,31 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewTofuResources:
+		context = []kv{
+			{"enter", "View resource state"},
+			{"p", "Run plan (parsed view)"},
+			{"a", "Run apply (interactive)"},
+			{"i", "Run init"},
+			{"W", "Save workspace"},
+			{"/", "Filter resources"},
+		}
+	case viewTofuPlan:
+		context = []kv{
+			{"enter", "View change detail"},
+			{"a", "Run apply (interactive)"},
+			{"/", "Filter changes"},
+		}
+	case viewTofuPlanDetail:
+		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewTofuStateDetail:
+		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
 	case viewECRRepos:
 		context = []kv{
 			{"enter", "View images"},
@@ -2340,6 +2468,10 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewCBBuilds:
 		return a.openCBBuildDetail()
+	case viewTofuResources:
+		return a.openTofuStateDetail()
+	case viewTofuPlan:
+		return a.openTofuPlanDetail()
 	case viewECRRepos:
 		if r := a.ecrReposView.SelectedRepo(); r != nil {
 			return a.openECRImages(r.Name, r.URI)
@@ -2390,6 +2522,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openEC2Instances("")
 	case modeECR:
 		return a.openECRRepos()
+	case modeTofu:
+		return a.promptTofuBrowser()
 	case modeRoute53:
 		return a.openR53Zones()
 	}
@@ -2431,6 +2565,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openEC2Instances("")
 	case modeECR:
 		return a.openECRRepos()
+	case modeTofu:
+		return a.promptTofuBrowser()
 	case modeRoute53:
 		return a.openR53Zones()
 	}
@@ -2601,6 +2737,17 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	case viewCBBuildDetail:
 		a.state = viewCBBuilds
+		return a, nil
+	case viewTofuResources:
+		return a.showModePicker()
+	case viewTofuStateDetail:
+		a.state = viewTofuResources
+		return a, nil
+	case viewTofuPlan:
+		a.state = viewTofuResources
+		return a, nil
+	case viewTofuPlanDetail:
+		a.state = viewTofuPlan
 		return a, nil
 	case viewECRRepos:
 		return a.showModePicker()

@@ -42,6 +42,8 @@ const (
 	InputLogSearchFrom
 	InputLogSearchTo
 	InputLogSearchGroupsSave
+	InputTofuDir
+	InputTofuSaveName
 )
 
 type InputModel struct {

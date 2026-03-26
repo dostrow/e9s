@@ -30,6 +30,11 @@ type SQSQueueEntry struct {
 	URL  string `yaml:"url"`
 }
 
+type TofuDirEntry struct {
+	Name string `yaml:"name"`
+	Dir  string `yaml:"dir"`
+}
+
 type DynamoTable struct {
 	Name  string `yaml:"name"`
 	Table string `yaml:"table"`
@@ -89,6 +94,7 @@ type Config struct {
 		EC2             *bool `yaml:"ec2_instances"`
 		ECR             *bool `yaml:"ecr"`
 		Route53         *bool `yaml:"route53"`
+		Tofu            *bool `yaml:"tofu"`
 	} `yaml:"modules"`
 	ExcludeServices []string `yaml:"exclude_services"`
 	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
@@ -99,6 +105,7 @@ type Config struct {
 	DynamoQueries   []DynamoQuery  `yaml:"dynamo_queries"`
 	SQSQueues       []SQSQueueEntry `yaml:"sqs_queues"`
 	LogPaths        []LogPathEntry `yaml:"log_paths"`
+	TofuDirs        []TofuDirEntry `yaml:"tofu_dirs"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -311,6 +318,7 @@ func (c *Config) ModuleCodeBuild() bool   { return boolDefault(c.Modules.CodeBui
 func (c *Config) ModuleEC2() bool         { return boolDefault(c.Modules.EC2, true) }
 func (c *Config) ModuleECR() bool         { return boolDefault(c.Modules.ECR, true) }
 func (c *Config) ModuleRoute53() bool     { return boolDefault(c.Modules.Route53, true) }
+func (c *Config) ModuleTofu() bool        { return boolDefault(c.Modules.Tofu, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {
 	if c.Modules.CWLogs != nil {
@@ -351,6 +359,28 @@ func (c *Config) RemoveSQSQueue(name string) {
 	for i, q := range c.SQSQueues {
 		if q.Name == name {
 			c.SQSQueues = append(c.SQSQueues[:i], c.SQSQueues[i+1:]...)
+			return
+		}
+	}
+}
+
+// AddTofuDir adds or updates a saved OpenTofu directory.
+func (c *Config) AddTofuDir(name, dir string) bool {
+	for i, d := range c.TofuDirs {
+		if d.Name == name {
+			c.TofuDirs[i].Dir = dir
+			return false
+		}
+	}
+	c.TofuDirs = append(c.TofuDirs, TofuDirEntry{Name: name, Dir: dir})
+	return true
+}
+
+// RemoveTofuDir removes a saved OpenTofu directory.
+func (c *Config) RemoveTofuDir(name string) {
+	for i, d := range c.TofuDirs {
+		if d.Name == name {
+			c.TofuDirs = append(c.TofuDirs[:i], c.TofuDirs[i+1:]...)
 			return
 		}
 	}

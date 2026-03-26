@@ -5,6 +5,7 @@ import (
 
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/tofu"
 )
 
 // --- ECS Messages ---
@@ -203,6 +204,14 @@ type r53RecordEditedMsg struct {
 	isNew  bool
 }
 type r53ActionDoneMsg struct{ message string }
+
+// --- OpenTofu Messages ---
+
+type tofuResourcesLoadedMsg struct{ resources []string }
+type tofuStateDetailMsg struct{ output string }
+type tofuPlanLoadedMsg struct{ plan *tofu.PlanResult }
+type tofuApplyDoneMsg struct{ message string }
+type tofuInitDoneMsg struct{ message string }
 
 // --- Shared Messages ---
 

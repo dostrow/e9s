@@ -28,6 +28,7 @@ const (
 	PickerSQSQueue
 	PickerCWAlarmState
 	PickerSetAlarmState
+	PickerTofuDir
 )
 
 type PickerModel struct {
