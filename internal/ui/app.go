@@ -30,6 +30,7 @@ const (
 	modeSQS
 	modeCodeBuild
 	modeEC2
+	modeRoute53
 )
 
 type viewState int
@@ -71,6 +72,9 @@ const (
 	viewEC2Instances
 	viewEC2Detail
 	viewEC2Console
+	viewR53Zones
+	viewR53Records
+	viewR53RecordDetail
 )
 
 type App struct {
@@ -115,6 +119,9 @@ type App struct {
 	ec2InstancesView  views.EC2InstancesModel
 	ec2DetailView     views.EC2DetailModel
 	ec2ConsoleView    views.EC2ConsoleModel
+	r53ZonesView      views.R53ZonesModel
+	r53RecordsView    views.R53RecordsModel
+	r53DetailView     views.R53RecordDetailModel
 	regionPicker      views.RegionPickerModel
 
 	// Navigation context
@@ -146,6 +153,9 @@ type App struct {
 	sqsSendQueueURL    string
 	sqsSendTemplate    *e9saws.SQSSendTemplate
 	cbTriggerProject   string
+	r53EditZoneID      string
+	r53EditRecord      *e9saws.R53Record
+	r53EditOriginal    *e9saws.R53Record
 	lambdaEditDir      string
 	lambdaEditFunc     string
 	lambdaEditZip      []byte
@@ -201,6 +211,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeSQS, "SQS", cfg.ModuleSQS()},
 		{modeCodeBuild, "CB", cfg.ModuleCodeBuild()},
 		{modeEC2, "EC2i", cfg.ModuleEC2()},
+		{modeRoute53, "R53", cfg.ModuleRoute53()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -247,6 +258,7 @@ func resolveDefaultMode(s string) *topMode {
 		"SQS": modeSQS, "sqs": modeSQS,
 		"CodeBuild": modeCodeBuild, "codebuild": modeCodeBuild, "CB": modeCodeBuild, "cb": modeCodeBuild,
 		"EC2": modeEC2, "ec2": modeEC2, "EC2i": modeEC2, "ec2i": modeEC2,
+		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -318,6 +330,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ec2InstancesView = a.ec2InstancesView.SetSize(w, h)
 		a.ec2DetailView = a.ec2DetailView.SetSize(w, h)
 		a.ec2ConsoleView = a.ec2ConsoleView.SetSize(w, h)
+		a.r53ZonesView = a.r53ZonesView.SetSize(w, h)
+		a.r53RecordsView = a.r53RecordsView.SetSize(w, h)
+		a.r53DetailView = a.r53DetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -843,6 +858,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ec2ActionDoneMsg:
 		return a.handleEC2Action(msg)
 
+	// --- Route53 messages ---
+	case r53ZonesLoadedMsg:
+		a.r53ZonesView = a.r53ZonesView.SetZones(msg.zones)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case r53RecordsLoadedMsg:
+		a.r53RecordsView = a.r53RecordsView.SetRecords(msg.records)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case r53DNSAnswerMsg:
+		a.r53DetailView = a.r53DetailView.SetDNSAnswer(msg.answer)
+		a.loading = false
+		return a, nil
+
+	case r53RecordEditedMsg:
+		a.r53EditRecord = msg.record
+		if msg.isNew {
+			a.confirm = NewConfirm(ConfirmR53Create,
+				fmt.Sprintf("Create %s record %q?", msg.record.Type, msg.record.Name))
+		} else {
+			a.confirm = NewConfirm(ConfirmR53Update,
+				fmt.Sprintf("Update %s record %q?", msg.record.Type, msg.record.Name))
+		}
+		return a, nil
+
+	case r53ActionDoneMsg:
+		return a.handleR53Action(msg)
+
 	// --- Shared messages ---
 	case regionSwitchedMsg:
 		a.flashMessage = fmt.Sprintf("Switched to %s", a.client.Region())
@@ -918,6 +965,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStopEC2()
 		case ConfirmEC2Reboot:
 			return a, a.doRebootEC2()
+		case ConfirmR53Create:
+			return a, a.doCreateR53Record()
+		case ConfirmR53Update:
+			return a, a.doUpdateR53Record()
+		case ConfirmR53Delete:
+			return a, a.doDeleteR53Record()
 		case ConfirmEC2Terminate:
 			return a, a.doTerminateEC2()
 		}
@@ -1399,6 +1452,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "x":
 				return a.stopCBBuild()
 			}
+		case viewR53Records:
+			if msg.String() == "n" {
+				return a.createR53Record()
+			}
+		case viewR53RecordDetail:
+			switch msg.String() {
+			case "t":
+				return a.testR53DNS()
+			case "e":
+				return a.editR53Record()
+			case "x":
+				return a.deleteR53Record()
+			}
 		case viewEC2Detail:
 			switch msg.String() {
 			case "e":
@@ -1483,6 +1549,12 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.cbBuildsView, cmd = a.cbBuildsView.Update(msg)
 	case viewCBBuildDetail:
 		a.cbBuildDetailView, cmd = a.cbBuildDetailView.Update(msg)
+	case viewR53Zones:
+		a.r53ZonesView, cmd = a.r53ZonesView.Update(msg)
+	case viewR53Records:
+		a.r53RecordsView, cmd = a.r53RecordsView.Update(msg)
+	case viewR53RecordDetail:
+		a.r53DetailView, cmd = a.r53DetailView.Update(msg)
 	case viewEC2Instances:
 		a.ec2InstancesView, cmd = a.ec2InstancesView.Update(msg)
 	case viewEC2Detail:
@@ -1531,6 +1603,10 @@ func (a App) isFiltering() bool {
 		return a.cbProjectsView.IsFiltering()
 	case viewEC2Instances:
 		return a.ec2InstancesView.IsFiltering()
+	case viewR53Zones:
+		return a.r53ZonesView.IsFiltering()
+	case viewR53Records:
+		return a.r53RecordsView.IsFiltering()
 	}
 	return false
 }
@@ -1628,6 +1704,12 @@ func (a App) View() string {
 		content = a.cbBuildsView.View()
 	case viewCBBuildDetail:
 		content = a.cbBuildDetailView.View()
+	case viewR53Zones:
+		content = a.r53ZonesView.View()
+	case viewR53Records:
+		content = a.r53RecordsView.View()
+	case viewR53RecordDetail:
+		content = a.r53DetailView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -1765,6 +1847,12 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewCBBuildDetail:
 		primary = "[l] view logs"
+	case viewR53Zones:
+		primary = "[enter] records"
+	case viewR53Records:
+		primary = "[enter] detail"
+	case viewR53RecordDetail:
+		primary = "[t] test DNS"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -2014,6 +2102,25 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewR53Zones:
+		context = []kv{
+			{"enter", "View records"},
+			{"/", "Filter zones"},
+		}
+	case viewR53Records:
+		context = []kv{
+			{"enter", "View record detail"},
+			{"n", "Create new record"},
+			{"/", "Filter records"},
+		}
+	case viewR53RecordDetail:
+		context = []kv{
+			{"t", "Test DNS resolution"},
+			{"e", "Edit record"},
+			{"x", "Delete record"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -2148,6 +2255,12 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewCBBuilds:
 		return a.openCBBuildDetail()
+	case viewR53Zones:
+		if z := a.r53ZonesView.SelectedZone(); z != nil {
+			return a.openR53Records(z.Name, z.ID)
+		}
+	case viewR53Records:
+		return a.openR53RecordDetail()
 	case viewEC2Instances:
 		return a.openEC2Detail()
 	}
@@ -2184,6 +2297,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openCBProjects()
 	case modeEC2:
 		return a.openEC2Instances("")
+	case modeRoute53:
+		return a.openR53Zones()
 	}
 	return a, nil
 }
@@ -2221,6 +2336,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openCBProjects()
 	case modeEC2:
 		return a.openEC2Instances("")
+	case modeRoute53:
+		return a.openR53Zones()
 	}
 	return a, nil
 }
@@ -2389,6 +2506,14 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	case viewCBBuildDetail:
 		a.state = viewCBBuilds
+		return a, nil
+	case viewR53Zones:
+		return a.showModePicker()
+	case viewR53Records:
+		a.state = viewR53Zones
+		return a, nil
+	case viewR53RecordDetail:
+		a.state = viewR53Records
 		return a, nil
 	case viewEC2Instances:
 		return a.showModePicker()

@@ -186,6 +186,17 @@ type ec2DetailLoadedMsg struct{ detail *e9saws.EC2InstanceDetail }
 type ec2ConsoleLoadedMsg struct{ output string }
 type ec2ActionDoneMsg struct{ message string }
 
+// --- Route53 Messages ---
+
+type r53ZonesLoadedMsg struct{ zones []e9saws.R53Zone }
+type r53RecordsLoadedMsg struct{ records []e9saws.R53Record }
+type r53DNSAnswerMsg struct{ answer *e9saws.R53DNSAnswer }
+type r53RecordEditedMsg struct {
+	record *e9saws.R53Record
+	isNew  bool
+}
+type r53ActionDoneMsg struct{ message string }
+
 // --- Shared Messages ---
 
 type regionSwitchedMsg struct{}

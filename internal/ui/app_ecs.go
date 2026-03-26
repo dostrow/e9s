@@ -550,6 +550,10 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshCBBuilds()
 	case viewCBBuildDetail:
 		return a.refreshCBBuildDetail()
+	case viewR53Zones:
+		return a.refreshR53Zones()
+	case viewR53Records:
+		return a.refreshR53Records()
 	case viewEC2Instances:
 		return a.refreshEC2Instances()
 	case viewEC2Detail:
