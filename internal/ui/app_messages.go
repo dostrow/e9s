@@ -186,6 +186,13 @@ type ec2DetailLoadedMsg struct{ detail *e9saws.EC2InstanceDetail }
 type ec2ConsoleLoadedMsg struct{ output string }
 type ec2ActionDoneMsg struct{ message string }
 
+// --- ECR Messages ---
+
+type ecrReposLoadedMsg struct{ repos []e9saws.ECRRepo }
+type ecrImagesLoadedMsg struct{ images []e9saws.ECRImage }
+type ecrFindingsLoadedMsg struct{ findings []e9saws.ECRFinding }
+type ecrActionDoneMsg struct{ message string }
+
 // --- Route53 Messages ---
 
 type r53ZonesLoadedMsg struct{ zones []e9saws.R53Zone }

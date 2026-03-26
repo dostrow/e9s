@@ -87,6 +87,7 @@ type Config struct {
 		SQS             *bool `yaml:"sqs"`
 		CodeBuild       *bool `yaml:"codebuild"`
 		EC2             *bool `yaml:"ec2_instances"`
+		ECR             *bool `yaml:"ecr"`
 		Route53         *bool `yaml:"route53"`
 	} `yaml:"modules"`
 	ExcludeServices []string `yaml:"exclude_services"`
@@ -308,6 +309,7 @@ func (c *Config) ModuleDynamoDB() bool    { return boolDefault(c.Modules.DynamoD
 func (c *Config) ModuleSQS() bool         { return boolDefault(c.Modules.SQS, true) }
 func (c *Config) ModuleCodeBuild() bool   { return boolDefault(c.Modules.CodeBuild, true) }
 func (c *Config) ModuleEC2() bool         { return boolDefault(c.Modules.EC2, true) }
+func (c *Config) ModuleECR() bool         { return boolDefault(c.Modules.ECR, true) }
 func (c *Config) ModuleRoute53() bool     { return boolDefault(c.Modules.Route53, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {

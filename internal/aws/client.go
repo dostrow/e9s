@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -32,6 +33,7 @@ type Client struct {
 	SQS       *sqs.Client
 	CodeBuild *codebuild.Client
 	EC2       *ec2.Client
+	ECR       *ecr.Client
 	Route53   *route53.Client
 	cfg       awscfg.Config
 	region string
@@ -64,6 +66,7 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		SQS:       sqs.NewFromConfig(cfg),
 		CodeBuild: codebuild.NewFromConfig(cfg),
 		EC2:       ec2.NewFromConfig(cfg),
+		ECR:       ecr.NewFromConfig(cfg),
 		Route53:   route53.NewFromConfig(cfg),
 		cfg:       cfg,
 		region:    cfg.Region,
@@ -92,6 +95,7 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	c.SQS = sqs.NewFromConfig(cfg)
 	c.CodeBuild = codebuild.NewFromConfig(cfg)
 	c.EC2 = ec2.NewFromConfig(cfg)
+	c.ECR = ecr.NewFromConfig(cfg)
 	c.Route53 = route53.NewFromConfig(cfg)
 	c.cfg = cfg
 	c.region = region

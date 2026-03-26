@@ -30,6 +30,7 @@ const (
 	modeSQS
 	modeCodeBuild
 	modeEC2
+	modeECR
 	modeRoute53
 )
 
@@ -72,6 +73,9 @@ const (
 	viewEC2Instances
 	viewEC2Detail
 	viewEC2Console
+	viewECRRepos
+	viewECRImages
+	viewECRFindings
 	viewR53Zones
 	viewR53Records
 	viewR53RecordDetail
@@ -119,6 +123,9 @@ type App struct {
 	ec2InstancesView  views.EC2InstancesModel
 	ec2DetailView     views.EC2DetailModel
 	ec2ConsoleView    views.EC2ConsoleModel
+	ecrReposView      views.ECRReposModel
+	ecrImagesView     views.ECRImagesModel
+	ecrFindingsView   views.ECRFindingsModel
 	r53ZonesView      views.R53ZonesModel
 	r53RecordsView    views.R53RecordsModel
 	r53DetailView     views.R53RecordDetailModel
@@ -211,6 +218,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeSQS, "SQS", cfg.ModuleSQS()},
 		{modeCodeBuild, "CB", cfg.ModuleCodeBuild()},
 		{modeEC2, "EC2i", cfg.ModuleEC2()},
+		{modeECR, "ECR", cfg.ModuleECR()},
 		{modeRoute53, "R53", cfg.ModuleRoute53()},
 	}
 	idx := 1
@@ -258,6 +266,7 @@ func resolveDefaultMode(s string) *topMode {
 		"SQS": modeSQS, "sqs": modeSQS,
 		"CodeBuild": modeCodeBuild, "codebuild": modeCodeBuild, "CB": modeCodeBuild, "cb": modeCodeBuild,
 		"EC2": modeEC2, "ec2": modeEC2, "EC2i": modeEC2, "ec2i": modeEC2,
+		"ECR": modeECR, "ecr": modeECR,
 		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
 	}
 	if m, ok := modes[s]; ok {
@@ -330,6 +339,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ec2InstancesView = a.ec2InstancesView.SetSize(w, h)
 		a.ec2DetailView = a.ec2DetailView.SetSize(w, h)
 		a.ec2ConsoleView = a.ec2ConsoleView.SetSize(w, h)
+		a.ecrReposView = a.ecrReposView.SetSize(w, h)
+		a.ecrImagesView = a.ecrImagesView.SetSize(w, h)
+		a.ecrFindingsView = a.ecrFindingsView.SetSize(w, h)
 		a.r53ZonesView = a.r53ZonesView.SetSize(w, h)
 		a.r53RecordsView = a.r53RecordsView.SetSize(w, h)
 		a.r53DetailView = a.r53DetailView.SetSize(w, h)
@@ -858,6 +870,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ec2ActionDoneMsg:
 		return a.handleEC2Action(msg)
 
+	// --- ECR messages ---
+	case ecrReposLoadedMsg:
+		a.ecrReposView = a.ecrReposView.SetRepos(msg.repos)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ecrImagesLoadedMsg:
+		a.ecrImagesView = a.ecrImagesView.SetImages(msg.images)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ecrFindingsLoadedMsg:
+		a.ecrFindingsView = a.ecrFindingsView.SetFindings(msg.findings)
+		a.loading = false
+		return a, nil
+
+	case ecrActionDoneMsg:
+		return a.handleECRAction(msg)
+
 	// --- Route53 messages ---
 	case r53ZonesLoadedMsg:
 		a.r53ZonesView = a.r53ZonesView.SetZones(msg.zones)
@@ -965,6 +998,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStopEC2()
 		case ConfirmEC2Reboot:
 			return a, a.doRebootEC2()
+		case ConfirmECRDelete:
+			return a, a.doDeleteECRImage()
 		case ConfirmR53Create:
 			return a, a.doCreateR53Record()
 		case ConfirmR53Update:
@@ -1452,6 +1487,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "x":
 				return a.stopCBBuild()
 			}
+		case viewECRImages:
+			switch msg.String() {
+			case "s":
+				return a.startECRScan()
+			case "x":
+				return a.deleteECRImage()
+			case "y":
+				return a.copyECRImageURI()
+			}
 		case viewR53Records:
 			if msg.String() == "n" {
 				return a.createR53Record()
@@ -1549,6 +1593,12 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.cbBuildsView, cmd = a.cbBuildsView.Update(msg)
 	case viewCBBuildDetail:
 		a.cbBuildDetailView, cmd = a.cbBuildDetailView.Update(msg)
+	case viewECRRepos:
+		a.ecrReposView, cmd = a.ecrReposView.Update(msg)
+	case viewECRImages:
+		a.ecrImagesView, cmd = a.ecrImagesView.Update(msg)
+	case viewECRFindings:
+		a.ecrFindingsView, cmd = a.ecrFindingsView.Update(msg)
 	case viewR53Zones:
 		a.r53ZonesView, cmd = a.r53ZonesView.Update(msg)
 	case viewR53Records:
@@ -1603,6 +1653,12 @@ func (a App) isFiltering() bool {
 		return a.cbProjectsView.IsFiltering()
 	case viewEC2Instances:
 		return a.ec2InstancesView.IsFiltering()
+	case viewECRRepos:
+		return a.ecrReposView.IsFiltering()
+	case viewECRImages:
+		return a.ecrImagesView.IsFiltering()
+	case viewECRFindings:
+		return a.ecrFindingsView.IsFiltering()
 	case viewR53Zones:
 		return a.r53ZonesView.IsFiltering()
 	case viewR53Records:
@@ -1704,6 +1760,12 @@ func (a App) View() string {
 		content = a.cbBuildsView.View()
 	case viewCBBuildDetail:
 		content = a.cbBuildDetailView.View()
+	case viewECRRepos:
+		content = a.ecrReposView.View()
+	case viewECRImages:
+		content = a.ecrImagesView.View()
+	case viewECRFindings:
+		content = a.ecrFindingsView.View()
 	case viewR53Zones:
 		content = a.r53ZonesView.View()
 	case viewR53Records:
@@ -1847,6 +1909,12 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewCBBuildDetail:
 		primary = "[l] view logs"
+	case viewECRRepos:
+		primary = "[enter] images"
+	case viewECRImages:
+		primary = "[enter] scan findings"
+	case viewECRFindings:
+		primary = "[/] filter"
 	case viewR53Zones:
 		primary = "[enter] records"
 	case viewR53Records:
@@ -2102,6 +2170,23 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewECRRepos:
+		context = []kv{
+			{"enter", "View images"},
+			{"/", "Filter repositories"},
+		}
+	case viewECRImages:
+		context = []kv{
+			{"enter", "View scan findings"},
+			{"s", "Start scan"},
+			{"y", "Copy image URI to clipboard"},
+			{"x", "Delete image"},
+			{"/", "Filter by tag or digest"},
+		}
+	case viewECRFindings:
+		context = []kv{
+			{"/", "Filter findings"},
+		}
 	case viewR53Zones:
 		context = []kv{
 			{"enter", "View records"},
@@ -2255,6 +2340,12 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewCBBuilds:
 		return a.openCBBuildDetail()
+	case viewECRRepos:
+		if r := a.ecrReposView.SelectedRepo(); r != nil {
+			return a.openECRImages(r.Name, r.URI)
+		}
+	case viewECRImages:
+		return a.openECRFindings()
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -2297,6 +2388,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openCBProjects()
 	case modeEC2:
 		return a.openEC2Instances("")
+	case modeECR:
+		return a.openECRRepos()
 	case modeRoute53:
 		return a.openR53Zones()
 	}
@@ -2336,6 +2429,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openCBProjects()
 	case modeEC2:
 		return a.openEC2Instances("")
+	case modeECR:
+		return a.openECRRepos()
 	case modeRoute53:
 		return a.openR53Zones()
 	}
@@ -2506,6 +2601,14 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	case viewCBBuildDetail:
 		a.state = viewCBBuilds
+		return a, nil
+	case viewECRRepos:
+		return a.showModePicker()
+	case viewECRImages:
+		a.state = viewECRRepos
+		return a, nil
+	case viewECRFindings:
+		a.state = viewECRImages
 		return a, nil
 	case viewR53Zones:
 		return a.showModePicker()

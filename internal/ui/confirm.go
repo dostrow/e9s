@@ -30,6 +30,7 @@ const (
 	ConfirmR53Create
 	ConfirmR53Update
 	ConfirmR53Delete
+	ConfirmECRDelete
 )
 
 type ConfirmModel struct {
