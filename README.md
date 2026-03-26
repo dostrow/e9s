@@ -1,6 +1,6 @@
 # e9s - ElasticMS The Elastic Management System
 
-An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, and CodeBuild.
+An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, ECR, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, CodeBuild, and Route53.
 
 Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubbletea](https://github.com/charmbracelet/bubbletea) and [lipgloss](https://github.com/charmbracelet/lipgloss). Colors adapt to your terminal's color scheme via ANSI color indices.
 
@@ -106,6 +106,27 @@ Browse CodeBuild projects, view build history per project, and inspect build det
 - **Start Build** — trigger a new build with `b` (with confirmation)
 - **Stop Build** — stop an in-progress build with `x`
 
+### ECR
+
+Browse ECR repositories, view images with vulnerability scan summaries, and drill into scan findings.
+
+- **Repository List** — name, scan-on-push status, tag mutability, encryption type. Filterable.
+- **Image List** — tags, digest, push date, size, scan status, vulnerability summary (C:2 H:5 M:12 format, color-coded). Newest first.
+- **Scan Findings** — severity (color-coded CRITICAL/HIGH/MEDIUM/LOW), CVE ID, package, version, description. Sorted by severity.
+- **Start Scan** — trigger on-demand image scan with `s`
+- **Copy URI** — copy full image URI to clipboard with `y`
+- **Delete Image** — remove by digest with `x` (with confirmation)
+
+### Route53
+
+Browse hosted zones, view and manage DNS record sets, and test DNS resolution.
+
+- **Hosted Zones** — zone name, public/private type, record count, comment. Filterable.
+- **Record Sets** — name, type (color-coded), TTL, values (with alias target display), routing policy. Filterable.
+- **Record Detail** — full values, alias info, routing policy details (weighted, latency, failover, geolocation), health check ID
+- **Test DNS** — resolve a record via the Route53 `TestDNSAnswer` API with `t` — shows response code, nameserver, and resolved data
+- **Create/Edit/Delete Records** — create (`n`) or edit (`e`) records via `$EDITOR` with JSON templates, delete (`x`) with confirmation
+
 ## Installation
 
 ### Prerequisites
@@ -182,7 +203,7 @@ e9s [flags]
 
 Flags:
   -c, --cluster string   ECS cluster (skips to service list)
-  -m, --mode string      Start in module: ECS, EC2i, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB
+  -m, --mode string      Start in module: ECS, EC2i, ECR, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53
   -r, --region string    AWS region (default: from AWS config)
   -p, --profile string   AWS profile name
       --refresh int      Auto-refresh interval in seconds (default: 5)
@@ -391,6 +412,30 @@ e9s -m SQS -r eu-west-1
 | `r` | Reboot instance |
 | `T` | Terminate instance |
 
+### ECR — Images
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View scan findings |
+| `s` | Start on-demand scan |
+| `y` | Copy image URI to clipboard |
+| `x` | Delete image |
+
+### Route53 — Records
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View record detail |
+| `n` | Create new record |
+
+### Route53 — Record Detail
+
+| Key | Action |
+| --- | --- |
+| `t` | Test DNS resolution |
+| `e` | Edit record |
+| `x` | Delete record |
+
 ### All Pickers (saved items)
 
 | Key | Action |
@@ -428,6 +473,8 @@ modules:
   sqs: true
   codebuild: true
   ec2_instances: true
+  ecr: true
+  route53: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -467,6 +514,10 @@ Your IAM identity needs permissions for whichever modules you use:
 | EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeVolumes`, `ec2:DescribeSecurityGroups`, `ec2:GetConsoleOutput` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |
+| ECR browse | `ecr:DescribeRepositories`, `ecr:DescribeImages`, `ecr:DescribeImageScanFindings` |
+| ECR operations | `ecr:StartImageScan`, `ecr:BatchDeleteImage` |
+| Route53 browse | `route53:ListHostedZones`, `route53:ListResourceRecordSets`, `route53:TestDNSAnswer` |
+| Route53 operations | `route53:ChangeResourceRecordSets` |
 
 ## License
 
