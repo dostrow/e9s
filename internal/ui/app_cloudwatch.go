@@ -127,10 +127,12 @@ func (a App) tailEntireLogGroup() (App, tea.Cmd) {
 
 func (a App) startLogTail(logGroup string, streams []string, title string) tea.Cmd {
 	return func() tea.Msg {
-		if len(streams) == 0 {
-			return logReadyMsg{title: title, logGroup: logGroup, streams: nil}
+		return logReadyMsg{
+			title:    title,
+			logGroup: logGroup,
+			streams:  streams,
+			lookback: 10 * time.Second,
 		}
-		return logReadyMsg{title: title, logGroup: logGroup, streams: streams}
 	}
 }
 
