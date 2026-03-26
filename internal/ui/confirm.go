@@ -22,6 +22,10 @@ const (
 	ConfirmSQSSend
 	ConfirmCBStartBuild
 	ConfirmCBStopBuild
+	ConfirmEC2Start
+	ConfirmEC2Stop
+	ConfirmEC2Reboot
+	ConfirmEC2Terminate
 )
 
 type ConfirmModel struct {

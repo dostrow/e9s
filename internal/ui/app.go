@@ -29,6 +29,7 @@ const (
 	modeDynamoDB
 	modeSQS
 	modeCodeBuild
+	modeEC2
 )
 
 type viewState int
@@ -67,6 +68,9 @@ const (
 	viewCBProjects
 	viewCBBuilds
 	viewCBBuildDetail
+	viewEC2Instances
+	viewEC2Detail
+	viewEC2Console
 )
 
 type App struct {
@@ -108,6 +112,9 @@ type App struct {
 	cbProjectsView    views.CBProjectsModel
 	cbBuildsView      views.CBBuildsModel
 	cbBuildDetailView views.CBBuildDetailModel
+	ec2InstancesView  views.EC2InstancesModel
+	ec2DetailView     views.EC2DetailModel
+	ec2ConsoleView    views.EC2ConsoleModel
 	regionPicker      views.RegionPickerModel
 
 	// Navigation context
@@ -190,6 +197,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeDynamoDB, "DDB", cfg.ModuleDynamoDB()},
 		{modeSQS, "SQS", cfg.ModuleSQS()},
 		{modeCodeBuild, "CB", cfg.ModuleCodeBuild()},
+		{modeEC2, "EC2i", cfg.ModuleEC2()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -235,6 +243,7 @@ func resolveDefaultMode(s string) *topMode {
 		"DynamoDB": modeDynamoDB, "dynamodb": modeDynamoDB, "DDB": modeDynamoDB, "ddb": modeDynamoDB,
 		"SQS": modeSQS, "sqs": modeSQS,
 		"CodeBuild": modeCodeBuild, "codebuild": modeCodeBuild, "CB": modeCodeBuild, "cb": modeCodeBuild,
+		"EC2": modeEC2, "ec2": modeEC2, "EC2i": modeEC2, "ec2i": modeEC2,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -303,6 +312,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.cbProjectsView = a.cbProjectsView.SetSize(w, h)
 		a.cbBuildsView = a.cbBuildsView.SetSize(w, h)
 		a.cbBuildDetailView = a.cbBuildDetailView.SetSize(w, h)
+		a.ec2InstancesView = a.ec2InstancesView.SetSize(w, h)
+		a.ec2DetailView = a.ec2DetailView.SetSize(w, h)
+		a.ec2ConsoleView = a.ec2ConsoleView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -790,6 +802,28 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	// --- EC2 messages ---
+	case ec2InstancesLoadedMsg:
+		a.ec2InstancesView = a.ec2InstancesView.SetInstances(msg.instances)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ec2DetailLoadedMsg:
+		a.ec2DetailView = views.NewEC2Detail(msg.detail)
+		a.ec2DetailView = a.ec2DetailView.SetSize(a.width-3, a.height-6)
+		a.state = viewEC2Detail
+		a.loading = false
+		return a, nil
+
+	case ec2ConsoleLoadedMsg:
+		a.ec2ConsoleView = a.ec2ConsoleView.SetOutput(msg.output)
+		a.loading = false
+		return a, nil
+
+	case ec2ActionDoneMsg:
+		return a.handleEC2Action(msg)
+
 	// --- Shared messages ---
 	case regionSwitchedMsg:
 		a.flashMessage = fmt.Sprintf("Switched to %s", a.client.Region())
@@ -857,6 +891,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStartCBBuild()
 		case ConfirmCBStopBuild:
 			return a, a.doStopCBBuild()
+		case ConfirmEC2Start:
+			return a, a.doStartEC2()
+		case ConfirmEC2Stop:
+			return a, a.doStopEC2()
+		case ConfirmEC2Reboot:
+			return a, a.doRebootEC2()
+		case ConfirmEC2Terminate:
+			return a, a.doTerminateEC2()
 		}
 		return a, nil
 
@@ -1330,6 +1372,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "x":
 				return a.stopCBBuild()
 			}
+		case viewEC2Detail:
+			switch msg.String() {
+			case "e":
+				return a.startEC2SSMSession()
+			case "c":
+				return a.openEC2Console()
+			case "S":
+				return a.startEC2Instance()
+			case "X":
+				return a.stopEC2Instance()
+			case "r":
+				return a.rebootEC2Instance()
+			case "T":
+				return a.terminateEC2Instance()
+			}
 		}
 
 		return a.delegateToActiveView(msg)
@@ -1399,6 +1456,12 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.cbBuildsView, cmd = a.cbBuildsView.Update(msg)
 	case viewCBBuildDetail:
 		a.cbBuildDetailView, cmd = a.cbBuildDetailView.Update(msg)
+	case viewEC2Instances:
+		a.ec2InstancesView, cmd = a.ec2InstancesView.Update(msg)
+	case viewEC2Detail:
+		a.ec2DetailView, cmd = a.ec2DetailView.Update(msg)
+	case viewEC2Console:
+		a.ec2ConsoleView, cmd = a.ec2ConsoleView.Update(msg)
 	}
 	return a, cmd
 }
@@ -1439,6 +1502,8 @@ func (a App) isFiltering() bool {
 		return a.alarmsView.IsFiltering()
 	case viewCBProjects:
 		return a.cbProjectsView.IsFiltering()
+	case viewEC2Instances:
+		return a.ec2InstancesView.IsFiltering()
 	}
 	return false
 }
@@ -1536,6 +1601,12 @@ func (a App) View() string {
 		content = a.cbBuildsView.View()
 	case viewCBBuildDetail:
 		content = a.cbBuildDetailView.View()
+	case viewEC2Instances:
+		content = a.ec2InstancesView.View()
+	case viewEC2Detail:
+		content = a.ec2DetailView.View()
+	case viewEC2Console:
+		content = a.ec2ConsoleView.View()
 	}
 
 	helpLine := a.helpText()
@@ -1667,6 +1738,12 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewCBBuildDetail:
 		primary = "[l] view logs"
+	case viewEC2Instances:
+		primary = "[enter] detail"
+	case viewEC2Detail:
+		primary = "[e] SSM session"
+	case viewEC2Console:
+		primary = "[j/k] scroll"
 	}
 	if primary != "" {
 		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
@@ -1907,6 +1984,27 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewEC2Instances:
+		context = []kv{
+			{"enter", "View instance detail"},
+			{"/", "Filter instances"},
+		}
+	case viewEC2Detail:
+		context = []kv{
+			{"e", "SSM session (shell into instance)"},
+			{"c", "View console output"},
+			{"S", "Start instance"},
+			{"X", "Stop instance"},
+			{"r", "Reboot instance"},
+			{"T", "Terminate instance"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewEC2Console:
+		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
 	}
 
 	// Combine: context first, then separator, then global
@@ -2022,6 +2120,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewCBBuilds:
 		return a.openCBBuildDetail()
+	case viewEC2Instances:
+		return a.openEC2Detail()
 	}
 	return a, nil
 }
@@ -2054,6 +2154,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.promptSQSBrowser()
 	case modeCodeBuild:
 		return a.openCBProjects()
+	case modeEC2:
+		return a.openEC2Instances("")
 	}
 	return a, nil
 }
@@ -2089,6 +2191,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.promptSQSBrowser()
 	case modeCodeBuild:
 		return a.openCBProjects()
+	case modeEC2:
+		return a.openEC2Instances("")
 	}
 	return a, nil
 }
@@ -2257,6 +2361,14 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	case viewCBBuildDetail:
 		a.state = viewCBBuilds
+		return a, nil
+	case viewEC2Instances:
+		return a.showModePicker()
+	case viewEC2Detail:
+		a.state = viewEC2Instances
+		return a, nil
+	case viewEC2Console:
+		a.state = viewEC2Detail
 		return a, nil
 	}
 	return a, nil

@@ -170,6 +170,13 @@ type cbBuildDetailLoadedMsg struct{ detail *e9saws.CBBuildDetail }
 type cbBuildStartedMsg struct{ message string }
 type cbBuildStoppedMsg struct{ message string }
 
+// --- EC2 Messages ---
+
+type ec2InstancesLoadedMsg struct{ instances []e9saws.EC2Instance }
+type ec2DetailLoadedMsg struct{ detail *e9saws.EC2InstanceDetail }
+type ec2ConsoleLoadedMsg struct{ output string }
+type ec2ActionDoneMsg struct{ message string }
+
 // --- Shared Messages ---
 
 type regionSwitchedMsg struct{}

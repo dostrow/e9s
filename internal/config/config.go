@@ -86,6 +86,7 @@ type Config struct {
 		DynamoDB        *bool `yaml:"dynamodb"`
 		SQS             *bool `yaml:"sqs"`
 		CodeBuild       *bool `yaml:"codebuild"`
+		EC2             *bool `yaml:"ec2_instances"`
 	} `yaml:"modules"`
 	ExcludeServices []string `yaml:"exclude_services"`
 	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
@@ -305,6 +306,7 @@ func (c *Config) ModuleLambda() bool      { return boolDefault(c.Modules.Lambda,
 func (c *Config) ModuleDynamoDB() bool    { return boolDefault(c.Modules.DynamoDB, true) }
 func (c *Config) ModuleSQS() bool         { return boolDefault(c.Modules.SQS, true) }
 func (c *Config) ModuleCodeBuild() bool   { return boolDefault(c.Modules.CodeBuild, true) }
+func (c *Config) ModuleEC2() bool         { return boolDefault(c.Modules.EC2, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {
 	if c.Modules.CWLogs != nil {

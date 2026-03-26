@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -29,6 +30,7 @@ type Client struct {
 	DynamoDB *dynamodb.Client
 	SQS       *sqs.Client
 	CodeBuild *codebuild.Client
+	EC2       *ec2.Client
 	cfg       awscfg.Config
 	region string
 }
@@ -59,8 +61,9 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		DynamoDB: dynamodb.NewFromConfig(cfg),
 		SQS:       sqs.NewFromConfig(cfg),
 		CodeBuild: codebuild.NewFromConfig(cfg),
+		EC2:       ec2.NewFromConfig(cfg),
 		cfg:       cfg,
-		region: cfg.Region,
+		region:    cfg.Region,
 	}, nil
 }
 
@@ -85,6 +88,7 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	c.DynamoDB = dynamodb.NewFromConfig(cfg)
 	c.SQS = sqs.NewFromConfig(cfg)
 	c.CodeBuild = codebuild.NewFromConfig(cfg)
+	c.EC2 = ec2.NewFromConfig(cfg)
 	c.cfg = cfg
 	c.region = region
 	return nil

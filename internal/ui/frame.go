@@ -168,6 +168,7 @@ func modeDisplayName(mode topMode) string {
 		modeDynamoDB: "DynamoDB",
 		modeSQS:       "SQS",
 		modeCodeBuild: "CodeBuild",
+		modeEC2:       "EC2",
 	}
 	if name, ok := names[mode]; ok {
 		return name
@@ -188,6 +189,7 @@ func modeShortName(mode topMode) string {
 		modeDynamoDB: "DDB",
 		modeSQS:       "SQS",
 		modeCodeBuild: "CB",
+		modeEC2:       "EC2i",
 	}
 	if name, ok := names[mode]; ok {
 		return name
