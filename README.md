@@ -1,67 +1,98 @@
 # e9s - ElasticMS The Elastic Management System
 
-An interactive terminal UI for managing AWS infrastructure — ECS, CloudWatch Logs, SSM Parameter Store, Secrets Manager, S3, and Lambda — from a single tool.
+An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, and CodeBuild.
 
-Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubbletea](https://github.com/charmbracelet/bubbletea) and [lipgloss](https://github.com/charmbracelet/lipgloss). Colors adapt to your terminal's color scheme.
+Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubbletea](https://github.com/charmbracelet/bubbletea) and [lipgloss](https://github.com/charmbracelet/lipgloss). Colors adapt to your terminal's color scheme via ANSI color indices.
 
-```
-e9s [1:ECS] [2:CW] [3:SSM] [4:SM] [5:S3] [6:λ] ── sample-prod ── region: us-east-1 ── ↻ 2s ago
+## Features
 
-  Services (4)
-
-  ╭─────────────────────────┬────────┬─────────┬─────────┬─────────┬────────────────────────────┬─────╮
-  │ NAME                    │ STATUS │ DESIRED │ RUNNING │ PENDING │ TASK DEF                   │ AGE │
-  ├─────────────────────────┼────────┼─────────┼─────────┼─────────┼────────────────────────────┼─────┤
-► │ backend                 │ ACTIVE │       5 │       5 │       0 │ backend:42                 │ 14d │
-  │ upload                  │ ACTIVE │       3 │       3 │       0 │ upload:41                  │ 14d │
-  │ api                     │ ACTIVE │       2 │       2 │       0 │ api:40                     │ 14d │
-  │ ui                      │ ACTIVE │       2 │       2 │       0 │ ui:15                      │  7d │
-  ╰─────────────────────────┴────────┴─────────┴─────────┴─────────┴────────────────────────────┴─────╯
-
-  [enter] tasks  [d] detail  [L] logs  [r] redeploy  [s] scale  [m] metrics  [S] standalone
-  [/] filter  [ctrl+r] region  [esc] back  [q] quit  [?] help
-```
+- **Full-screen framed UI** with bordered layout, scrollbar, info bar, and mode label
+- **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to reopen the current mode's entry picker
+- **Context-sensitive help** — press `?` for a full keybinding overlay
+- **Region switching** — `ctrl+r` to change AWS region on the fly
+- **Config hot-reload** — edit `~/.config/e9s/config.yaml` (or `ctrl+e` to open in `$EDITOR`) and changes apply automatically
+- **Saved bookmarks** — save frequently used paths, filters, queries, and multi-group selections with `W`
+- **Terminal-adaptive colors** — uses ANSI indices 0–15 so colors match your terminal theme
 
 ## Modules
 
-e9s is organized into modules, each accessible as a numbered tab in the status bar. Press `1`–`6` to switch between them. Modules can be individually enabled or disabled in the config file.
+e9s is organized into modules accessible via the mode switcher (`` ` ``). Modules can be individually enabled or disabled in the config file.
 
-### ECS (tab 1)
+### ECS
 
 Navigate clusters → services → tasks → containers. Force new deployments, scale services, stop tasks, view deployment rollout progress, inspect service events, and monitor CPU/memory metrics with CloudWatch alarm status.
 
-- **ECS Exec** — shell into running containers via Session Manager Plugin with command prompt
+- **ECS Exec** — shell into running containers via Session Manager Plugin
 - **Environment Variables** — view resolved env vars including SSM/Secrets Manager references with source labels and ARN toggle
 - **Task Definition Diff** — compare task definitions between deployments
 - **Standalone Tasks** — browse non-service tasks (Lambda-launched workers, one-off jobs)
 - **Log Streaming** — tail CloudWatch logs per task, container, or entire service
 
-### CloudWatch Logs (tab 2)
+### CloudWatch Logs (CWL)
 
 Browse log groups (by prefix or substring search), drill into log streams, and interact with logs.
 
 - **Live Tail** — stream logs at the group or stream level with follow mode, search highlighting, and `n`/`N` match navigation
-- **Log Search** — search across a time range using CloudWatch filter syntax, then jump from a result directly into the full log context
-- **Backward/Forward Fetch** — press `[`/`]` to load older or newer log chunks without enabling follow
+- **Log Search** — search across a time range (relative presets or custom UTC timestamps) using CloudWatch filter syntax; plain text is auto-quoted for literal matching
+- **Multi-Group Search** — select multiple log groups with `space`, search across all of them, and save the selection for future use
+- **Backward/Forward Fetch** — press `[`/`]` to load older or newer log chunks
 - **Timestamp Modes** — cycle through relative, local, and UTC timestamps with `t`
+- **Copy/Edit** — copy log buffer to clipboard (`y`) or open in `$EDITOR` (`o`)
 - **Save to File** — export the current log buffer with `w`
-- **Save/Delete Log Paths** — bookmark frequently used log groups and streams
+- **Save/Delete Log Paths** — bookmark frequently used log groups, streams, and multi-group selections
 
-### SSM Parameter Store (tab 3)
+### CloudWatch Alarms (CWA)
+
+Browse all CloudWatch metric alarms with color-coded state (OK, ALARM, INSUFFICIENT_DATA). Filter by state on entry, filter by name/metric/namespace in the list.
+
+- **Alarm Detail** — view configuration, dimensions, actions, and recent history
+- **Toggle Actions** — enable or disable alarm actions with `a`
+- **Set State** — manually set alarm state for testing with `S`
+- **Timestamps** — toggle between local and UTC with `t`
+
+### SSM Parameter Store
 
 Browse SSM parameters by path prefix. View values (with decryption for SecureString), edit parameters with confirmation, and save prefixes for quick access.
 
-### Secrets Manager (tab 4)
+### Secrets Manager
 
-Browse secrets by name filter. View secret values as pretty-printed JSON with syntax coloring, inspect tags, and edit values with confirmation. Saved filters for quick access.
+Browse secrets by name filter (true substring matching). View secret values as pretty-printed JSON with syntax coloring, inspect tags, and edit values with confirmation. Save filters for quick access.
 
-### S3 (tab 5)
+### S3
 
-Browse S3 buckets (search by name), navigate object keys as a file browser with folder-level navigation. View object metadata and tags, download individual objects or recursively download entire prefixes.
+Browse S3 buckets (search by name), navigate object keys as a file browser with folder-level navigation. View object metadata and tags, download individual objects or recursively download entire prefixes. Configurable default save directory.
 
-### Lambda (tab 6)
+### Lambda
 
-Browse Lambda functions with runtime, state, memory, and timeout info. View environment variables with SSM/Secrets Manager resolution (same as ECS), tail CloudWatch logs, and search logs with the full CW search flow.
+Browse Lambda functions with runtime, state, memory, and timeout info. View environment variables with SSM/Secrets Manager resolution (same as ECS), tail CloudWatch logs, and search logs with the full CW Logs search flow.
+
+### DynamoDB
+
+Browse DynamoDB tables, scan items with pagination (press `]` to load more), and drill into item details.
+
+- **Filter Scan** — filter by attribute with operators (=, <>, contains, begins_with, etc.)
+- **PartiQL** — run arbitrary PartiQL queries with saved query support
+- **Edit Fields** — edit individual field values via `$EDITOR` with type inference
+- **Clone Items** — clone and modify items via `$EDITOR` for creating new entries
+
+### SQS
+
+Browse SQS queues (substring search), view queue stats and configuration, poll for messages, and inspect message details.
+
+- **Send Messages** — compose messages via `$EDITOR` with FIFO support (group ID, deduplication ID)
+- **Clone & Send** — clone an existing message for re-sending
+- **DLQ Navigation** — jump to the dead letter queue from a queue's detail view
+- **Delete Messages** — delete individual messages with confirmation
+
+### CodeBuild
+
+Browse CodeBuild projects, view build history per project, and inspect build details.
+
+- **Build Detail** — view phases with durations and error contexts, source info, environment variables, and log location
+- **View Logs** — open the build's CloudWatch log stream in the log viewer (full history for completed builds, follow mode for in-progress)
+- **Search Logs** — server-side search across the full build log with `s`
+- **Start Build** — trigger a new build with `b` (with confirmation)
+- **Stop Build** — stop an in-progress build with `x`
 
 ## Installation
 
@@ -149,7 +180,7 @@ Flags:
 ### Examples
 
 ```bash
-# Interactive — start at cluster list
+# Interactive — start at mode picker
 e9s
 
 # Jump directly to a cluster's services
@@ -163,100 +194,175 @@ e9s -p production -r us-east-2 -c my-cluster
 
 ### Global
 
-| Key                | Action                                  |
-| ------------------ | --------------------------------------- |
-| `1`–`6`            | Switch module (ECS, CW, SSM, SM, S3, λ) |
-| `j`/`k` or `↑`/`↓` | Navigate up/down                        |
-| `Enter`            | Drill into selected item                |
-| `Esc`              | Go back to parent view                  |
-| `q`                | Quit from anywhere                      |
-| `/`                | Filter/search                           |
-| `R`                | Refresh data                            |
-| `Ctrl+R`           | Switch AWS region                       |
-| `?`                | Help overlay                            |
+| Key | Action |
+| --- | --- |
+| `` ` `` | Open mode switcher |
+| `ctrl+p` | Reopen current mode's entry picker |
+| `ctrl+e` | Edit config in `$EDITOR` |
+| `ctrl+r` | Switch AWS region |
+| `j`/`k` or `↑`/`↓` | Navigate up/down |
+| `Enter` | Drill into selected item |
+| `Esc` | Go back to parent view |
+| `q` | Quit |
+| `/` | Filter/search |
+| `R` | Refresh data |
+| `?` | Context-sensitive help overlay |
+| `PgUp`/`PgDn` | Scroll by page |
 
 ### ECS — Service List
 
-| Key | Action                                   |
-| --- | ---------------------------------------- |
+| Key | Action |
+| --- | --- |
 | `r` | Force new deployment (with confirmation) |
-| `s` | Scale — prompt for desired count         |
-| `d` | Service detail (deployments + events)    |
-| `L` | Tail logs for entire service             |
-| `m` | CPU/memory metrics + alarms              |
-| `S` | Standalone tasks (non-service)           |
+| `s` | Scale — prompt for desired count |
+| `d` | Service detail (deployments + events) |
+| `L` | Tail logs for entire service |
+| `m` | CPU/memory metrics + alarms |
+| `S` | Standalone tasks (non-service) |
 
 ### ECS — Task List
 
-| Key | Action                          |
-| --- | ------------------------------- |
-| `l` | Tail logs for selected task     |
-| `x` | Stop task (with confirmation)   |
+| Key | Action |
+| --- | --- |
+| `l` | Tail logs for selected task |
+| `x` | Stop task (with confirmation) |
 | `e` | ECS Exec (shell into container) |
 
 ### ECS — Task/Lambda Detail
 
-| Key | Action                                              |
-| --- | --------------------------------------------------- |
+| Key | Action |
+| --- | --- |
 | `E` | View environment variables (with SSM/SM resolution) |
 
 ### Log Viewer
 
-| Key           | Action                                   |
-| ------------- | ---------------------------------------- |
-| `f`           | Toggle follow mode (auto-scroll)         |
-| `t`           | Cycle timestamps: relative → local → UTC |
-| `/`           | Search — jump to matches with `n`/`N`    |
-| `[`/`]`       | Load older/newer log chunks              |
-| `w`           | Save buffer to file                      |
-| `g`/`G`       | Jump to top/bottom                       |
-| `PgUp`/`PgDn` | Scroll by page                           |
+| Key | Action |
+| --- | --- |
+| `f` | Toggle follow mode (auto-scroll) |
+| `t` | Cycle timestamps: relative → local → UTC |
+| `/` | Search — jump to matches with `n`/`N` |
+| `[`/`]` | Load older/newer log chunks |
+| `y` | Copy log buffer to clipboard |
+| `o` | Open log buffer in `$EDITOR` |
+| `w` | Save buffer to file |
+| `g`/`G` | Jump to top/bottom |
 
-### CloudWatch — Log Groups/Streams
+### CloudWatch Logs — Log Groups
 
-| Key | Action                             |
-| --- | ---------------------------------- |
-| `l` | Tail selected stream/group         |
-| `L` | Tail entire log group              |
-| `s` | Search logs (time range + pattern) |
-| `W` | Save log path                      |
+| Key | Action |
+| --- | --- |
+| `space` | Multi-select groups for search |
+| `l` | Tail selected group |
+| `s` | Search selected groups |
+| `W` | Save log path / group selection |
+
+### CloudWatch Logs — Log Streams
+
+| Key | Action |
+| --- | --- |
+| `l` | Tail selected stream |
+| `L` | Tail entire log group |
+| `s` | Search stream |
+| `W` | Save log path |
+
+### CloudWatch Alarms
+
+| Key | Action |
+| --- | --- |
+| `t` | Toggle local/UTC timestamps |
+| `/` | Filter alarms |
+
+### CloudWatch Alarms — Detail
+
+| Key | Action |
+| --- | --- |
+| `a` | Enable/disable alarm actions |
+| `S` | Set alarm state (for testing) |
 
 ### SSM / Secrets Manager
 
-| Key     | Action                                              |
-| ------- | --------------------------------------------------- |
+| Key | Action |
+| --- | --- |
 | `Enter` | View value (SM shows pretty-printed JSON with tags) |
-| `e`     | Edit value (with confirmation)                      |
-| `W`     | Save prefix/filter                                  |
+| `e` | Edit value (with confirmation) |
+| `W` | Save prefix/filter |
 
 ### S3
 
-| Key     | Action                                  |
-| ------- | --------------------------------------- |
+| Key | Action |
+| --- | --- |
 | `Enter` | Browse into folder / view object detail |
-| `i`     | View object detail + tags               |
-| `D`     | Download object or folder               |
-| `W`     | Save bucket search                      |
+| `D` | Download object or folder |
+| `W` | Save bucket search |
 
 ### Lambda
 
-| Key     | Action                                   |
-| ------- | ---------------------------------------- |
-| `Enter` | View function detail                     |
-| `l`     | Tail function logs                       |
-| `s`     | Search function logs                     |
-| `E`     | View environment variables (from detail) |
-| `W`     | Save search                              |
+| Key | Action |
+| --- | --- |
+| `Enter` | View function detail |
+| `l` | Tail function logs |
+| `s` | Search function logs |
+| `E` | View environment variables (from detail) |
+| `W` | Save search |
+
+### DynamoDB — Items
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View item detail |
+| `f` | Filter scan (attribute + operator + value) |
+| `p` | PartiQL query |
+| `]` | Load next page |
+| `W` | Save PartiQL query |
+
+### DynamoDB — Item Detail
+
+| Key | Action |
+| --- | --- |
+| `e` | Edit field value via `$EDITOR` |
+| `c` | Clone item via `$EDITOR` |
+
+### SQS — Queue Detail
+
+| Key | Action |
+| --- | --- |
+| `m` | View messages |
+| `n` | Navigate to dead letter queue |
+
+### SQS — Messages
+
+| Key | Action |
+| --- | --- |
+| `p` | Poll for messages |
+| `s` | Send message via `$EDITOR` |
+| `c` | Clone & send message |
+| `x` | Delete message |
+
+### CodeBuild
+
+| Key | Action |
+| --- | --- |
+| `b` | Start new build (with confirmation) |
+| `t` | Toggle local/UTC timestamps (builds list) |
+
+### CodeBuild — Build Detail
+
+| Key | Action |
+| --- | --- |
+| `l` | View build logs |
+| `s` | Search build logs (full, server-side) |
+| `b` | Start new build |
+| `x` | Stop build (if in progress) |
 
 ### All Pickers (saved items)
 
-| Key | Action                      |
-| --- | --------------------------- |
+| Key | Action |
+| --- | --- |
 | `d` | Delete selected saved entry |
 
 ## Configuration
 
-Create `~/.e9s.yaml` to set defaults:
+Config is stored at `~/.config/e9s/config.yaml` (XDG convention). Press `ctrl+e` to edit it in your `$EDITOR`, or it hot-reloads on file changes.
 
 ```yaml
 defaults:
@@ -264,20 +370,26 @@ defaults:
   region: us-east-2
   profile: ""
   refresh_interval: 5
+  default_mode: ""        # start in this mode (e.g. "ECS", "CWL", "SQS")
+  save_dir: ~/Downloads   # default directory for file saves
 
 display:
-  timestamp_format: relative # "relative" or "absolute"
+  timestamp_format: relative  # "relative" or "absolute"
   max_events: 50
   max_log_lines: 1000
 
 # Enable/disable modules (all enabled by default)
 modules:
   ecs: true
-  cloudwatch: true
+  cloudwatch_logs: true
+  cloudwatch_alarms: true
   ssm: true
   sm: true
   s3: true
   lambda: true
+  dynamodb: true
+  sqs: true
+  codebuild: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -285,6 +397,9 @@ sm_filters: []
 s3_searches: []
 lambda_searches: []
 log_paths: []
+dynamo_tables: []
+dynamo_queries: []
+sqs_queues: []
 
 exclude_services: []
 ```
@@ -293,90 +408,25 @@ CLI flags override config file values.
 
 ## AWS Permissions
 
-Your IAM identity needs permissions for whichever features you use:
+Your IAM identity needs permissions for whichever modules you use:
 
-| Feature            | API Calls                                                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| ECS browse         | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` |
-| ECS operations     | `ecs:UpdateService`, `ecs:StopTask`                                                                                          |
-| ECS Exec           | `ecs:ExecuteCommand`, `ssmmessages:*`                                                                                        |
-| Task definitions   | `ecs:DescribeTaskDefinition`                                                                                                 |
-| CloudWatch Logs    | `logs:DescribeLogGroups`, `logs:DescribeLogStreams`, `logs:FilterLogEvents`                                                  |
-| CloudWatch Metrics | `cloudwatch:GetMetricData`, `cloudwatch:DescribeAlarms`                                                                      |
-| SSM parameters     | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter`                                       |
-| Secrets Manager    | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue`                               |
-| S3                 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging`                                 |
-| Lambda             | `lambda:ListFunctions`, `lambda:GetFunction`                                                                                 |
-
-## Project Structure
-
-```
-e9s/
-├── main.go
-├── Makefile
-├── internal/
-│   ├── aws/
-│   │   ├── client.go          # AWS SDK client + region switching
-│   │   ├── ecs.go             # ECS CRUD operations
-│   │   ├── exec.go            # ECS Exec + session-manager-plugin
-│   │   ├── logs.go            # CloudWatch log streaming + search
-│   │   ├── metrics.go         # CloudWatch metrics + alarms
-│   │   ├── ssm.go             # SSM Parameter Store
-│   │   ├── secrets.go         # Secrets Manager
-│   │   ├── s3.go              # S3 bucket/object operations
-│   │   ├── lambda.go          # Lambda function listing
-│   │   └── taskdef.go         # Task definition fetch + diff + env var resolution
-│   ├── config/
-│   │   └── config.go          # ~/.e9s.yaml loader + saved bookmarks
-│   ├── model/
-│   │   ├── types.go           # ECS data types
-│   │   └── transform.go       # AWS SDK types → internal types
-│   └── ui/
-│       ├── app.go             # Core: types, Update routing, View, navigation
-│       ├── app_ecs.go         # ECS operations, exec, env vars, data loading
-│       ├── app_cloudwatch.go  # CloudWatch log browser + search
-│       ├── app_ssm.go         # SSM parameter operations
-│       ├── app_sm.go          # Secrets Manager operations
-│       ├── app_s3.go          # S3 browser + download
-│       ├── app_lambda.go      # Lambda browser + log integration
-│       ├── app_messages.go    # All message type definitions
-│       ├── app_shared.go      # Region switching, saved entry deletion
-│       ├── confirm.go         # Confirmation dialog
-│       ├── help.go            # Help overlay
-│       ├── input.go           # Text input dialog
-│       ├── picker.go          # List picker with delete support
-│       ├── execwrap.go        # Exec subprocess wrapper
-│       ├── statusbar.go       # Status bar with mode tabs
-│       ├── theme/
-│       │   ├── styles.go      # ANSI-adaptive colors + styles
-│       │   └── keys.go        # Key bindings
-│       ├── components/
-│       │   └── table.go       # Auto-sizing nushell-style grid table
-│       └── views/
-│           ├── clusters.go
-│           ├── services.go
-│           ├── service_detail.go
-│           ├── tasks.go
-│           ├── standalone_tasks.go
-│           ├── task_detail.go
-│           ├── taskdef_diff.go
-│           ├── logs.go
-│           ├── log_groups.go
-│           ├── log_streams.go
-│           ├── log_search.go
-│           ├── metrics.go
-│           ├── env_vars.go
-│           ├── ssm.go
-│           ├── secrets.go
-│           ├── secret_value.go
-│           ├── s3_buckets.go
-│           ├── s3_objects.go
-│           ├── s3_detail.go
-│           ├── lambda_list.go
-│           ├── lambda_detail.go
-│           └── region_picker.go
-```
+| Module | API Calls |
+| --- | --- |
+| ECS browse | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` |
+| ECS operations | `ecs:UpdateService`, `ecs:StopTask` |
+| ECS Exec | `ecs:ExecuteCommand`, `ssmmessages:*` |
+| Task definitions | `ecs:DescribeTaskDefinition` |
+| CloudWatch Logs | `logs:DescribeLogGroups`, `logs:DescribeLogStreams`, `logs:FilterLogEvents`, `logs:GetLogEvents` |
+| CloudWatch Alarms | `cloudwatch:DescribeAlarms`, `cloudwatch:DescribeAlarmHistory`, `cloudwatch:EnableAlarmActions`, `cloudwatch:DisableAlarmActions`, `cloudwatch:SetAlarmState` |
+| CloudWatch Metrics | `cloudwatch:GetMetricData` |
+| SSM parameters | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter` |
+| Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue` |
+| S3 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging` |
+| Lambda | `lambda:ListFunctions`, `lambda:GetFunction` |
+| DynamoDB | `dynamodb:ListTables`, `dynamodb:DescribeTable`, `dynamodb:Scan`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:PutItem`, `dynamodb:ExecuteStatement` |
+| SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
+| CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
 
 ## License
 
-MIT
+[MIT](LICENSE)
