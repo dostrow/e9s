@@ -80,6 +80,24 @@ func (a App) tailLambdaLogs() (App, tea.Cmd) {
 	}
 }
 
+func (a App) browseLambdaLogs() (App, tea.Cmd) {
+	fn := a.lambdaListView.SelectedFunction()
+	if fn == nil {
+		return a, nil
+	}
+	a.prevState = viewLambdaList
+	return a.openLogStreams(fn.LogGroup)
+}
+
+func (a App) browseLambdaDetailLogs() (App, tea.Cmd) {
+	fn := a.lambdaDetailView.Function()
+	if fn == nil {
+		return a, nil
+	}
+	a.prevState = viewLambdaDetail
+	return a.openLogStreams(fn.LogGroup)
+}
+
 func (a App) showLambdaEnvVars() (App, tea.Cmd) {
 	fn := a.lambdaDetailView.Function()
 	if fn == nil || len(fn.EnvVars) == 0 {

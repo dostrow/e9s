@@ -1328,6 +1328,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.saveLambdaSearch()
 			case "l":
 				return a.tailLambdaLogs()
+			case "L":
+				return a.browseLambdaLogs()
 			case "s":
 				return a.searchLambdaLogs()
 			}
@@ -1335,6 +1337,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "l":
 				return a.tailLambdaDetailLogs()
+			case "L":
+				return a.browseLambdaDetailLogs()
 			case "s":
 				return a.searchLambdaDetailLogs()
 			case "E":
@@ -1890,7 +1894,8 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewLambdaList:
 		context = []kv{
 			{"enter", "Function detail"},
-			{"l", "Tail function logs"},
+			{"l", "Tail function logs (live)"},
+			{"L", "Browse log streams (historical)"},
 			{"s", "Search function logs"},
 			{"W", "Save search"},
 		}
@@ -1898,7 +1903,8 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"c", "Edit code (download, $EDITOR, deploy)"},
 			{"E", "View environment variables"},
-			{"l", "Tail logs"},
+			{"l", "Tail logs (live)"},
+			{"L", "Browse log streams (historical)"},
 			{"s", "Search logs"},
 		}
 	case viewDynamoTables:
