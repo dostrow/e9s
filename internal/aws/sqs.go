@@ -17,17 +17,17 @@ type SQSQueue struct {
 }
 
 type SQSQueueStats struct {
-	URL                    string
-	MessagesAvailable      int
-	MessagesInFlight       int
-	MessagesDelayed        int
-	RetentionSeconds       int
-	VisibilityTimeout      int
-	DelaySeconds           int
-	MaxMessageSize         int
-	IsFIFO                 bool
-	DeadLetterTargetARN    string
-	MaxReceiveCount        int
+	URL                 string
+	MessagesAvailable   int
+	MessagesInFlight    int
+	MessagesDelayed     int
+	RetentionSeconds    int
+	VisibilityTimeout   int
+	DelaySeconds        int
+	MaxMessageSize      int
+	IsFIFO              bool
+	DeadLetterTargetARN string
+	MaxReceiveCount     int
 }
 
 type SQSMessage struct {
@@ -35,9 +35,9 @@ type SQSMessage struct {
 	ReceiptHandle string
 	Body          string
 	MD5           string
-	Attributes    map[string]string            // system attributes
+	Attributes    map[string]string                         // system attributes
 	UserAttrs     map[string]sqstypes.MessageAttributeValue // user message attributes
-	UserAttrsMap  map[string]string            // simplified user attrs for display
+	UserAttrsMap  map[string]string                         // simplified user attrs for display
 }
 
 // SQSSendTemplate is the JSON structure for composing a message in $EDITOR.
@@ -54,7 +54,6 @@ type SQSAttr struct {
 	Value    string `json:"value"`
 }
 
-// ListQueues returns SQS queue names and URLs, optionally filtered.
 // ListSQSQueues returns SQS queues. The SQS API only supports prefix matching,
 // so for substring searches we fetch all queues and filter client-side.
 func (c *Client) ListSQSQueues(ctx context.Context, filter string) ([]SQSQueue, error) {
@@ -129,12 +128,12 @@ func (c *Client) ReceiveSQSMessages(ctx context.Context, queueURL string, maxMes
 	max := int32(maxMessages)
 
 	out, err := c.SQS.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:              &queueURL,
-		MaxNumberOfMessages:   max,
-		WaitTimeSeconds:       wait,
-		AttributeNames:        []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
+		QueueUrl:                    &queueURL,
+		MaxNumberOfMessages:         max,
+		WaitTimeSeconds:             wait,
+		AttributeNames:              []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
 		MessageSystemAttributeNames: []sqstypes.MessageSystemAttributeName{sqstypes.MessageSystemAttributeNameAll},
-		MessageAttributeNames: []string{"All"},
+		MessageAttributeNames:       []string{"All"},
 	})
 	if err != nil {
 		return nil, err

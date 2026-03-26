@@ -22,12 +22,12 @@ type DynamoTable struct {
 }
 
 type DynamoKeyElement struct {
-	Name    string
-	Type    string // HASH or RANGE
+	Name     string
+	Type     string // HASH or RANGE
 	AttrType string // S, N, B
 }
 
-type DynamoItem map[string]interface{}
+type DynamoItem map[string]any
 
 type DynamoScanResult struct {
 	Items            []DynamoItem
@@ -36,7 +36,7 @@ type DynamoScanResult struct {
 	LastEvaluatedKey map[string]dbtypes.AttributeValue
 }
 
-// ListTables returns DynamoDB table names, optionally filtered by substring.
+// ListDynamoTables ListTables returns DynamoDB table names, optionally filtered by substring.
 func (c *Client) ListDynamoTables(ctx context.Context, filter string) ([]string, error) {
 	var tables []string
 	var lastTable *string
@@ -279,8 +279,8 @@ func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyIte
 
 	expr := "SET #attr = :val"
 	input := &dynamodb.UpdateItemInput{
-		TableName: &tableName,
-		Key:       keyItem,
+		TableName:        &tableName,
+		Key:              keyItem,
 		UpdateExpression: &expr,
 		ExpressionAttributeNames: map[string]string{
 			"#attr": attrName,
@@ -336,7 +336,7 @@ func inferAttributeValue(s string) dbtypes.AttributeValue {
 	s = strings.TrimSpace(s)
 	if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
 		(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {
-		var m interface{}
+		var m any
 		if err := json.Unmarshal([]byte(s), &m); err == nil {
 			if av, err := attributevalue.Marshal(m); err == nil {
 				return av
