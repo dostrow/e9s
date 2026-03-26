@@ -1,7 +1,14 @@
 package aws
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -121,6 +128,150 @@ func sortEnvVars(vars []EnvVar) {
 		}
 		return 0
 	})
+}
+
+// DownloadLambdaCode downloads the function's deployment package and extracts
+// it to a temporary directory. Returns the directory path. Caller must clean up.
+func (c *Client) DownloadLambdaCode(ctx context.Context, functionName string) (string, error) {
+	out, err := c.Lambda.GetFunction(ctx, &lambda.GetFunctionInput{
+		FunctionName: &functionName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("get function: %w", err)
+	}
+	if out.Code == nil || out.Code.Location == nil {
+		return "", fmt.Errorf("no downloadable code (may be a container image)")
+	}
+
+	// Download the ZIP
+	resp, err := http.Get(*out.Code.Location)
+	if err != nil {
+		return "", fmt.Errorf("download code: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
+	}
+
+	zipData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read zip: %w", err)
+	}
+
+	// Extract to temp dir
+	dir, err := os.MkdirTemp("", "e9s-lambda-*")
+	if err != nil {
+		return "", err
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("invalid zip: %w", err)
+	}
+
+	for _, f := range zr.File {
+		target := filepath.Join(dir, f.Name)
+
+		// Prevent zip slip
+		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dir)+string(os.PathSeparator)) {
+			continue
+		}
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(target, 0o755)
+			continue
+		}
+
+		os.MkdirAll(filepath.Dir(target), 0o755)
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
+		if err != nil {
+			rc.Close()
+			continue
+		}
+		io.Copy(out, rc)
+		out.Close()
+		rc.Close()
+	}
+
+	return dir, nil
+}
+
+// ZipDirectory creates a ZIP archive from all files in a directory.
+func ZipDirectory(dir string) ([]byte, error) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+		header.Name = relPath
+		header.Method = zip.Deflate
+
+		writer, err := w.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		_, err = io.Copy(writer, file)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// UpdateLambdaCode uploads new code to a Lambda function.
+func (c *Client) UpdateLambdaCode(ctx context.Context, functionName string, zipData []byte) error {
+	_, err := c.Lambda.UpdateFunctionCode(ctx, &lambda.UpdateFunctionCodeInput{
+		FunctionName: &functionName,
+		ZipFile:      zipData,
+	})
+	return err
+}
+
+// LambdaPackageType returns "Zip" or "Image" for the function's deployment type.
+func (c *Client) LambdaPackageType(ctx context.Context, functionName string) (string, error) {
+	out, err := c.Lambda.GetFunction(ctx, &lambda.GetFunctionInput{
+		FunctionName: &functionName,
+	})
+	if err != nil {
+		return "", err
+	}
+	if out.Configuration != nil {
+		return string(out.Configuration.PackageType), nil
+	}
+	return "Zip", nil
 }
 
 func containsLower(s, substr string) bool {

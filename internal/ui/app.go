@@ -146,6 +146,9 @@ type App struct {
 	sqsSendQueueURL    string
 	sqsSendTemplate    *e9saws.SQSSendTemplate
 	cbTriggerProject   string
+	lambdaEditDir      string
+	lambdaEditFunc     string
+	lambdaEditZip      []byte
 	dynamoEditField    string
 	dynamoEditValue    string
 	dynamoEditItem     *e9saws.DynamoItem
@@ -718,6 +721,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case lambdaCodeReadyMsg:
+		return a.handleLambdaCodeReady(msg)
+
+	case lambdaCodeEditedMsg:
+		a.lambdaEditFunc = msg.functionName
+		a.lambdaEditZip = msg.zipData
+		a.confirm = NewConfirm(ConfirmLambdaCodeUpdate,
+			fmt.Sprintf("Deploy updated code to %s?", msg.functionName))
+		return a, nil
+
+	case lambdaCodeUpdatedMsg:
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.loading = false
+		return a, nil
+
 	// --- S3 messages ---
 	case s3BucketsLoadedMsg:
 		a.s3BucketsView = a.s3BucketsView.SetBuckets(msg.buckets)
@@ -891,6 +910,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStartCBBuild()
 		case ConfirmCBStopBuild:
 			return a, a.doStopCBBuild()
+		case ConfirmLambdaCodeUpdate:
+			return a, a.doLambdaCodeUpdate()
 		case ConfirmEC2Start:
 			return a, a.doStartEC2()
 		case ConfirmEC2Stop:
@@ -1318,6 +1339,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.searchLambdaDetailLogs()
 			case "E":
 				return a.showLambdaEnvVars()
+			case "c":
+				return a.editLambdaCode()
 			}
 		case viewLogGroups:
 			switch msg.String() {
@@ -1711,7 +1734,7 @@ func (a App) helpText() string {
 	case viewS3Detail:
 		primary = "[D] download"
 	case viewLambdaDetail:
-		primary = "[E] env vars"
+		primary = "[c] edit code"
 	case viewDynamoItems:
 		primary = "[enter] detail"
 	case viewDynamoItemDetail:
@@ -1873,6 +1896,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		}
 	case viewLambdaDetail:
 		context = []kv{
+			{"c", "Edit code (download, $EDITOR, deploy)"},
 			{"E", "View environment variables"},
 			{"l", "Tail logs"},
 			{"s", "Search logs"},

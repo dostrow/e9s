@@ -147,6 +147,15 @@ type sqsSendReadyMsg struct {
 // --- Lambda Messages ---
 
 type lambdaFunctionsLoadedMsg struct{ functions []e9saws.LambdaFunction }
+type lambdaCodeReadyMsg struct {
+	functionName string
+	dir          string // temp directory with extracted code
+}
+type lambdaCodeEditedMsg struct {
+	functionName string
+	zipData      []byte
+}
+type lambdaCodeUpdatedMsg struct{ message string }
 
 // --- CloudWatch Logs Messages ---
 

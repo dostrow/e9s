@@ -3,9 +3,11 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -119,6 +121,69 @@ func (a App) searchLambdaDetailLogs() (App, tea.Cmd) {
 	a.logSearchGroups = []string{fn.LogGroup}
 	a.logSearchStream = ""
 	return a.promptLogSearchTimeRange()
+}
+
+func (a App) editLambdaCode() (App, tea.Cmd) {
+	fn := a.lambdaDetailView.Function()
+	if fn == nil {
+		return a, nil
+	}
+	a.loading = true
+	client := a.client
+	name := fn.Name
+	return a, func() tea.Msg {
+		// Check package type
+		pkgType, err := client.LambdaPackageType(context.Background(), name)
+		if err != nil {
+			return errMsg{err}
+		}
+		if pkgType == "Image" {
+			return errMsg{fmt.Errorf("cannot edit container image functions — only ZIP deployments are supported")}
+		}
+
+		dir, err := client.DownloadLambdaCode(context.Background(), name)
+		if err != nil {
+			return errMsg{err}
+		}
+		return lambdaCodeReadyMsg{functionName: name, dir: dir}
+	}
+}
+
+func (a App) handleLambdaCodeReady(msg lambdaCodeReadyMsg) (App, tea.Cmd) {
+	a.loading = false
+	a.lambdaEditDir = msg.dir
+	a.lambdaEditFunc = msg.functionName
+
+	editor := NewEditorCmd(msg.dir)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		if err != nil {
+			os.RemoveAll(msg.dir)
+			return errMsg{err}
+		}
+		// Repackage the directory
+		zipData, err := aws.ZipDirectory(msg.dir)
+		os.RemoveAll(msg.dir)
+		if err != nil {
+			return errMsg{fmt.Errorf("failed to create zip: %w", err)}
+		}
+		return lambdaCodeEditedMsg{
+			functionName: msg.functionName,
+			zipData:      zipData,
+		}
+	})
+}
+
+func (a App) doLambdaCodeUpdate() tea.Cmd {
+	client := a.client
+	name := a.lambdaEditFunc
+	data := a.lambdaEditZip
+	return func() tea.Msg {
+		err := client.UpdateLambdaCode(context.Background(), name, data)
+		if err != nil {
+			return errMsg{err}
+		}
+		return lambdaCodeUpdatedMsg{fmt.Sprintf("Code updated for %s", name)}
+	}
 }
 
 func (a App) tailLambdaDetailLogs() (App, tea.Cmd) {

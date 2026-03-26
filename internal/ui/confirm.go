@@ -26,6 +26,7 @@ const (
 	ConfirmEC2Stop
 	ConfirmEC2Reboot
 	ConfirmEC2Terminate
+	ConfirmLambdaCodeUpdate
 )
 
 type ConfirmModel struct {
