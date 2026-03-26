@@ -3,9 +3,10 @@ e9s
 e9s-*
 *.exe
 
-# IDE
+# IDE / tools
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
