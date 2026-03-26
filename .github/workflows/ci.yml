@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build
+        run: go build -o e9s .
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+
+  auto-release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag and bump minor version
+        id: version
+        run: |
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            # Parse vMAJOR.MINOR.PATCH and increment MINOR
+            major=$(echo "$latest" | sed 's/v//' | cut -d. -f1)
+            minor=$(echo "$latest" | sed 's/v//' | cut -d. -f2)
+            patch=$(echo "$latest" | sed 's/v//' | cut -d. -f3)
+            next="v${major}.$((minor + 1)).0"
+          fi
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: $next"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
