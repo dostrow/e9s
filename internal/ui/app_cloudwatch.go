@@ -80,17 +80,31 @@ func (a App) tailLogGroup() (App, tea.Cmd) {
 	return a, a.startLogTail(g.Name, nil, g.Name)
 }
 
-func (a App) peekLogStream(streamName string) (App, tea.Cmd) {
+func (a App) peekLogStream() (App, tea.Cmd) {
+	s := a.logStreamsView.SelectedStream()
+	if s == nil {
+		return a, nil
+	}
 	a.prevState = viewLogStreams
 	logGroup := a.logStreamsView.LogGroup()
 	f := false
+
+	// Use the stream's first event time for lookback so historical logs are visible.
+	// Fall back to 5 minutes if no event time is available.
+	lookback := 5 * time.Minute
+	if s.FirstEventTime > 0 {
+		firstEvent := time.UnixMilli(s.FirstEventTime)
+		lookback = time.Since(firstEvent) + time.Minute
+	}
+
+	streamName := s.Name
 	return a, func() tea.Msg {
 		return logReadyMsg{
 			title:    fmt.Sprintf("%s / %s", logGroup, streamName),
 			logGroup: logGroup,
 			streams:  []string{streamName},
 			follow:   &f,
-			lookback: 1 * time.Minute,
+			lookback: lookback,
 		}
 	}
 }

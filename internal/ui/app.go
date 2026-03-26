@@ -2139,9 +2139,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 			return a.openLogStreams(g.Name)
 		}
 	case viewLogStreams:
-		if s := a.logStreamsView.SelectedStream(); s != nil {
-			return a.peekLogStream(s.Name)
-		}
+		return a.peekLogStream()
 	case viewAlarms:
 		return a.openAlarmDetail()
 	case viewCBProjects:
