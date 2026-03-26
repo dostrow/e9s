@@ -1,6 +1,6 @@
 # e9s - ElasticMS The Elastic Management System
 
-An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, and CodeBuild.
+An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, and CodeBuild.
 
 Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubbletea](https://github.com/charmbracelet/bubbletea) and [lipgloss](https://github.com/charmbracelet/lipgloss). Colors adapt to your terminal's color scheme via ANSI color indices.
 
@@ -27,6 +27,18 @@ Navigate clusters → services → tasks → containers. Force new deployments, 
 - **Task Definition Diff** — compare task definitions between deployments
 - **Standalone Tasks** — browse non-service tasks (Lambda-launched workers, one-off jobs)
 - **Log Streaming** — tail CloudWatch logs per task, container, or entire service
+
+### EC2 (EC2i)
+
+Browse EC2 instances with name, state (color-coded), type, availability zone, private IP, and age. Filter by name, instance ID, IP, type, or state. Running instances sort first.
+
+- **Instance Detail** — full metadata, networking (private/public IP, VPC, subnet), IAM role, AMI, key name, architecture
+- **Security Groups** — inbound and outbound rules table with protocol, ports, and source/destination
+- **EBS Volumes** — attached volumes with size, type, and state
+- **Tags** — all instance tags
+- **SSM Session** — shell into a running instance via Session Manager Plugin (`e`)
+- **Console Output** — view the instance's serial console log for debugging boot issues (`c`)
+- **State Management** — start (`S`), stop (`X`), reboot (`r`), and terminate (`T`) with confirmation
 
 ### CloudWatch Logs (CWL)
 
@@ -170,7 +182,7 @@ e9s [flags]
 
 Flags:
   -c, --cluster string   ECS cluster (skips to service list)
-  -m, --mode string      Start in module: ECS, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB
+  -m, --mode string      Start in module: ECS, EC2i, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB
   -r, --region string    AWS region (default: from AWS config)
   -p, --profile string   AWS profile name
       --refresh int      Auto-refresh interval in seconds (default: 5)
@@ -361,6 +373,24 @@ e9s -m SQS -r eu-west-1
 | `b` | Start new build |
 | `x` | Stop build (if in progress) |
 
+### EC2 — Instances
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View instance detail |
+| `/` | Filter instances |
+
+### EC2 — Instance Detail
+
+| Key | Action |
+| --- | --- |
+| `e` | SSM session (shell into instance) |
+| `c` | View console output |
+| `S` | Start instance |
+| `X` | Stop instance |
+| `r` | Reboot instance |
+| `T` | Terminate instance |
+
 ### All Pickers (saved items)
 
 | Key | Action |
@@ -397,6 +427,7 @@ modules:
   dynamodb: true
   sqs: true
   codebuild: true
+  ec2_instances: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -433,6 +464,9 @@ Your IAM identity needs permissions for whichever modules you use:
 | DynamoDB | `dynamodb:ListTables`, `dynamodb:DescribeTable`, `dynamodb:Scan`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:PutItem`, `dynamodb:ExecuteStatement` |
 | SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
+| EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeVolumes`, `ec2:DescribeSecurityGroups`, `ec2:GetConsoleOutput` |
+| EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
+| EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |
 
 ## License
 
