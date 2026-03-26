@@ -439,7 +439,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logReadyMsg:
 		a.state = viewLogs
 		follow := true
-		lookback := 5 * time.Minute
+		lookback := 10 * time.Second
 		if msg.follow != nil {
 			follow = *msg.follow
 		}
