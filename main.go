@@ -21,12 +21,19 @@ func main() {
 		cluster string
 		region  string
 		profile string
+		mode    string
 		refresh int
 	)
 
 	rootCmd := &cobra.Command{
-		Use:     "e9s",
-		Short:   "Interactive terminal UI for AWS ECS",
+		Use:   "e9s",
+		Short: "Interactive terminal UI for managing AWS infrastructure",
+		Long: `e9s provides a single interactive terminal UI for managing AWS infrastructure
+across ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store,
+Secrets Manager, S3, Lambda, DynamoDB, SQS, and CodeBuild.
+
+Launch e9s to open the mode picker, or use --mode to jump directly into
+a module. Press ` + "`" + ` at any time to switch between modules.`,
 		Version: version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.Load()
@@ -40,6 +47,9 @@ func main() {
 			}
 			if profile == "" {
 				profile = cfg.Defaults.Profile
+			}
+			if mode != "" {
+				cfg.Defaults.DefaultMode = mode
 			}
 			if !cmd.Flags().Changed("refresh") {
 				refresh = cfg.Defaults.RefreshInterval
@@ -62,10 +72,11 @@ func main() {
 		},
 	}
 
-	rootCmd.Flags().StringVarP(&cluster, "cluster", "c", "", "Default cluster name (skips cluster selection)")
+	rootCmd.Flags().StringVarP(&cluster, "cluster", "c", "", "ECS cluster (skips to service list)")
 	rootCmd.Flags().StringVarP(&region, "region", "r", "", "AWS region (default: from AWS config)")
 	rootCmd.Flags().StringVarP(&profile, "profile", "p", "", "AWS profile name")
-	rootCmd.Flags().IntVar(&refresh, "refresh", 5, "Refresh interval in seconds")
+	rootCmd.Flags().StringVarP(&mode, "mode", "m", "", "Start in module: ECS, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB")
+	rootCmd.Flags().IntVar(&refresh, "refresh", 5, "Auto-refresh interval in seconds")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

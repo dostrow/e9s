@@ -169,10 +169,11 @@ Verify: `session-manager-plugin --version`
 e9s [flags]
 
 Flags:
-  -c, --cluster string   Default cluster name (skips cluster selection)
+  -c, --cluster string   ECS cluster (skips to service list)
+  -m, --mode string      Start in module: ECS, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB
   -r, --region string    AWS region (default: from AWS config)
   -p, --profile string   AWS profile name
-      --refresh int      Refresh interval in seconds (default: 5)
+      --refresh int      Auto-refresh interval in seconds (default: 5)
   -h, --help             Help
   -v, --version          Version
 ```
@@ -183,11 +184,17 @@ Flags:
 # Interactive — start at mode picker
 e9s
 
-# Jump directly to a cluster's services
+# Jump straight into DynamoDB
+e9s -m DDB
+
+# Jump directly to an ECS cluster's services
 e9s -c my-cluster
 
 # Use a specific AWS profile and region
-e9s -p production -r us-east-2 -c my-cluster
+e9s -p production -r us-east-2
+
+# Start in SQS mode in a specific region
+e9s -m SQS -r eu-west-1
 ```
 
 ## Key Bindings
