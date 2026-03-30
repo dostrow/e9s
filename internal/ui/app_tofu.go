@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,7 +15,10 @@ import (
 func (a App) promptTofuBrowser() (App, tea.Cmd) {
 	saved := a.cfg.TofuDirs
 	if len(saved) == 0 {
-		a.input = NewInput(InputTofuDir, "OpenTofu directory path", "")
+		cwd, _ := os.Getwd()
+		a.pathInput = &PathInput{}
+		pi := NewPathInput(InputTofuDir, "OpenTofu directory path", cwd+"/")
+		a.pathInput = &pi
 		return a, nil
 	}
 	items := make([]string, 0, len(saved)+1)

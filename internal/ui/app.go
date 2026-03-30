@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -169,6 +170,7 @@ type App struct {
 	sqsSendQueueURL    string
 	sqsSendTemplate    *e9saws.SQSSendTemplate
 	cbTriggerProject   string
+	pathInput          *PathInput
 	tofuDir            string
 	r53EditZoneID      string
 	r53EditRecord      *e9saws.R53Record
@@ -415,6 +417,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if a.input.Active {
 		var cmd tea.Cmd
 		a.input, cmd = a.input.Update(msg)
+		return a, cmd
+	}
+	if a.pathInput != nil {
+		var cmd tea.Cmd
+		pi := *a.pathInput
+		pi, cmd = pi.Update(msg)
+		a.pathInput = &pi
 		return a, cmd
 	}
 
@@ -1059,6 +1068,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case PathInputResultMsg:
+		a.pathInput = nil
+		switch msg.Action {
+		case InputTofuDir:
+			return a.openTofuResources(msg.Value)
+		}
+		return a, nil
+
+	case PathInputCancelMsg:
+		a.pathInput = nil
+		return a.showModePicker()
+
 	case InputResultMsg:
 		if msg.Canceled {
 			return a, nil
@@ -1103,8 +1124,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logSearchEndMs = t.UnixMilli()
 			a.input = NewInput(InputLogSearchPattern, "Search pattern (CloudWatch filter syntax)", "")
 			return a, nil
-		case InputTofuDir:
-			return a.openTofuResources(msg.Value)
 		case InputTofuSaveName:
 			return a.doSaveTofuDir(msg.Value)
 		case InputLogSearchGroupsSave:
@@ -1236,7 +1255,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.handleCWAlarmStatePick(msg.Value)
 		case PickerTofuDir:
 			if msg.Index == len(a.cfg.TofuDirs) {
-				a.input = NewInput(InputTofuDir, "OpenTofu directory path", "")
+				cwd, _ := os.Getwd()
+				pi := NewPathInput(InputTofuDir, "OpenTofu directory path", cwd+"/")
+				a.pathInput = &pi
 				return a, nil
 			}
 			td := a.cfg.TofuDirs[msg.Index]
@@ -1901,6 +1922,9 @@ func (a App) View() string {
 	}
 	if a.input.Active {
 		return renderOverlay(fullView, a.input.View(), a.width, a.height)
+	}
+	if a.pathInput != nil {
+		return renderOverlay(fullView, a.pathInput.View(), a.width, a.height)
 	}
 
 	return fullView

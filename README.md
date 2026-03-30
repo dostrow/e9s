@@ -1,6 +1,6 @@
 # e9s - ElasticMS The Elastic Management System
 
-An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, ECR, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, CodeBuild, and Route53.
+An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, ECR, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, CodeBuild, Route53, and OpenTofu/Terraform workspaces.
 
 Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubbletea](https://github.com/charmbracelet/bubbletea) and [lipgloss](https://github.com/charmbracelet/lipgloss). Colors adapt to your terminal's color scheme via ANSI color indices.
 
@@ -127,6 +127,22 @@ Browse hosted zones, view and manage DNS record sets, and test DNS resolution.
 - **Test DNS** — resolve a record via the Route53 `TestDNSAnswer` API with `t` — shows response code, nameserver, and resolved data
 - **Create/Edit/Delete Records** — create (`n`) or edit (`e`) records via `$EDITOR` with JSON templates, delete (`x`) with confirmation
 
+### OpenTofu / Terraform (TF)
+
+Manage infrastructure-as-code workspaces directly from e9s. Point at any directory containing `.tf` files to browse state, run plans, and apply changes.
+
+- **Path Completion** — interactive directory picker with tab-completion and fuzzy directory matching as you type
+- **State Browser** — list all resources in state with type, name, and module path. Filterable. Drill in to view full `state show` output.
+- **Plan Visualization** — runs `tofu plan -json` and parses the structured output into a clean, readable table:
+  - Color-coded actions: `+ create` (green), `~ update` (yellow), `- delete` (red), `-/+ replace` (magenta)
+  - Summary header with counts: `+3 ~1 -1`
+  - Drill into individual changes to see before->after attribute diffs with add/change/remove color coding
+  - Changes sorted: deletes first, then replaces, updates, creates
+- **Apply** — runs `tofu apply` interactively (terminal handoff, same as ECS Exec)
+- **Init** — runs `tofu init` with `i`
+- **Save Workspaces** — bookmark directories for quick access with `W`
+- Auto-detects `tofu` vs `terraform` in PATH
+
 ## Installation
 
 ### Prerequisites
@@ -203,7 +219,7 @@ e9s [flags]
 
 Flags:
   -c, --cluster string   ECS cluster (skips to service list)
-  -m, --mode string      Start in module: ECS, EC2i, ECR, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53
+  -m, --mode string      Start in module: ECS, EC2i, ECR, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53, TF
   -r, --region string    AWS region (default: from AWS config)
   -p, --profile string   AWS profile name
       --refresh int      Auto-refresh interval in seconds (default: 5)
@@ -436,6 +452,23 @@ e9s -m SQS -r eu-west-1
 | `e` | Edit record |
 | `x` | Delete record |
 
+### OpenTofu — Resources
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View resource state detail |
+| `p` | Run plan (parsed view) |
+| `a` | Run apply (interactive) |
+| `i` | Run init |
+| `W` | Save workspace |
+
+### OpenTofu — Plan
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View change detail (before/after diff) |
+| `a` | Run apply (interactive) |
+
 ### All Pickers (saved items)
 
 | Key | Action |
@@ -475,6 +508,7 @@ modules:
   ec2_instances: true
   ecr: true
   route53: true
+  tofu: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
