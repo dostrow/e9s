@@ -420,11 +420,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 	if a.pathInput != nil {
-		var cmd tea.Cmd
-		pi := *a.pathInput
-		pi, cmd = pi.Update(msg)
-		a.pathInput = &pi
-		return a, cmd
+		// Let result/cancel messages pass through to the main handler
+		switch msg.(type) {
+		case PathInputResultMsg, PathInputCancelMsg:
+			// fall through to main switch
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			pi := *a.pathInput
+			pi, cmd = pi.Update(msg)
+			a.pathInput = &pi
+			return a, cmd
+		default:
+			return a, nil
+		}
 	}
 
 	// If a list view is in filter mode, delegate all key input to it

@@ -6,26 +6,29 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
-const pathInputMaxMatches = 8
+const pathInputMaxVisible = 8
 
-// PathInput wraps a textinput with filesystem path completion.
-// As the user types, it lists matching directories below the input
-// and offers them as tab-completable suggestions.
+// PathInput provides a directory path input with filesystem completion.
+// Type to filter, Tab/Down/Up to navigate suggestions, Enter to select.
 type PathInput struct {
-	Action  InputAction
-	Prompt  string
-	input   textinput.Model
-	matches []string // current directory matches shown below input
-	hasTF   bool     // true if current path contains .tf files
-	errMsg  string   // validation error to show
-	width   int
-	height  int
+	Action    InputAction
+	Prompt    string
+	value     string // current input value
+	cursor    int    // cursor in suggestions list (-1 = typing)
+	matches   []pathMatch
+	hasTF     bool
+	errMsg    string
+}
+
+type pathMatch struct {
+	display string
+	path    string // full suggestion path
+	hasTF   bool
 }
 
 // PathInputResultMsg is returned when the user submits a path.
@@ -38,139 +41,183 @@ type PathInputResultMsg struct {
 type PathInputCancelMsg struct{}
 
 func NewPathInput(action InputAction, prompt, defaultVal string) PathInput {
-	ti := textinput.New()
-	ti.Placeholder = "~/Projects/infra"
-	ti.Focus()
-	ti.CharLimit = 256
-	ti.Width = 60
-	ti.ShowSuggestions = true
-
-	if defaultVal != "" {
-		ti.SetValue(defaultVal)
-		ti.CursorEnd()
-	}
-
 	p := PathInput{
 		Action: action,
 		Prompt: prompt,
-		input:  ti,
-		width:  80,
-		height: 30,
+		value:  defaultVal,
+		cursor: -1,
 	}
-	p.updateSuggestions()
+	p.refreshMatches()
 	return p
 }
 
 func (p PathInput) Update(msg tea.Msg) (PathInput, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			val := strings.TrimRight(p.input.Value(), "/")
-			val = expandHome(val)
-			// Validate: directory must contain .tf files
-			if !dirHasTFFiles(val) {
-				p.errMsg = fmt.Sprintf("No .tf files found in %s", collapseHome(val))
-				return p, nil
-			}
-			p.errMsg = ""
-			return p, func() tea.Msg {
-				return PathInputResultMsg{Action: p.Action, Value: val}
-			}
-		case "esc":
-			return p, func() tea.Msg { return PathInputCancelMsg{} }
-		case "tab":
-			var cmd tea.Cmd
-			p.input, cmd = p.input.Update(msg)
-			p.updateSuggestions()
-			return p, cmd
-		}
+	km, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return p, nil
 	}
 
-	p.errMsg = ""
-	var cmd tea.Cmd
-	p.input, cmd = p.input.Update(msg)
-	p.updateSuggestions()
-	return p, cmd
+	switch km.Type {
+	case tea.KeyEnter:
+		// If cursor is on a suggestion, accept it
+		if p.cursor >= 0 && p.cursor < len(p.matches) {
+			selected := p.matches[p.cursor]
+			if selected.hasTF {
+				// Has .tf files — select it
+				return p, func() tea.Msg {
+					return PathInputResultMsg{Action: p.Action, Value: expandHome(strings.TrimRight(selected.path, "/"))}
+				}
+			}
+			// No .tf files — navigate into it
+			p.value = selected.path
+			p.cursor = -1
+			p.errMsg = ""
+			p.refreshMatches()
+			return p, nil
+		}
+		// Enter on the text input — try to select current value
+		val := strings.TrimRight(p.value, "/")
+		val = expandHome(val)
+		if !dirHasTFFiles(val) {
+			p.errMsg = fmt.Sprintf("No .tf files in %s", collapseHome(val))
+			return p, nil
+		}
+		return p, func() tea.Msg {
+			return PathInputResultMsg{Action: p.Action, Value: val}
+		}
+
+	case tea.KeyEsc:
+		return p, func() tea.Msg { return PathInputCancelMsg{} }
+
+	case tea.KeyTab, tea.KeyDown:
+		// Move cursor into/through suggestions
+		if len(p.matches) > 0 {
+			if p.cursor < len(p.matches)-1 {
+				p.cursor++
+			}
+		}
+		return p, nil
+
+	case tea.KeyShiftTab, tea.KeyUp:
+		if p.cursor > 0 {
+			p.cursor--
+		} else if p.cursor == 0 {
+			p.cursor = -1 // back to typing
+		}
+		return p, nil
+
+	case tea.KeyBackspace:
+		if len(p.value) > 0 {
+			p.value = p.value[:len(p.value)-1]
+			p.cursor = -1
+			p.errMsg = ""
+			p.refreshMatches()
+		}
+		return p, nil
+
+	case tea.KeyRunes:
+		p.value += string(km.Runes)
+		p.cursor = -1
+		p.errMsg = ""
+		p.refreshMatches()
+		return p, nil
+
+	case tea.KeySpace:
+		// Ignore spaces in paths
+		return p, nil
+	}
+
+	return p, nil
 }
 
 func (p PathInput) View() string {
-	var b strings.Builder
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ColorCyan).
+		Padding(1, 2).
+		Width(70)
 
-	// Fixed-height content area
-	lines := make([]string, 0, pathInputMaxMatches+8)
+	var lines []string
 
-	lines = append(lines, theme.TitleStyle.Render("  "+p.Prompt))
+	lines = append(lines, theme.TitleStyle.Render(p.Prompt))
 	lines = append(lines, "")
-	lines = append(lines, "  "+p.input.View())
 
-	// TF file indicator
-	if p.hasTF {
-		lines = append(lines, lipgloss.NewStyle().Foreground(theme.ColorGreen).Render(
-			"  ✓ contains .tf files — press Enter to select"))
-	} else {
-		val := strings.TrimRight(p.input.Value(), "/")
-		expanded := expandHome(val)
-		if isDir(expanded) {
-			lines = append(lines, theme.HelpStyle.Render("  no .tf files in this directory"))
-		} else {
-			lines = append(lines, "")
-		}
-	}
+	// Input line with cursor
+	inputStyle := lipgloss.NewStyle().Foreground(theme.ColorWhite).Bold(true)
+	cursorStr := inputStyle.Render(p.value) + lipgloss.NewStyle().
+		Foreground(theme.ColorCyan).Blink(true).Render("█")
+	lines = append(lines, cursorStr)
 
-	// Error message
+	// Status
 	if p.errMsg != "" {
-		lines = append(lines, theme.ErrorStyle.Render("  "+p.errMsg))
+		lines = append(lines, theme.ErrorStyle.Render(p.errMsg))
+	} else if p.hasTF {
+		lines = append(lines, lipgloss.NewStyle().Foreground(theme.ColorGreen).
+			Render("contains .tf files"))
 	} else {
 		lines = append(lines, "")
 	}
 
-	// Directory matches (fixed slot count)
-	lines = append(lines, theme.HelpStyle.Render("  Directories:"))
+	lines = append(lines, "")
+
+	// Suggestions list (fixed height)
 	if len(p.matches) == 0 {
-		lines = append(lines, theme.HelpStyle.Render("    (no matches)"))
-		for i := 0; i < pathInputMaxMatches-1; i++ {
+		lines = append(lines, theme.HelpStyle.Render("(no matching directories)"))
+		for i := 0; i < pathInputMaxVisible-1; i++ {
 			lines = append(lines, "")
 		}
 	} else {
-		shown := p.matches
-		if len(shown) > pathInputMaxMatches {
-			shown = shown[:pathInputMaxMatches]
+		// Window the visible range around cursor
+		start := 0
+		if p.cursor >= pathInputMaxVisible {
+			start = p.cursor - pathInputMaxVisible + 1
 		}
-		for _, m := range shown {
-			lines = append(lines, theme.HelpStyle.Render("    "+m))
+		end := start + pathInputMaxVisible
+		if end > len(p.matches) {
+			end = len(p.matches)
+			start = max(0, end-pathInputMaxVisible)
+		}
+
+		for i := start; i < end; i++ {
+			m := p.matches[i]
+			prefix := "  "
+			style := theme.HelpStyle
+			if i == p.cursor {
+				prefix = "► "
+				style = theme.SelectedRowStyle
+			}
+			label := m.display
+			if m.hasTF {
+				label += " ✓"
+			}
+			lines = append(lines, style.Render(prefix+label))
 		}
 		// Pad to fixed height
-		for i := len(shown); i < pathInputMaxMatches; i++ {
+		for i := end - start; i < pathInputMaxVisible; i++ {
 			lines = append(lines, "")
 		}
-		if len(p.matches) > pathInputMaxMatches {
+		if len(p.matches) > pathInputMaxVisible {
 			lines = append(lines, theme.HelpStyle.Render(
-				fmt.Sprintf("    ... and %d more", len(p.matches)-pathInputMaxMatches)))
+				fmt.Sprintf("(%d total)", len(p.matches))))
 		} else {
 			lines = append(lines, "")
 		}
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, theme.HelpStyle.Render("  [tab] complete  [enter] select  [esc] cancel"))
+	lines = append(lines, theme.HelpStyle.Render("[tab/↓↑] navigate  [enter] select  [esc] cancel"))
 
-	for _, line := range lines {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	return b.String()
+	content := strings.Join(lines, "\n")
+	return boxStyle.Render(content)
 }
 
-func (p *PathInput) updateSuggestions() {
-	val := p.input.Value()
-	expanded := expandHome(val)
+func (p *PathInput) refreshMatches() {
+	expanded := expandHome(p.value)
 
-	// Check if current path has .tf files
+	// Check current path for .tf
 	checkDir := strings.TrimRight(expanded, "/")
 	p.hasTF = dirHasTFFiles(checkDir)
 
-	// Get the directory to list and the prefix to match
 	dir := expanded
 	prefix := ""
 	if !strings.HasSuffix(expanded, "/") {
@@ -181,12 +228,10 @@ func (p *PathInput) updateSuggestions() {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		p.matches = nil
-		p.input.SetSuggestions(nil)
 		return
 	}
 
-	var suggestions []string
-	var displayMatches []string
+	p.matches = nil
 	lowerPrefix := strings.ToLower(prefix)
 
 	for _, e := range entries {
@@ -204,30 +249,17 @@ func (p *PathInput) updateSuggestions() {
 		fullPath := filepath.Join(dir, name)
 		display := collapseHome(fullPath) + "/"
 
-		// Mark directories that contain .tf files
-		if dirHasTFFiles(fullPath) {
-			display += " ✓"
-		}
-		displayMatches = append(displayMatches, display)
-
 		suggestion := collapseHome(fullPath) + "/"
-		if strings.HasPrefix(p.input.Value(), "/") {
+		if strings.HasPrefix(p.value, "/") {
 			suggestion = fullPath + "/"
 		}
-		suggestions = append(suggestions, suggestion)
-	}
 
-	p.matches = displayMatches
-	p.input.SetSuggestions(suggestions)
-}
-
-func (p PathInput) SetSize(w, h int) PathInput {
-	p.width = w
-	p.height = h
-	if w > 10 {
-		p.input.Width = w - 6
+		p.matches = append(p.matches, pathMatch{
+			display: display,
+			path:    suggestion,
+			hasTF:   dirHasTFFiles(fullPath),
+		})
 	}
-	return p
 }
 
 func dirHasTFFiles(dir string) bool {
@@ -241,11 +273,6 @@ func dirHasTFFiles(dir string) bool {
 		}
 	}
 	return false
-}
-
-func isDir(path string) bool {
-	fi, err := os.Stat(path)
-	return err == nil && fi.IsDir()
 }
 
 func expandHome(path string) string {
