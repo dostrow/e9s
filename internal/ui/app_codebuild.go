@@ -159,7 +159,7 @@ func (a App) searchCBBuildLogs() (App, tea.Cmd) {
 	a.prevState = viewCBBuildDetail
 	a.logSearchGroup = logGroup
 	a.logSearchGroups = []string{logGroup}
-	a.logSearchStream = logStream
+	a.logSearchStreams = []string{logStream}
 	a.logSearchStartMs = detail.StartTime.Add(-time.Minute).UnixMilli()
 	if detail.EndTime.IsZero() {
 		a.logSearchEndMs = time.Now().UnixMilli()

@@ -42,7 +42,7 @@ type LogSearchJumpMsg struct {
 
 type LogSearchModel struct {
 	logGroup string
-	stream   string // optional
+	streams  []string // optional stream filter
 	pattern  string
 	results  []aws.LogEntry
 	cursor   int
@@ -54,10 +54,10 @@ type LogSearchModel struct {
 	height   int
 }
 
-func NewLogSearch(logGroup, stream, pattern string) LogSearchModel {
+func NewLogSearch(logGroup string, streams []string, pattern string) LogSearchModel {
 	return LogSearchModel{
 		logGroup: logGroup,
-		stream:   stream,
+		streams:  streams,
 		pattern:  pattern,
 		loading:  true,
 	}
@@ -97,7 +97,10 @@ func (m LogSearchModel) Update(msg tea.Msg) (LogSearchModel, tea.Cmd) {
 			if len(m.results) > 0 && m.cursor < len(m.results) {
 				entry := m.results[m.cursor]
 				logGroup := m.logGroup
-				stream := m.stream
+				stream := ""
+				if len(m.streams) == 1 {
+					stream = m.streams[0]
+				}
 
 				if stream == "" {
 					// For multi-group results, entry.Stream is "group/stream"
@@ -152,8 +155,10 @@ func (m LogSearchModel) View() string {
 	b.WriteString(theme.TitleStyle.Render(title))
 
 	scope := m.logGroup
-	if m.stream != "" {
-		scope += " / " + m.stream
+	if len(m.streams) == 1 {
+		scope += " / " + m.streams[0]
+	} else if len(m.streams) > 1 {
+		scope += fmt.Sprintf(" / %d streams", len(m.streams))
 	}
 	b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  in %s", scope)))
 	fmt.Fprintf(&b, "  [%d results]", len(m.results))
@@ -192,7 +197,7 @@ func (m LogSearchModel) View() string {
 		highlighted := highlightPattern(msg, m.pattern)
 
 		streamLabel := ""
-		if entry.Stream != "" && m.stream == "" {
+		if entry.Stream != "" && len(m.streams) != 1 {
 			// Show stream name when viewing group-level results
 			// Replace "|" separator with " / " for display
 			short := strings.ReplaceAll(entry.Stream, "|", " / ")

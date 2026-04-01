@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
@@ -16,6 +17,7 @@ import (
 type LogStreamsModel struct {
 	logGroup    string
 	streams     []aws.LogStreamInfo
+	selected    map[string]bool // multi-select by stream name
 	cursor      int
 	filter      string
 	filtering   bool
@@ -26,7 +28,7 @@ type LogStreamsModel struct {
 }
 
 func NewLogStreams(logGroup string) LogStreamsModel {
-	return LogStreamsModel{logGroup: logGroup}
+	return LogStreamsModel{logGroup: logGroup, selected: make(map[string]bool)}
 }
 
 func (m LogStreamsModel) Update(msg tea.Msg) (LogStreamsModel, tea.Cmd) {
@@ -58,6 +60,16 @@ func (m LogStreamsModel) Update(msg tea.Msg) (LogStreamsModel, tea.Cmd) {
 			if m.cursor < len(filtered)-1 {
 				m.cursor++
 			}
+		case msg.String() == " ":
+			filtered := m.filteredStreams()
+			if m.cursor < len(filtered) {
+				name := filtered[m.cursor].Name
+				if m.selected[name] {
+					delete(m.selected, name)
+				} else {
+					m.selected[name] = true
+				}
+			}
 		case msg.String() == "pgup":
 			m.cursor = max(0, m.cursor-m.visibleRows())
 		case msg.String() == "pgdown":
@@ -83,6 +95,9 @@ func (m LogStreamsModel) View() string {
 
 	title := fmt.Sprintf("  Log Streams (%d)", len(filtered))
 	b.WriteString(theme.TitleStyle.Render(title))
+	if len(m.selected) > 0 {
+		b.WriteString(theme.HealthStyle("deploying").Render(fmt.Sprintf("  %d selected", len(m.selected))))
+	}
 	b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  group: %s", m.logGroup)))
 	if m.filter != "" {
 		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  filter: %q", m.filter)))
@@ -103,7 +118,10 @@ func (m LogStreamsModel) View() string {
 		return b.String()
 	}
 
+	checkStyle := lipgloss.NewStyle().Foreground(theme.ColorGreen)
+
 	tbl := components.NewTable([]components.Column{
+		{Title: ""},
 		{Title: "STREAM"},
 		{Title: "LAST EVENT"},
 	})
@@ -114,7 +132,12 @@ func (m LogStreamsModel) View() string {
 			t := time.UnixMilli(s.LastEventTime)
 			lastEvent = formatAge(t) + " ago"
 		}
+		check := " "
+		if m.selected[s.Name] {
+			check = checkStyle.Render("✓")
+		}
 		tbl.AddRow(
+			components.Cell{Content: check},
 			components.Plain(s.Name),
 			components.Plain(lastEvent),
 		)
@@ -155,6 +178,27 @@ func (m LogStreamsModel) SelectedStream() *aws.LogStreamInfo {
 	}
 	s := filtered[m.cursor]
 	return &s
+}
+
+// SelectedStreams returns all multi-selected stream names.
+// If none are selected, returns just the cursor item.
+func (m LogStreamsModel) SelectedStreams() []string {
+	if len(m.selected) > 0 {
+		names := make([]string, 0, len(m.selected))
+		for name := range m.selected {
+			names = append(names, name)
+		}
+		return names
+	}
+	if s := m.SelectedStream(); s != nil {
+		return []string{s.Name}
+	}
+	return nil
+}
+
+// SelectionCount returns the number of multi-selected streams.
+func (m LogStreamsModel) SelectionCount() int {
+	return len(m.selected)
 }
 
 func (m LogStreamsModel) LogGroup() string {

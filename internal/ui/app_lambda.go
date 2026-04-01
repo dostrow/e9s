@@ -125,7 +125,7 @@ func (a App) searchLambdaLogs() (App, tea.Cmd) {
 	a.prevState = viewLambdaList
 	a.logSearchGroup = fn.LogGroup
 	a.logSearchGroups = []string{fn.LogGroup}
-	a.logSearchStream = ""
+	a.logSearchStreams = nil
 	return a.promptLogSearchTimeRange()
 }
 
@@ -137,7 +137,7 @@ func (a App) searchLambdaDetailLogs() (App, tea.Cmd) {
 	a.prevState = viewLambdaDetail
 	a.logSearchGroup = fn.LogGroup
 	a.logSearchGroups = []string{fn.LogGroup}
-	a.logSearchStream = ""
+	a.logSearchStreams = nil
 	return a.promptLogSearchTimeRange()
 }
 

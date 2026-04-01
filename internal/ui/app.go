@@ -148,7 +148,7 @@ type App struct {
 	execContainerName  string
 	logSearchGroup     string
 	logSearchGroups    []string // multi-group search
-	logSearchStream    string
+	logSearchStreams    []string
 	logSearchStartMs   int64
 	logSearchEndMs     int64
 	logSearchFilter    string // quoted/processed filter pattern for CW API
@@ -562,14 +562,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if nextIdx > 0 && nextIdx < len(a.logSearchGroups) {
 					nextCmd := searchNextGroup(a.client, a.logSearchGroups, nextIdx,
-						a.logSearchFilter, a.logSearchStream,
+						a.logSearchFilter, a.logSearchStreams,
 						a.logSearchStartMs, a.logSearchEndMs)
 					return a, tea.Batch(viewCmd, nextCmd)
 				}
 			}
 			// For single-group paginated search, chain next page if not done
 			if !msg.Done && len(a.logSearchGroups) <= 1 && msg.NextToken != nil {
-				nextCmd := searchGroupPaginated(a.client, msg.Source, a.logSearchStream,
+				nextCmd := searchGroupPaginated(a.client, msg.Source, a.logSearchStreams,
 					a.logSearchFilter, a.logSearchStartMs, a.logSearchEndMs,
 					msg.NextToken, msg.Remaining)
 				return a, tea.Batch(viewCmd, nextCmd)
@@ -1249,7 +1249,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.prevState = viewLogGroups
 				a.logSearchGroups = lp.LogGroups
 				a.logSearchGroup = lp.LogGroups[0]
-				a.logSearchStream = ""
+				a.logSearchStreams = nil
 				return a.promptLogSearchTimeRange()
 			}
 			if lp.Stream != "" {
@@ -2260,9 +2260,10 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewLogStreams:
 		context = []kv{
 			{"enter", "Peek (last 1 min, paused)"},
+			{"space", "Multi-select for search"},
 			{"l", "Tail stream"},
 			{"L", "Tail entire log group"},
-			{"s", "Search stream"},
+			{"s", "Search selected streams"},
 			{"W", "Save log path"},
 		}
 	case viewLogSearch:
