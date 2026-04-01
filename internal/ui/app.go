@@ -195,6 +195,9 @@ type App struct {
 
 	// State
 	lastRefresh  time.Time
+	lastActivity time.Time // updated on every keypress
+	idleTimeout  time.Duration
+	paused       bool // true when idle timeout reached
 	refreshSec   int
 	loading      bool
 	err          error
@@ -206,12 +209,19 @@ type App struct {
 }
 
 func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
+	idleTimeout := 5 * time.Minute
+	if cfg.Defaults.IdleTimeout > 0 {
+		idleTimeout = time.Duration(cfg.Defaults.IdleTimeout) * time.Second
+	}
+
 	app := App{
-		client:      client,
-		cfg:         cfg,
-		state:       viewClusters,
-		clusterView: views.NewClusterList(),
-		refreshSec:  refreshSec,
+		client:       client,
+		cfg:          cfg,
+		state:        viewClusters,
+		clusterView:  views.NewClusterList(),
+		refreshSec:   refreshSec,
+		lastActivity: time.Now(),
+		idleTimeout:  idleTimeout,
 	}
 
 	allModes := []struct {
@@ -1311,10 +1321,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.flashMessage = "Config reloaded"
 			a.flashExpiry = time.Now().Add(3 * time.Second)
 		}
+		// Pause refresh when idle to reduce API calls
+		if a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout {
+			a.paused = true
+			return a, a.tick() // keep ticking for flash/config but skip refresh
+		}
 		return a, tea.Batch(a.refreshCurrentView(), a.tick())
 
 	// --- Key input ---
 	case tea.KeyMsg:
+		// Reset idle timer on any keypress
+		wasIdle := a.paused
+		a.lastActivity = time.Now()
+		a.paused = false
+		// If resuming from idle, trigger an immediate refresh
+		if wasIdle {
+			a.loading = true
+			return a, a.refreshCurrentView()
+		}
 		// Global keys
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
@@ -1806,7 +1830,7 @@ func (a App) buildBreadcrumbs() []string {
 func (a App) View() string {
 	breadcrumbs := a.buildBreadcrumbs()
 	infoBar := buildInfoBar(breadcrumbs, a.client.Region(), a.lastRefresh,
-		a.flashMessage, a.flashExpiry, a.err)
+		a.paused, a.flashMessage, a.flashExpiry, a.err)
 
 	var content string
 	switch a.state {

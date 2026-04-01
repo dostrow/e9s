@@ -133,7 +133,7 @@ func padToWidth(s string, width int) string {
 }
 
 // buildInfoBar constructs the top info bar content.
-func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, flashMessage string, flashExpiry time.Time, err error) string {
+func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, paused bool, flashMessage string, flashExpiry time.Time, err error) string {
 	left := "e9s"
 	if len(breadcrumbs) > 0 {
 		left += " ── " + strings.Join(breadcrumbs, " ► ")
@@ -147,6 +147,8 @@ func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, fl
 		right = lipgloss.NewStyle().Foreground(theme.ColorGreen).Render(flashMessage)
 	} else if err != nil {
 		right = theme.ErrorStyle.Render(fmt.Sprintf("error: %s", err))
+	} else if paused {
+		right = lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("⏸ paused (press any key)")
 	} else if !lastRefresh.IsZero() {
 		ago := time.Since(lastRefresh).Truncate(time.Second)
 		right = fmt.Sprintf("↻ %s ago", ago)

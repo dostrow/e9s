@@ -71,6 +71,7 @@ type Config struct {
 		Region          string `yaml:"region"`
 		Profile         string `yaml:"profile"`
 		RefreshInterval int    `yaml:"refresh_interval"`
+		IdleTimeout     int    `yaml:"idle_timeout"`      // seconds of inactivity before pausing refresh (0 = never, default 300)
 		DefaultMode     string `yaml:"default_mode"`      // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
 		SaveDirectory   string `yaml:"save_directory"`    // default directory for file save dialogs
 	} `yaml:"defaults"`
