@@ -106,6 +106,7 @@ func (m SecretsModel) View() string {
 
 	tbl := components.NewTable([]components.Column{
 		{Title: "NAME"},
+		{Title: "ARN"},
 		{Title: "DESCRIPTION"},
 		{Title: "LAST CHANGED"},
 	})
@@ -113,7 +114,11 @@ func (m SecretsModel) View() string {
 	for _, s := range filtered {
 		desc := s.Description
 		if len(desc) > 40 {
-			desc = desc[:40] + ".."
+			desc = desc[:37] + "..."
+		}
+		arn := s.ARN
+		if len(arn) > 50 {
+			arn = "..." + arn[len(arn)-47:]
 		}
 
 		changed := ""
@@ -123,6 +128,7 @@ func (m SecretsModel) View() string {
 
 		tbl.AddRow(
 			components.Plain(s.Name),
+			components.Plain(arn),
 			components.Plain(desc),
 			components.Plain(changed),
 		)
