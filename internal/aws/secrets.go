@@ -84,6 +84,19 @@ func (c *Client) GetSecretValueByName(ctx context.Context, secretName string) (*
 	}, nil
 }
 
+// CreateSecret creates a new secret with the given name and value.
+func (c *Client) CreateSecret(ctx context.Context, name, value, description string) error {
+	input := &secretsmanager.CreateSecretInput{
+		Name:         &name,
+		SecretString: &value,
+	}
+	if description != "" {
+		input.Description = &description
+	}
+	_, err := c.SM.CreateSecret(ctx, input)
+	return err
+}
+
 // PutSecretValue updates a secret's value.
 func (c *Client) PutSecretValue(ctx context.Context, secretName, value string) error {
 	_, err := c.SM.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{

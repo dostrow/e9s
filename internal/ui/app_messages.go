@@ -73,6 +73,14 @@ type smUpdatedMsg struct {
 	name    string
 	secrets []e9saws.Secret
 }
+type smCloneReadyMsg struct {
+	sourceName string
+	value      string
+}
+type smCloneEditedMsg struct {
+	name  string
+	value string
+}
 
 // --- S3 Messages ---
 

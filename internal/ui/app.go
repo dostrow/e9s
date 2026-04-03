@@ -158,6 +158,8 @@ type App struct {
 	ssmEditValue       string
 	smEditName         string
 	smEditValue        string
+	smCloneName        string
+	smCloneValue       string
 	s3DownloadBucket   string
 	s3DownloadKey      string
 	s3DownloadIsPrefix bool
@@ -671,6 +673,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.currentValue)
 		return a, nil
 
+	case smCloneReadyMsg:
+		return a.handleCloneReady(msg)
+
+	case smCloneEditedMsg:
+		a.smCloneName = msg.name
+		a.smCloneValue = msg.value
+		a.confirm = NewConfirm(ConfirmSMClone,
+			fmt.Sprintf("Create new secret %q?", msg.name))
+		return a, nil
+
 	case smUpdatedMsg:
 		a.secretsView = a.secretsView.SetSecrets(msg.secrets)
 		a.flashMessage = fmt.Sprintf("Updated %q", msg.name)
@@ -1049,6 +1061,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStopTask()
 		case ConfirmSSMUpdate:
 			return a, a.doSSMUpdate()
+		case ConfirmSMClone:
+			return a, a.doCreateClonedSecret()
 		case ConfirmSMUpdate:
 			return a, a.doSMUpdate()
 		case ConfirmDynamoFieldEdit:
@@ -1156,6 +1170,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.doSaveSMFilter(msg.Value)
 		case InputSMEditValue:
 			return a.confirmSMUpdate(msg.Value)
+		case InputSMCloneName:
+			return a.handleCloneName(msg.Value)
 		case InputS3Search:
 			return a.openS3Buckets(msg.Value)
 		case InputS3SaveName:
@@ -1448,6 +1464,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.saveSMFilter()
 			case "e":
 				return a.editSecret()
+			case "c":
+				return a.cloneSecret()
 			}
 		case viewS3Buckets:
 			switch msg.String() {
@@ -2184,6 +2202,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "View secret value"},
 			{"e", "Edit secret value"},
+			{"c", "Clone secret to new name"},
 			{"W", "Save filter for quick access"},
 		}
 	case viewSecretValue:

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -87,6 +88,74 @@ func (a App) editSecret() (App, tea.Cmd) {
 			return errMsg{fmt.Errorf("failed to read current value: %w", err)}
 		}
 		return smEditReadyMsg{name: s.Name, currentValue: sv.Value}
+	}
+}
+
+func (a App) cloneSecret() (App, tea.Cmd) {
+	s := a.secretsView.SelectedSecret()
+	if s == nil {
+		return a, nil
+	}
+	// Fetch current value, then prompt for new name
+	client := a.client
+	name := s.Name
+	return a, func() tea.Msg {
+		sv, err := client.GetSecretValueByName(context.Background(), name)
+		if err != nil {
+			return errMsg{fmt.Errorf("failed to read secret: %w", err)}
+		}
+		return smCloneReadyMsg{sourceName: name, value: sv.Value}
+	}
+}
+
+func (a App) handleCloneReady(msg smCloneReadyMsg) (App, tea.Cmd) {
+	a.smCloneValue = msg.value
+	a.input = NewInput(InputSMCloneName,
+		fmt.Sprintf("Clone %q — enter name for new secret", msg.sourceName), msg.sourceName+"-copy")
+	return a, nil
+}
+
+func (a App) handleCloneName(newName string) (App, tea.Cmd) {
+	a.smCloneName = newName
+	// Open $EDITOR with the value so user can modify it
+	tmpFile, err := os.CreateTemp("", "e9s-secret-*.txt")
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	tmpPath := tmpFile.Name()
+	_, _ = tmpFile.WriteString(a.smCloneValue)
+	tmpFile.Close()
+
+	editor := NewEditorCmd(tmpPath)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		defer os.Remove(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		return smCloneEditedMsg{name: newName, value: string(data)}
+	})
+}
+
+func (a App) doCreateClonedSecret() tea.Cmd {
+	client := a.client
+	name := a.smCloneName
+	value := a.smCloneValue
+	nameFilter := a.secretsView.NameFilter()
+	return func() tea.Msg {
+		err := client.CreateSecret(context.Background(), name, value, "")
+		if err != nil {
+			return errMsg{err}
+		}
+		secrets, err := client.ListSecrets(context.Background(), nameFilter)
+		if err != nil {
+			return actionSuccessMsg{fmt.Sprintf("Created %q (reload failed: %v)", name, err)}
+		}
+		return smUpdatedMsg{name: name, secrets: secrets}
 	}
 }
 

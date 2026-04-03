@@ -37,6 +37,7 @@ const (
 	InputDynamoFilterValue
 	InputDynamoPartiQL
 	InputDynamoQuerySaveName
+	InputSMCloneName
 	InputSQSSearch
 	InputSQSSaveName
 	InputLogSearchFrom

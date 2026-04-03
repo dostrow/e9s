@@ -18,6 +18,7 @@ const (
 	ConfirmSMUpdate
 	ConfirmDynamoFieldEdit
 	ConfirmDynamoClone
+	ConfirmSMClone
 	ConfirmSQSDelete
 	ConfirmSQSSend
 	ConfirmCBStartBuild
