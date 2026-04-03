@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -89,6 +90,20 @@ func (a App) editSecret() (App, tea.Cmd) {
 		}
 		return smEditReadyMsg{name: s.Name, currentValue: sv.Value}
 	}
+}
+
+func (a App) copySecretARN() (App, tea.Cmd) {
+	s := a.secretsView.SelectedSecret()
+	if s == nil {
+		return a, nil
+	}
+	if err := clipboard.WriteAll(s.ARN); err != nil {
+		a.err = fmt.Errorf("clipboard: %w", err)
+		return a, nil
+	}
+	a.flashMessage = fmt.Sprintf("Copied: %s", s.ARN)
+	a.flashExpiry = time.Now().Add(5 * time.Second)
+	return a, nil
 }
 
 func (a App) cloneSecret() (App, tea.Cmd) {

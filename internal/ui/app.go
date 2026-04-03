@@ -1466,6 +1466,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.editSecret()
 			case "c":
 				return a.cloneSecret()
+			case "y":
+				return a.copySecretARN()
 			}
 		case viewS3Buckets:
 			switch msg.String() {
@@ -2203,6 +2205,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "View secret value"},
 			{"e", "Edit secret value"},
 			{"c", "Clone secret to new name"},
+			{"y", "Copy ARN to clipboard"},
 			{"W", "Save filter for quick access"},
 		}
 	case viewSecretValue:
