@@ -199,7 +199,8 @@ type App struct {
 	lastRefresh  time.Time
 	lastActivity time.Time // updated on every keypress
 	idleTimeout  time.Duration
-	paused       bool // true when idle timeout reached
+	paused       bool // true when polling is paused (idle or manual)
+	manualPause  bool // true when paused via ctrl+s (not auto-resumed by keypress)
 	refreshSec   int
 	loading      bool
 	err          error
@@ -1337,8 +1338,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.flashMessage = "Config reloaded"
 			a.flashExpiry = time.Now().Add(3 * time.Second)
 		}
-		// Pause refresh when idle to reduce API calls
-		if a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout {
+		// Pause refresh when idle or manually paused
+		if a.paused || (a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout) {
 			a.paused = true
 			return a, a.tick() // keep ticking for flash/config but skip refresh
 		}
@@ -1347,14 +1348,31 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Key input ---
 	case tea.KeyMsg:
 		// Reset idle timer on any keypress
-		wasIdle := a.paused
 		a.lastActivity = time.Now()
-		a.paused = false
-		// If resuming from idle, trigger an immediate refresh
-		if wasIdle {
+
+		// ctrl+s toggles manual pause
+		if msg.String() == "ctrl+s" {
+			a.paused = !a.paused
+			a.manualPause = a.paused
+			if a.paused {
+				a.flashMessage = "Polling paused"
+				a.flashExpiry = time.Now().Add(3 * time.Second)
+			} else {
+				a.flashMessage = "Polling resumed"
+				a.flashExpiry = time.Now().Add(3 * time.Second)
+				a.loading = true
+				return a, a.refreshCurrentView()
+			}
+			return a, nil
+		}
+
+		// If idle-paused (not manually), any key resumes
+		if a.paused && !a.manualPause {
+			a.paused = false
 			a.loading = true
 			return a, a.refreshCurrentView()
 		}
+
 		// Global keys
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
@@ -2121,6 +2139,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	global := []kv{
 		{"`", "Switch mode"},
 		{"ctrl+p", "Reopen mode picker"},
+		{"ctrl+s", "Pause/resume polling"},
 		{"ctrl+e", "Edit config"},
 		{"ctrl+r", "Switch AWS region"},
 		{"R", "Refresh data"},
