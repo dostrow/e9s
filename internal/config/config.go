@@ -97,6 +97,7 @@ type Config struct {
 		Route53         *bool `yaml:"route53"`
 		Tofu            *bool `yaml:"tofu"`
 	} `yaml:"modules"`
+	KeyBindings map[string]string `yaml:"keybindings"` // action → key override
 	ExcludeServices []string `yaml:"exclude_services"`
 	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
 	SMFilters       []SMFilter     `yaml:"sm_filters"`

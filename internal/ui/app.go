@@ -202,6 +202,7 @@ type App struct {
 	paused       bool // true when polling is paused (idle or manual)
 	manualPause  bool // true when paused via ctrl+s (not auto-resumed by keypress)
 	refreshSec   int
+	kb           KeyBindings
 	loading      bool
 	err          error
 	flashMessage   string
@@ -224,6 +225,11 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		clusterView:  views.NewClusterList(),
 		refreshSec:   refreshSec,
 		lastActivity: time.Now(),
+		kb:           func() KeyBindings {
+			kb := NewKeyBindings()
+			kb.ApplyOverrides(cfg.KeyBindings)
+			return kb
+		}(),
 		idleTimeout:  idleTimeout,
 	}
 
@@ -1350,8 +1356,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset idle timer on any keypress
 		a.lastActivity = time.Now()
 
-		// ctrl+s toggles manual pause
-		if msg.String() == "ctrl+s" {
+		// Toggle manual pause
+		if msg.String() == a.kb.PauseResume {
 			a.paused = !a.paused
 			a.manualPause = a.paused
 			if a.paused {
@@ -1389,15 +1395,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, theme.Keys.Help):
 			a.help.Active = true
 			return a, nil
-		case msg.String() == "ctrl+r":
+		case msg.String() == a.kb.SwitchRegion:
 			a.regionPicker = views.NewRegionPicker(a.client.Region())
 			return a, nil
-		case msg.String() == "`":
+		case msg.String() == a.kb.SwitchMode:
 			a.modeSwitcher = NewModeSwitcher(a.modeTabs, a.mode)
 			return a, nil
-		case msg.String() == "ctrl+e":
+		case msg.String() == a.kb.EditConfig:
 			return a.openConfigEditor()
-		case msg.String() == "ctrl+p":
+		case msg.String() == a.kb.ReopenPicker:
 			return a.reopenModePicker()
 		}
 
@@ -1417,180 +1423,181 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Context-specific keys
+		// Context-specific keys (configurable via keybindings)
+		k := msg.String()
 		switch a.state {
 		case viewServices:
-			switch msg.String() {
-			case "r":
+			switch k {
+			case a.kb.ForceRedeploy:
 				return a.promptForceDeploy()
-			case "s":
+			case a.kb.Scale:
 				return a.promptScale()
-			case "d":
+			case a.kb.ServiceDetail:
 				return a.showServiceDetail()
-			case "L":
+			case a.kb.ServiceLogs:
 				return a.openServiceLogs()
-			case "S":
+			case a.kb.StandaloneTasks:
 				return a.showStandaloneTasks()
-			case "m":
+			case a.kb.Metrics:
 				return a.showMetrics()
 			}
 		case viewTasks:
-			switch msg.String() {
-			case "x":
+			switch k {
+			case a.kb.StopTask:
 				return a.promptStopTask()
-			case "l":
+			case a.kb.TaskLogs:
 				return a.openTaskLogs()
-			case "e":
+			case a.kb.ECSExec:
 				return a.execIntoTask()
 			}
 		case viewTaskDetail:
-			switch msg.String() {
-			case "E":
+			switch k {
+			case a.kb.EnvVars:
 				return a.showEnvVars()
 			}
 		case viewLogs:
-			switch msg.String() {
-			case "w":
+			switch k {
+			case a.kb.LogSave:
 				return a.promptSaveLogBuffer()
-			case "y":
+			case a.kb.LogCopy:
 				return a.copyLogBufferToClipboard()
-			case "o":
+			case a.kb.LogOpenEditor:
 				return a.openLogBufferInEditor()
 			}
 		case viewStandaloneTasks:
-			switch msg.String() {
-			case "l":
+			switch k {
+			case a.kb.TaskLogs:
 				return a.openStandaloneTaskLogs()
-			case "x":
+			case a.kb.StopTask:
 				return a.promptStopStandaloneTask()
 			}
 		case viewServiceDetail:
-			switch msg.String() {
-			case "D":
+			switch k {
+			case a.kb.Download:
 				return a.showTaskDefDiff()
 			}
 		case viewSSM:
-			switch msg.String() {
-			case "W":
+			switch k {
+			case a.kb.Save:
 				return a.saveSSMPrefix()
-			case "e":
+			case a.kb.EditValue:
 				return a.editSSMParam()
 			}
 		case viewSecrets:
-			switch msg.String() {
-			case "W":
+			switch k {
+			case a.kb.Save:
 				return a.saveSMFilter()
-			case "e":
+			case a.kb.EditValue:
 				return a.editSecret()
-			case "c":
+			case a.kb.CloneSecret:
 				return a.cloneSecret()
-			case "y":
+			case a.kb.CopyARN:
 				return a.copySecretARN()
 			}
 		case viewS3Buckets:
-			switch msg.String() {
-			case "W":
+			switch k {
+			case a.kb.Save:
 				return a.saveS3Search()
 			}
 		case viewS3Objects:
-			switch msg.String() {
+			switch k {
 			case "i":
 				return a.showS3ObjectDetail()
-			case "D":
+			case a.kb.Download:
 				return a.promptS3Download()
 			}
 		case viewS3Detail:
-			switch msg.String() {
-			case "D":
+			switch k {
+			case a.kb.Download:
 				return a.promptS3DownloadFromDetail()
 			}
 		case viewDynamoTables:
-			switch msg.String() {
-			case "W":
+			switch k {
+			case a.kb.Save:
 				return a.saveDynamoTable()
 			}
 		case viewDynamoItems:
-			switch msg.String() {
-			case "f":
+			switch k {
+			case a.kb.FilterScan:
 				return a.promptDynamoFilter()
-			case "p":
+			case a.kb.PartiQL:
 				return a.promptDynamoPartiQL()
-			case "W":
+			case a.kb.Save:
 				return a.saveDynamoQuery()
-			case "]":
+			case a.kb.NextPage:
 				return a.loadDynamoNextPage()
 			}
 		case viewDynamoItemDetail:
-			switch msg.String() {
-			case "e":
+			switch k {
+			case a.kb.EditField:
 				return a.editDynamoField()
-			case "c":
+			case a.kb.CloneItem:
 				return a.cloneDynamoItem()
 			}
 		case viewSQSQueues:
-			switch msg.String() {
-			case "W":
+			switch k {
+			case a.kb.Save:
 				return a.saveSQSQueue()
 			}
 		case viewSQSDetail:
-			switch msg.String() {
-			case "m":
+			switch k {
+			case a.kb.Messages:
 				return a.openSQSMessages()
-			case "s":
+			case a.kb.SendMessage:
 				return a.sendSQSMessage()
-			case "d":
+			case a.kb.NavigateDLQ:
 				return a.openSQSDLQ()
 			}
 		case viewSQSMessages:
-			switch msg.String() {
-			case "p":
+			switch k {
+			case a.kb.PollMessages:
 				return a.pollSQSMessages()
-			case "x":
+			case a.kb.DeleteMsg:
 				return a.deleteSQSMessage()
-			case "s":
+			case a.kb.SendMessage:
 				return a.sendSQSMessage()
 			case "X":
 				a.sqsMessagesView = a.sqsMessagesView.ClearMessages()
 				return a, nil
 			}
 		case viewSQSMessageDetail:
-			switch msg.String() {
-			case "x":
+			switch k {
+			case a.kb.DeleteMsg:
 				return a.deleteSQSMessage()
-			case "c":
+			case a.kb.CloneSend:
 				return a.cloneSQSMessage()
 			}
 		case viewLambdaList:
-			switch msg.String() {
-			case "W":
+			switch k {
+			case a.kb.Save:
 				return a.saveLambdaSearch()
-			case "l":
+			case a.kb.TailStream:
 				return a.tailLambdaLogs()
-			case "L":
+			case a.kb.BrowseStreams:
 				return a.browseLambdaLogs()
-			case "s":
+			case a.kb.SearchLogs:
 				return a.searchLambdaLogs()
 			}
 		case viewLambdaDetail:
-			switch msg.String() {
-			case "l":
+			switch k {
+			case a.kb.TailStream:
 				return a.tailLambdaDetailLogs()
-			case "L":
+			case a.kb.BrowseStreams:
 				return a.browseLambdaDetailLogs()
-			case "s":
+			case a.kb.SearchLogs:
 				return a.searchLambdaDetailLogs()
-			case "E":
+			case a.kb.EnvVars:
 				return a.showLambdaEnvVars()
-			case "c":
+			case a.kb.EditCode:
 				return a.editLambdaCode()
 			}
 		case viewLogGroups:
-			switch msg.String() {
-			case "l":
+			switch k {
+			case a.kb.TailStream:
 				return a.tailLogGroup()
-			case "s":
+			case a.kb.SearchLogs:
 				return a.promptLogSearchFromGroups()
-			case "W":
+			case a.kb.Save:
 				if a.logGroupsView.SelectionCount() > 1 {
 					groups := a.logGroupsView.SelectedGroups()
 					a.logSearchGroups = groups
@@ -1599,95 +1606,95 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.saveLogGroupPath()
 			}
 		case viewLogStreams:
-			switch msg.String() {
-			case "l":
+			switch k {
+			case a.kb.TailStream:
 				return a.tailLogStream()
-			case "L":
+			case a.kb.TailGroup:
 				return a.tailEntireLogGroup()
-			case "s":
+			case a.kb.SearchLogs:
 				return a.promptLogSearchFromStreams()
-			case "W":
+			case a.kb.Save:
 				return a.saveLogStreamPath()
 			}
 		case viewAlarmDetail:
-			switch msg.String() {
-			case "a":
+			switch k {
+			case a.kb.ToggleActions:
 				return a.toggleAlarmActions()
-			case "S":
+			case a.kb.SetAlarmState:
 				return a.promptSetAlarmState()
 			}
 		case viewCBProjects:
-			switch msg.String() {
-			case "b":
+			switch k {
+			case a.kb.StartBuild:
 				return a.triggerCBBuild()
 			}
 		case viewCBBuilds:
-			switch msg.String() {
-			case "b":
+			switch k {
+			case a.kb.StartBuild:
 				return a.triggerCBBuild()
 			}
 		case viewCBBuildDetail:
-			switch msg.String() {
-			case "l":
+			switch k {
+			case a.kb.ViewLogs:
 				return a.viewCBBuildLogs()
-			case "s":
+			case a.kb.SearchBuildLogs:
 				return a.searchCBBuildLogs()
-			case "b":
+			case a.kb.StartBuild:
 				return a.triggerCBBuild()
-			case "x":
+			case a.kb.StopBuild:
 				return a.stopCBBuild()
 			}
 		case viewTofuResources:
-			switch msg.String() {
-			case "p":
+			switch k {
+			case a.kb.RunPlan:
 				return a.runTofuPlan()
-			case "a":
+			case a.kb.RunApply:
 				return a.runTofuApply()
-			case "i":
+			case a.kb.RunInit:
 				return a.runTofuInit()
-			case "W":
+			case a.kb.Save:
 				return a.saveTofuDir()
 			}
 		case viewTofuPlan:
-			switch msg.String() {
-			case "a":
+			switch k {
+			case a.kb.RunApply:
 				return a.runTofuApply()
 			}
 		case viewECRImages:
-			switch msg.String() {
-			case "s":
+			switch k {
+			case a.kb.StartScan:
 				return a.startECRScan()
-			case "x":
+			case a.kb.DeleteImage:
 				return a.deleteECRImage()
-			case "y":
+			case a.kb.CopyURI:
 				return a.copyECRImageURI()
 			}
 		case viewR53Records:
-			if msg.String() == "n" {
+			if k == a.kb.NewRecord {
 				return a.createR53Record()
 			}
 		case viewR53RecordDetail:
-			switch msg.String() {
-			case "t":
+			switch k {
+			case a.kb.TestDNS:
 				return a.testR53DNS()
-			case "e":
+			case a.kb.EditRecord:
 				return a.editR53Record()
-			case "x":
+			case a.kb.DeleteRecord:
 				return a.deleteR53Record()
 			}
 		case viewEC2Detail:
-			switch msg.String() {
-			case "e":
+			switch k {
+			case a.kb.SSMSession:
 				return a.startEC2SSMSession()
-			case "c":
+			case a.kb.ConsoleOutput:
 				return a.openEC2Console()
-			case "S":
+			case a.kb.StartInstance:
 				return a.startEC2Instance()
-			case "X":
+			case a.kb.StopInstance:
 				return a.stopEC2Instance()
-			case "r":
+			case a.kb.RebootInstance:
 				return a.rebootEC2Instance()
-			case "T":
+			case a.kb.TermInstance:
 				return a.terminateEC2Instance()
 			}
 		}
@@ -2137,11 +2144,11 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	type kv = struct{ key, desc string }
 
 	global := []kv{
-		{"`", "Switch mode"},
-		{"ctrl+p", "Reopen mode picker"},
-		{"ctrl+s", "Pause/resume polling"},
-		{"ctrl+e", "Edit config"},
-		{"ctrl+r", "Switch AWS region"},
+		{a.kb.SwitchMode, "Switch mode"},
+		{a.kb.ReopenPicker, "Reopen mode picker"},
+		{a.kb.PauseResume, "Pause/resume polling"},
+		{a.kb.EditConfig, "Edit config"},
+		{a.kb.SwitchRegion, "Switch AWS region"},
 		{"R", "Refresh data"},
 		{"/", "Filter/search"},
 		{"esc", "Go back"},
@@ -2150,6 +2157,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	}
 
 	var context []kv
+	kb := a.kb
 	switch a.state {
 	case viewClusters:
 		context = []kv{
@@ -2161,48 +2169,48 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewServices:
 		context = []kv{
 			{"enter", "Browse tasks"},
-			{"d", "Service detail (deployments + events)"},
-			{"L", "Tail logs (all tasks)"},
-			{"r", "Force new deployment"},
-			{"s", "Scale service"},
-			{"m", "CPU/memory metrics + alarms"},
-			{"S", "Standalone tasks (non-service)"},
+			{kb.ServiceDetail, "Service detail (deployments + events)"},
+			{kb.ServiceLogs, "Tail logs (all tasks)"},
+			{kb.ForceRedeploy, "Force new deployment"},
+			{kb.Scale, "Scale service"},
+			{kb.Metrics, "CPU/memory metrics + alarms"},
+			{kb.StandaloneTasks, "Standalone tasks (non-service)"},
 		}
 	case viewTasks:
 		context = []kv{
 			{"enter", "Task detail"},
-			{"l", "Tail logs"},
-			{"x", "Stop task"},
-			{"e", "ECS Exec (shell into container)"},
+			{kb.TaskLogs, "Tail logs"},
+			{kb.StopTask, "Stop task"},
+			{kb.ECSExec, "ECS Exec (shell into container)"},
 		}
 	case viewTaskDetail:
 		context = []kv{
-			{"E", "View environment variables"},
+			{kb.EnvVars, "View environment variables"},
 		}
 	case viewServiceDetail:
 		context = []kv{
 			{"tab", "Switch between Deployments and Events"},
-			{"D", "Task definition diff"},
+			{kb.Download, "Task definition diff"},
 			{"j/k", "Scroll"},
 		}
 	case viewLogs:
 		context = []kv{
-			{"f", "Toggle follow mode"},
-			{"t", "Cycle timestamps (relative/local/UTC)"},
+			{kb.LogFollow, "Toggle follow mode"},
+			{kb.LogTimestamp, "Cycle timestamps (relative/local/UTC)"},
 			{"/", "Search — jump with n/N"},
 			{"n/N", "Next/previous match"},
-			{"[/]", "Load older/newer logs"},
-			{"w", "Save buffer to file"},
-			{"y", "Copy buffer to clipboard"},
-			{"o", "Open buffer in $EDITOR"},
+			{kb.LogOlder + "/" + kb.LogNewer, "Load older/newer logs"},
+			{kb.LogSave, "Save buffer to file"},
+			{kb.LogCopy, "Copy buffer to clipboard"},
+			{kb.LogOpenEditor, "Open buffer in $EDITOR"},
 			{"g/G", "Jump to top/bottom"},
 			{"PgUp/PgDn", "Scroll by page"},
 		}
 	case viewStandaloneTasks:
 		context = []kv{
 			{"enter", "Task detail"},
-			{"l", "Tail logs"},
-			{"x", "Stop task"},
+			{kb.TaskLogs, "Tail logs"},
+			{kb.StopTask, "Stop task"},
 		}
 	case viewTaskDefDiff:
 		context = []kv{
@@ -2216,16 +2224,16 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewSSM:
 		context = []kv{
 			{"enter", "View parameter value"},
-			{"e", "Edit parameter value"},
-			{"W", "Save prefix for quick access"},
+			{kb.EditValue, "Edit parameter value"},
+			{kb.Save, "Save prefix for quick access"},
 		}
 	case viewSecrets:
 		context = []kv{
 			{"enter", "View secret value"},
-			{"e", "Edit secret value"},
-			{"c", "Clone secret to new name"},
-			{"y", "Copy ARN to clipboard"},
-			{"W", "Save filter for quick access"},
+			{kb.EditValue, "Edit secret value"},
+			{kb.CloneSecret, "Clone secret to new name"},
+			{kb.CopyARN, "Copy ARN to clipboard"},
+			{kb.Save, "Save filter for quick access"},
 		}
 	case viewSecretValue:
 		context = []kv{
@@ -2235,78 +2243,78 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewS3Buckets:
 		context = []kv{
 			{"enter", "Browse bucket"},
-			{"W", "Save search"},
+			{kb.Save, "Save search"},
 		}
 	case viewS3Objects:
 		context = []kv{
 			{"enter", "Open folder / view detail"},
 			{"i", "View detail + tags"},
-			{"D", "Download object or folder"},
+			{kb.Download, "Download object or folder"},
 		}
 	case viewS3Detail:
 		context = []kv{
-			{"D", "Download"},
+			{kb.Download, "Download"},
 		}
 	case viewLambdaList:
 		context = []kv{
 			{"enter", "Function detail"},
-			{"l", "Tail function logs (live)"},
-			{"L", "Browse log streams (historical)"},
-			{"s", "Search function logs"},
-			{"W", "Save search"},
+			{kb.TailStream, "Tail function logs (live)"},
+			{kb.BrowseStreams, "Browse log streams (historical)"},
+			{kb.SearchLogs, "Search function logs"},
+			{kb.Save, "Save search"},
 		}
 	case viewLambdaDetail:
 		context = []kv{
-			{"c", "Edit code (download, $EDITOR, deploy)"},
-			{"E", "View environment variables"},
-			{"l", "Tail logs (live)"},
-			{"L", "Browse log streams (historical)"},
-			{"s", "Search logs"},
+			{kb.EditCode, "Edit code (download, $EDITOR, deploy)"},
+			{kb.EnvVars, "View environment variables"},
+			{kb.TailStream, "Tail logs (live)"},
+			{kb.BrowseStreams, "Browse log streams (historical)"},
+			{kb.SearchLogs, "Search logs"},
 		}
 	case viewDynamoTables:
 		context = []kv{
 			{"enter", "Browse table"},
-			{"W", "Save table"},
+			{kb.Save, "Save table"},
 		}
 	case viewDynamoItems:
 		context = []kv{
 			{"enter", "View item detail"},
-			{"f", "Filter scan (attribute + operator + value)"},
-			{"p", "PartiQL query"},
-			{"]", "Load next page"},
-			{"W", "Save PartiQL query"},
+			{kb.FilterScan, "Filter scan (attribute + operator + value)"},
+			{kb.PartiQL, "PartiQL query"},
+			{kb.NextPage, "Load next page"},
+			{kb.Save, "Save PartiQL query"},
 		}
 	case viewDynamoItemDetail:
 		context = []kv{
-			{"e", "Edit field value"},
-			{"c", "Clone item"},
+			{kb.EditField, "Edit field value"},
+			{kb.CloneItem, "Clone item"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewSQSQueues:
 		context = []kv{
 			{"enter", "Queue detail"},
-			{"W", "Save queue"},
+			{kb.Save, "Save queue"},
 		}
 	case viewSQSDetail:
 		context = []kv{
-			{"m", "Browse messages"},
-			{"s", "Send new message"},
-			{"d", "Navigate to dead letter queue"},
+			{kb.Messages, "Browse messages"},
+			{kb.SendMessage, "Send new message"},
+			{kb.NavigateDLQ, "Navigate to dead letter queue"},
 			{"R", "Refresh stats"},
 		}
 	case viewSQSMessages:
 		context = []kv{
 			{"enter", "Message detail"},
-			{"p", "Poll for messages"},
-			{"s", "Send new message"},
-			{"x", "Delete message"},
+			{kb.PollMessages, "Poll for messages"},
+			{kb.SendMessage, "Send new message"},
+			{kb.DeleteMsg, "Delete message"},
 			{"X", "Clear message list"},
 		}
 	case viewSQSMessageDetail:
 		context = []kv{
-			{"c", "Clone & send"},
-			{"x", "Delete message"},
+			{kb.CloneSend, "Clone & send"},
+			{kb.DeleteMsg, "Delete message"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -2318,72 +2326,72 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Browse streams"},
 			{"space", "Multi-select for search"},
-			{"l", "Tail entire log group"},
-			{"s", "Search selected groups"},
-			{"W", "Save log path / group selection"},
+			{kb.TailStream, "Tail entire log group"},
+			{kb.SearchLogs, "Search selected groups"},
+			{kb.Save, "Save log path / group selection"},
 		}
 	case viewLogStreams:
 		context = []kv{
 			{"enter", "Peek (last 1 min, paused)"},
 			{"space", "Multi-select for search"},
-			{"l", "Tail stream"},
-			{"L", "Tail entire log group"},
-			{"s", "Search selected streams"},
-			{"W", "Save log path"},
+			{kb.TailStream, "Tail stream"},
+			{kb.TailGroup, "Tail entire log group"},
+			{kb.SearchLogs, "Search selected streams"},
+			{kb.Save, "Save log path"},
 		}
 	case viewLogSearch:
 		context = []kv{
 			{"enter", "Jump to log at timestamp"},
-			{"t", "Toggle timestamps"},
+			{kb.Timestamp, "Toggle timestamps"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewAlarms:
 		context = []kv{
 			{"enter", "View alarm detail"},
-			{"t", "Toggle local/UTC timestamps"},
+			{kb.Timestamp, "Toggle local/UTC timestamps"},
 			{"/", "Filter alarms"},
 		}
 	case viewAlarmDetail:
 		context = []kv{
-			{"a", "Enable/disable alarm actions"},
-			{"S", "Set alarm state (testing)"},
+			{kb.ToggleActions, "Enable/disable alarm actions"},
+			{kb.SetAlarmState, "Set alarm state (testing)"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewCBProjects:
 		context = []kv{
 			{"enter", "View builds"},
-			{"b", "Start new build"},
+			{kb.StartBuild, "Start new build"},
 			{"/", "Filter projects"},
 		}
 	case viewCBBuilds:
 		context = []kv{
 			{"enter", "View build detail"},
-			{"b", "Start new build"},
-			{"t", "Toggle local/UTC timestamps"},
+			{kb.StartBuild, "Start new build"},
+			{kb.Timestamp, "Toggle local/UTC timestamps"},
 		}
 	case viewCBBuildDetail:
 		context = []kv{
-			{"l", "View build logs (buffer)"},
-			{"s", "Search build logs (full)"},
-			{"b", "Start new build"},
-			{"x", "Stop build (if in progress)"},
+			{kb.ViewLogs, "View build logs (buffer)"},
+			{kb.SearchBuildLogs, "Search build logs (full)"},
+			{kb.StartBuild, "Start new build"},
+			{kb.StopBuild, "Stop build (if in progress)"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewTofuResources:
 		context = []kv{
 			{"enter", "View resource state"},
-			{"p", "Run plan (parsed view)"},
-			{"a", "Run apply (interactive)"},
-			{"i", "Run init"},
-			{"W", "Save workspace"},
+			{kb.RunPlan, "Run plan (parsed view)"},
+			{kb.RunApply, "Run apply (interactive)"},
+			{kb.RunInit, "Run init"},
+			{kb.Save, "Save workspace"},
 			{"/", "Filter resources"},
 		}
 	case viewTofuPlan:
 		context = []kv{
 			{"enter", "View change detail"},
-			{"a", "Run apply (interactive)"},
+			{kb.RunApply, "Run apply (interactive)"},
 			{"/", "Filter changes"},
 		}
 	case viewTofuPlanDetail:
@@ -2404,9 +2412,9 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewECRImages:
 		context = []kv{
 			{"enter", "View scan findings"},
-			{"s", "Start scan"},
-			{"y", "Copy image URI to clipboard"},
-			{"x", "Delete image"},
+			{kb.StartScan, "Start scan"},
+			{kb.CopyURI, "Copy image URI to clipboard"},
+			{kb.DeleteImage, "Delete image"},
 			{"/", "Filter by tag or digest"},
 		}
 	case viewECRFindings:
@@ -2421,14 +2429,14 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewR53Records:
 		context = []kv{
 			{"enter", "View record detail"},
-			{"n", "Create new record"},
+			{kb.NewRecord, "Create new record"},
 			{"/", "Filter records"},
 		}
 	case viewR53RecordDetail:
 		context = []kv{
-			{"t", "Test DNS resolution"},
-			{"e", "Edit record"},
-			{"x", "Delete record"},
+			{kb.TestDNS, "Test DNS resolution"},
+			{kb.EditRecord, "Edit record"},
+			{kb.DeleteRecord, "Delete record"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -2439,12 +2447,12 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		}
 	case viewEC2Detail:
 		context = []kv{
-			{"e", "SSM session (shell into instance)"},
-			{"c", "View console output"},
-			{"S", "Start instance"},
-			{"X", "Stop instance"},
-			{"r", "Reboot instance"},
-			{"T", "Terminate instance"},
+			{kb.SSMSession, "SSM session (shell into instance)"},
+			{kb.ConsoleOutput, "View console output"},
+			{kb.StartInstance, "Start instance"},
+			{kb.StopInstance, "Stop instance"},
+			{kb.RebootInstance, "Reboot instance"},
+			{kb.TermInstance, "Terminate instance"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
