@@ -103,6 +103,36 @@ func (c *Client) ListObjects(ctx context.Context, bucket, prefix string) ([]S3Ob
 	return objects, nil
 }
 
+// SearchObjects searches for objects by key prefix without a delimiter,
+// returning all matching keys at any depth (not folder-grouped).
+func (c *Client) SearchObjects(ctx context.Context, bucket, prefix string) ([]S3Object, error) {
+	maxKeys := int32(500)
+	input := &s3.ListObjectsV2Input{
+		Bucket:  &bucket,
+		Prefix:  &prefix,
+		MaxKeys: &maxKeys,
+	}
+
+	var objects []S3Object
+	page, err := c.S3.ListObjectsV2(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	for _, obj := range page.Contents {
+		key := derefStrAws(obj.Key)
+		var lastMod time.Time
+		if obj.LastModified != nil {
+			lastMod = *obj.LastModified
+		}
+		objects = append(objects, S3Object{
+			Key:          key,
+			Size:         derefInt64(obj.Size),
+			LastModified: lastMod,
+		})
+	}
+	return objects, nil
+}
+
 // GetObjectTags returns the tags on an S3 object.
 func (c *Client) GetObjectTags(ctx context.Context, bucket, key string) (map[string]string, error) {
 	out, err := c.S3.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{

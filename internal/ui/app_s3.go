@@ -72,7 +72,18 @@ func (a App) promptS3KeySearch() (App, tea.Cmd) {
 
 func (a App) searchS3Keys(prefix string) (App, tea.Cmd) {
 	bucket := a.s3ObjectsView.Bucket()
-	return a.openS3Objects(bucket, prefix)
+	a.state = viewS3Objects
+	a.s3ObjectsView = views.NewS3Objects(bucket, prefix)
+	a.s3ObjectsView = a.s3ObjectsView.SetSize(a.width, a.height-3)
+	a.loading = true
+	client := a.client
+	return a, func() tea.Msg {
+		objects, err := client.SearchObjects(context.Background(), bucket, prefix)
+		if err != nil {
+			return errMsg{err}
+		}
+		return s3ObjectsLoadedMsg{objects}
+	}
 }
 
 func (a App) loadS3Detail(bucket, key string) tea.Cmd {
