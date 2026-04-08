@@ -33,11 +33,10 @@ type KeyBindings struct {
 	LogSave      string
 
 	// CloudWatch Logs
-	TailStream       string
-	TailGroup        string
-	SearchLogs       string
-	BrowseStreams     string
-	SavePath         string
+	TailStream    string
+	TailGroup     string
+	BrowseStreams string
+	SavePath      string
 
 	// CloudWatch Alarms
 	ToggleActions string
@@ -73,7 +72,6 @@ type KeyBindings struct {
 	StartBuild string
 	StopBuild  string
 	ViewLogs   string
-	SearchBuildLogs string
 
 	// EC2
 	SSMSession     string
@@ -101,6 +99,7 @@ type KeyBindings struct {
 
 	// Shared
 	Save      string // W — save/bookmark
+	Search    string // s — general search/find
 	Timestamp string // t — toggle timestamps
 }
 
@@ -138,7 +137,6 @@ func NewKeyBindings() KeyBindings {
 		// CW Logs
 		TailStream:   "l",
 		TailGroup:    "L",
-		SearchLogs:   "s",
 		BrowseStreams: "L",
 		SavePath:     "W",
 
@@ -176,7 +174,6 @@ func NewKeyBindings() KeyBindings {
 		StartBuild:      "b",
 		StopBuild:       "x",
 		ViewLogs:        "l",
-		SearchBuildLogs: "s",
 
 		// EC2
 		SSMSession:     "e",
@@ -204,6 +201,7 @@ func NewKeyBindings() KeyBindings {
 
 		// Shared
 		Save:      "W",
+		Search:    "s",
 		Timestamp: "t",
 	}
 }
@@ -271,7 +269,7 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 		case "tail_group":
 			kb.TailGroup = key
 		case "search_logs":
-			kb.SearchLogs = key
+			kb.Search = key
 		case "browse_streams":
 			kb.BrowseStreams = key
 		case "save_path":
@@ -333,7 +331,7 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 		case "view_logs":
 			kb.ViewLogs = key
 		case "search_build_logs":
-			kb.SearchBuildLogs = key
+			kb.Search = key
 
 		// EC2
 		case "ssm_session":
@@ -378,6 +376,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 		// Shared
 		case "save":
 			kb.Save = key
+		case "search":
+			kb.Search = key
 		case "timestamp":
 			kb.Timestamp = key
 		}

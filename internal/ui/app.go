@@ -1507,7 +1507,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.showS3ObjectDetail()
 			case a.kb.Download:
 				return a.promptS3Download()
-			case a.kb.SearchLogs:
+			case a.kb.Search:
 				return a.promptS3KeySearch()
 			}
 		case viewS3Detail:
@@ -1579,7 +1579,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.tailLambdaLogs()
 			case a.kb.BrowseStreams:
 				return a.browseLambdaLogs()
-			case a.kb.SearchLogs:
+			case a.kb.Search:
 				return a.searchLambdaLogs()
 			}
 		case viewLambdaDetail:
@@ -1588,7 +1588,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.tailLambdaDetailLogs()
 			case a.kb.BrowseStreams:
 				return a.browseLambdaDetailLogs()
-			case a.kb.SearchLogs:
+			case a.kb.Search:
 				return a.searchLambdaDetailLogs()
 			case a.kb.EnvVars:
 				return a.showLambdaEnvVars()
@@ -1599,7 +1599,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case a.kb.TailStream:
 				return a.tailLogGroup()
-			case a.kb.SearchLogs:
+			case a.kb.Search:
 				return a.promptLogSearchFromGroups()
 			case a.kb.Save:
 				if a.logGroupsView.SelectionCount() > 1 {
@@ -1615,7 +1615,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.tailLogStream()
 			case a.kb.TailGroup:
 				return a.tailEntireLogGroup()
-			case a.kb.SearchLogs:
+			case a.kb.Search:
 				return a.promptLogSearchFromStreams()
 			case a.kb.Save:
 				return a.saveLogStreamPath()
@@ -1641,7 +1641,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case a.kb.ViewLogs:
 				return a.viewCBBuildLogs()
-			case a.kb.SearchBuildLogs:
+			case a.kb.Search:
 				return a.searchCBBuildLogs()
 			case a.kb.StartBuild:
 				return a.triggerCBBuild()
@@ -2253,7 +2253,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Open folder / view detail"},
 			{"i", "View detail + tags"},
-			{kb.SearchLogs, "Search by key prefix"},
+			{kb.Search, "Search by key prefix"},
 			{kb.Download, "Download object or folder"},
 		}
 	case viewS3Detail:
@@ -2265,7 +2265,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "Function detail"},
 			{kb.TailStream, "Tail function logs (live)"},
 			{kb.BrowseStreams, "Browse log streams (historical)"},
-			{kb.SearchLogs, "Search function logs"},
+			{kb.Search, "Search function logs"},
 			{kb.Save, "Save search"},
 		}
 	case viewLambdaDetail:
@@ -2274,7 +2274,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.EnvVars, "View environment variables"},
 			{kb.TailStream, "Tail logs (live)"},
 			{kb.BrowseStreams, "Browse log streams (historical)"},
-			{kb.SearchLogs, "Search logs"},
+			{kb.Search, "Search logs"},
 		}
 	case viewDynamoTables:
 		context = []kv{
@@ -2332,7 +2332,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "Browse streams"},
 			{"space", "Multi-select for search"},
 			{kb.TailStream, "Tail entire log group"},
-			{kb.SearchLogs, "Search selected groups"},
+			{kb.Search, "Search selected groups"},
 			{kb.Save, "Save log path / group selection"},
 		}
 	case viewLogStreams:
@@ -2341,7 +2341,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"space", "Multi-select for search"},
 			{kb.TailStream, "Tail stream"},
 			{kb.TailGroup, "Tail entire log group"},
-			{kb.SearchLogs, "Search selected streams"},
+			{kb.Search, "Search selected streams"},
 			{kb.Save, "Save log path"},
 		}
 	case viewLogSearch:
@@ -2378,7 +2378,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewCBBuildDetail:
 		context = []kv{
 			{kb.ViewLogs, "View build logs (buffer)"},
-			{kb.SearchBuildLogs, "Search build logs (full)"},
+			{kb.Search, "Search build logs (full)"},
 			{kb.StartBuild, "Start new build"},
 			{kb.StopBuild, "Stop build (if in progress)"},
 			{"j/k", "Scroll"},
