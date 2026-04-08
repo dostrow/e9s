@@ -72,7 +72,6 @@ func (m ClusterListModel) Update(msg tea.Msg) (ClusterListModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter clusters..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		}

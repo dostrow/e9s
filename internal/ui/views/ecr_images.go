@@ -69,7 +69,6 @@ func (m ECRImagesModel) Update(msg tea.Msg) (ECRImagesModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter by tag or digest..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

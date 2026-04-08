@@ -70,7 +70,6 @@ func (m ECRFindingsModel) Update(msg tea.Msg) (ECRFindingsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter findings..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

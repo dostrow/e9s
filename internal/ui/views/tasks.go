@@ -72,7 +72,6 @@ func (m TaskListModel) Update(msg tea.Msg) (TaskListModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter tasks..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		}

@@ -68,7 +68,6 @@ func (m S3BucketsModel) Update(msg tea.Msg) (S3BucketsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter buckets..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		}

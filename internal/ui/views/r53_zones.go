@@ -67,7 +67,6 @@ func (m R53ZonesModel) Update(msg tea.Msg) (R53ZonesModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter zones..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

@@ -68,7 +68,6 @@ func (m TofuPlanModel) Update(msg tea.Msg) (TofuPlanModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter changes..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

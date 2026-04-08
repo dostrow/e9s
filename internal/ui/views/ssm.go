@@ -69,7 +69,6 @@ func (m SSMModel) Update(msg tea.Msg) (SSMModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter parameters..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		}

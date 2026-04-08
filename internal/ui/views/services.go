@@ -73,7 +73,6 @@ func (m ServiceListModel) Update(msg tea.Msg) (ServiceListModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter services..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		}

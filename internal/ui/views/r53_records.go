@@ -69,7 +69,6 @@ func (m R53RecordsModel) Update(msg tea.Msg) (R53RecordsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter records..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

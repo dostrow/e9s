@@ -62,6 +62,19 @@ func (a App) openS3Objects(bucket, prefix string) (App, tea.Cmd) {
 	}
 }
 
+func (a App) promptS3KeySearch() (App, tea.Cmd) {
+	bucket := a.s3ObjectsView.Bucket()
+	currentPrefix := a.s3ObjectsView.Prefix()
+	a.input = NewInput(InputS3KeySearch,
+		fmt.Sprintf("Search by key prefix in %s", bucket), currentPrefix)
+	return a, nil
+}
+
+func (a App) searchS3Keys(prefix string) (App, tea.Cmd) {
+	bucket := a.s3ObjectsView.Bucket()
+	return a.openS3Objects(bucket, prefix)
+}
+
 func (a App) loadS3Detail(bucket, key string) tea.Cmd {
 	client := a.client
 	return func() tea.Msg {

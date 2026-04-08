@@ -67,7 +67,6 @@ func (m SQSQueuesModel) Update(msg tea.Msg) (SQSQueuesModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter queues..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		}

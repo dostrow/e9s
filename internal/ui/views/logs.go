@@ -262,7 +262,6 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			m.searchInput.Placeholder = "search..."
 			m.searchInput.SetValue(m.search)
 			m.searchInput.Focus()
-			m.searchInput.CharLimit = 100
 			m.searchInput.Width = 40
 			return m, m.searchInput.Focus()
 		case msg.String() == "n":

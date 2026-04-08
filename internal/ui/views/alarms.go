@@ -72,7 +72,6 @@ func (m AlarmsModel) Update(msg tea.Msg) (AlarmsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter alarms..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

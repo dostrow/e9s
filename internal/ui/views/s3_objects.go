@@ -71,7 +71,6 @@ func (m S3ObjectsModel) Update(msg tea.Msg) (S3ObjectsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter objects..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 100
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

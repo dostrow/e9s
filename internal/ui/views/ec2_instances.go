@@ -68,7 +68,6 @@ func (m EC2InstancesModel) Update(msg tea.Msg) (EC2InstancesModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter instances..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 80
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}

@@ -1185,6 +1185,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.doSaveS3Search(msg.Value)
 		case InputS3Download:
 			return a, a.doS3Download(msg.Value)
+		case InputS3KeySearch:
+			return a.searchS3Keys(msg.Value)
 		case InputLambdaSearch:
 			return a.openLambdaList(msg.Value)
 		case InputLambdaSaveName:
@@ -1505,6 +1507,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.showS3ObjectDetail()
 			case a.kb.Download:
 				return a.promptS3Download()
+			case a.kb.SearchLogs:
+				return a.promptS3KeySearch()
 			}
 		case viewS3Detail:
 			switch k {
@@ -2249,6 +2253,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Open folder / view detail"},
 			{"i", "View detail + tags"},
+			{kb.SearchLogs, "Search by key prefix"},
 			{kb.Download, "Download object or folder"},
 		}
 	case viewS3Detail:

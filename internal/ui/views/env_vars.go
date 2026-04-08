@@ -71,7 +71,6 @@ func (m EnvVarsModel) Update(msg tea.Msg) (EnvVarsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter env vars..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 50
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		case msg.String() == "a":

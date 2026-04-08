@@ -81,7 +81,6 @@ func (m LogStreamsModel) Update(msg tea.Msg) (LogStreamsModel, tea.Cmd) {
 			m.filterInput.Placeholder = "filter streams..."
 			m.filterInput.SetValue(m.filter)
 			m.filterInput.Focus()
-			m.filterInput.CharLimit = 100
 			m.filterInput.Width = 40
 			return m, m.filterInput.Focus()
 		}
