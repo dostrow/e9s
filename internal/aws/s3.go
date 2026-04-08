@@ -57,46 +57,48 @@ func (c *Client) ListBuckets(ctx context.Context, filter string) ([]S3Bucket, er
 }
 
 // ListObjects lists objects and common prefixes (folders) in a bucket under a prefix.
+// Limits results to maxKeys per call to avoid expensive full-bucket listings.
+// Returns a continuation token if there are more results.
 func (c *Client) ListObjects(ctx context.Context, bucket, prefix string) ([]S3Object, error) {
 	delimiter := "/"
+	maxKeys := int32(500)
 	input := &s3.ListObjectsV2Input{
 		Bucket:    &bucket,
 		Prefix:    &prefix,
 		Delimiter: &delimiter,
+		MaxKeys:   &maxKeys,
 	}
 
 	var objects []S3Object
-	paginator := s3.NewListObjectsV2Paginator(c.S3, input)
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
+	// Single page only — use ] to load more
+	page, err := c.S3.ListObjectsV2(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	// Common prefixes (folders)
+	for _, cp := range page.CommonPrefixes {
+		p := derefStrAws(cp.Prefix)
+		objects = append(objects, S3Object{
+			Key:      p,
+			IsPrefix: true,
+		})
+	}
+	// Objects
+	for _, obj := range page.Contents {
+		key := derefStrAws(obj.Key)
+		// Skip the prefix itself if it appears as an object
+		if key == prefix {
+			continue
 		}
-		// Common prefixes (folders)
-		for _, cp := range page.CommonPrefixes {
-			p := derefStrAws(cp.Prefix)
-			objects = append(objects, S3Object{
-				Key:      p,
-				IsPrefix: true,
-			})
+		var lastMod time.Time
+		if obj.LastModified != nil {
+			lastMod = *obj.LastModified
 		}
-		// Objects
-		for _, obj := range page.Contents {
-			key := derefStrAws(obj.Key)
-			// Skip the prefix itself if it appears as an object
-			if key == prefix {
-				continue
-			}
-			var lastMod time.Time
-			if obj.LastModified != nil {
-				lastMod = *obj.LastModified
-			}
-			objects = append(objects, S3Object{
-				Key:          key,
-				Size:         derefInt64(obj.Size),
-				LastModified: lastMod,
-			})
-		}
+		objects = append(objects, S3Object{
+			Key:          key,
+			Size:         derefInt64(obj.Size),
+			LastModified: lastMod,
+		})
 	}
 	return objects, nil
 }
