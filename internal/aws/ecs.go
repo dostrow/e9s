@@ -2,8 +2,11 @@ package aws
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/applicationautoscaling"
+	aastypes "github.com/aws/aws-sdk-go-v2/service/applicationautoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -142,6 +145,43 @@ func (c *Client) ScaleService(ctx context.Context, cluster, service string, desi
 		Cluster:      &cluster,
 		Service:      &service,
 		DesiredCount: &count,
+	})
+	return err
+}
+
+// ScaleInSuspended checks if scale-in is currently suspended for a service.
+func (c *Client) ScaleInSuspended(ctx context.Context, cluster, service string) (bool, error) {
+	resourceID := fmt.Sprintf("service/%s/%s", cluster, service)
+	out, err := c.AppAutoScaling.DescribeScalableTargets(ctx, &applicationautoscaling.DescribeScalableTargetsInput{
+		ServiceNamespace: aastypes.ServiceNamespaceEcs,
+		ResourceIds:      []string{resourceID},
+		ScalableDimension: aastypes.ScalableDimensionECSServiceDesiredCount,
+	})
+	if err != nil {
+		return false, err
+	}
+	if len(out.ScalableTargets) == 0 {
+		return false, nil // no auto-scaling configured
+	}
+	target := out.ScalableTargets[0]
+	if target.SuspendedState != nil && target.SuspendedState.DynamicScalingInSuspended != nil {
+		return *target.SuspendedState.DynamicScalingInSuspended, nil
+	}
+	return false, nil
+}
+
+// SetScaleInSuspended enables or disables scale-in suspension for a service.
+func (c *Client) SetScaleInSuspended(ctx context.Context, cluster, service string, suspended bool) error {
+	resourceID := fmt.Sprintf("service/%s/%s", cluster, service)
+	_, err := c.AppAutoScaling.RegisterScalableTarget(ctx, &applicationautoscaling.RegisterScalableTargetInput{
+		ServiceNamespace:  aastypes.ServiceNamespaceEcs,
+		ResourceId:        &resourceID,
+		ScalableDimension: aastypes.ScalableDimensionECSServiceDesiredCount,
+		SuspendedState: &aastypes.SuspendedState{
+			DynamicScalingInSuspended:  &suspended,
+			DynamicScalingOutSuspended: boolPtr(false),
+			ScheduledScalingSuspended:  boolPtr(false),
+		},
 	})
 	return err
 }

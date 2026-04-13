@@ -14,6 +14,7 @@ const (
 	ConfirmNone ConfirmAction = iota
 	ConfirmForceDeploy
 	ConfirmStopTask
+	ConfirmScaleInToggle
 	ConfirmSSMUpdate
 	ConfirmSMUpdate
 	ConfirmDynamoFieldEdit

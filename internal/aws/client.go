@@ -6,6 +6,7 @@ import (
 
 	awscfg "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/applicationautoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
@@ -22,7 +23,8 @@ import (
 )
 
 type Client struct {
-	ECS    *ecs.Client
+	ECS       *ecs.Client
+	AppAutoScaling *applicationautoscaling.Client
 	Logs   *cloudwatchlogs.Client
 	CW     *cloudwatch.Client
 	SSM    *ssm.Client
@@ -55,7 +57,8 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 	}
 
 	return &Client{
-		ECS:    ecs.NewFromConfig(cfg),
+		ECS:           ecs.NewFromConfig(cfg),
+		AppAutoScaling: applicationautoscaling.NewFromConfig(cfg),
 		Logs:   cloudwatchlogs.NewFromConfig(cfg),
 		CW:     cloudwatch.NewFromConfig(cfg),
 		SSM:    ssm.NewFromConfig(cfg),
@@ -85,6 +88,7 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	}
 
 	c.ECS = ecs.NewFromConfig(cfg)
+	c.AppAutoScaling = applicationautoscaling.NewFromConfig(cfg)
 	c.Logs = cloudwatchlogs.NewFromConfig(cfg)
 	c.CW = cloudwatch.NewFromConfig(cfg)
 	c.SSM = ssm.NewFromConfig(cfg)

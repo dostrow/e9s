@@ -145,7 +145,10 @@ type App struct {
 	selectedCluster    *model.Cluster
 	selectedService    *model.Service
 	selectedTask       *model.Task
-	execContainerName  string
+	execContainerName    string
+	scaleInCluster       string
+	scaleInService       string
+	scaleInCurrentState  bool
 	logSearchGroup     string
 	logSearchGroups    []string // multi-group search
 	logSearchStreams    []string
@@ -628,6 +631,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = false
 		return a, nil
 
+	case scaleInStatusMsg:
+		a.scaleInCluster = msg.cluster
+		a.scaleInService = msg.service
+		a.scaleInCurrentState = msg.suspended
+		action := "Suspend"
+		if msg.suspended {
+			action = "Resume"
+		}
+		a.confirm = NewConfirm(ConfirmScaleInToggle,
+			fmt.Sprintf("%s scale-in for %s? (currently %s)",
+				action, msg.service, func() string {
+					if msg.suspended {
+						return "suspended"
+					}
+					return "active"
+				}()))
+		return a, nil
+
 	case execSessionReadyMsg:
 		wrap := NewExecWrap(msg.pluginPath, msg.args)
 		return a, tea.Exec(wrap, func(err error) tea.Msg {
@@ -1066,6 +1087,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doForceDeploy()
 		case ConfirmStopTask:
 			return a, a.doStopTask()
+		case ConfirmScaleInToggle:
+			return a, a.doToggleScaleIn()
 		case ConfirmSSMUpdate:
 			return a, a.doSSMUpdate()
 		case ConfirmSMClone:
@@ -1442,6 +1465,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.showStandaloneTasks()
 			case a.kb.Metrics:
 				return a.showMetrics()
+			case a.kb.ToggleScaleIn:
+				return a.toggleScaleIn()
 			}
 		case viewTasks:
 			switch k {
@@ -2178,6 +2203,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.ForceRedeploy, "Force new deployment"},
 			{kb.Scale, "Scale service"},
 			{kb.Metrics, "CPU/memory metrics + alarms"},
+			{kb.ToggleScaleIn, "Toggle scale-in suspension"},
 			{kb.StandaloneTasks, "Standalone tasks (non-service)"},
 		}
 	case viewTasks:

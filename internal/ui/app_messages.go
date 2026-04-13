@@ -26,6 +26,11 @@ type logReadyMsg struct {
 	lookback time.Duration // 0 = default (5min)
 	search   string        // pre-set search pattern
 }
+type scaleInStatusMsg struct {
+	service   string
+	cluster   string
+	suspended bool
+}
 type execFinishedMsg struct{ err error }
 type execSessionReadyMsg struct {
 	pluginPath string

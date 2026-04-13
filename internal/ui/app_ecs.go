@@ -213,6 +213,46 @@ func (a App) showTaskDefDiff() (App, tea.Cmd) {
 
 // --- Metrics & Alarms ---
 
+func (a App) toggleScaleIn() (App, tea.Cmd) {
+	s := a.serviceView.SelectedService()
+	if s == nil {
+		return a, nil
+	}
+	clusterName := ""
+	if a.selectedCluster != nil {
+		clusterName = a.selectedCluster.Name
+	}
+	serviceName := s.Name
+	client := a.client
+
+	// Check current state, then confirm toggle
+	return a, func() tea.Msg {
+		suspended, err := client.ScaleInSuspended(context.Background(), clusterName, serviceName)
+		if err != nil {
+			return errMsg{fmt.Errorf("scale-in status: %w (auto-scaling may not be configured)", err)}
+		}
+		return scaleInStatusMsg{service: serviceName, cluster: clusterName, suspended: suspended}
+	}
+}
+
+func (a App) doToggleScaleIn() tea.Cmd {
+	client := a.client
+	cluster := a.scaleInCluster
+	service := a.scaleInService
+	newState := !a.scaleInCurrentState
+	return func() tea.Msg {
+		err := client.SetScaleInSuspended(context.Background(), cluster, service, newState)
+		if err != nil {
+			return errMsg{err}
+		}
+		action := "enabled"
+		if newState {
+			action = "suspended"
+		}
+		return actionSuccessMsg{fmt.Sprintf("Scale-in %s for %s", action, service)}
+	}
+}
+
 func (a App) showMetrics() (App, tea.Cmd) {
 	s := a.serviceView.SelectedService()
 	if s == nil {
