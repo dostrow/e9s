@@ -53,8 +53,8 @@ type LogViewerModel struct {
 
 	firstTS int64 // earliest timestamp in buffer (for backward fetch)
 	lastTS  int64
-	width  int
-	height int
+	width   int
+	height  int
 }
 
 type logLine struct {
@@ -68,7 +68,10 @@ func NewLogViewer(title string, client *aws.Client, logGroup string, streams []s
 }
 
 func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, streams []string, follow bool, lookback time.Duration) LogViewerModel {
-	startTS := time.Now().Add(-lookback).UnixMilli()
+	startTS := int64(0)
+	if !follow {
+		startTS = time.Now().Add(-lookback).UnixMilli()
+	}
 
 	return LogViewerModel{
 		title:    title,
@@ -575,21 +578,38 @@ func (m LogViewerModel) fetchLogs() tea.Cmd {
 	logGroup := m.logGroup
 	streams := m.streams
 	startTime := m.lastTS
+	limit := 100
+	if m.tailMode {
+		limit = maxLogLines
+	}
 
 	return func() tea.Msg {
 		var entries []aws.LogEntry
 		var lastTS int64
 		var err error
 
-		if len(streams) == 1 {
-			entries, lastTS, err = client.FetchLogs(
-				context.Background(), logGroup, streams[0], startTime, 100)
-		} else if len(streams) > 1 {
-			entries, lastTS, err = client.FetchMultiStreamLogs(
-				context.Background(), logGroup, streams, startTime, 100)
+		if m.tailMode {
+			if len(streams) == 1 {
+				entries, lastTS, err = client.TailLogs(
+					context.Background(), logGroup, streams[0], startTime, limit)
+			} else if len(streams) > 1 {
+				entries, lastTS, err = client.TailMultiStreamLogs(
+					context.Background(), logGroup, streams, startTime, limit)
+			} else {
+				entries, lastTS, err = client.TailLogGroup(
+					context.Background(), logGroup, startTime, limit)
+			}
 		} else {
-			entries, lastTS, err = client.FetchLogGroup(
-				context.Background(), logGroup, startTime, 100)
+			if len(streams) == 1 {
+				entries, lastTS, err = client.FetchLogs(
+					context.Background(), logGroup, streams[0], startTime, limit)
+			} else if len(streams) > 1 {
+				entries, lastTS, err = client.FetchMultiStreamLogs(
+					context.Background(), logGroup, streams, startTime, limit)
+			} else {
+				entries, lastTS, err = client.FetchLogGroup(
+					context.Background(), logGroup, startTime, limit)
+			}
 		}
 
 		if err != nil {

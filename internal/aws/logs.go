@@ -18,6 +18,10 @@ type LogEntry struct {
 	Stream    string
 }
 
+type filterLogEventsAPI interface {
+	FilterLogEvents(context.Context, *cloudwatchlogs.FilterLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error)
+}
+
 // GetLogConfig retrieves the awslogs configuration from a task definition
 // for a given container. Returns logGroup, logStreamPrefix.
 func (c *Client) GetLogConfig(ctx context.Context, taskDefARN, containerName string) (string, string, error) {
@@ -209,8 +213,48 @@ func (c *Client) FetchLogGroup(ctx context.Context, logGroup string, startTime i
 	return entries, lastTS, nil
 }
 
+// TailLogs retrieves the newest log entries from a single stream since startTime.
+// Unlike FetchLogs, this paginates through the full result set so live tailing
+// does not get stuck on the oldest page of a busy window.
+func (c *Client) TailLogs(ctx context.Context, logGroup, logStream string, startTime int64, limit int) ([]LogEntry, int64, error) {
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName:   &logGroup,
+		LogStreamNames: []string{logStream},
+	}
+	if startTime > 0 {
+		input.StartTime = &startTime
+	}
+	return tailLogs(ctx, c.Logs, input, startTime, limit)
+}
+
+// TailMultiStreamLogs retrieves the newest log entries from multiple streams since startTime.
+func (c *Client) TailMultiStreamLogs(ctx context.Context, logGroup string, logStreams []string, startTime int64, limit int) ([]LogEntry, int64, error) {
+	if len(logStreams) == 0 {
+		return nil, startTime, nil
+	}
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName:   &logGroup,
+		LogStreamNames: logStreams,
+	}
+	if startTime > 0 {
+		input.StartTime = &startTime
+	}
+	return tailLogs(ctx, c.Logs, input, startTime, limit)
+}
+
+// TailLogGroup retrieves the newest log entries from an entire group since startTime.
+func (c *Client) TailLogGroup(ctx context.Context, logGroup string, startTime int64, limit int) ([]LogEntry, int64, error) {
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &logGroup,
+	}
+	if startTime > 0 {
+		input.StartTime = &startTime
+	}
+	return tailLogs(ctx, c.Logs, input, startTime, limit)
+}
+
 type LogGroupInfo struct {
-	Name      string
+	Name        string
 	StoredBytes int64
 	StreamCount int
 }
@@ -450,4 +494,49 @@ func eventToLogEntry(ev cwltypes.FilteredLogEvent) LogEntry {
 
 func intPtr(i int32) *int32 {
 	return &i
+}
+
+func tailLogs(ctx context.Context, api filterLogEventsAPI, input *cloudwatchlogs.FilterLogEventsInput, startTime int64, limit int) ([]LogEntry, int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	req := *input
+	pageLimit := min(limit, 10000)
+	req.Limit = intPtr(int32(pageLimit))
+
+	var (
+		entries   []LogEntry
+		lastTS    = startTime
+		nextToken *string
+	)
+
+	for {
+		req.NextToken = nextToken
+		out, err := api.FilterLogEvents(ctx, &req)
+		if err != nil {
+			return nil, startTime, err
+		}
+
+		for _, ev := range out.Events {
+			entry := eventToLogEntry(ev)
+			entries = append(entries, entry)
+			if entry.Timestamp > lastTS {
+				lastTS = entry.Timestamp
+			}
+		}
+		if len(entries) > limit {
+			entries = append([]LogEntry(nil), entries[len(entries)-limit:]...)
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		if nextToken != nil && *out.NextToken == *nextToken {
+			break
+		}
+		nextToken = out.NextToken
+	}
+
+	return entries, lastTS, nil
 }

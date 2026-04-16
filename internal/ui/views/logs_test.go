@@ -3,6 +3,7 @@ package views
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSanitizeLogMessage_StripsCR(t *testing.T) {
@@ -95,5 +96,27 @@ func TestWrapPlainText_Unicode(t *testing.T) {
 	lines := wrapPlainText(input, 5)
 	if len(lines) != 2 {
 		t.Errorf("Expected 2 lines for 10 runes at width 5, got %d", len(lines))
+	}
+}
+
+func TestNewLogViewerWithOptions_TailStartsFromLatestWindow(t *testing.T) {
+	m := NewLogViewerWithOptions("tail", nil, "/aws/ecs/example", nil, true, 10*time.Second)
+	if m.lastTS != 0 {
+		t.Fatalf("tail mode should start from the newest logs, got lastTS=%d", m.lastTS)
+	}
+	if !m.tailMode {
+		t.Fatal("tail mode should be enabled when follow=true")
+	}
+}
+
+func TestNewLogViewerWithOptions_HistoricalUsesLookback(t *testing.T) {
+	before := time.Now().Add(-11 * time.Second).UnixMilli()
+	m := NewLogViewerWithOptions("history", nil, "/aws/ecs/example", nil, false, 10*time.Second)
+	after := time.Now().Add(-9 * time.Second).UnixMilli()
+	if m.lastTS < before || m.lastTS > after {
+		t.Fatalf("historical start timestamp %d outside expected lookback window [%d, %d]", m.lastTS, before, after)
+	}
+	if m.tailMode {
+		t.Fatal("tail mode should be disabled when follow=false")
 	}
 }
