@@ -21,8 +21,8 @@ type LogSearchResultsMsg struct {
 // LogSearchPartialMsg delivers a batch of results incrementally.
 type LogSearchPartialMsg struct {
 	Results   []aws.LogEntry
-	Done      bool   // true if this is the last batch
-	Source    string // e.g. log group name for multi-group
+	Done      bool    // true if this is the last batch
+	Source    string  // e.g. log group name for multi-group
 	NextToken *string // for pagination chaining (nil if done)
 	Remaining int     // remaining results to fetch
 }
@@ -34,10 +34,10 @@ type LogSearchErrorMsg struct {
 
 // LogSearchJumpMsg is sent when the user selects a search result to jump to.
 type LogSearchJumpMsg struct {
-	LogGroup    string
-	Stream      string
-	Timestamp   int64
-	Pattern     string
+	LogGroup  string
+	Stream    string
+	Timestamp int64
+	Pattern   string
 }
 
 type LogSearchModel struct {
@@ -303,6 +303,14 @@ func splitGroupStream(composite, defaultGroup string) (string, string) {
 
 func (m LogSearchModel) Pattern() string {
 	return m.pattern
+}
+
+func (m LogSearchModel) SelectedResult() *aws.LogEntry {
+	if len(m.results) == 0 || m.cursor < 0 || m.cursor >= len(m.results) {
+		return nil
+	}
+	entry := m.results[m.cursor]
+	return &entry
 }
 
 func (m LogSearchModel) SetSize(w, h int) LogSearchModel {

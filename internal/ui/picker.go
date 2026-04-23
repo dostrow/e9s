@@ -19,6 +19,7 @@ const (
 	PickerSSMPrefix
 	PickerLogPath
 	PickerLogSearchTimeRange
+	PickerLogCorrelationWindow
 	PickerSMFilter
 	PickerS3Search
 	PickerLambdaSearch

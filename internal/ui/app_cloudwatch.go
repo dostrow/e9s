@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	tea "github.com/charmbracelet/bubbletea"
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -128,10 +128,11 @@ func (a App) tailEntireLogGroup() (App, tea.Cmd) {
 func (a App) startLogTail(logGroup string, streams []string, title string) tea.Cmd {
 	return func() tea.Msg {
 		return logReadyMsg{
-			title:    title,
-			logGroup: logGroup,
-			streams:  streams,
-			lookback: 10 * time.Second,
+			title:     title,
+			logGroup:  logGroup,
+			logGroups: []string{logGroup},
+			streams:   streams,
+			lookback:  10 * time.Second,
 		}
 	}
 }
@@ -372,6 +373,114 @@ func derefStrPtr(p *string) string {
 		return *p
 	}
 	return ""
+}
+
+func (a App) startLogCorrelation() (App, tea.Cmd) {
+	entry := a.logSearchView.SelectedResult()
+	if entry == nil {
+		return a, nil
+	}
+
+	a.prevState = viewLogSearch
+	a.logCorrelationActive = true
+	a.logCorrelationTS = entry.Timestamp
+	a.logCorrelationPattern = a.logSearchView.Pattern()
+	a.logCorrelationGroups = nil
+	a.logCorrelationStreams = nil
+
+	return a.openLogGroups("")
+}
+
+func (a App) promptLogCorrelationWindowForGroups() (App, tea.Cmd) {
+	groups := a.logGroupsView.SelectedGroups()
+	if len(groups) == 0 {
+		return a, nil
+	}
+	a.logCorrelationGroups = groups
+	a.logCorrelationStreams = nil
+	return a.promptLogCorrelationWindow()
+}
+
+func (a App) promptLogCorrelationWindowForStreams() (App, tea.Cmd) {
+	streams := a.logStreamsView.SelectedStreams()
+	if len(streams) == 0 {
+		return a, nil
+	}
+	a.logCorrelationGroups = []string{a.logStreamsView.LogGroup()}
+	a.logCorrelationStreams = streams
+	return a.promptLogCorrelationWindow()
+}
+
+func (a App) promptLogCorrelationWindow() (App, tea.Cmd) {
+	a.picker = NewPicker(PickerLogCorrelationWindow, "Correlation window", []string{
+		"±10 seconds",
+		"±30 seconds",
+		"±1 minute",
+		"±5 minutes",
+		"±15 minutes",
+		"±1 hour",
+	})
+	return a, nil
+}
+
+func (a App) handleLogCorrelationWindowPick(value string) (App, tea.Cmd) {
+	windows := map[string]time.Duration{
+		"±10 seconds": 10 * time.Second,
+		"±30 seconds": 30 * time.Second,
+		"±1 minute":   1 * time.Minute,
+		"±5 minutes":  5 * time.Minute,
+		"±15 minutes": 15 * time.Minute,
+		"±1 hour":     1 * time.Hour,
+	}
+	window, ok := windows[value]
+	if !ok {
+		window = 1 * time.Minute
+	}
+
+	startMs := a.logCorrelationTS - window.Milliseconds()
+	if startMs < 0 {
+		startMs = 0
+	}
+	endMs := a.logCorrelationTS + window.Milliseconds()
+	follow := false
+	title := correlationTitle(a.logCorrelationGroups, a.logCorrelationStreams, window)
+	groups := append([]string(nil), a.logCorrelationGroups...)
+	streams := append([]string(nil), a.logCorrelationStreams...)
+	logGroup := ""
+	if len(groups) > 0 {
+		logGroup = groups[0]
+	}
+
+	a.prevState = viewLogSearch
+	a.logCorrelationActive = false
+	return a, func() tea.Msg {
+		return logReadyMsg{
+			title:     title,
+			logGroup:  logGroup,
+			logGroups: groups,
+			streams:   streams,
+			follow:    &follow,
+			startMs:   startMs,
+			endMs:     endMs,
+		}
+	}
+}
+
+func correlationTitle(groups, streams []string, window time.Duration) string {
+	scope := ""
+	switch {
+	case len(groups) > 1:
+		scope = fmt.Sprintf("%d groups", len(groups))
+	case len(groups) == 1 && len(streams) > 1:
+		scope = fmt.Sprintf("%s / %d streams", groups[0], len(streams))
+	case len(groups) == 1 && len(streams) == 1:
+		scope = fmt.Sprintf("%s / %s", groups[0], streams[0])
+	case len(groups) == 1:
+		scope = groups[0]
+	default:
+		scope = "logs"
+	}
+	return fmt.Sprintf("correlate: %s (%s)", scope, window.String())
 }
 
 // --- Log Path Saving ---

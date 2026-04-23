@@ -118,6 +118,87 @@ func TestTailLogsKeepsNewestEntriesWhenWindowExceedsLimit(t *testing.T) {
 	}
 }
 
+func TestFetchLogsRangeIncludesEndTimeAndPaginates(t *testing.T) {
+	api := &fakeFilterLogEventsAPI{
+		t: t,
+		pages: []*cloudwatchlogs.FilterLogEventsOutput{
+			{
+				Events: []cwltypes.FilteredLogEvent{
+					logEvent(1000, "first"),
+					logEvent(1001, "second"),
+				},
+				NextToken: strPtrLogs("page-2"),
+			},
+			{
+				Events: []cwltypes.FilteredLogEvent{
+					logEvent(1002, "third"),
+				},
+			},
+		},
+	}
+
+	logGroup := "/aws/ecs/example"
+	stream := "ecs/app/task"
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName:   &logGroup,
+		LogStreamNames: []string{stream},
+		StartTime:      int64PtrLogs(900),
+		EndTime:        int64PtrLogs(1100),
+	}
+
+	entries, err := fetchLogsRange(context.Background(), api, input, 10)
+	if err != nil {
+		t.Fatalf("fetchLogsRange returned error: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	if api.inputs[0].EndTime == nil || *api.inputs[0].EndTime != 1100 {
+		t.Fatalf("first request end time = %v, want 1100", api.inputs[0].EndTime)
+	}
+	if api.inputs[1].NextToken == nil || *api.inputs[1].NextToken != "page-2" {
+		t.Fatalf("second request next token = %v, want page-2", api.inputs[1].NextToken)
+	}
+}
+
+func TestFetchLogsRangeKeepsWindowAroundRangeMidpointWhenTrimming(t *testing.T) {
+	api := &fakeFilterLogEventsAPI{
+		t: t,
+		pages: []*cloudwatchlogs.FilterLogEventsOutput{
+			{
+				Events: []cwltypes.FilteredLogEvent{
+					logEvent(1000, "t0"),
+					logEvent(1010, "t10"),
+					logEvent(1020, "t20"),
+					logEvent(1030, "t30"),
+					logEvent(1040, "t40"),
+				},
+			},
+		},
+	}
+
+	logGroup := "/aws/ecs/example"
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &logGroup,
+		StartTime:    int64PtrLogs(1000),
+		EndTime:      int64PtrLogs(1040),
+	}
+
+	entries, err := fetchLogsRange(context.Background(), api, input, 3)
+	if err != nil {
+		t.Fatalf("fetchLogsRange returned error: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	if entries[0].Timestamp != 1010 || entries[1].Timestamp != 1020 || entries[2].Timestamp != 1030 {
+		t.Fatalf("expected centered timestamps [1010 1020 1030], got [%d %d %d]",
+			entries[0].Timestamp, entries[1].Timestamp, entries[2].Timestamp)
+	}
+}
+
 func cloneFilterInput(input *cloudwatchlogs.FilterLogEventsInput) *cloudwatchlogs.FilterLogEventsInput {
 	cloned := *input
 	if input.LogStreamNames != nil {

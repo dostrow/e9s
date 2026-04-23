@@ -25,13 +25,14 @@ type KeyBindings struct {
 	ToggleScaleIn   string
 
 	// Log viewer
-	LogFollow    string
-	LogTimestamp string
-	LogOlder     string
-	LogNewer     string
-	LogCopy      string
+	LogFollow     string
+	LogTimestamp  string
+	LogOlder      string
+	LogNewer      string
+	LogCopy       string
 	LogOpenEditor string
-	LogSave      string
+	LogSave       string
+	LogCorrelate  string
 
 	// CloudWatch Logs
 	TailStream    string
@@ -89,8 +90,8 @@ type KeyBindings struct {
 	NewRecord    string
 
 	// ECR
-	StartScan string
-	CopyURI   string
+	StartScan   string
+	CopyURI     string
 	DeleteImage string
 
 	// OpenTofu
@@ -130,17 +131,18 @@ func NewKeyBindings() KeyBindings {
 		// Log viewer
 		LogFollow:     "f",
 		LogTimestamp:  "t",
-		LogOlder:     "[",
-		LogNewer:     "]",
-		LogCopy:      "y",
+		LogOlder:      "[",
+		LogNewer:      "]",
+		LogCopy:       "y",
 		LogOpenEditor: "o",
-		LogSave:      "w",
+		LogSave:       "w",
+		LogCorrelate:  "c",
 
 		// CW Logs
-		TailStream:   "l",
-		TailGroup:    "L",
+		TailStream:    "l",
+		TailGroup:     "L",
 		BrowseStreams: "L",
-		SavePath:     "W",
+		SavePath:      "W",
 
 		// CW Alarms
 		ToggleActions: "a",
@@ -173,9 +175,9 @@ func NewKeyBindings() KeyBindings {
 		NavigateDLQ:  "n",
 
 		// CodeBuild
-		StartBuild:      "b",
-		StopBuild:       "x",
-		ViewLogs:        "l",
+		StartBuild: "b",
+		StopBuild:  "x",
+		ViewLogs:   "l",
 
 		// EC2
 		SSMSession:     "e",
@@ -266,6 +268,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.LogOpenEditor = key
 		case "log_save":
 			kb.LogSave = key
+		case "log_correlate":
+			kb.LogCorrelate = key
 
 		// CW
 		case "tail_stream":

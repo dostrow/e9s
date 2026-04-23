@@ -19,12 +19,15 @@ type errMsg struct{ err error }
 type tickMsg time.Time
 type actionSuccessMsg struct{ message string }
 type logReadyMsg struct {
-	title    string
-	logGroup string
-	streams  []string
-	follow   *bool         // nil = default (true), false = paused
-	lookback time.Duration // 0 = default (5min)
-	search   string        // pre-set search pattern
+	title     string
+	logGroup  string
+	logGroups []string
+	streams   []string
+	follow    *bool         // nil = default (true), false = paused
+	lookback  time.Duration // 0 = default (5min)
+	search    string        // pre-set search pattern
+	startMs   int64         // absolute range start (paused viewer)
+	endMs     int64         // absolute range end (paused viewer)
 }
 type scaleInStatusMsg struct {
 	service   string

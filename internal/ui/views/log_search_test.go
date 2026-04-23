@@ -3,6 +3,8 @@ package views
 import (
 	"strings"
 	"testing"
+
+	"github.com/dostrow/e9s/internal/aws"
 )
 
 func TestSplitGroupStream_WithPipe(t *testing.T) {
@@ -57,5 +59,22 @@ func TestHighlightPattern_EmptyPattern(t *testing.T) {
 	result := highlightPattern(input, "")
 	if result != input {
 		t.Errorf("Expected unchanged output for empty pattern")
+	}
+}
+
+func TestLogSearchSelectedResult(t *testing.T) {
+	m := NewLogSearch("/aws/ecs/example", nil, "error")
+	m.results = []aws.LogEntry{
+		{Timestamp: 1, Message: "one"},
+		{Timestamp: 2, Message: "two"},
+	}
+	m.cursor = 1
+
+	entry := m.SelectedResult()
+	if entry == nil {
+		t.Fatal("expected selected result")
+	}
+	if entry.Message != "two" {
+		t.Fatalf("selected result message = %q, want %q", entry.Message, "two")
 	}
 }

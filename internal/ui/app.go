@@ -88,131 +88,136 @@ const (
 )
 
 type App struct {
-	client            *e9saws.Client
-	cfg               *config.Config
-	mode              topMode
-	state             viewState
-	prevState         viewState
-	clusterView       views.ClusterListModel
-	serviceView       views.ServiceListModel
-	taskView          views.TaskListModel
-	detailView        views.TaskDetailModel
-	serviceDetailView views.ServiceDetailModel
-	logView           views.LogViewerModel
-	standaloneView    views.StandaloneTasksModel
-	diffView          views.TaskDefDiffModel
-	metricsView       views.MetricsModel
-	envVarsView       views.EnvVarsModel
-	logGroupsView     views.LogGroupsModel
-	logStreamsView     views.LogStreamsModel
-	logSearchView     views.LogSearchModel
-	ssmView           views.SSMModel
-	secretsView       views.SecretsModel
-	secretValueView   views.SecretValueModel
-	s3BucketsView     views.S3BucketsModel
-	s3ObjectsView     views.S3ObjectsModel
-	s3DetailView      views.S3DetailModel
-	lambdaListView    views.LambdaListModel
-	lambdaDetailView  views.LambdaDetailModel
-	dynamoTablesView  views.DynamoTablesModel
-	dynamoItemsView   views.DynamoItemsModel
-	dynamoDetailView  views.DynamoItemDetailModel
-	sqsQueuesView     views.SQSQueuesModel
-	sqsDetailView     views.SQSDetailModel
-	sqsMessagesView   views.SQSMessagesModel
-	sqsMsgDetailView  views.SQSMessageDetailModel
-	alarmsView        views.AlarmsModel
-	alarmDetailView   views.AlarmDetailModel
-	cbProjectsView    views.CBProjectsModel
-	cbBuildsView      views.CBBuildsModel
-	cbBuildDetailView views.CBBuildDetailModel
-	ec2InstancesView  views.EC2InstancesModel
-	ec2DetailView     views.EC2DetailModel
-	ec2ConsoleView    views.EC2ConsoleModel
-	ecrReposView      views.ECRReposModel
-	ecrImagesView     views.ECRImagesModel
-	ecrFindingsView   views.ECRFindingsModel
+	client              *e9saws.Client
+	cfg                 *config.Config
+	mode                topMode
+	state               viewState
+	prevState           viewState
+	clusterView         views.ClusterListModel
+	serviceView         views.ServiceListModel
+	taskView            views.TaskListModel
+	detailView          views.TaskDetailModel
+	serviceDetailView   views.ServiceDetailModel
+	logView             views.LogViewerModel
+	standaloneView      views.StandaloneTasksModel
+	diffView            views.TaskDefDiffModel
+	metricsView         views.MetricsModel
+	envVarsView         views.EnvVarsModel
+	logGroupsView       views.LogGroupsModel
+	logStreamsView      views.LogStreamsModel
+	logSearchView       views.LogSearchModel
+	ssmView             views.SSMModel
+	secretsView         views.SecretsModel
+	secretValueView     views.SecretValueModel
+	s3BucketsView       views.S3BucketsModel
+	s3ObjectsView       views.S3ObjectsModel
+	s3DetailView        views.S3DetailModel
+	lambdaListView      views.LambdaListModel
+	lambdaDetailView    views.LambdaDetailModel
+	dynamoTablesView    views.DynamoTablesModel
+	dynamoItemsView     views.DynamoItemsModel
+	dynamoDetailView    views.DynamoItemDetailModel
+	sqsQueuesView       views.SQSQueuesModel
+	sqsDetailView       views.SQSDetailModel
+	sqsMessagesView     views.SQSMessagesModel
+	sqsMsgDetailView    views.SQSMessageDetailModel
+	alarmsView          views.AlarmsModel
+	alarmDetailView     views.AlarmDetailModel
+	cbProjectsView      views.CBProjectsModel
+	cbBuildsView        views.CBBuildsModel
+	cbBuildDetailView   views.CBBuildDetailModel
+	ec2InstancesView    views.EC2InstancesModel
+	ec2DetailView       views.EC2DetailModel
+	ec2ConsoleView      views.EC2ConsoleModel
+	ecrReposView        views.ECRReposModel
+	ecrImagesView       views.ECRImagesModel
+	ecrFindingsView     views.ECRFindingsModel
 	tofuResourcesView   views.TofuResourcesModel
 	tofuStateDetailView views.TofuStateDetailModel
 	tofuPlanView        views.TofuPlanModel
 	tofuPlanDetailView  views.TofuPlanDetailModel
 	r53ZonesView        views.R53ZonesModel
-	r53RecordsView    views.R53RecordsModel
-	r53DetailView     views.R53RecordDetailModel
-	regionPicker      views.RegionPickerModel
+	r53RecordsView      views.R53RecordsModel
+	r53DetailView       views.R53RecordDetailModel
+	regionPicker        views.RegionPickerModel
 
 	// Navigation context
-	selectedCluster    *model.Cluster
-	selectedService    *model.Service
-	selectedTask       *model.Task
-	execContainerName    string
-	scaleInCluster       string
-	scaleInService       string
-	scaleInCurrentState  bool
-	logSearchGroup     string
-	logSearchGroups    []string // multi-group search
-	logSearchStreams    []string
-	logSearchStartMs   int64
-	logSearchEndMs     int64
-	logSearchFilter    string // quoted/processed filter pattern for CW API
-	logSaveGroup       string
-	logSaveStream      string
-	ssmEditName        string
-	ssmEditValue       string
-	smEditName         string
-	smEditValue        string
-	smCloneName        string
-	smCloneValue       string
-	s3DownloadBucket   string
-	s3DownloadKey      string
-	s3DownloadIsPrefix bool
-	dynamoKeyNames []string
-	dynamoLastKey  any // stores map[string]dbtypes.AttributeValue for pagination
-	dynamoFilterAttr   string
-	dynamoFilterOp     string
-	dynamoFilterExpr   bool
-	dynamoLastPartiQL  string
-	sqsSendQueueURL    string
-	sqsSendTemplate    *e9saws.SQSSendTemplate
-	cbTriggerProject   string
-	pathInput          *PathInput
-	tofuDir            string
-	r53EditZoneID      string
-	r53EditRecord      *e9saws.R53Record
-	r53EditOriginal    *e9saws.R53Record
-	lambdaEditDir      string
-	lambdaEditFunc     string
-	lambdaEditZip      []byte
-	dynamoEditField    string
-	dynamoEditValue    string
-	dynamoEditItem     *e9saws.DynamoItem
-	dynamoCloneItem    *e9saws.DynamoItem
+	selectedCluster       *model.Cluster
+	selectedService       *model.Service
+	selectedTask          *model.Task
+	execContainerName     string
+	scaleInCluster        string
+	scaleInService        string
+	scaleInCurrentState   bool
+	logSearchGroup        string
+	logSearchGroups       []string // multi-group search
+	logSearchStreams      []string
+	logSearchStartMs      int64
+	logSearchEndMs        int64
+	logSearchFilter       string // quoted/processed filter pattern for CW API
+	logCorrelationActive  bool
+	logCorrelationTS      int64
+	logCorrelationPattern string
+	logCorrelationGroups  []string
+	logCorrelationStreams []string
+	logSaveGroup          string
+	logSaveStream         string
+	ssmEditName           string
+	ssmEditValue          string
+	smEditName            string
+	smEditValue           string
+	smCloneName           string
+	smCloneValue          string
+	s3DownloadBucket      string
+	s3DownloadKey         string
+	s3DownloadIsPrefix    bool
+	dynamoKeyNames        []string
+	dynamoLastKey         any // stores map[string]dbtypes.AttributeValue for pagination
+	dynamoFilterAttr      string
+	dynamoFilterOp        string
+	dynamoFilterExpr      bool
+	dynamoLastPartiQL     string
+	sqsSendQueueURL       string
+	sqsSendTemplate       *e9saws.SQSSendTemplate
+	cbTriggerProject      string
+	pathInput             *PathInput
+	tofuDir               string
+	r53EditZoneID         string
+	r53EditRecord         *e9saws.R53Record
+	r53EditOriginal       *e9saws.R53Record
+	lambdaEditDir         string
+	lambdaEditFunc        string
+	lambdaEditZip         []byte
+	dynamoEditField       string
+	dynamoEditValue       string
+	dynamoEditItem        *e9saws.DynamoItem
+	dynamoCloneItem       *e9saws.DynamoItem
 
 	// Modal dialogs
-	confirm       ConfirmModel
-	input         InputModel
-	picker        PickerModel
-	help          HelpModel
-	modeSwitcher  ModeSwitcherModel
+	confirm      ConfirmModel
+	input        InputModel
+	picker       PickerModel
+	help         HelpModel
+	modeSwitcher ModeSwitcherModel
 
 	// Mode tabs (built from config)
 	modeTabs []ModeTab
 
 	// State
-	lastRefresh  time.Time
-	lastActivity time.Time // updated on every keypress
-	idleTimeout  time.Duration
-	paused       bool // true when polling is paused (idle or manual)
-	manualPause  bool // true when paused via ctrl+s (not auto-resumed by keypress)
-	refreshSec   int
-	kb           KeyBindings
-	loading      bool
-	err          error
-	flashMessage   string
-	flashExpiry    time.Time
-	configModTime  time.Time // last known config file mod time
-	width          int
-	height         int
+	lastRefresh   time.Time
+	lastActivity  time.Time // updated on every keypress
+	idleTimeout   time.Duration
+	paused        bool // true when polling is paused (idle or manual)
+	manualPause   bool // true when paused via ctrl+s (not auto-resumed by keypress)
+	refreshSec    int
+	kb            KeyBindings
+	loading       bool
+	err           error
+	flashMessage  string
+	flashExpiry   time.Time
+	configModTime time.Time // last known config file mod time
+	width         int
+	height        int
 }
 
 func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
@@ -228,12 +233,12 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		clusterView:  views.NewClusterList(),
 		refreshSec:   refreshSec,
 		lastActivity: time.Now(),
-		kb:           func() KeyBindings {
+		kb: func() KeyBindings {
 			kb := NewKeyBindings()
 			kb.ApplyOverrides(cfg.KeyBindings)
 			return kb
 		}(),
-		idleTimeout:  idleTimeout,
+		idleTimeout: idleTimeout,
 	}
 
 	allModes := []struct {
@@ -528,7 +533,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.lookback > 0 {
 			lookback = msg.lookback
 		}
-		if msg.search != "" {
+		if msg.startMs > 0 || msg.endMs > 0 {
+			if len(msg.logGroups) > 1 {
+				a.logView = views.NewMultiGroupLogViewerInRange(msg.title, a.client, msg.logGroups, msg.startMs, msg.endMs, msg.search)
+			} else {
+				a.logView = views.NewLogViewerInRange(msg.title, a.client, msg.logGroup, msg.streams, msg.startMs, msg.endMs, msg.search)
+			}
+		} else if msg.search != "" {
 			a.logView = views.NewLogViewerWithSearch(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback, msg.search)
 		} else {
 			a.logView = views.NewLogViewerWithOptions(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback)
@@ -1317,6 +1328,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openLogStreams(lp.LogGroup)
 		case PickerLogSearchTimeRange:
 			return a.handleTimeRangePick(msg.Value)
+		case PickerLogCorrelationWindow:
+			return a.handleLogCorrelationWindowPick(msg.Value)
 		case PickerCWAlarmState:
 			return a.handleCWAlarmStatePick(msg.Value)
 		case PickerTofuDir:
@@ -1491,6 +1504,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case a.kb.LogOpenEditor:
 				return a.openLogBufferInEditor()
 			}
+		case viewLogSearch:
+			switch k {
+			case a.kb.LogCorrelate:
+				return a.startLogCorrelation()
+			}
 		case viewStandaloneTasks:
 			switch k {
 			case a.kb.TaskLogs:
@@ -1633,6 +1651,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a.saveLogSearchGroups()
 				}
 				return a.saveLogGroupPath()
+			case a.kb.LogCorrelate:
+				if a.logCorrelationActive {
+					return a.promptLogCorrelationWindowForGroups()
+				}
 			}
 		case viewLogStreams:
 			switch k {
@@ -1644,6 +1666,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.promptLogSearchFromStreams()
 			case a.kb.Save:
 				return a.saveLogStreamPath()
+			case a.kb.LogCorrelate:
+				if a.logCorrelationActive {
+					return a.promptLogCorrelationWindowForStreams()
+				}
 			}
 		case viewAlarmDetail:
 			switch k {
@@ -2356,23 +2382,30 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewLogGroups:
 		context = []kv{
 			{"enter", "Browse streams"},
-			{"space", "Multi-select for search"},
+			{"space", "Multi-select groups"},
 			{kb.TailStream, "Tail entire log group"},
 			{kb.Search, "Search selected groups"},
 			{kb.Save, "Save log path / group selection"},
 		}
+		if a.logCorrelationActive {
+			context = append(context, kv{kb.LogCorrelate, "Correlate selected groups"})
+		}
 	case viewLogStreams:
 		context = []kv{
 			{"enter", "Peek (last 1 min, paused)"},
-			{"space", "Multi-select for search"},
+			{"space", "Multi-select streams"},
 			{kb.TailStream, "Tail stream"},
 			{kb.TailGroup, "Tail entire log group"},
 			{kb.Search, "Search selected streams"},
 			{kb.Save, "Save log path"},
 		}
+		if a.logCorrelationActive {
+			context = append(context, kv{kb.LogCorrelate, "Correlate selected streams"})
+		}
 	case viewLogSearch:
 		context = []kv{
 			{"enter", "Jump to log at timestamp"},
+			{kb.LogCorrelate, "Correlate selected result"},
 			{kb.Timestamp, "Toggle timestamps"},
 			{"g/G", "Top/bottom"},
 		}
@@ -2837,8 +2870,17 @@ func (a App) goBack() (App, tea.Cmd) {
 		}
 		return a, nil
 	case viewLogGroups:
+		if a.logCorrelationActive && a.prevState == viewLogSearch {
+			a.state = viewLogSearch
+			a.logCorrelationActive = false
+			return a, nil
+		}
 		return a.showModePicker()
 	case viewLogStreams:
+		if a.logCorrelationActive && a.prevState == viewLogSearch {
+			a.state = viewLogGroups
+			return a, nil
+		}
 		if a.logGroupsView.HasData() {
 			a.state = viewLogGroups
 			return a, nil

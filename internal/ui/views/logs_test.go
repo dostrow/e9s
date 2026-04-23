@@ -120,3 +120,26 @@ func TestNewLogViewerWithOptions_HistoricalUsesLookback(t *testing.T) {
 		t.Fatal("tail mode should be disabled when follow=false")
 	}
 }
+
+func TestNewLogViewerInRange_SetsAbsoluteWindow(t *testing.T) {
+	m := NewLogViewerInRange("range", nil, "/aws/ecs/example", []string{"stream-a", "stream-b"}, 1000, 2000, "")
+	if m.lastTS != 1000 {
+		t.Fatalf("lastTS = %d, want 1000", m.lastTS)
+	}
+	if m.endTS != 2000 {
+		t.Fatalf("endTS = %d, want 2000", m.endTS)
+	}
+	if !m.showStreams {
+		t.Fatal("range viewer with multiple streams should show stream labels")
+	}
+	if m.tailMode {
+		t.Fatal("range viewer should not be in tail mode")
+	}
+}
+
+func TestFormatLogSource_MultiGroup(t *testing.T) {
+	got := formatLogSource("/aws/ecs/api|ecs/app/task")
+	if got != "/aws/ecs/api / ecs/app/task" {
+		t.Fatalf("formatLogSource() = %q", got)
+	}
+}

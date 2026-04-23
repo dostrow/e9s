@@ -30,10 +30,11 @@ type LogsPrependedMsg struct {
 }
 
 type LogViewerModel struct {
-	title    string
-	client   *aws.Client
-	logGroup string
-	streams  []string
+	title     string
+	client    *aws.Client
+	logGroup  string
+	logGroups []string
+	streams   []string
 
 	lines    []logLine
 	scroll   int
@@ -51,10 +52,13 @@ type LogViewerModel struct {
 	jumpTargetTS  int64 // if > 0, scroll to nearest line after first load
 	initialLoaded bool  // whether first batch has loaded
 
-	firstTS int64 // earliest timestamp in buffer (for backward fetch)
-	lastTS  int64
-	width   int
-	height  int
+	firstTS      int64 // earliest timestamp in buffer (for backward fetch)
+	lastTS       int64
+	rangeStartTS int64
+	endTS        int64
+	showStreams  bool
+	width        int
+	height       int
 }
 
 type logLine struct {
@@ -74,13 +78,16 @@ func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, 
 	}
 
 	return LogViewerModel{
-		title:    title,
-		client:   client,
-		logGroup: logGroup,
-		streams:  streams,
-		follow:   follow,
-		tailMode: follow,
-		lastTS:   startTS,
+		title:        title,
+		client:       client,
+		logGroup:     logGroup,
+		logGroups:    []string{logGroup},
+		streams:      streams,
+		follow:       follow,
+		tailMode:     follow,
+		lastTS:       startTS,
+		rangeStartTS: startTS,
+		showStreams:  len(streams) != 1,
 	}
 }
 
@@ -93,18 +100,41 @@ func NewLogViewerWithSearch(title string, client *aws.Client, logGroup string, s
 // NewLogViewerAtTimestamp creates a log viewer starting at an absolute timestamp.
 // Used for jump-from-search: loads a window around the timestamp, paused, with search highlighted.
 func NewLogViewerAtTimestamp(title string, client *aws.Client, logGroup string, streams []string, timestampMs int64, search string) LogViewerModel {
-	// Start 0.5 seconds before the match so the result is immediately visible
-	startTS := timestampMs - 5*100
+	return NewLogViewerInRange(title, client, logGroup, streams, timestampMs-30*1000, timestampMs+30*1000, search)
+}
 
+// NewLogViewerInRange creates a paused viewer for a fixed time range.
+func NewLogViewerInRange(title string, client *aws.Client, logGroup string, streams []string, startMs, endMs int64, search string) LogViewerModel {
 	return LogViewerModel{
 		title:        title,
 		client:       client,
 		logGroup:     logGroup,
+		logGroups:    []string{logGroup},
 		streams:      streams,
 		follow:       false,
-		lastTS:       startTS,
+		lastTS:       max(0, startMs),
+		rangeStartTS: max(0, startMs),
+		endTS:        endMs,
 		search:       search,
-		jumpTargetTS: timestampMs,
+		jumpTargetTS: startMs + (endMs-startMs)/2,
+		showStreams:  len(streams) != 1,
+	}
+}
+
+// NewMultiGroupLogViewerInRange creates a paused viewer for a fixed time range across multiple groups.
+func NewMultiGroupLogViewerInRange(title string, client *aws.Client, logGroups []string, startMs, endMs int64, search string) LogViewerModel {
+	return LogViewerModel{
+		title:        title,
+		client:       client,
+		logGroup:     firstString(logGroups),
+		logGroups:    append([]string(nil), logGroups...),
+		follow:       false,
+		lastTS:       max(0, startMs),
+		rangeStartTS: max(0, startMs),
+		endTS:        endMs,
+		search:       search,
+		jumpTargetTS: startMs + (endMs-startMs)/2,
+		showStreams:  true,
 	}
 }
 
@@ -272,8 +302,18 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		case msg.String() == "N":
 			m.jumpToPrevMatch()
 		case msg.String() == "[":
+			if m.endTS > 0 {
+				oldStart := m.rangeStartTS
+				m.rangeStartTS = max(0, oldStart-30*1000)
+				return m, m.fetchRangeLogs(m.rangeStartTS, oldStart, true)
+			}
 			return m, m.fetchOlderLogs()
 		case msg.String() == "]":
+			if m.endTS > 0 {
+				oldEnd := m.endTS
+				m.endTS = oldEnd + 30*1000
+				return m, m.fetchRangeLogs(max(m.lastTS, oldEnd), m.endTS, false)
+			}
 			return m, m.fetchNewerLogs()
 		case msg.String() == "g":
 			m.scroll = 0
@@ -468,6 +508,11 @@ func (m LogViewerModel) View() string {
 			marker = "» "
 		}
 
+		sourceLabel := ""
+		if m.showStreams && line.stream != "" {
+			sourceLabel = theme.HelpStyle.Render("[" + formatLogSource(line.stream) + "] ")
+		}
+
 		// Split on embedded newlines, then wrap each segment to fit
 		msgLines := strings.Split(line.message, "\n")
 		for li, msgLine := range msgLines {
@@ -477,7 +522,7 @@ func (m LogViewerModel) View() string {
 					wLine = highlightSearch(wLine, m.search)
 				}
 				if li == 0 && wi == 0 {
-					fmt.Fprintf(&b, "%s%s  %s\n", marker, tsStr, wLine)
+					fmt.Fprintf(&b, "%s%s  %s%s\n", marker, tsStr, sourceLabel, wLine)
 				} else {
 					fmt.Fprintf(&b, "%s%s\n", indent, wLine)
 				}
@@ -574,9 +619,6 @@ func (m LogViewerModel) scheduleRefresh() tea.Cmd {
 }
 
 func (m LogViewerModel) fetchLogs() tea.Cmd {
-	client := m.client
-	logGroup := m.logGroup
-	streams := m.streams
 	startTime := m.lastTS
 	limit := 100
 	if m.tailMode {
@@ -588,7 +630,17 @@ func (m LogViewerModel) fetchLogs() tea.Cmd {
 		var lastTS int64
 		var err error
 
-		if m.tailMode {
+		if m.endTS > 0 {
+			entries, err = m.fetchRangeEntries(startTime, m.endTS)
+			if len(entries) > 0 {
+				lastTS = entries[len(entries)-1].Timestamp
+			} else {
+				lastTS = startTime
+			}
+		} else if m.tailMode {
+			client := m.client
+			logGroup := m.logGroup
+			streams := m.streams
 			if len(streams) == 1 {
 				entries, lastTS, err = client.TailLogs(
 					context.Background(), logGroup, streams[0], startTime, limit)
@@ -600,6 +652,9 @@ func (m LogViewerModel) fetchLogs() tea.Cmd {
 					context.Background(), logGroup, startTime, limit)
 			}
 		} else {
+			client := m.client
+			logGroup := m.logGroup
+			streams := m.streams
 			if len(streams) == 1 {
 				entries, lastTS, err = client.FetchLogs(
 					context.Background(), logGroup, streams[0], startTime, limit)
@@ -657,6 +712,40 @@ func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
 	}
 }
 
+func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) tea.Cmd {
+	return func() tea.Msg {
+		entries, err := m.fetchRangeEntries(startTime, endTime)
+		if err != nil {
+			return LogsErrorMsg{Err: err}
+		}
+		if prepend {
+			cutoff := m.firstTS
+			if cutoff == 0 {
+				cutoff = endTime
+			}
+			var older []aws.LogEntry
+			for _, e := range entries {
+				if e.Timestamp < cutoff {
+					older = append(older, e)
+				}
+			}
+			return LogsPrependedMsg{Entries: older}
+		}
+		cutoff := m.lastTS
+		var newer []aws.LogEntry
+		for _, e := range entries {
+			if e.Timestamp >= cutoff {
+				newer = append(newer, e)
+			}
+		}
+		lastTS := cutoff
+		if len(newer) > 0 {
+			lastTS = newer[len(newer)-1].Timestamp
+		}
+		return LogsLoadedMsg{Entries: newer, LastTS: lastTS}
+	}
+}
+
 func (m LogViewerModel) fetchNewerLogs() tea.Cmd {
 	client := m.client
 	logGroup := m.logGroup
@@ -684,6 +773,24 @@ func (m LogViewerModel) fetchNewerLogs() tea.Cmd {
 		}
 		return LogsLoadedMsg{Entries: entries, LastTS: lastTS}
 	}
+}
+
+func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]aws.LogEntry, error) {
+	client := m.client
+	logGroup := m.logGroup
+	logGroups := m.logGroups
+	streams := m.streams
+
+	if len(logGroups) > 1 {
+		return client.FetchMultiGroupRange(context.Background(), logGroups, startTime, endTime, maxLogLines)
+	}
+	if len(streams) == 1 {
+		return client.FetchLogsRange(context.Background(), logGroup, streams[0], startTime, endTime, maxLogLines)
+	}
+	if len(streams) > 1 {
+		return client.FetchMultiStreamLogsRange(context.Background(), logGroup, streams, startTime, endTime, maxLogLines)
+	}
+	return client.FetchLogGroupRange(context.Background(), logGroup, startTime, endTime, maxLogLines)
 }
 
 func (m LogViewerModel) SetSearch(pattern string) LogViewerModel {
@@ -757,4 +864,18 @@ func (m LogViewerModel) SetSize(w, h int) LogViewerModel {
 
 func (m LogViewerModel) LogGroup() string {
 	return m.logGroup
+}
+
+func formatLogSource(source string) string {
+	if source == "" {
+		return source
+	}
+	return strings.ReplaceAll(source, "|", " / ")
+}
+
+func firstString(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	return items[0]
 }

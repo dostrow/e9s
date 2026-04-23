@@ -213,6 +213,91 @@ func (c *Client) FetchLogGroup(ctx context.Context, logGroup string, startTime i
 	return entries, lastTS, nil
 }
 
+// FetchLogsRange retrieves log events from a single stream within an absolute time range.
+func (c *Client) FetchLogsRange(ctx context.Context, logGroup, logStream string, startTime, endTime int64, limit int) ([]LogEntry, error) {
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName:   &logGroup,
+		LogStreamNames: []string{logStream},
+	}
+	if startTime > 0 {
+		input.StartTime = &startTime
+	}
+	if endTime > 0 {
+		input.EndTime = &endTime
+	}
+	return fetchLogsRange(ctx, c.Logs, input, limit)
+}
+
+// FetchMultiStreamLogsRange retrieves log events from multiple streams within an absolute time range.
+func (c *Client) FetchMultiStreamLogsRange(ctx context.Context, logGroup string, logStreams []string, startTime, endTime int64, limit int) ([]LogEntry, error) {
+	if len(logStreams) == 0 {
+		return nil, nil
+	}
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName:   &logGroup,
+		LogStreamNames: logStreams,
+	}
+	if startTime > 0 {
+		input.StartTime = &startTime
+	}
+	if endTime > 0 {
+		input.EndTime = &endTime
+	}
+	return fetchLogsRange(ctx, c.Logs, input, limit)
+}
+
+// FetchLogGroupRange retrieves log events from an entire group within an absolute time range.
+func (c *Client) FetchLogGroupRange(ctx context.Context, logGroup string, startTime, endTime int64, limit int) ([]LogEntry, error) {
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &logGroup,
+	}
+	if startTime > 0 {
+		input.StartTime = &startTime
+	}
+	if endTime > 0 {
+		input.EndTime = &endTime
+	}
+	return fetchLogsRange(ctx, c.Logs, input, limit)
+}
+
+// FetchMultiGroupRange retrieves log events from multiple log groups within an absolute time range.
+// Entries are tagged as "group|stream" so callers can display the originating source.
+func (c *Client) FetchMultiGroupRange(ctx context.Context, logGroups []string, startTime, endTime int64, limit int) ([]LogEntry, error) {
+	if len(logGroups) == 0 {
+		return nil, nil
+	}
+
+	perGroup := max(50, limit/max(1, len(logGroups)))
+	var allEntries []LogEntry
+	for _, group := range logGroups {
+		entries, err := c.FetchLogGroupRange(ctx, group, startTime, endTime, perGroup)
+		if err != nil {
+			allEntries = append(allEntries, LogEntry{
+				Timestamp: startTime,
+				Message:   fmt.Sprintf("[error fetching %s: %v]", group, err),
+				Stream:    group,
+			})
+			continue
+		}
+		for i := range entries {
+			if entries[i].Stream == "" {
+				entries[i].Stream = group
+			} else {
+				entries[i].Stream = group + "|" + entries[i].Stream
+			}
+		}
+		allEntries = append(allEntries, entries...)
+	}
+
+	sort.Slice(allEntries, func(i, j int) bool {
+		return allEntries[i].Timestamp < allEntries[j].Timestamp
+	})
+	if limit > 0 && len(allEntries) > limit {
+		allEntries = allEntries[:limit]
+	}
+	return allEntries, nil
+}
+
 // TailLogs retrieves the newest log entries from a single stream since startTime.
 // Unlike FetchLogs, this paginates through the full result set so live tailing
 // does not get stuck on the oldest page of a busy window.
@@ -494,6 +579,85 @@ func eventToLogEntry(ev cwltypes.FilteredLogEvent) LogEntry {
 
 func intPtr(i int32) *int32 {
 	return &i
+}
+
+func fetchLogsRange(ctx context.Context, api filterLogEventsAPI, input *cloudwatchlogs.FilterLogEventsInput, limit int) ([]LogEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	req := *input
+	pageLimit := min(limit, 10000)
+	req.Limit = intPtr(int32(pageLimit))
+
+	var (
+		entries   []LogEntry
+		nextToken *string
+	)
+
+	for {
+		req.NextToken = nextToken
+		out, err := api.FilterLogEvents(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ev := range out.Events {
+			entries = append(entries, eventToLogEntry(ev))
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		if nextToken != nil && *out.NextToken == *nextToken {
+			break
+		}
+		nextToken = out.NextToken
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	if len(entries) > limit {
+		targetTS := rangeMidpoint(input)
+		if targetTS > 0 {
+			entries = trimEntriesAroundTimestamp(entries, targetTS, limit)
+		} else {
+			entries = entries[:limit]
+		}
+	}
+	return entries, nil
+}
+
+func rangeMidpoint(input *cloudwatchlogs.FilterLogEventsInput) int64 {
+	if input == nil || input.StartTime == nil || input.EndTime == nil {
+		return 0
+	}
+	return *input.StartTime + (*input.EndTime-*input.StartTime)/2
+}
+
+func trimEntriesAroundTimestamp(entries []LogEntry, targetTS int64, limit int) []LogEntry {
+	if len(entries) <= limit || limit <= 0 {
+		return entries
+	}
+
+	pivot := sort.Search(len(entries), func(i int) bool {
+		return entries[i].Timestamp >= targetTS
+	})
+	if pivot >= len(entries) {
+		pivot = len(entries) - 1
+	}
+
+	start := pivot - limit/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + limit
+	if end > len(entries) {
+		end = len(entries)
+		start = max(0, end-limit)
+	}
+	return append([]LogEntry(nil), entries[start:end]...)
 }
 
 func tailLogs(ctx context.Context, api filterLogEventsAPI, input *cloudwatchlogs.FilterLogEventsInput, startTime int64, limit int) ([]LogEntry, int64, error) {
