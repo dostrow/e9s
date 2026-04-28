@@ -119,6 +119,56 @@ func (a App) showServiceDetail() (App, tea.Cmd) {
 	return a, nil
 }
 
+func (a App) openTaskDefinitions() (App, tea.Cmd) {
+	a.prevState = a.state
+	a.state = viewTaskDefs
+	a.selectedTaskDef = ""
+	a.taskDefsView = views.NewTaskDefs()
+	a.taskDefsView = a.taskDefsView.SetSize(a.width, a.height-3)
+	a.loading = true
+	return a, a.loadTaskDefinitions()
+}
+
+func (a App) loadTaskDefinitions() tea.Cmd {
+	return func() tea.Msg {
+		defs, err := a.client.ListTaskDefinitions(context.Background(), "")
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskDefsLoadedMsg{defs}
+	}
+}
+
+func (a App) openSelectedTaskDefinition() (App, tea.Cmd) {
+	td := a.taskDefsView.SelectedTaskDef()
+	if td == nil {
+		return a, nil
+	}
+	a.loading = true
+	a.selectedTaskDef = fmt.Sprintf("%s:%d", td.Family, td.Revision)
+	arn := td.ARN
+	return a, a.loadTaskDefinitionDetail(arn)
+}
+
+func (a App) loadTaskDefinitionDetail(taskDef string) tea.Cmd {
+	client := a.client
+	return func() tea.Msg {
+		def, err := client.GetTaskDefinition(context.Background(), taskDef)
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskDefLoadedMsg{def: def}
+	}
+}
+
+func (a App) refreshSelectedTaskDefinition() tea.Cmd {
+	td := a.taskDefDetailView.TaskDef()
+	if td == nil || td.ARN == "" {
+		return a.loadTaskDefinitions()
+	}
+	return a.loadTaskDefinitionDetail(td.ARN)
+}
+
 // --- Standalone Tasks ---
 
 func (a App) showStandaloneTasks() (App, tea.Cmd) {
@@ -407,6 +457,48 @@ func (a App) doShowEnvVars(containerName string) tea.Cmd {
 	}
 }
 
+func (a App) showTaskDefEnvVars() (App, tea.Cmd) {
+	td := a.taskDefDetailView.TaskDef()
+	if td == nil {
+		return a, nil
+	}
+
+	a.prevState = viewTaskDefDetail
+	if len(td.Containers) == 0 {
+		a.err = fmt.Errorf("task definition has no containers")
+		return a, nil
+	}
+	if len(td.Containers) == 1 {
+		return a, a.doShowTaskDefEnvVars(td.Containers[0].Name)
+	}
+	names := make([]string, len(td.Containers))
+	for i, c := range td.Containers {
+		names[i] = c.Name
+	}
+	a.picker = NewPicker(PickerEnvContainer, "Select container to view env vars", names)
+	return a, nil
+}
+
+func (a App) doShowTaskDefEnvVars(containerName string) tea.Cmd {
+	td := a.taskDefDetailView.TaskDef()
+	client := a.client
+	return func() tea.Msg {
+		if td == nil {
+			return errMsg{fmt.Errorf("no task definition selected")}
+		}
+		for _, c := range td.Containers {
+			if c.Name == containerName {
+				resolved := client.ResolveEnvVars(context.Background(), c.EnvVars)
+				return envVarsReadyMsg{
+					title:   fmt.Sprintf("%s:%d/%s", td.Family, td.Revision, containerName),
+					envVars: resolved,
+				}
+			}
+		}
+		return errMsg{fmt.Errorf("container %q not found in task definition", containerName)}
+	}
+}
+
 // --- Log Viewing ---
 
 func (a App) openTaskLogs() (App, tea.Cmd) {
@@ -576,6 +668,10 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.loadTasks()
 	case viewTaskDetail:
 		return a.reloadSelectedTask()
+	case viewTaskDefs:
+		return a.loadTaskDefinitions()
+	case viewTaskDefDetail:
+		return a.refreshSelectedTaskDefinition()
 	case viewStandaloneTasks:
 		return a.loadStandaloneTasks()
 	case viewMetrics:

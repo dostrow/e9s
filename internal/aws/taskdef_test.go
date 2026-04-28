@@ -122,9 +122,9 @@ func TestExtractSSMParamName(t *testing.T) {
 
 func TestParseSecretARN(t *testing.T) {
 	tests := []struct {
-		input     string
-		wantARN   string
-		wantKey   string
+		input   string
+		wantARN string
+		wantKey string
 	}{
 		{
 			"arn:aws:secretsmanager:us-east-1:123456:secret:my-secret",
@@ -178,6 +178,37 @@ func TestBuildLogStreamName(t *testing.T) {
 	}
 }
 
+func TestParseTaskDefARN(t *testing.T) {
+	tests := []struct {
+		arn          string
+		wantFamily   string
+		wantRevision int
+	}{
+		{
+			arn:          "arn:aws:ecs:us-east-1:123456789012:task-definition/my-app:42",
+			wantFamily:   "my-app",
+			wantRevision: 42,
+		},
+		{
+			arn:          "my-app:7",
+			wantFamily:   "my-app",
+			wantRevision: 7,
+		},
+		{
+			arn:          "my-app",
+			wantFamily:   "my-app",
+			wantRevision: 0,
+		},
+	}
+	for _, tt := range tests {
+		family, revision := parseTaskDefARN(tt.arn)
+		if family != tt.wantFamily || revision != tt.wantRevision {
+			t.Fatalf("parseTaskDefARN(%q) = (%q, %d), want (%q, %d)",
+				tt.arn, family, revision, tt.wantFamily, tt.wantRevision)
+		}
+	}
+}
+
 func TestDynamoItemToJSON(t *testing.T) {
 	item := DynamoItem{
 		"name": "test",
@@ -194,8 +225,8 @@ func TestDynamoItemToJSON(t *testing.T) {
 
 func TestInferAttributeValue(t *testing.T) {
 	tests := []struct {
-		name string
-		input string
+		name     string
+		input    string
 		wantType string
 	}{
 		{"string", "hello", "S"},

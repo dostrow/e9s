@@ -5,20 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	awsPkg "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	smSvc "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	ssmSvc "github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
+type TaskDefRef struct {
+	ARN      string
+	Family   string
+	Revision int
+}
+
 type TaskDefSummary struct {
-	Family    string
-	Revision  int
-	CPU       string
-	Memory    string
-	Containers []TaskDefContainer
-	RawJSON   string
+	ARN                     string
+	Family                  string
+	Revision                int
+	Status                  string
+	CPU                     string
+	Memory                  string
+	NetworkMode             string
+	TaskRoleArn             string
+	ExecutionRoleArn        string
+	RequiresCompatibilities []string
+	RegisteredAt            time.Time
+	Containers              []TaskDefContainer
+	RawJSON                 string
 }
 
 type TaskDefContainer struct {
@@ -38,6 +53,35 @@ type EnvVar struct {
 	Source        string // "" for plain env, "secrets-manager" or "ssm" for secrets
 }
 
+// ListTaskDefinitions returns active task definitions in descending revision order.
+func (c *Client) ListTaskDefinitions(ctx context.Context, familyPrefix string) ([]TaskDefRef, error) {
+	input := &ecs.ListTaskDefinitionsInput{
+		Sort:   ecstypes.SortOrderDesc,
+		Status: ecstypes.TaskDefinitionStatusActive,
+	}
+	if familyPrefix != "" {
+		input.FamilyPrefix = &familyPrefix
+	}
+
+	paginator := ecs.NewListTaskDefinitionsPaginator(c.ECS, input)
+	var refs []TaskDefRef
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, arn := range page.TaskDefinitionArns {
+			family, revision := parseTaskDefARN(arn)
+			refs = append(refs, TaskDefRef{
+				ARN:      arn,
+				Family:   family,
+				Revision: revision,
+			})
+		}
+	}
+	return refs, nil
+}
+
 // GetTaskDefinition fetches and summarizes a task definition.
 func (c *Client) GetTaskDefinition(ctx context.Context, taskDef string) (*TaskDefSummary, error) {
 	out, err := c.ECS.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
@@ -49,10 +93,21 @@ func (c *Client) GetTaskDefinition(ctx context.Context, taskDef string) (*TaskDe
 
 	td := out.TaskDefinition
 	summary := &TaskDefSummary{
-		Family:   derefStrAws(td.Family),
-		Revision: int(td.Revision),
-		CPU:      derefStrAws(td.Cpu),
-		Memory:   derefStrAws(td.Memory),
+		ARN:              derefStrAws(td.TaskDefinitionArn),
+		Family:           derefStrAws(td.Family),
+		Revision:         int(td.Revision),
+		Status:           string(td.Status),
+		CPU:              derefStrAws(td.Cpu),
+		Memory:           derefStrAws(td.Memory),
+		NetworkMode:      string(td.NetworkMode),
+		TaskRoleArn:      derefStrAws(td.TaskRoleArn),
+		ExecutionRoleArn: derefStrAws(td.ExecutionRoleArn),
+	}
+	if td.RegisteredAt != nil {
+		summary.RegisteredAt = *td.RegisteredAt
+	}
+	for _, compat := range td.RequiresCompatibilities {
+		summary.RequiresCompatibilities = append(summary.RequiresCompatibilities, string(compat))
 	}
 
 	for _, cd := range td.ContainerDefinitions {
@@ -107,6 +162,20 @@ func (c *Client) GetTaskDefinition(ctx context.Context, taskDef string) (*TaskDe
 	summary.RawJSON = string(raw)
 
 	return summary, nil
+}
+
+func parseTaskDefARN(arn string) (string, int) {
+	name := arn
+	if idx := strings.LastIndex(arn, "/"); idx >= 0 && idx < len(arn)-1 {
+		name = arn[idx+1:]
+	}
+	family, revisionStr, ok := strings.Cut(name, ":")
+	if !ok {
+		return name, 0
+	}
+	revision := 0
+	fmt.Sscanf(revisionStr, "%d", &revision)
+	return family, revision
 }
 
 // DiffTaskDefinitions produces a human-readable diff between two task definitions.

@@ -18,6 +18,7 @@ type KeyBindings struct {
 	ServiceLogs     string
 	Metrics         string
 	StandaloneTasks string
+	TaskDefinitions string
 	TaskLogs        string
 	StopTask        string
 	ECSExec         string
@@ -122,6 +123,7 @@ func NewKeyBindings() KeyBindings {
 		ServiceLogs:     "L",
 		Metrics:         "m",
 		StandaloneTasks: "S",
+		TaskDefinitions: "T",
 		TaskLogs:        "l",
 		StopTask:        "x",
 		ECSExec:         "e",
@@ -242,6 +244,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.Metrics = key
 		case "standalone_tasks":
 			kb.StandaloneTasks = key
+		case "task_definitions":
+			kb.TaskDefinitions = key
 		case "task_logs":
 			kb.TaskLogs = key
 		case "stop_task":

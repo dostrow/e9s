@@ -15,6 +15,8 @@ type servicesLoadedMsg struct{ services []model.Service }
 type tasksLoadedMsg struct{ tasks []model.Task }
 type standaloneTasksLoadedMsg struct{ tasks []model.Task }
 type taskDetailRefreshedMsg struct{ task *model.Task }
+type taskDefsLoadedMsg struct{ defs []e9saws.TaskDefRef }
+type taskDefLoadedMsg struct{ def *e9saws.TaskDefSummary }
 type errMsg struct{ err error }
 type tickMsg time.Time
 type actionSuccessMsg struct{ message string }

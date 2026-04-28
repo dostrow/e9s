@@ -43,6 +43,8 @@ const (
 	viewServices
 	viewTasks
 	viewTaskDetail
+	viewTaskDefs
+	viewTaskDefDetail
 	viewServiceDetail
 	viewLogs
 	viewStandaloneTasks
@@ -97,6 +99,8 @@ type App struct {
 	serviceView         views.ServiceListModel
 	taskView            views.TaskListModel
 	detailView          views.TaskDetailModel
+	taskDefsView        views.TaskDefsModel
+	taskDefDetailView   views.TaskDefDetailModel
 	serviceDetailView   views.ServiceDetailModel
 	logView             views.LogViewerModel
 	standaloneView      views.StandaloneTasksModel
@@ -145,6 +149,7 @@ type App struct {
 	selectedCluster       *model.Cluster
 	selectedService       *model.Service
 	selectedTask          *model.Task
+	selectedTaskDef       string
 	execContainerName     string
 	scaleInCluster        string
 	scaleInService        string
@@ -352,6 +357,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.serviceView = a.serviceView.SetSize(w, h)
 		a.taskView = a.taskView.SetSize(w, h)
 		a.detailView = a.detailView.SetSize(w, h)
+		a.taskDefsView = a.taskDefsView.SetSize(w, h)
+		a.taskDefDetailView = a.taskDefDetailView.SetSize(w, h)
 		a.serviceDetailView = a.serviceDetailView.SetSize(w, h)
 		a.logView = a.logView.SetSize(w, h)
 		a.standaloneView = a.standaloneView.SetSize(w, h)
@@ -507,6 +514,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.detailView = views.NewTaskDetail(msg.task)
 			a.detailView = a.detailView.SetSize(a.width, a.height-3)
 			a.lastRefresh = time.Now()
+		}
+		return a, nil
+
+	case taskDefsLoadedMsg:
+		a.loading = false
+		a.lastRefresh = time.Now()
+		a.err = nil
+		a.taskDefsView = a.taskDefsView.SetTaskDefs(msg.defs)
+		return a, nil
+
+	case taskDefLoadedMsg:
+		a.loading = false
+		a.lastRefresh = time.Now()
+		a.err = nil
+		a.state = viewTaskDefDetail
+		a.taskDefDetailView = views.NewTaskDefDetail(msg.def)
+		a.taskDefDetailView = a.taskDefDetailView.SetSize(a.width, a.height-3)
+		if msg.def != nil {
+			a.selectedTaskDef = fmt.Sprintf("%s:%d", msg.def.Family, msg.def.Revision)
 		}
 		return a, nil
 
@@ -1259,6 +1285,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case PickerLogContainer:
 			return a, a.doLogForContainer(msg.Value)
 		case PickerEnvContainer:
+			if a.state == viewTaskDefDetail {
+				return a, a.doShowTaskDefEnvVars(msg.Value)
+			}
 			return a, a.doShowEnvVars(msg.Value)
 		case PickerSSMPrefix:
 			if msg.Index == len(a.cfg.SSMPrefixes) {
@@ -1464,6 +1493,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Context-specific keys (configurable via keybindings)
 		k := msg.String()
 		switch a.state {
+		case viewClusters:
+			switch k {
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
+			}
 		case viewServices:
 			switch k {
 			case a.kb.ForceRedeploy:
@@ -1480,6 +1514,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.showMetrics()
 			case a.kb.ToggleScaleIn:
 				return a.toggleScaleIn()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			}
 		case viewTasks:
 			switch k {
@@ -1494,6 +1530,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case a.kb.EnvVars:
 				return a.showEnvVars()
+			}
+		case viewTaskDefDetail:
+			switch k {
+			case a.kb.EnvVars:
+				return a.showTaskDefEnvVars()
+			}
+		case viewTaskDefs:
+			switch k {
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			}
 		case viewLogs:
 			switch k {
@@ -1773,6 +1819,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.taskView, cmd = a.taskView.Update(msg)
 	case viewServiceDetail:
 		a.serviceDetailView, cmd = a.serviceDetailView.Update(msg)
+	case viewTaskDefs:
+		a.taskDefsView, cmd = a.taskDefsView.Update(msg)
+	case viewTaskDefDetail:
+		a.taskDefDetailView, cmd = a.taskDefDetailView.Update(msg)
 	case viewLogs:
 		a.logView, cmd = a.logView.Update(msg)
 	case viewStandaloneTasks:
@@ -1859,6 +1909,8 @@ func (a App) isFiltering() bool {
 		return a.serviceView.IsFiltering()
 	case viewTasks:
 		return a.taskView.IsFiltering()
+	case viewTaskDefs:
+		return a.taskDefsView.IsFiltering()
 	case viewStandaloneTasks:
 		return a.standaloneView.IsFiltering()
 	case viewSSM:
@@ -1910,6 +1962,13 @@ func (a App) isFiltering() bool {
 // --- View ---
 
 func (a App) buildBreadcrumbs() []string {
+	if a.state == viewTaskDefs || a.state == viewTaskDefDetail {
+		crumbs := []string{"Task Definitions"}
+		if a.selectedTaskDef != "" {
+			crumbs = append(crumbs, a.selectedTaskDef)
+		}
+		return crumbs
+	}
 	var crumbs []string
 	if a.selectedCluster != nil {
 		crumbs = append(crumbs, a.selectedCluster.Name)
@@ -1942,6 +2001,10 @@ func (a App) View() string {
 		content = a.taskView.View()
 	case viewTaskDetail:
 		content = a.detailView.View()
+	case viewTaskDefs:
+		content = a.taskDefsView.View()
+	case viewTaskDefDetail:
+		content = a.taskDefDetailView.View()
 	case viewServiceDetail:
 		content = a.serviceDetailView.View()
 	case viewLogs:
@@ -2116,6 +2179,10 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewTaskDetail:
 		primary = "[E] env vars"
+	case viewTaskDefs:
+		primary = "[enter] detail"
+	case viewTaskDefDetail:
+		primary = "[tab] switch tab"
 	case viewServiceDetail:
 		primary = "[tab] switch tab"
 	case viewLogs:
@@ -2219,6 +2286,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "Browse services"},
 			{"1-9", "Quick select"},
 			{"/", "Filter"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{"R", "Refresh"},
 		}
 	case viewServices:
@@ -2231,6 +2299,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.Metrics, "CPU/memory metrics + alarms"},
 			{kb.ToggleScaleIn, "Toggle scale-in suspension"},
 			{kb.StandaloneTasks, "Standalone tasks (non-service)"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 		}
 	case viewTasks:
 		context = []kv{
@@ -2242,6 +2311,18 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewTaskDetail:
 		context = []kv{
 			{kb.EnvVars, "View environment variables"},
+		}
+	case viewTaskDefs:
+		context = []kv{
+			{"enter", "Task definition detail"},
+			{"/", "Filter"},
+		}
+	case viewTaskDefDetail:
+		context = []kv{
+			{"tab", "Switch Summary/JSON"},
+			{kb.EnvVars, "View environment variables"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
 		}
 	case viewServiceDetail:
 		context = []kv{
@@ -2564,6 +2645,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 			a.detailView = views.NewTaskDetail(t)
 			return a, nil
 		}
+	case viewTaskDefs:
+		return a.openSelectedTaskDefinition()
 	case viewStandaloneTasks:
 		if t := a.standaloneView.SelectedTask(); t != nil {
 			a.selectedTask = t
@@ -2668,6 +2751,7 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		a.selectedCluster = nil
 		a.selectedService = nil
 		a.selectedTask = nil
+		a.selectedTaskDef = ""
 		a.loading = true
 		return a, a.loadClusters()
 	case modeCWLogs:
@@ -2711,6 +2795,7 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		a.selectedCluster = nil
 		a.selectedService = nil
 		a.selectedTask = nil
+		a.selectedTaskDef = ""
 		a.loading = true
 		return a, a.loadClusters()
 	case modeCWLogs:
@@ -2770,6 +2855,21 @@ func (a App) goBack() (App, tea.Cmd) {
 			a.state = viewTasks
 		}
 		a.selectedTask = nil
+		return a, nil
+	case viewTaskDefs:
+		a.selectedTaskDef = ""
+		if a.prevState == viewServices {
+			a.state = viewServices
+			return a, nil
+		}
+		if a.prevState == viewClusters {
+			a.state = viewClusters
+			return a, nil
+		}
+		return a.showModePicker()
+	case viewTaskDefDetail:
+		a.state = viewTaskDefs
+		a.selectedTaskDef = ""
 		return a, nil
 	case viewServiceDetail:
 		a.state = viewServices
@@ -2865,6 +2965,8 @@ func (a App) goBack() (App, tea.Cmd) {
 	case viewEnvVars:
 		if a.prevState == viewLambdaDetail {
 			a.state = viewLambdaDetail
+		} else if a.prevState == viewTaskDefDetail {
+			a.state = viewTaskDefDetail
 		} else {
 			a.state = viewTaskDetail
 		}
