@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -146,7 +147,17 @@ func (m ServiceListModel) filteredServices() []model.Service {
 }
 
 func (m ServiceListModel) SetServices(services []model.Service) ServiceListModel {
-	m.services = services
+	sorted := append([]model.Service(nil), services...)
+	slices.SortFunc(sorted, func(a, b model.Service) int {
+		if a.Name < b.Name {
+			return -1
+		}
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
+	m.services = sorted
 	m.loaded = true
 	filtered := m.filteredServices()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {

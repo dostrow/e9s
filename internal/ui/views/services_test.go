@@ -3,6 +3,8 @@ package views
 import (
 	"testing"
 	"time"
+
+	"github.com/dostrow/e9s/internal/model"
 )
 
 func TestFormatAge(t *testing.T) {
@@ -50,5 +52,34 @@ func TestFormatBytes(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("formatBytes(%d) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestSetServicesSortsAlphabeticallyByName(t *testing.T) {
+	m := NewServiceList("cluster").SetServices([]model.Service{
+		{Name: "worker"},
+		{Name: "api"},
+		{Name: "batch"},
+	})
+
+	filtered := m.filteredServices()
+	if len(filtered) != 3 {
+		t.Fatalf("expected 3 services, got %d", len(filtered))
+	}
+	if filtered[0].Name != "api" || filtered[1].Name != "batch" || filtered[2].Name != "worker" {
+		t.Fatalf("services not sorted alphabetically: %#v", filtered)
+	}
+}
+
+func TestSetServicesDoesNotMutateInputSlice(t *testing.T) {
+	input := []model.Service{
+		{Name: "worker"},
+		{Name: "api"},
+	}
+
+	_ = NewServiceList("cluster").SetServices(input)
+
+	if input[0].Name != "worker" || input[1].Name != "api" {
+		t.Fatalf("input slice was mutated: %#v", input)
 	}
 }

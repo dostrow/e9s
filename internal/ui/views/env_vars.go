@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -25,9 +26,20 @@ type EnvVarsModel struct {
 }
 
 func NewEnvVars(title string, envVars []aws.EnvVar) EnvVarsModel {
+	sorted := append([]aws.EnvVar(nil), envVars...)
+	slices.SortFunc(sorted, func(a, b aws.EnvVar) int {
+		if a.Name < b.Name {
+			return -1
+		}
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
+
 	return EnvVarsModel{
 		title:   title,
-		envVars: envVars,
+		envVars: sorted,
 	}
 }
 
