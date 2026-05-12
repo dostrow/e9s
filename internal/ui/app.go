@@ -187,6 +187,7 @@ type App struct {
 	cbTriggerProject      string
 	pathInput             *PathInput
 	tofuDir               string
+	tofuPlanFile          string
 	r53EditZoneID         string
 	r53EditRecord         *e9saws.R53Record
 	r53EditOriginal       *e9saws.R53Record
@@ -732,11 +733,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case smEditReadyMsg:
-		a.smEditName = msg.name
-		a.input = NewInput(InputSMEditValue,
-			fmt.Sprintf("Edit secret %s", msg.name),
-			msg.currentValue)
-		return a, nil
+		return a.handleSecretEditReady(msg)
+
+	case smEditedMsg:
+		return a.confirmSMUpdate(msg.value)
 
 	case smCloneReadyMsg:
 		return a.handleCloneReady(msg)
@@ -1023,6 +1023,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tofuPlanLoadedMsg:
+		a.cleanupTofuPlanFileExcept(msg.planFile)
+		a.tofuPlanFile = msg.planFile
 		a.tofuPlanView = a.tofuPlanView.SetPlan(msg.plan)
 		a.loading = false
 		return a, nil
@@ -3020,11 +3022,13 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewCBBuilds
 		return a, nil
 	case viewTofuResources:
+		a.cleanupTofuPlanFile()
 		return a.showModePicker()
 	case viewTofuStateDetail:
 		a.state = viewTofuResources
 		return a, nil
 	case viewTofuPlan:
+		a.cleanupTofuPlanFile()
 		a.state = viewTofuResources
 		return a, nil
 	case viewTofuPlanDetail:

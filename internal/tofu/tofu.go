@@ -4,14 +4,15 @@ package tofu
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
 // Runner executes tofu/terraform commands in a working directory.
 type Runner struct {
-	Dir     string // working directory
-	Binary  string // "tofu" or "terraform"
+	Dir    string // working directory
+	Binary string // "tofu" or "terraform"
 }
 
 // NewRunner creates a runner for the given directory.
@@ -58,20 +59,40 @@ func (r *Runner) StateShow(address string) (string, error) {
 }
 
 // PlanJSON runs tofu plan and returns the JSON output for parsing.
+// The generated plan file is removed after the JSON is rendered.
 func (r *Runner) PlanJSON() (string, error) {
-	// Create a temp plan file, then convert to JSON
-	planFile := fmt.Sprintf("%s/.e9s-plan.tfplan", r.Dir)
-	_, err := r.run("plan", "-no-color", "-out="+planFile)
+	jsonOut, planFile, err := r.PlanJSONSaved()
 	if err != nil {
-		return "", fmt.Errorf("plan failed: %w", err)
+		return "", err
 	}
-	jsonOut, err := r.run("show", "-json", planFile)
-	if err != nil {
-		return "", fmt.Errorf("show plan failed: %w", err)
-	}
-	// Clean up plan file
-	exec.Command("rm", "-f", planFile).Run()
+	_ = os.Remove(planFile)
 	return jsonOut, nil
+}
+
+// PlanJSONSaved runs tofu plan, returns the JSON output for parsing,
+// and preserves the generated plan file for a later apply.
+func (r *Runner) PlanJSONSaved() (string, string, error) {
+	planFile, err := os.CreateTemp("", "e9s-tofu-plan-*.tfplan")
+	if err != nil {
+		return "", "", fmt.Errorf("create plan file: %w", err)
+	}
+	planPath := planFile.Name()
+	if err := planFile.Close(); err != nil {
+		_ = os.Remove(planPath)
+		return "", "", fmt.Errorf("close plan file: %w", err)
+	}
+
+	_, err = r.run("plan", "-no-color", "-out="+planPath)
+	if err != nil {
+		_ = os.Remove(planPath)
+		return "", "", fmt.Errorf("plan failed: %w", err)
+	}
+	jsonOut, err := r.run("show", "-json", planPath)
+	if err != nil {
+		_ = os.Remove(planPath)
+		return "", "", fmt.Errorf("show plan failed: %w", err)
+	}
+	return jsonOut, planPath, nil
 }
 
 // Validate runs tofu validate and returns the output.

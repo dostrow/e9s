@@ -38,6 +38,9 @@ func (a App) promptTofuBrowser() (App, tea.Cmd) {
 }
 
 func (a App) openTofuResources(dir string) (App, tea.Cmd) {
+	if dir != a.tofuDir {
+		a.cleanupTofuPlanFile()
+	}
 	a.mode = modeTofu
 	a.state = viewTofuResources
 	a.tofuDir = dir
@@ -92,15 +95,16 @@ func (a App) runTofuPlan() (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		jsonOut, err := runner.PlanJSON()
+		jsonOut, planFile, err := runner.PlanJSONSaved()
 		if err != nil {
 			return errMsg{err}
 		}
 		plan, err := tofu.ParsePlan(jsonOut)
 		if err != nil {
+			_ = os.Remove(planFile)
 			return errMsg{err}
 		}
-		return tofuPlanLoadedMsg{plan}
+		return tofuPlanLoadedMsg{plan: plan, planFile: planFile}
 	}
 }
 
@@ -122,14 +126,34 @@ func (a App) runTofuApply() (App, tea.Cmd) {
 		a.err = err
 		return a, nil
 	}
-	// Run apply interactively — user sees the plan and confirms
-	wrap := NewExecWrap(runner.Binary, []string{"-chdir=" + dir, "apply", "-no-color"})
+	wrap := NewExecWrap(runner.Binary, a.tofuApplyArgs(dir))
 	return a, tea.Exec(wrap, func(err error) tea.Msg {
 		if err != nil {
 			return tofuApplyDoneMsg{fmt.Sprintf("Apply finished with error: %v", err)}
 		}
 		return tofuApplyDoneMsg{"Apply completed successfully"}
 	})
+}
+
+func (a App) tofuApplyArgs(dir string) []string {
+	args := []string{"-chdir=" + dir, "apply", "-no-color"}
+	if a.state == viewTofuPlan && a.tofuPlanFile != "" {
+		args = append(args, a.tofuPlanFile)
+	}
+	return args
+}
+
+func (a *App) cleanupTofuPlanFile() {
+	a.cleanupTofuPlanFileExcept("")
+}
+
+func (a *App) cleanupTofuPlanFileExcept(keep string) {
+	if a.tofuPlanFile == "" || a.tofuPlanFile == keep {
+		a.tofuPlanFile = keep
+		return
+	}
+	_ = os.Remove(a.tofuPlanFile)
+	a.tofuPlanFile = keep
 }
 
 func (a App) runTofuInit() (App, tea.Cmd) {

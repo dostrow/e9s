@@ -79,6 +79,10 @@ type smEditReadyMsg struct {
 	name         string
 	currentValue string
 }
+type smEditedMsg struct {
+	name  string
+	value string
+}
 type smUpdatedMsg struct {
 	name    string
 	secrets []e9saws.Secret
@@ -227,7 +231,10 @@ type r53ActionDoneMsg struct{ message string }
 
 type tofuResourcesLoadedMsg struct{ resources []string }
 type tofuStateDetailMsg struct{ output string }
-type tofuPlanLoadedMsg struct{ plan *tofu.PlanResult }
+type tofuPlanLoadedMsg struct {
+	plan     *tofu.PlanResult
+	planFile string
+}
 type tofuApplyDoneMsg struct{ message string }
 type tofuInitDoneMsg struct{ message string }
 
