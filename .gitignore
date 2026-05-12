@@ -17,3 +17,9 @@ Thumbs.db
 
 # Config (user-specific)
 # .e9s.yaml is intentionally not ignored — it's in the user's home dir, not the repo
+
+# Local Codex migration artifacts
+.agents/
+plugins/claude-imports-e9s/
+codex-migration/
+.codex
