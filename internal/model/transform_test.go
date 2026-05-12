@@ -7,16 +7,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 )
 
-func strPtr(s string) *string      { return &s }
+func strPtr(s string) *string        { return &s }
 func timePtr(t time.Time) *time.Time { return &t }
 
 func TestTransformCluster(t *testing.T) {
 	c := types.Cluster{
 		ClusterName:         strPtr("test-cluster"),
 		ClusterArn:          strPtr("arn:aws:ecs:us-east-1:123456:cluster/test-cluster"),
-		ActiveServicesCount:  3,
-		RunningTasksCount:    10,
-		PendingTasksCount:    2,
+		ActiveServicesCount: 3,
+		RunningTasksCount:   10,
+		PendingTasksCount:   2,
 		Status:              strPtr("ACTIVE"),
 	}
 
@@ -96,9 +96,9 @@ func TestTransformService(t *testing.T) {
 
 func TestComputeServiceHealth(t *testing.T) {
 	tests := []struct {
-		name    string
-		svc     Service
-		want    string
+		name string
+		svc  Service
+		want string
 	}{
 		{
 			name: "healthy - all running",
@@ -148,6 +148,7 @@ func TestTransformTask(t *testing.T) {
 	task := types.Task{
 		TaskArn:           strPtr("arn:aws:ecs:us-east-1:123456:task/cluster/abc123def456"),
 		TaskDefinitionArn: strPtr("arn:aws:ecs:us-east-1:123456:task-definition/my-task:5"),
+		AvailabilityZone:  strPtr("us-east-1a"),
 		LastStatus:        strPtr("RUNNING"),
 		DesiredStatus:     strPtr("RUNNING"),
 		HealthStatus:      types.HealthStatusHealthy,
@@ -185,6 +186,9 @@ func TestTransformTask(t *testing.T) {
 	}
 	if result.PrivateIP != "10.0.1.42" {
 		t.Errorf("PrivateIP = %q, want %q", result.PrivateIP, "10.0.1.42")
+	}
+	if result.AvailabilityZone != "us-east-1a" {
+		t.Errorf("AvailabilityZone = %q, want %q", result.AvailabilityZone, "us-east-1a")
 	}
 	if result.Group != "service:my-service" {
 		t.Errorf("Group = %q, want %q", result.Group, "service:my-service")

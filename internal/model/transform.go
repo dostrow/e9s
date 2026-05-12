@@ -20,11 +20,11 @@ func TransformCluster(c types.Cluster) Cluster {
 
 func TransformService(s types.Service) Service {
 	svc := Service{
-		Name:           derefStr(s.ServiceName),
-		Status:         derefStr(s.Status),
-		DesiredCount:   int(s.DesiredCount),
-		RunningCount:   int(s.RunningCount),
-		PendingCount:   int(s.PendingCount),
+		Name:                 derefStr(s.ServiceName),
+		Status:               derefStr(s.Status),
+		DesiredCount:         int(s.DesiredCount),
+		RunningCount:         int(s.RunningCount),
+		PendingCount:         int(s.PendingCount),
 		TaskDefinition:       shortTaskDef(derefStr(s.TaskDefinition)),
 		LaunchType:           string(s.LaunchType),
 		CreatedAt:            derefTime(s.CreatedAt),
@@ -63,17 +63,18 @@ func TransformDeployment(d types.Deployment) Deployment {
 
 func TransformTask(t types.Task) Task {
 	task := Task{
-		TaskID:         shortTaskID(derefStr(t.TaskArn)),
-		TaskARN:        derefStr(t.TaskArn),
-		TaskDefinition: shortTaskDef(derefStr(t.TaskDefinitionArn)),
-		Status:         derefStr(t.LastStatus),
-		HealthStatus:   string(t.HealthStatus),
-		DesiredStatus:  derefStr(t.DesiredStatus),
-		LaunchType:     string(t.LaunchType),
-		StartedAt:      derefTime(t.StartedAt),
-		StoppedAt:      derefTime(t.StoppedAt),
-		StoppedReason:  derefStr(t.StoppedReason),
-		Group:          derefStr(t.Group),
+		TaskID:           shortTaskID(derefStr(t.TaskArn)),
+		TaskARN:          derefStr(t.TaskArn),
+		TaskDefinition:   shortTaskDef(derefStr(t.TaskDefinitionArn)),
+		Status:           derefStr(t.LastStatus),
+		HealthStatus:     string(t.HealthStatus),
+		DesiredStatus:    derefStr(t.DesiredStatus),
+		LaunchType:       string(t.LaunchType),
+		StartedAt:        derefTime(t.StartedAt),
+		StoppedAt:        derefTime(t.StoppedAt),
+		StoppedReason:    derefStr(t.StoppedReason),
+		AvailabilityZone: derefStr(t.AvailabilityZone),
+		Group:            derefStr(t.Group),
 	}
 
 	for _, a := range t.Attachments {

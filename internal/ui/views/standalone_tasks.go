@@ -104,6 +104,7 @@ func (m StandaloneTasksModel) View() string {
 		{Title: "STATUS"},
 		{Title: "HEALTH"},
 		{Title: "GROUP"},
+		{Title: "AZ"},
 		{Title: "AGE", RightAlign: true},
 		{Title: "IP"},
 		{Title: "STOP REASON"},
@@ -119,6 +120,7 @@ func (m StandaloneTasksModel) View() string {
 			components.Styled(t.Status, theme.StatusStyle(t.Status)),
 			components.Styled(t.HealthStatus, theme.HealthStyle(t.HealthStatus)),
 			components.Plain(t.Group),
+			components.Plain(t.AvailabilityZone),
 			components.Plain(formatAge(t.StartedAt)),
 			components.Plain(t.PrivateIP),
 			components.Plain(t.StoppedReason),
@@ -139,6 +141,7 @@ func (m StandaloneTasksModel) filteredTasks() []model.Task {
 		match := strings.Contains(strings.ToLower(t.TaskID), lf) ||
 			strings.Contains(strings.ToLower(t.Status), lf) ||
 			strings.Contains(strings.ToLower(t.Group), lf) ||
+			strings.Contains(strings.ToLower(t.AvailabilityZone), lf) ||
 			strings.Contains(strings.ToLower(t.PrivateIP), lf)
 		if match {
 			out = append(out, t)

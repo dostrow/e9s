@@ -13,15 +13,15 @@ type Cluster struct {
 }
 
 type Service struct {
-	Name           string
-	Status         string
-	DesiredCount   int
-	RunningCount   int
-	PendingCount   int
-	TaskDefinition string // family:revision
-	LaunchType     string
-	Deployments    []Deployment
-	Events         []ServiceEvent
+	Name                 string
+	Status               string
+	DesiredCount         int
+	RunningCount         int
+	PendingCount         int
+	TaskDefinition       string // family:revision
+	LaunchType           string
+	Deployments          []Deployment
+	Events               []ServiceEvent
 	CreatedAt            time.Time
 	HealthStatus         string // "healthy", "degraded", "unhealthy"
 	EnableExecuteCommand bool
@@ -46,20 +46,21 @@ type ServiceEvent struct {
 }
 
 type Task struct {
-	TaskID         string // short ID extracted from ARN
-	TaskARN        string
-	TaskDefinition string
-	Status         string // PROVISIONING, PENDING, ACTIVATING, RUNNING, DEACTIVATING, STOPPING, STOPPED
-	HealthStatus   string
-	DesiredStatus  string
-	LaunchType     string
-	StartedAt      time.Time
-	StoppedAt      time.Time
-	StoppedReason  string
-	Containers        []Container
-	PrivateIP         string
-	Group             string // "service:name" or "family:name"
-	ExecAgentRunning  bool   // whether the ExecuteCommandAgent managed agent is running
+	TaskID           string // short ID extracted from ARN
+	TaskARN          string
+	TaskDefinition   string
+	Status           string // PROVISIONING, PENDING, ACTIVATING, RUNNING, DEACTIVATING, STOPPING, STOPPED
+	HealthStatus     string
+	DesiredStatus    string
+	LaunchType       string
+	StartedAt        time.Time
+	StoppedAt        time.Time
+	StoppedReason    string
+	Containers       []Container
+	PrivateIP        string
+	AvailabilityZone string
+	Group            string // "service:name" or "family:name"
+	ExecAgentRunning bool   // whether the ExecuteCommandAgent managed agent is running
 }
 
 type Container struct {

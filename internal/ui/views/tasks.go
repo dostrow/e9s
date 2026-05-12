@@ -108,6 +108,7 @@ func (m TaskListModel) View() string {
 		{Title: "TASK ID"},
 		{Title: "STATUS"},
 		{Title: "HEALTH"},
+		{Title: "AZ"},
 		{Title: "AGE", RightAlign: true},
 		{Title: "IP"},
 		{Title: "STOP REASON"},
@@ -122,6 +123,7 @@ func (m TaskListModel) View() string {
 			components.Plain(id),
 			components.Styled(t.Status, theme.StatusStyle(t.Status)),
 			components.Styled(t.HealthStatus, theme.HealthStyle(t.HealthStatus)),
+			components.Plain(t.AvailabilityZone),
 			components.Plain(formatAge(t.StartedAt)),
 			components.Plain(t.PrivateIP),
 			components.Plain(t.StoppedReason),
@@ -141,6 +143,7 @@ func (m TaskListModel) filteredTasks() []model.Task {
 	for _, t := range m.tasks {
 		match := strings.Contains(strings.ToLower(t.TaskID), lf) ||
 			strings.Contains(strings.ToLower(t.Status), lf) ||
+			strings.Contains(strings.ToLower(t.AvailabilityZone), lf) ||
 			strings.Contains(strings.ToLower(t.PrivateIP), lf) ||
 			strings.Contains(strings.ToLower(t.StoppedReason), lf)
 		if match {
