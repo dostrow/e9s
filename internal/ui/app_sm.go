@@ -92,6 +92,32 @@ func (a App) editSecret() (App, tea.Cmd) {
 	}
 }
 
+func (a App) handleSecretEditReady(msg smEditReadyMsg) (App, tea.Cmd) {
+	a.smEditName = msg.name
+
+	tmpFile, err := os.CreateTemp("", "e9s-secret-edit-*.txt")
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	tmpPath := tmpFile.Name()
+	_, _ = tmpFile.WriteString(msg.currentValue)
+	tmpFile.Close()
+
+	editor := NewEditorCmd(tmpPath)
+	return a, tea.Exec(editor, func(err error) tea.Msg {
+		defer os.Remove(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return errMsg{err}
+		}
+		return smEditedMsg{name: msg.name, value: string(data)}
+	})
+}
+
 func (a App) copySecretARN() (App, tea.Cmd) {
 	s := a.secretsView.SelectedSecret()
 	if s == nil {
