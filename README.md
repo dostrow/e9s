@@ -1,6 +1,6 @@
 # e9s - ElasticMS The Elastic Management System
 
-An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, ECR, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, CodeBuild, Route53, and OpenTofu/Terraform workspaces.
+An interactive terminal UI for managing AWS infrastructure from a single tool. Browse and operate on ECS, EC2, ECR, RDS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager, S3, Lambda, DynamoDB, SQS, CodeBuild, Route53, and OpenTofu/Terraform workspaces.
 
 Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubbletea](https://github.com/charmbracelet/bubbletea) and [lipgloss](https://github.com/charmbracelet/lipgloss). Colors adapt to your terminal's color scheme via ANSI color indices.
 
@@ -117,6 +117,18 @@ Browse ECR repositories, view images with vulnerability scan summaries, and dril
 - **Copy URI** — copy full image URI to clipboard with `y`
 - **Delete Image** — remove by digest with `x` (with confirmation)
 
+### RDS
+
+Browse RDS DB instances and Aurora cluster members with engine, instance class, status, role, availability zone, and endpoint. Filter by identifier, engine, status, role, or cluster ID.
+
+- **Instance Detail** — full metadata: engine version, class, AZ, Multi-AZ, created date, CA certificate
+- **Network** — endpoint with port, VPC, subnet group, and security groups
+- **Storage** — allocated storage (GiB), storage type, encryption, and deletion protection status
+- **Backup & Maintenance** — backup retention period, backup window, latest restorable time, maintenance window, parameter groups, and replica source
+- **CloudWatch Metrics** — live CPU utilization (color-coded), active connections, free storage, read/write IOPS, and read/write latency (last 5 min average)
+- **Tags** — all instance tags
+- **Aurora cluster awareness** — writer/reader roles derived from cluster membership, with failover priority for readers
+
 ### Route53
 
 Browse hosted zones, view and manage DNS record sets, and test DNS resolution.
@@ -219,7 +231,7 @@ e9s [flags]
 
 Flags:
   -c, --cluster string   ECS cluster (skips to service list)
-  -m, --mode string      Start in module: ECS, EC2i, ECR, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53, TF
+  -m, --mode string      Start in module: ECS, EC2i, ECR, RDS, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53, TF
   -r, --region string    AWS region (default: from AWS config)
   -p, --profile string   AWS profile name
       --refresh int      Auto-refresh interval in seconds (default: 5)
@@ -428,6 +440,14 @@ e9s -m SQS -r eu-west-1
 | `r` | Reboot instance |
 | `T` | Terminate instance |
 
+### RDS — Instances
+
+| Key | Action |
+| --- | --- |
+| `Enter` | View instance detail |
+| `/` | Filter instances |
+| `g`/`G` | Jump to top/bottom of detail |
+
 ### ECR — Images
 
 | Key | Action |
@@ -507,6 +527,7 @@ modules:
   codebuild: true
   ec2_instances: true
   ecr: true
+  rds: true
   route53: true
   tofu: true
 
@@ -545,6 +566,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | DynamoDB | `dynamodb:ListTables`, `dynamodb:DescribeTable`, `dynamodb:Scan`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:PutItem`, `dynamodb:ExecuteStatement` |
 | SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
+| RDS browse | `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `cloudwatch:GetMetricData` |
 | EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeVolumes`, `ec2:DescribeSecurityGroups`, `ec2:GetConsoleOutput` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |

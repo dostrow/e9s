@@ -94,6 +94,7 @@ type Config struct {
 		CodeBuild       *bool `yaml:"codebuild"`
 		EC2             *bool `yaml:"ec2_instances"`
 		ECR             *bool `yaml:"ecr"`
+		RDS             *bool `yaml:"rds"`
 		Route53         *bool `yaml:"route53"`
 		Tofu            *bool `yaml:"tofu"`
 	} `yaml:"modules"`
@@ -319,6 +320,7 @@ func (c *Config) ModuleSQS() bool         { return boolDefault(c.Modules.SQS, tr
 func (c *Config) ModuleCodeBuild() bool   { return boolDefault(c.Modules.CodeBuild, true) }
 func (c *Config) ModuleEC2() bool         { return boolDefault(c.Modules.EC2, true) }
 func (c *Config) ModuleECR() bool         { return boolDefault(c.Modules.ECR, true) }
+func (c *Config) ModuleRDS() bool         { return boolDefault(c.Modules.RDS, true) }
 func (c *Config) ModuleRoute53() bool     { return boolDefault(c.Modules.Route53, true) }
 func (c *Config) ModuleTofu() bool        { return boolDefault(c.Modules.Tofu, true) }
 func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }

@@ -174,6 +174,7 @@ func modeDisplayName(mode topMode) string {
 		modeECR:       "ECR",
 		modeTofu:      "OpenTofu",
 		modeRoute53:   "Route53",
+		modeRDS:       "RDS",
 	}
 	if name, ok := names[mode]; ok {
 		return name
@@ -198,6 +199,7 @@ func modeShortName(mode topMode) string {
 		modeECR:       "ECR",
 		modeTofu:      "TF",
 		modeRoute53:   "R53",
+		modeRDS:       "RDS",
 	}
 	if name, ok := names[mode]; ok {
 		return name

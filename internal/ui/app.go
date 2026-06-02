@@ -34,6 +34,7 @@ const (
 	modeECR
 	modeTofu
 	modeRoute53
+	modeRDS
 )
 
 type viewState int
@@ -87,6 +88,8 @@ const (
 	viewR53Zones
 	viewR53Records
 	viewR53RecordDetail
+	viewRDSInstances
+	viewRDSDetail
 )
 
 type App struct {
@@ -143,6 +146,8 @@ type App struct {
 	r53ZonesView        views.R53ZonesModel
 	r53RecordsView      views.R53RecordsModel
 	r53DetailView       views.R53RecordDetailModel
+	rdsInstancesView    views.RDSInstancesModel
+	rdsDetailView       views.RDSDetailModel
 	regionPicker        views.RegionPickerModel
 
 	// Navigation context
@@ -266,6 +271,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeECR, "ECR", cfg.ModuleECR()},
 		{modeTofu, "TF", cfg.ModuleTofu()},
 		{modeRoute53, "R53", cfg.ModuleRoute53()},
+		{modeRDS, "RDS", cfg.ModuleRDS()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -315,6 +321,7 @@ func resolveDefaultMode(s string) *topMode {
 		"ECR": modeECR, "ecr": modeECR,
 		"Tofu": modeTofu, "tofu": modeTofu, "TF": modeTofu, "tf": modeTofu, "terraform": modeTofu, "opentofu": modeTofu,
 		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
+		"RDS": modeRDS, "rds": modeRDS,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -398,6 +405,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.r53ZonesView = a.r53ZonesView.SetSize(w, h)
 		a.r53RecordsView = a.r53RecordsView.SetSize(w, h)
 		a.r53DetailView = a.r53DetailView.SetSize(w, h)
+		a.rdsInstancesView = a.rdsInstancesView.SetSize(w, h)
+		a.rdsDetailView = a.rdsDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -1042,6 +1051,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tofuInitDoneMsg:
 		a.flashMessage = msg.message
 		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.loading = false
+		return a, nil
+
+	// --- RDS messages ---
+	case rdsInstancesLoadedMsg:
+		a.rdsInstancesView = a.rdsInstancesView.SetInstances(msg.instances)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case rdsDetailLoadedMsg:
+		if msg.detail != nil {
+			a.rdsDetailView = views.NewRDSDetail(msg.detail)
+			a.rdsDetailView = a.rdsDetailView.SetSize(a.width-3, a.height-6)
+		}
+		a.state = viewRDSDetail
 		a.loading = false
 		return a, nil
 
@@ -1893,6 +1918,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.r53RecordsView, cmd = a.r53RecordsView.Update(msg)
 	case viewR53RecordDetail:
 		a.r53DetailView, cmd = a.r53DetailView.Update(msg)
+	case viewRDSInstances:
+		a.rdsInstancesView, cmd = a.rdsInstancesView.Update(msg)
+	case viewRDSDetail:
+		a.rdsDetailView, cmd = a.rdsDetailView.Update(msg)
 	case viewEC2Instances:
 		a.ec2InstancesView, cmd = a.ec2InstancesView.Update(msg)
 	case viewEC2Detail:
@@ -1957,6 +1986,8 @@ func (a App) isFiltering() bool {
 		return a.r53ZonesView.IsFiltering()
 	case viewR53Records:
 		return a.r53RecordsView.IsFiltering()
+	case viewRDSInstances:
+		return a.rdsInstancesView.IsFiltering()
 	}
 	return false
 }
@@ -2085,6 +2116,10 @@ func (a App) View() string {
 		content = a.r53RecordsView.View()
 	case viewR53RecordDetail:
 		content = a.r53DetailView.View()
+	case viewRDSInstances:
+		content = a.rdsInstancesView.View()
+	case viewRDSDetail:
+		content = a.rdsDetailView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -2249,6 +2284,10 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewR53RecordDetail:
 		primary = "[t] test DNS"
+	case viewRDSInstances:
+		primary = "[enter] detail"
+	case viewRDSDetail:
+		primary = "[j/k] scroll"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -2587,6 +2626,17 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewRDSInstances:
+		context = []kv{
+			{"enter", "View instance detail + metrics"},
+			{"/", "Filter instances"},
+			{"T", "Toggle relative/absolute timestamps"},
+		}
+	case viewRDSDetail:
+		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -2733,6 +2783,10 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewECRImages:
 		return a.openECRFindings()
+	case viewRDSInstances:
+		if inst := a.rdsInstancesView.SelectedInstance(); inst != nil {
+			return a.openRDSDetail(inst.Identifier)
+		}
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -2782,6 +2836,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.promptTofuBrowser()
 	case modeRoute53:
 		return a.openR53Zones()
+	case modeRDS:
+		return a.openRDSInstances()
 	}
 	return a, nil
 }
@@ -2826,6 +2882,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.promptTofuBrowser()
 	case modeRoute53:
 		return a.openR53Zones()
+	case modeRDS:
+		return a.openRDSInstances()
 	}
 	return a, nil
 }
@@ -3049,6 +3107,11 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	case viewR53RecordDetail:
 		a.state = viewR53Records
+		return a, nil
+	case viewRDSInstances:
+		return a.showModePicker()
+	case viewRDSDetail:
+		a.state = viewRDSInstances
 		return a, nil
 	case viewEC2Instances:
 		return a.showModePicker()

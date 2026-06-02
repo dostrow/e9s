@@ -238,6 +238,11 @@ type tofuPlanLoadedMsg struct {
 type tofuApplyDoneMsg struct{ message string }
 type tofuInitDoneMsg struct{ message string }
 
+// --- RDS Messages ---
+
+type rdsInstancesLoadedMsg struct{ instances []e9saws.RDSInstance }
+type rdsDetailLoadedMsg struct{ detail *e9saws.RDSInstanceDetail }
+
 // --- Shared Messages ---
 
 type regionSwitchedMsg struct{}

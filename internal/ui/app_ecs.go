@@ -700,6 +700,10 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshEC2Instances()
 	case viewEC2Detail:
 		return a.refreshEC2Detail()
+	case viewRDSInstances:
+		return a.refreshRDSInstances()
+	case viewRDSDetail:
+		return a.refreshRDSDetail()
 	default:
 		return nil
 	}

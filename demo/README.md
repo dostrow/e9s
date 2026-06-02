@@ -18,6 +18,7 @@ OpenTofu/Terraform configuration and VHS recording script for creating demo cont
 | DynamoDB | `orders` table with 8 sample items, `users` table |
 | SQS | Standard queue with DLQ, FIFO notification queue |
 | CodeBuild | Project pointed at the e9s repo |
+| RDS | Not included, point at an existing RDS instance or Aurora cluster |
 
 ### Deploy
 
