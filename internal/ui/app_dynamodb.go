@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -148,14 +148,14 @@ func (a App) promptDynamoFilterOp() (App, tea.Cmd) {
 func (a App) handleDynamoFilterOp(value string) (App, tea.Cmd) {
 	// Extract operator from display string
 	ops := map[string]string{
-		"= (equals)":          "=",
-		"<> (not equals)":     "<>",
-		"< (less than)":       "<",
-		"<= (less or equal)":  "<=",
-		"> (greater than)":    ">",
+		"= (equals)":            "=",
+		"<> (not equals)":       "<>",
+		"< (less than)":         "<",
+		"<= (less or equal)":    "<=",
+		"> (greater than)":      ">",
 		">= (greater or equal)": ">=",
-		"begins_with":         "begins_with",
-		"contains":            "contains",
+		"begins_with":           "begins_with",
+		"contains":              "contains",
 	}
 	a.dynamoFilterOp = ops[value]
 	if a.dynamoFilterOp == "" {
@@ -349,7 +349,8 @@ func (a App) doDynamoFieldEdit() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		err = client.UpdateDynamoField(context.Background(), tableName, keyAV, fieldName, newValue)
+		originalValue := (*item)[fieldName]
+		err = client.UpdateDynamoField(context.Background(), tableName, keyAV, fieldName, originalValue, newValue)
 		if err != nil {
 			return dynamoWriteDoneMsg{err: err}
 		}

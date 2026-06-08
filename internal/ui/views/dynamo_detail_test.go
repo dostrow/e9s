@@ -1,6 +1,7 @@
 package views
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -121,6 +122,26 @@ func TestBuildFieldEntries_LongValue(t *testing.T) {
 	// Long value should have key on own line + value on next line = 2
 	if len(fields[0].lines) < 2 {
 		t.Errorf("Expected at least 2 lines for long value, got %d", len(fields[0].lines))
+	}
+}
+
+func TestSelectedField_MapValueIsEditableJSON(t *testing.T) {
+	item := aws.DynamoItem{"config": map[string]interface{}{"key": "val"}}
+	model := NewDynamoItemDetail("table", nil, &item)
+
+	field, value, isKey := model.SelectedField()
+	if field != "config" {
+		t.Fatalf("field = %q, want config", field)
+	}
+	if isKey {
+		t.Fatal("config should not be a key")
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
+		t.Fatalf("selected value is not editable JSON: %v\n%s", err, value)
+	}
+	if decoded["key"] != "val" {
+		t.Errorf("key = %v, want %q", decoded["key"], "val")
 	}
 }
 

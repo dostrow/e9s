@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -273,9 +276,11 @@ func (c *Client) GetDynamoItem(ctx context.Context, tableName string, keyAV map[
 }
 
 // UpdateDynamoField updates a single attribute on an item identified by its key.
-func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyItem map[string]dbtypes.AttributeValue, attrName, newValue string) error {
-	// Try to detect the value type and build the appropriate AttributeValue
-	av := inferAttributeValue(newValue)
+func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyItem map[string]dbtypes.AttributeValue, attrName string, originalValue any, newValue string) error {
+	av, err := editedDynamoValueAttributeValue(originalValue, newValue)
+	if err != nil {
+		return err
+	}
 
 	expr := "SET #attr = :val"
 	input := &dynamodb.UpdateItemInput{
@@ -290,7 +295,7 @@ func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyIte
 		},
 	}
 
-	_, err := c.DynamoDB.UpdateItem(ctx, input)
+	_, err = c.DynamoDB.UpdateItem(ctx, input)
 	return err
 }
 
@@ -327,6 +332,101 @@ func ParseDynamoItemFromJSON(jsonStr string) (DynamoItem, error) {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	return item, nil
+}
+
+// DynamoValueToEditableString formats a single attribute value for editing.
+// Strings are left raw; structured and scalar non-string values use JSON so
+// they can be parsed back without losing their DynamoDB type.
+func DynamoValueToEditableString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err == nil {
+		return string(b)
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func editedDynamoValueAttributeValue(original any, edited string) (dbtypes.AttributeValue, error) {
+	if _, ok := original.(string); ok {
+		return &dbtypes.AttributeValueMemberS{Value: edited}, nil
+	}
+	if _, ok := original.(bool); ok {
+		trimmed := strings.TrimSpace(edited)
+		if trimmed != "true" && trimmed != "false" {
+			return nil, fmt.Errorf("invalid bool value %q", edited)
+		}
+		return &dbtypes.AttributeValueMemberBOOL{Value: trimmed == "true"}, nil
+	}
+	if isNumericValue(original) {
+		number, err := validateDynamoNumber(edited)
+		if err != nil {
+			return nil, err
+		}
+		return &dbtypes.AttributeValueMemberN{Value: number}, nil
+	}
+
+	value, err := parseEditedDynamoValue(original, edited)
+	if err != nil {
+		return nil, err
+	}
+	av, err := attributevalue.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal edited value: %w", err)
+	}
+	return av, nil
+}
+
+func parseEditedDynamoValue(original any, edited string) (any, error) {
+	if original == nil {
+		var value any
+		if err := json.Unmarshal([]byte(edited), &value); err != nil {
+			return nil, fmt.Errorf("parse edited value as JSON: %w", err)
+		}
+		return value, nil
+	}
+
+	t := reflect.TypeOf(original)
+	switch t.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct:
+		value := reflect.New(t)
+		if err := json.Unmarshal([]byte(edited), value.Interface()); err != nil {
+			return nil, fmt.Errorf("parse edited value as JSON: %w", err)
+		}
+		return value.Elem().Interface(), nil
+	}
+
+	return edited, nil
+}
+
+func isNumericValue(v any) bool {
+	if _, ok := v.(json.Number); ok {
+		return true
+	}
+	if v == nil {
+		return false
+	}
+	switch reflect.TypeOf(v).Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateDynamoNumber(s string) (string, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", fmt.Errorf("invalid number value %q", s)
+	}
+	f, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return "", fmt.Errorf("invalid number value %q", s)
+	}
+	return trimmed, nil
 }
 
 // inferAttributeValue tries to detect the type of a string value and

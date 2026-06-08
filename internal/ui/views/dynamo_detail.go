@@ -14,10 +14,10 @@ import (
 
 // DynamoEditFieldMsg is emitted when the user wants to edit a field.
 type DynamoEditFieldMsg struct {
-	TableName string
-	Item      *aws.DynamoItem
-	KeyNames  []string
-	FieldName string
+	TableName  string
+	Item       *aws.DynamoItem
+	KeyNames   []string
+	FieldName  string
 	FieldValue string
 	IsKeyField bool
 }
@@ -30,9 +30,9 @@ type DynamoCloneItemMsg struct {
 }
 
 type fieldEntry struct {
-	key      string
-	lines    []string // rendered lines for this field
-	isKey    bool     // is a key attribute (read-only for edit)
+	key   string
+	lines []string // rendered lines for this field
+	isKey bool     // is a key attribute (read-only for edit)
 }
 
 // DynamoItemDetailModel displays a single DynamoDB item with field-level cursor.
@@ -229,14 +229,14 @@ func (m DynamoItemDetailModel) SelectedField() (string, string, bool) {
 	f := m.fields[m.cursor]
 	val := ""
 	if m.item != nil {
-		val = formatDetailValue((*m.item)[f.key])
+		val = aws.DynamoValueToEditableString((*m.item)[f.key])
 	}
 	return f.key, val, f.isKey
 }
 
-func (m DynamoItemDetailModel) Item() *aws.DynamoItem   { return m.item }
-func (m DynamoItemDetailModel) TableName() string        { return m.tableName }
-func (m DynamoItemDetailModel) KeyNames() []string       { return m.keyNames }
+func (m DynamoItemDetailModel) Item() *aws.DynamoItem { return m.item }
+func (m DynamoItemDetailModel) TableName() string     { return m.tableName }
+func (m DynamoItemDetailModel) KeyNames() []string    { return m.keyNames }
 
 func (m DynamoItemDetailModel) visibleLines() int {
 	h := m.height - 6
