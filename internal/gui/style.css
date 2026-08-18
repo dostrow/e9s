@@ -8,6 +8,8 @@
 }
 
 .breadcrumb-frame {
+  /* Give changing text an opaque, theme-owned surface so old glyph damage is cleared. */
+  background-color: @theme_bg_color;
   padding: 1px 0;
 }
 
