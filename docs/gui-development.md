@@ -113,6 +113,12 @@ memory than a cached rebuild.
 9. Place the pointer over each pane and use Ctrl+mouse-wheel to confirm the
    browser and workspace zoom independently. Confirm Ctrl++/Ctrl+- affect the
    focused or most recently pointed-to pane and Ctrl+0 resets it.
+10. Switch between Clusters and Task Defs in the module rail and confirm the
+    browser and workspace both change immediately.
+11. Enter Standalone from both a service list and a service task list; confirm
+    the header toggle returns to the corresponding service view.
+12. Open logs, then use the header Back button or select another browser item;
+    confirm log polling stops and the workspace shows the new context.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

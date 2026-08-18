@@ -105,22 +105,12 @@ func (w *mainWindow) openTaskDefinitions() {
 	if w.currentPage == pageTaskDefinitions {
 		return
 	}
-	w.taskDefinitionReturnPage = w.currentPage
-	if w.showingTerminal {
-		w.closeTerminalNow(false)
-	}
-	if w.logCancel != nil && w.showingLogs {
-		w.logCancel()
-		w.logGeneration++
-	}
-	w.showingLogs = false
-	w.showingMetrics = false
-	w.showingEditor = false
+	w.resetWorkspaceForBrowserChange()
 	w.currentPage = pageTaskDefinitions
 	w.selectedTaskDefinition = nil
 	w.updateActionSensitivity()
 	w.breadcrumb.SetLabel("ECS / Task definitions")
-	w.backButton.SetSensitive(true)
+	w.backButton.SetSensitive(false)
 	w.search.SetPlaceholderText("Filter task definitions…")
 	w.search.SetText("")
 	w.resourceStack.SetVisibleChildName(pageTaskDefinitions)
@@ -171,6 +161,22 @@ func (w *mainWindow) openTaskDefinitionAt(position uint) {
 		return
 	}
 	ref := w.filteredTaskDefinitions[position]
+	if w.selectedTaskDefinition != nil && w.selectedTaskDefinition.ARN == ref.ARN {
+		return
+	}
+	if w.showingEditor {
+		w.closeTaskDefinitionEditorThen(func() { w.openTaskDefinition(ref) })
+		return
+	}
+	w.openTaskDefinition(ref)
+}
+
+func (w *mainWindow) openTaskDefinition(ref model.TaskDefRef) {
+	w.resetWorkspaceForBrowserChange()
+	w.selectedTaskDefinition = nil
+	w.setTaskDefinitionControls(false)
+	w.taskDefinitionBuffer.SetText("Loading " + ref.Family + ":" + fmt.Sprint(ref.Revision) + "…")
+	w.detailStack.SetVisibleChildName("task-definition")
 	ctx, generation := w.startRequest("Loading " + ref.Family + ":" + fmt.Sprint(ref.Revision) + "…")
 	go func() {
 		definition, err := w.options.ECS.GetTaskDefinition(ctx, ref.ARN)
@@ -467,11 +473,21 @@ func definitionRevision(definition *model.TaskDefSummary) int {
 }
 
 func (w *mainWindow) closeTaskDefinitionEditor() {
+	w.closeTaskDefinitionEditorThen(nil)
+}
+
+func (w *mainWindow) closeTaskDefinitionEditorThen(after func()) {
 	if !w.showingEditor {
+		if after != nil {
+			after()
+		}
 		return
 	}
 	if !w.editorDirty {
 		w.closeTaskDefinitionEditorNow()
+		if after != nil {
+			after()
+		}
 		return
 	}
 	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
@@ -482,6 +498,9 @@ func (w *mainWindow) closeTaskDefinitionEditor() {
 		dialog.Destroy()
 		if response == int(gtk.ResponseYes) {
 			w.closeTaskDefinitionEditorNow()
+			if after != nil {
+				after()
+			}
 		}
 	})
 	dialog.Present()
@@ -535,49 +554,4 @@ func findTaskDefinition(definitions []model.TaskDefRef, arn string) (model.TaskD
 		}
 	}
 	return model.TaskDefRef{}, false
-}
-
-func (w *mainWindow) restoreTaskDefinitionReturnPage() {
-	returnPage := w.taskDefinitionReturnPage
-	w.selectedTaskDefinition = nil
-	w.showingEditor = false
-	w.detailStack.SetVisibleChildName("detail")
-	w.search.SetText("")
-	switch returnPage {
-	case pageTasks:
-		w.currentPage = pageTasks
-		w.resourceStack.SetVisibleChildName(pageTasks)
-		w.search.SetPlaceholderText("Filter tasks…")
-		w.applyTaskFilter()
-		if w.selectedTask != "" {
-			if task, found := findTask(w.allTasks, w.selectedTask); found {
-				w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + w.selectedService + " / " + shortID(task.TaskID))
-			} else {
-				w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + w.selectedService)
-			}
-		} else {
-			w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + w.selectedService)
-		}
-	case pageStandaloneTasks:
-		w.currentPage = pageStandaloneTasks
-		w.resourceStack.SetVisibleChildName(pageTasks)
-		w.search.SetPlaceholderText("Filter standalone tasks…")
-		w.applyTaskFilter()
-		w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / Standalone tasks")
-	case pageServices:
-		w.currentPage = pageServices
-		w.resourceStack.SetVisibleChildName(pageServices)
-		w.search.SetPlaceholderText("Filter services…")
-		w.applyServiceFilter()
-		w.breadcrumb.SetLabel("ECS / " + w.selectedCluster)
-	default:
-		w.currentPage = pageClusters
-		w.resourceStack.SetVisibleChildName(pageClusters)
-		w.search.SetPlaceholderText("Filter clusters…")
-		w.applyClusterFilter()
-		w.breadcrumb.SetLabel("ECS / Clusters")
-		w.backButton.SetSensitive(false)
-	}
-	w.updateActionSensitivity()
-	w.setStatus("Ready", false)
 }
