@@ -150,6 +150,21 @@ func (m TaskDefsModel) SelectedTaskDef() *aws.TaskDefRef {
 	return &td
 }
 
+func (m TaskDefsModel) PreviousRevision(family string, revision int) *aws.TaskDefRef {
+	var previous *aws.TaskDefRef
+	for i := range m.defs {
+		candidate := m.defs[i]
+		if candidate.Family != family || candidate.Revision >= revision {
+			continue
+		}
+		if previous == nil || candidate.Revision > previous.Revision {
+			copy := candidate
+			previous = &copy
+		}
+	}
+	return previous
+}
+
 func (m TaskDefsModel) IsFiltering() bool {
 	return m.filtering
 }

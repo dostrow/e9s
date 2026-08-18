@@ -1,6 +1,7 @@
 package views
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dostrow/e9s/internal/aws"
@@ -19,6 +20,41 @@ func TestNewEnvVarsSortsAlphabeticallyByName(t *testing.T) {
 	}
 	if filtered[0].Name != "A_VAR" || filtered[1].Name != "M_VAR" || filtered[2].Name != "Z_VAR" {
 		t.Fatalf("env vars not sorted alphabetically: %#v", filtered)
+	}
+}
+
+func TestEnvVarsHideSecretValuesUntilResolved(t *testing.T) {
+	vars := []aws.EnvVar{
+		{
+			Name:          "API_TOKEN",
+			Value:         "arn:aws:secretsmanager:us-east-1:123456789012:secret:api-token",
+			ResolvedValue: "super-secret-value",
+			Source:        "secrets-manager",
+		},
+	}
+
+	unresolved := NewEnvVars("test", vars)
+	unresolvedView := unresolved.View()
+	if !unresolved.HasSecrets() {
+		t.Fatal("expected secret-backed environment variable to be detected")
+	}
+	if unresolved.SecretsResolved() {
+		t.Fatal("expected secrets to be unresolved by default")
+	}
+	if !strings.Contains(unresolvedView, vars[0].Value) {
+		t.Fatal("expected unresolved view to show the secret reference")
+	}
+	if strings.Contains(unresolvedView, vars[0].ResolvedValue) {
+		t.Fatal("unresolved view exposed the secret value")
+	}
+
+	resolved := NewEnvVars("test", vars, true)
+	resolvedView := resolved.View()
+	if !resolved.SecretsResolved() {
+		t.Fatal("expected resolved view to report revealed secrets")
+	}
+	if !strings.Contains(resolvedView, vars[0].ResolvedValue) {
+		t.Fatal("expected resolved view to show the secret value")
 	}
 }
 

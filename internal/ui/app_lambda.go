@@ -111,8 +111,10 @@ func (a App) showLambdaEnvVars() (App, tea.Cmd) {
 	return a, func() tea.Msg {
 		resolved := client.ResolveEnvVars(context.Background(), fn.EnvVars)
 		return envVarsReadyMsg{
-			title:   fmt.Sprintf("λ %s", fn.Name),
-			envVars: resolved,
+			title:       fmt.Sprintf("λ %s", fn.Name),
+			envVars:     resolved,
+			resolved:    true,
+			returnState: viewLambdaDetail,
 		}
 	}
 }

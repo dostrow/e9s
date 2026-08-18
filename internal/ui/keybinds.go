@@ -27,6 +27,9 @@ type KeyBindings struct {
 	TaskScope       string
 	LoadMore        string
 	RunTask         string
+	TaskDefDiff     string
+	TaskDefEdit     string
+	RevealSecrets   string
 
 	// Log viewer
 	LogFollow     string
@@ -135,6 +138,9 @@ func NewKeyBindings() KeyBindings {
 		TaskScope:       "tab",
 		LoadMore:        "]",
 		RunTask:         "a",
+		TaskDefDiff:     "d",
+		TaskDefEdit:     "e",
+		RevealSecrets:   "v",
 
 		// Log viewer
 		LogFollow:     "f",
@@ -268,6 +274,12 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.LoadMore = key
 		case "run_task":
 			kb.RunTask = key
+		case "task_definition_diff":
+			kb.TaskDefDiff = key
+		case "task_definition_edit":
+			kb.TaskDefEdit = key
+		case "reveal_secrets":
+			kb.RevealSecrets = key
 
 		// Log viewer
 		case "log_follow":

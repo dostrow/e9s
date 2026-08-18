@@ -60,9 +60,15 @@ type taskDefDiffReadyMsg struct {
 	diff  string
 }
 type envVarsReadyMsg struct {
-	title   string
-	envVars []e9saws.EnvVar
+	title          string
+	envVars        []e9saws.EnvVar
+	taskDefinition string
+	container      string
+	resolved       bool
+	returnState    viewState
 }
+type taskDefinitionEditedMsg struct{ document string }
+type taskDefinitionRegisteredMsg struct{ definition *e9saws.TaskDefSummary }
 type metricsLoadedMsg struct {
 	metrics        *e9saws.ServiceMetrics
 	alarms         []e9saws.AlarmState

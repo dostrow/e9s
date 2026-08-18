@@ -321,6 +321,7 @@ func (a App) showTaskDefDiff() (App, tea.Cmd) {
 	deps := a.selectedService.Deployments
 	oldTD := deps[1].TaskDefinition
 	newTD := deps[0].TaskDefinition
+	a.diffReturnState = viewServiceDetail
 
 	return a, func() tea.Msg {
 		diff, err := a.ecs.TaskDefinitionDiff(a.ctx, oldTD, newTD)
@@ -331,6 +332,88 @@ func (a App) showTaskDefDiff() (App, tea.Cmd) {
 			title: fmt.Sprintf("%s → %s", oldTD, newTD),
 			diff:  diff,
 		}
+	}
+}
+
+func (a App) showSelectedTaskDefDiff() (App, tea.Cmd) {
+	definition := a.taskDefDetailView.TaskDef()
+	if definition == nil {
+		return a, nil
+	}
+	previous := a.taskDefsView.PreviousRevision(definition.Family, definition.Revision)
+	if previous == nil {
+		a.err = fmt.Errorf("no earlier active revision is available for %s:%d", definition.Family, definition.Revision)
+		return a, nil
+	}
+	a.diffReturnState = viewTaskDefDetail
+	oldRef, newRef := previous.ARN, definition.ARN
+	return a, func() tea.Msg {
+		diff, err := a.ecs.TaskDefinitionDiff(a.ctx, oldRef, newRef)
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskDefDiffReadyMsg{
+			title: fmt.Sprintf("%s:%d → %s:%d", previous.Family, previous.Revision, definition.Family, definition.Revision),
+			diff:  diff,
+		}
+	}
+}
+
+func (a App) editSelectedTaskDefinition() (App, tea.Cmd) {
+	definition := a.taskDefDetailView.TaskDef()
+	if definition == nil {
+		return a, nil
+	}
+	document, err := a.ecs.TaskDefinitionEditorDocument(definition.RawJSON)
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	file, err := os.CreateTemp("", "e9s-task-definition-*.json")
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	path := file.Name()
+	if _, err = file.WriteString(document); err != nil {
+		file.Close()
+		os.Remove(path)
+		a.err = err
+		return a, nil
+	}
+	if err = file.Close(); err != nil {
+		os.Remove(path)
+		a.err = err
+		return a, nil
+	}
+
+	editor := NewEditorCmd(path)
+	ecs := a.ecs
+	return a, tea.Exec(editor, func(editorErr error) tea.Msg {
+		defer os.Remove(path)
+		if editorErr != nil {
+			return errMsg{editorErr}
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return errMsg{err}
+		}
+		validated, err := ecs.TaskDefinitionEditorDocument(string(raw))
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskDefinitionEditedMsg{document: validated}
+	})
+}
+
+func (a App) registerEditedTaskDefinition() tea.Cmd {
+	document := a.taskDefinitionDocument
+	return func() tea.Msg {
+		definition, err := a.ecs.RegisterTaskDefinitionJSON(a.ctx, document)
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskDefinitionRegisteredMsg{definition: definition}
 	}
 }
 
@@ -563,14 +646,18 @@ func (a App) showEnvVars() (App, tea.Cmd) {
 
 func (a App) doShowEnvVars(containerName string) tea.Cmd {
 	t := a.selectedTask
+	returnState := a.state
 	return func() tea.Msg {
-		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, t.TaskDefinition, containerName, true)
+		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, t.TaskDefinition, containerName, false)
 		if err != nil {
 			return errMsg{err}
 		}
 		return envVarsReadyMsg{
-			title:   fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
-			envVars: environment,
+			title:          fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
+			envVars:        environment,
+			taskDefinition: t.TaskDefinition,
+			container:      containerName,
+			returnState:    returnState,
 		}
 	}
 }
@@ -599,17 +686,49 @@ func (a App) showTaskDefEnvVars() (App, tea.Cmd) {
 
 func (a App) doShowTaskDefEnvVars(containerName string) tea.Cmd {
 	td := a.taskDefDetailView.TaskDef()
+	returnState := a.state
 	return func() tea.Msg {
 		if td == nil {
 			return errMsg{fmt.Errorf("no task definition selected")}
 		}
-		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, td.ARN, containerName, true)
+		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, td.ARN, containerName, false)
 		if err != nil {
 			return errMsg{err}
 		}
 		return envVarsReadyMsg{
-			title:   fmt.Sprintf("%s:%d/%s", td.Family, td.Revision, containerName),
-			envVars: environment,
+			title:          fmt.Sprintf("%s:%d/%s", td.Family, td.Revision, containerName),
+			envVars:        environment,
+			taskDefinition: td.ARN,
+			container:      containerName,
+			returnState:    returnState,
+		}
+	}
+}
+
+func (a App) confirmRevealEnvSecrets() (App, tea.Cmd) {
+	if a.state != viewEnvVars || a.envTaskDefinition == "" || a.envContainer == "" ||
+		a.envSecretsResolved || !a.envVarsView.HasSecrets() {
+		return a, nil
+	}
+	a.confirm = NewConfirm(ConfirmRevealSecrets,
+		fmt.Sprintf("Resolve and display secret values for container %q?", a.envContainer))
+	return a, nil
+}
+
+func (a App) loadResolvedEnvSecrets() tea.Cmd {
+	taskDefinition := a.envTaskDefinition
+	container := a.envContainer
+	title := a.envTitle
+	returnState := a.prevState
+	return func() tea.Msg {
+		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, taskDefinition, container, true)
+		if err != nil {
+			return errMsg{err}
+		}
+		return envVarsReadyMsg{
+			title: title, envVars: environment,
+			taskDefinition: taskDefinition, container: container,
+			resolved: true, returnState: returnState,
 		}
 	}
 }

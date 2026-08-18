@@ -14,18 +14,19 @@ import (
 )
 
 type EnvVarsModel struct {
-	title       string
-	envVars     []aws.EnvVar
-	cursor      int
-	showARNs    bool // false = show resolved values, true = show ARNs
-	filter      string
-	filtering   bool
-	filterInput textinput.Model
-	width       int
-	height      int
+	title           string
+	envVars         []aws.EnvVar
+	cursor          int
+	showReferences  bool
+	secretsResolved bool
+	filter          string
+	filtering       bool
+	filterInput     textinput.Model
+	width           int
+	height          int
 }
 
-func NewEnvVars(title string, envVars []aws.EnvVar) EnvVarsModel {
+func NewEnvVars(title string, envVars []aws.EnvVar, resolved ...bool) EnvVarsModel {
 	sorted := append([]aws.EnvVar(nil), envVars...)
 	slices.SortFunc(sorted, func(a, b aws.EnvVar) int {
 		if a.Name < b.Name {
@@ -37,9 +38,12 @@ func NewEnvVars(title string, envVars []aws.EnvVar) EnvVarsModel {
 		return 0
 	})
 
+	secretsResolved := len(resolved) > 0 && resolved[0]
 	return EnvVarsModel{
-		title:   title,
-		envVars: sorted,
+		title:           title,
+		envVars:         sorted,
+		secretsResolved: secretsResolved,
+		showReferences:  !secretsResolved,
 	}
 }
 
@@ -86,7 +90,9 @@ func (m EnvVarsModel) Update(msg tea.Msg) (EnvVarsModel, tea.Cmd) {
 			m.filterInput.Width = 30
 			return m, m.filterInput.Focus()
 		case msg.String() == "a":
-			m.showARNs = !m.showARNs
+			if m.secretsResolved {
+				m.showReferences = !m.showReferences
+			}
 		}
 	}
 	return m, nil
@@ -101,8 +107,12 @@ func (m EnvVarsModel) View() string {
 	if m.filter != "" {
 		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  filter: %q", m.filter)))
 	}
-	if m.showARNs {
-		b.WriteString(theme.HelpStyle.Render("  [showing ARNs]"))
+	if m.HasSecrets() {
+		if m.showReferences {
+			b.WriteString(theme.HelpStyle.Render("  [showing secret references]"))
+		} else {
+			b.WriteString(theme.ErrorStyle.Render("  [secret values revealed]"))
+		}
 	}
 	b.WriteString("\n")
 
@@ -169,13 +179,26 @@ func (m EnvVarsModel) displayValue(ev aws.EnvVar) string {
 		// Plain env var — always show value
 		return ev.Value
 	}
-	if m.showARNs {
+	if m.showReferences {
 		return ev.Value // the ARN
 	}
 	if ev.ResolvedValue != "" {
 		return ev.ResolvedValue
 	}
 	return ev.Value // fallback to ARN if resolve failed
+}
+
+func (m EnvVarsModel) HasSecrets() bool {
+	for _, variable := range m.envVars {
+		if variable.Source != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m EnvVarsModel) SecretsResolved() bool {
+	return m.secretsResolved
 }
 
 func (m EnvVarsModel) filteredVars() []aws.EnvVar {

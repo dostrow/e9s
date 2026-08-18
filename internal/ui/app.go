@@ -157,64 +157,70 @@ type App struct {
 	regionPicker        views.RegionPickerModel
 
 	// Navigation context
-	selectedCluster       *model.Cluster
-	selectedService       *model.Service
-	selectedTask          *model.Task
-	selectedTaskDef       string
-	taskScopeStopped      bool
-	taskNextToken         string
-	metricsReturnState    viewState
-	metricsTaskScope      bool
-	metricsServiceName    string
-	execContainerName     string
-	scaleInCluster        string
-	scaleInService        string
-	scaleInCurrentState   bool
-	logSearchGroup        string
-	logSearchGroups       []string // multi-group search
-	logSearchStreams      []string
-	logSearchStartMs      int64
-	logSearchEndMs        int64
-	logSearchFilter       string // quoted/processed filter pattern for CW API
-	logCorrelationActive  bool
-	logCorrelationTS      int64
-	logCorrelationPattern string
-	logCorrelationGroups  []string
-	logCorrelationStreams []string
-	logSaveGroup          string
-	logSaveStream         string
-	ssmEditName           string
-	ssmEditValue          string
-	smEditName            string
-	smEditValue           string
-	smCloneName           string
-	smCloneValue          string
-	s3DownloadBucket      string
-	s3DownloadKey         string
-	s3DownloadIsPrefix    bool
-	dynamoKeyNames        []string
-	dynamoLastKey         any // stores map[string]dbtypes.AttributeValue for pagination
-	dynamoFilterAttr      string
-	dynamoFilterOp        string
-	dynamoFilterExpr      bool
-	dynamoLastPartiQL     string
-	sqsSendQueueURL       string
-	sqsSendTemplate       *e9saws.SQSSendTemplate
-	cbTriggerProject      string
-	pathInput             *PathInput
-	runTaskForm           RunTaskFormModel
-	tofuDir               string
-	tofuPlanFile          string
-	r53EditZoneID         string
-	r53EditRecord         *e9saws.R53Record
-	r53EditOriginal       *e9saws.R53Record
-	lambdaEditDir         string
-	lambdaEditFunc        string
-	lambdaEditZip         []byte
-	dynamoEditField       string
-	dynamoEditValue       string
-	dynamoEditItem        *e9saws.DynamoItem
-	dynamoCloneItem       *e9saws.DynamoItem
+	selectedCluster        *model.Cluster
+	selectedService        *model.Service
+	selectedTask           *model.Task
+	selectedTaskDef        string
+	taskScopeStopped       bool
+	taskNextToken          string
+	metricsReturnState     viewState
+	metricsTaskScope       bool
+	metricsServiceName     string
+	diffReturnState        viewState
+	envTaskDefinition      string
+	envContainer           string
+	envTitle               string
+	envSecretsResolved     bool
+	taskDefinitionDocument string
+	execContainerName      string
+	scaleInCluster         string
+	scaleInService         string
+	scaleInCurrentState    bool
+	logSearchGroup         string
+	logSearchGroups        []string // multi-group search
+	logSearchStreams       []string
+	logSearchStartMs       int64
+	logSearchEndMs         int64
+	logSearchFilter        string // quoted/processed filter pattern for CW API
+	logCorrelationActive   bool
+	logCorrelationTS       int64
+	logCorrelationPattern  string
+	logCorrelationGroups   []string
+	logCorrelationStreams  []string
+	logSaveGroup           string
+	logSaveStream          string
+	ssmEditName            string
+	ssmEditValue           string
+	smEditName             string
+	smEditValue            string
+	smCloneName            string
+	smCloneValue           string
+	s3DownloadBucket       string
+	s3DownloadKey          string
+	s3DownloadIsPrefix     bool
+	dynamoKeyNames         []string
+	dynamoLastKey          any // stores map[string]dbtypes.AttributeValue for pagination
+	dynamoFilterAttr       string
+	dynamoFilterOp         string
+	dynamoFilterExpr       bool
+	dynamoLastPartiQL      string
+	sqsSendQueueURL        string
+	sqsSendTemplate        *e9saws.SQSSendTemplate
+	cbTriggerProject       string
+	pathInput              *PathInput
+	runTaskForm            RunTaskFormModel
+	tofuDir                string
+	tofuPlanFile           string
+	r53EditZoneID          string
+	r53EditRecord          *e9saws.R53Record
+	r53EditOriginal        *e9saws.R53Record
+	lambdaEditDir          string
+	lambdaEditFunc         string
+	lambdaEditZip          []byte
+	dynamoEditField        string
+	dynamoEditValue        string
+	dynamoEditItem         *e9saws.DynamoItem
+	dynamoCloneItem        *e9saws.DynamoItem
 
 	// Modal dialogs
 	confirm      ConfirmModel
@@ -710,8 +716,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- ECS detail messages ---
 	case envVarsReadyMsg:
+		a.prevState = msg.returnState
+		a.envTaskDefinition = msg.taskDefinition
+		a.envContainer = msg.container
+		a.envTitle = msg.title
+		a.envSecretsResolved = msg.resolved
 		a.state = viewEnvVars
-		a.envVarsView = views.NewEnvVars(msg.title, msg.envVars)
+		a.envVarsView = views.NewEnvVars(msg.title, msg.envVars, msg.resolved)
 		a.envVarsView = a.envVarsView.SetSize(a.width, a.height-3)
 		return a, nil
 
@@ -720,6 +731,31 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.diffView = views.NewTaskDefDiff(msg.title, msg.diff)
 		a.diffView = a.diffView.SetSize(a.width, a.height-3)
 		return a, nil
+
+	case taskDefinitionEditedMsg:
+		a.taskDefinitionDocument = msg.document
+		definition := a.taskDefDetailView.TaskDef()
+		name := "this task definition"
+		if definition != nil {
+			name = fmt.Sprintf("%s:%d", definition.Family, definition.Revision)
+		}
+		a.confirm = NewConfirm(ConfirmRegisterTaskDefinition,
+			"Register a new revision from the edited JSON for "+name+"?")
+		return a, nil
+
+	case taskDefinitionRegisteredMsg:
+		a.loading = false
+		a.taskDefinitionDocument = ""
+		if msg.definition == nil {
+			a.err = fmt.Errorf("task definition registration returned no definition")
+			return a, nil
+		}
+		a.state = viewTaskDefDetail
+		a.selectedTaskDef = fmt.Sprintf("%s:%d", msg.definition.Family, msg.definition.Revision)
+		a.taskDefDetailView = views.NewTaskDefDetail(msg.definition).SetSize(a.width, a.height-3)
+		a.flashMessage = fmt.Sprintf("Registered %s:%d", msg.definition.Family, msg.definition.Revision)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, a.loadTaskDefinitions()
 
 	case metricsLoadedMsg:
 		a.metricsView = a.metricsView.SetMetrics(msg.metrics)
@@ -1214,6 +1250,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Dialog results ---
 	case ConfirmResultMsg:
 		if !msg.Confirmed {
+			if msg.Action == ConfirmRegisterTaskDefinition {
+				a.taskDefinitionDocument = ""
+			}
 			return a, nil
 		}
 		switch msg.Action {
@@ -1223,6 +1262,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStopTask()
 		case ConfirmScaleInToggle:
 			return a, a.doToggleScaleIn()
+		case ConfirmRevealSecrets:
+			a.loading = true
+			return a, a.loadResolvedEnvSecrets()
+		case ConfirmRegisterTaskDefinition:
+			a.loading = true
+			return a, a.registerEditedTaskDefinition()
 		case ConfirmSSMUpdate:
 			return a, a.doSSMUpdate()
 		case ConfirmSMClone:
@@ -1647,6 +1692,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case a.kb.EnvVars:
 				return a.showTaskDefEnvVars()
+			case a.kb.TaskDefDiff:
+				return a.showSelectedTaskDefDiff()
+			case a.kb.TaskDefEdit:
+				return a.editSelectedTaskDefinition()
 			}
 		case viewTaskDefs:
 			switch k {
@@ -1686,12 +1735,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewServiceDetail:
 			switch k {
-			case a.kb.Download:
+			case a.kb.TaskDefDiff:
 				return a.showTaskDefDiff()
 			}
 		case viewMetrics:
 			if k == a.kb.ToggleScaleIn {
 				return a.toggleScaleIn()
+			}
+		case viewEnvVars:
+			if k == a.kb.RevealSecrets {
+				return a.confirmRevealEnvSecrets()
 			}
 		case viewSSM:
 			switch k {
@@ -2480,13 +2533,15 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"tab", "Switch Summary/JSON"},
 			{kb.EnvVars, "View environment variables"},
+			{kb.TaskDefDiff, "Diff against previous active revision"},
+			{kb.TaskDefEdit, "Edit in $EDITOR and register revision"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewServiceDetail:
 		context = []kv{
 			{"tab", "Switch between Deployments and Events"},
-			{kb.Download, "Task definition diff"},
+			{kb.TaskDefDiff, "Task definition deployment diff"},
 			{"j/k", "Scroll"},
 		}
 	case viewLogs:
@@ -2631,8 +2686,12 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"g/G", "Top/bottom"},
 		}
 	case viewEnvVars:
-		context = []kv{
-			{"a", "Toggle ARN/resolved values"},
+		if a.envVarsView.HasSecrets() {
+			if a.envVarsView.SecretsResolved() {
+				context = []kv{{"a", "Toggle secret references/values"}}
+			} else {
+				context = []kv{{kb.RevealSecrets, "Resolve and reveal secret values"}}
+			}
 		}
 	case viewLogGroups:
 		context = []kv{
@@ -3109,7 +3168,7 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewServices
 		return a, nil
 	case viewTaskDefDiff:
-		a.state = viewServiceDetail
+		a.state = a.diffReturnState
 		return a, nil
 	case viewMetrics:
 		a.state = a.metricsReturnState
