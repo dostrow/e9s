@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/diamondburned/gotk4/pkg/pangocairo"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -346,7 +347,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	sidebar := gtk.NewBox(gtk.OrientationVertical, 6)
 	sidebar.AddCSSClass("mode-sidebar")
-	sidebar.SetSizeRequest(150, -1)
+	sidebar.SetSizeRequest(175, -1)
 	modules := gtk.NewLabel("MODULES")
 	modules.SetXAlign(0)
 	modules.AddCSSClass("section-title")
@@ -513,9 +514,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebarScroll.SetChild(sidebar)
 	mainSplit.SetStartChild(sidebarScroll)
 	mainSplit.SetEndChild(contentSplit)
-	mainSplit.SetPosition(165)
+	mainSplit.SetPosition(190)
 	mainSplit.SetResizeStartChild(false)
 	mainSplit.SetResizeEndChild(true)
+	mainSplit.SetShrinkStartChild(false)
 
 	w.spinner = gtk.NewSpinner()
 	w.status = gtk.NewLabel("Ready")
@@ -540,6 +542,11 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 func newModuleRailButton(label string, activate func()) *gtk.ToggleButton {
 	text := gtk.NewLabel(label)
 	text.SetXAlign(0)
+	text.SetHAlign(gtk.AlignFill)
+	text.SetHExpand(true)
+	text.SetWidthChars(1)
+	text.SetMaxWidthChars(18)
+	text.SetEllipsize(pango.EllipsizeEnd)
 	button := gtk.NewToggleButton()
 	button.SetChild(text)
 	button.SetHAlign(gtk.AlignFill)
