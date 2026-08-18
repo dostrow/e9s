@@ -15,13 +15,22 @@ type fakeFilterLogEventsAPI struct {
 }
 
 type fakeGetLogEventsAPI struct {
-	out   *cloudwatchlogs.GetLogEventsOutput
-	input *cloudwatchlogs.GetLogEventsInput
+	outputs []*cloudwatchlogs.GetLogEventsOutput
+	inputs  []*cloudwatchlogs.GetLogEventsInput
 }
 
 func (f *fakeGetLogEventsAPI) GetLogEvents(_ context.Context, input *cloudwatchlogs.GetLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error) {
-	f.input = input
-	return f.out, nil
+	cloned := *input
+	if input.NextToken != nil {
+		cloned.NextToken = strPtrLogs(*input.NextToken)
+	}
+	f.inputs = append(f.inputs, &cloned)
+	if len(f.outputs) == 0 {
+		return &cloudwatchlogs.GetLogEventsOutput{}, nil
+	}
+	out := f.outputs[0]
+	f.outputs = f.outputs[1:]
+	return out, nil
 }
 
 func (f *fakeFilterLogEventsAPI) FilterLogEvents(_ context.Context, input *cloudwatchlogs.FilterLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error) {
@@ -131,28 +140,45 @@ func TestTailLogsKeepsNewestEntriesWhenWindowExceedsLimit(t *testing.T) {
 	}
 }
 
-func TestNewestStreamLogsStartsAtEnd(t *testing.T) {
+func TestNewestStreamLogsWalksBackwardAcrossPartialAndEmptyPages(t *testing.T) {
 	api := &fakeGetLogEventsAPI{
-		out: &cloudwatchlogs.GetLogEventsOutput{Events: []cwltypes.OutputLogEvent{
-			{Timestamp: int64PtrLogs(1002), Message: strPtrLogs("newest")},
-			{Timestamp: int64PtrLogs(1001), Message: strPtrLogs("older")},
-		}},
+		outputs: []*cloudwatchlogs.GetLogEventsOutput{
+			{NextBackwardToken: strPtrLogs("back-1")},
+			{
+				Events: []cwltypes.OutputLogEvent{
+					{Timestamp: int64PtrLogs(1002), Message: strPtrLogs("newer")},
+					{Timestamp: int64PtrLogs(1003), Message: strPtrLogs("newest")},
+				},
+				NextBackwardToken: strPtrLogs("back-2"),
+			},
+			{Events: []cwltypes.OutputLogEvent{
+				{Timestamp: int64PtrLogs(1000), Message: strPtrLogs("oldest")},
+				{Timestamp: int64PtrLogs(1001), Message: strPtrLogs("older")},
+			}},
+		},
 	}
 
-	entries, lastTS, err := newestStreamLogs(context.Background(), api, "group", "stream", 10)
+	entries, lastTS, err := newestStreamLogs(context.Background(), api, "group", "stream", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if api.input == nil || api.input.StartFromHead == nil || *api.input.StartFromHead {
-		t.Fatalf("StartFromHead = %v, want false", api.input.StartFromHead)
+	if len(api.inputs) != 3 {
+		t.Fatalf("requests = %d, want 3", len(api.inputs))
 	}
-	if api.input.Limit == nil || *api.input.Limit != 10 {
-		t.Fatalf("Limit = %v, want 10", api.input.Limit)
+	if api.inputs[0].StartFromHead == nil || *api.inputs[0].StartFromHead {
+		t.Fatalf("StartFromHead = %v, want false", api.inputs[0].StartFromHead)
 	}
-	if len(entries) != 2 || entries[0].Message != "older" || entries[1].Message != "newest" {
+	if api.inputs[0].Limit == nil || *api.inputs[0].Limit != 3 {
+		t.Fatalf("Limit = %v, want 3", api.inputs[0].Limit)
+	}
+	if api.inputs[1].NextToken == nil || *api.inputs[1].NextToken != "back-1" ||
+		api.inputs[2].NextToken == nil || *api.inputs[2].NextToken != "back-2" {
+		t.Fatalf("backward tokens = %v, %v", api.inputs[1].NextToken, api.inputs[2].NextToken)
+	}
+	if len(entries) != 3 || entries[0].Message != "older" || entries[1].Message != "newer" || entries[2].Message != "newest" {
 		t.Fatalf("entries = %#v", entries)
 	}
-	if entries[0].Stream != "stream" || lastTS != 1002 {
+	if entries[0].Stream != "stream" || lastTS != 1003 {
 		t.Fatalf("stream = %q, lastTS = %d", entries[0].Stream, lastTS)
 	}
 }

@@ -308,34 +308,58 @@ func newestStreamLogs(ctx context.Context, api getLogEventsAPI, logGroup, logStr
 	}
 	limit = min(limit, 10000)
 	startFromHead := false
-	out, err := api.GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
+	input := &cloudwatchlogs.GetLogEventsInput{
 		LogGroupName:  &logGroup,
 		LogStreamName: &logStream,
 		Limit:         intPtr(int32(limit)),
 		StartFromHead: &startFromHead,
-	})
-	if err != nil {
-		return nil, 0, err
 	}
 
-	entries := make([]LogEntry, 0, len(out.Events))
+	entries := make([]LogEntry, 0, limit)
+	seen := make(map[model.LogEntryKey]struct{}, limit)
+	seenTokens := make(map[string]struct{})
+	for len(entries) < limit {
+		out, err := api.GetLogEvents(ctx, input)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, event := range out.Events {
+			entry := LogEntry{Stream: logStream}
+			if event.Timestamp != nil {
+				entry.Timestamp = *event.Timestamp
+			}
+			if event.Message != nil {
+				entry.Message = *event.Message
+			}
+			if _, exists := seen[entry.Key()]; exists {
+				continue
+			}
+			seen[entry.Key()] = struct{}{}
+			entries = append(entries, entry)
+		}
+		if len(entries) >= limit || out.NextBackwardToken == nil || *out.NextBackwardToken == "" {
+			break
+		}
+		token := *out.NextBackwardToken
+		if _, repeated := seenTokens[token]; repeated {
+			break
+		}
+		seenTokens[token] = struct{}{}
+		input.NextToken = &token
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	if len(entries) > limit {
+		entries = append([]LogEntry(nil), entries[len(entries)-limit:]...)
+	}
 	var lastTS int64
-	for _, event := range out.Events {
-		entry := LogEntry{Stream: logStream}
-		if event.Timestamp != nil {
-			entry.Timestamp = *event.Timestamp
-		}
-		if event.Message != nil {
-			entry.Message = *event.Message
-		}
-		entries = append(entries, entry)
+	for _, entry := range entries {
 		if entry.Timestamp > lastTS {
 			lastTS = entry.Timestamp
 		}
 	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		return entries[i].Timestamp < entries[j].Timestamp
-	})
 	return entries, lastTS, nil
 }
 
