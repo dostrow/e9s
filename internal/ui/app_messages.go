@@ -11,39 +11,57 @@ import (
 // --- ECS Messages ---
 
 type clustersLoadedMsg struct{ clusters []model.Cluster }
-type servicesLoadedMsg struct{ services []model.Service }
+type servicesLoadedMsg struct {
+	cluster  string
+	services []model.Service
+}
 type tasksLoadedMsg struct {
+	cluster   string
+	service   string
 	tasks     []model.Task
 	stopped   bool
 	append    bool
 	nextToken string
 }
 type standaloneTasksLoadedMsg struct {
+	cluster   string
 	tasks     []model.Task
 	stopped   bool
 	append    bool
 	nextToken string
 }
-type taskDetailRefreshedMsg struct{ task *model.Task }
+type taskDetailRefreshedMsg struct {
+	taskARN string
+	task    *model.Task
+}
 type taskDefsLoadedMsg struct{ defs []e9saws.TaskDefRef }
-type taskDefLoadedMsg struct{ def *e9saws.TaskDefSummary }
+type taskDefLoadedMsg struct {
+	taskDefinition string
+	def            *e9saws.TaskDefSummary
+}
 type errMsg struct{ err error }
 type tickMsg time.Time
 type actionSuccessMsg struct{ message string }
 type runTaskStartedMsg struct {
 	count          int
 	taskDefinition string
+	cluster        string
 }
 type logReadyMsg struct {
-	title     string
-	logGroup  string
-	logGroups []string
-	streams   []string
-	follow    *bool         // nil = default (true), false = paused
-	lookback  time.Duration // 0 = default (5min)
-	search    string        // pre-set search pattern
-	startMs   int64         // absolute range start (paused viewer)
-	endMs     int64         // absolute range end (paused viewer)
+	title       string
+	logGroup    string
+	logGroups   []string
+	streams     []string
+	follow      *bool         // nil = default (true), false = paused
+	lookback    time.Duration // 0 = default (5min)
+	search      string        // pre-set search pattern
+	startMs     int64         // absolute range start (paused viewer)
+	endMs       int64         // absolute range end (paused viewer)
+	ecsGuard    bool
+	returnState viewState
+	cluster     string
+	service     string
+	taskARN     string
 }
 type scaleInStatusMsg struct {
 	service   string
@@ -56,8 +74,9 @@ type execSessionReadyMsg struct {
 	args       []string
 }
 type taskDefDiffReadyMsg struct {
-	title string
-	diff  string
+	title       string
+	diff        string
+	returnState viewState
 }
 type envVarsReadyMsg struct {
 	title          string
@@ -68,8 +87,14 @@ type envVarsReadyMsg struct {
 	returnState    viewState
 }
 type taskDefinitionEditedMsg struct{ document string }
-type taskDefinitionRegisteredMsg struct{ definition *e9saws.TaskDefSummary }
+type taskDefinitionRegisteredMsg struct {
+	baseDefinition string
+	definition     *e9saws.TaskDefSummary
+}
 type metricsLoadedMsg struct {
+	cluster        string
+	service        string
+	taskARN        string
 	metrics        *e9saws.ServiceMetrics
 	alarms         []e9saws.AlarmState
 	scaleKnown     bool

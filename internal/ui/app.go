@@ -157,70 +157,76 @@ type App struct {
 	regionPicker        views.RegionPickerModel
 
 	// Navigation context
-	selectedCluster        *model.Cluster
-	selectedService        *model.Service
-	selectedTask           *model.Task
-	selectedTaskDef        string
-	taskScopeStopped       bool
-	taskNextToken          string
-	metricsReturnState     viewState
-	metricsTaskScope       bool
-	metricsServiceName     string
-	diffReturnState        viewState
-	envTaskDefinition      string
-	envContainer           string
-	envTitle               string
-	envSecretsResolved     bool
-	taskDefinitionDocument string
-	execContainerName      string
-	scaleInCluster         string
-	scaleInService         string
-	scaleInCurrentState    bool
-	logSearchGroup         string
-	logSearchGroups        []string // multi-group search
-	logSearchStreams       []string
-	logSearchStartMs       int64
-	logSearchEndMs         int64
-	logSearchFilter        string // quoted/processed filter pattern for CW API
-	logCorrelationActive   bool
-	logCorrelationTS       int64
-	logCorrelationPattern  string
-	logCorrelationGroups   []string
-	logCorrelationStreams  []string
-	logSaveGroup           string
-	logSaveStream          string
-	ssmEditName            string
-	ssmEditValue           string
-	smEditName             string
-	smEditValue            string
-	smCloneName            string
-	smCloneValue           string
-	s3DownloadBucket       string
-	s3DownloadKey          string
-	s3DownloadIsPrefix     bool
-	dynamoKeyNames         []string
-	dynamoLastKey          any // stores map[string]dbtypes.AttributeValue for pagination
-	dynamoFilterAttr       string
-	dynamoFilterOp         string
-	dynamoFilterExpr       bool
-	dynamoLastPartiQL      string
-	sqsSendQueueURL        string
-	sqsSendTemplate        *e9saws.SQSSendTemplate
-	cbTriggerProject       string
-	pathInput              *PathInput
-	runTaskForm            RunTaskFormModel
-	tofuDir                string
-	tofuPlanFile           string
-	r53EditZoneID          string
-	r53EditRecord          *e9saws.R53Record
-	r53EditOriginal        *e9saws.R53Record
-	lambdaEditDir          string
-	lambdaEditFunc         string
-	lambdaEditZip          []byte
-	dynamoEditField        string
-	dynamoEditValue        string
-	dynamoEditItem         *e9saws.DynamoItem
-	dynamoCloneItem        *e9saws.DynamoItem
+	selectedCluster          *model.Cluster
+	selectedService          *model.Service
+	selectedTask             *model.Task
+	selectedTaskDef          string
+	taskScopeStopped         bool
+	taskNextToken            string
+	taskDetailReturnState    viewState
+	serviceDetailReturnState viewState
+	taskDefsReturnState      viewState
+	standaloneReturnState    viewState
+	standaloneReturnService  *model.Service
+	standaloneReturnTask     *model.Task
+	metricsReturnState       viewState
+	metricsTaskScope         bool
+	metricsServiceName       string
+	diffReturnState          viewState
+	envTaskDefinition        string
+	envContainer             string
+	envTitle                 string
+	envSecretsResolved       bool
+	taskDefinitionDocument   string
+	execContainerName        string
+	scaleInCluster           string
+	scaleInService           string
+	scaleInCurrentState      bool
+	logSearchGroup           string
+	logSearchGroups          []string // multi-group search
+	logSearchStreams         []string
+	logSearchStartMs         int64
+	logSearchEndMs           int64
+	logSearchFilter          string // quoted/processed filter pattern for CW API
+	logCorrelationActive     bool
+	logCorrelationTS         int64
+	logCorrelationPattern    string
+	logCorrelationGroups     []string
+	logCorrelationStreams    []string
+	logSaveGroup             string
+	logSaveStream            string
+	ssmEditName              string
+	ssmEditValue             string
+	smEditName               string
+	smEditValue              string
+	smCloneName              string
+	smCloneValue             string
+	s3DownloadBucket         string
+	s3DownloadKey            string
+	s3DownloadIsPrefix       bool
+	dynamoKeyNames           []string
+	dynamoLastKey            any // stores map[string]dbtypes.AttributeValue for pagination
+	dynamoFilterAttr         string
+	dynamoFilterOp           string
+	dynamoFilterExpr         bool
+	dynamoLastPartiQL        string
+	sqsSendQueueURL          string
+	sqsSendTemplate          *e9saws.SQSSendTemplate
+	cbTriggerProject         string
+	pathInput                *PathInput
+	runTaskForm              RunTaskFormModel
+	tofuDir                  string
+	tofuPlanFile             string
+	r53EditZoneID            string
+	r53EditRecord            *e9saws.R53Record
+	r53EditOriginal          *e9saws.R53Record
+	lambdaEditDir            string
+	lambdaEditFunc           string
+	lambdaEditZip            []byte
+	dynamoEditField          string
+	dynamoEditValue          string
+	dynamoEditItem           *e9saws.DynamoItem
+	dynamoCloneItem          *e9saws.DynamoItem
 
 	// Modal dialogs
 	confirm      ConfirmModel
@@ -524,6 +530,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// --- ECS data messages ---
 	case clustersLoadedMsg:
+		if a.state != viewClusters {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -531,6 +540,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case servicesLoadedMsg:
+		if (a.state != viewServices && a.state != viewServiceDetail) || msg.cluster != a.selectedClusterName() {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -547,7 +559,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tasksLoadedMsg:
-		if msg.stopped != a.taskScopeStopped {
+		if a.state != viewTasks || msg.cluster != a.selectedClusterName() ||
+			msg.service != a.selectedServiceName() || msg.stopped != a.taskScopeStopped {
 			return a, nil
 		}
 		a.loading = false
@@ -563,6 +576,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case taskDetailRefreshedMsg:
+		if a.state != viewTaskDetail || a.selectedTask == nil || msg.taskARN != a.selectedTask.TaskARN {
+			return a, nil
+		}
 		if msg.task != nil {
 			a.selectedTask = msg.task
 			a.detailView = views.NewTaskDetail(msg.task)
@@ -572,6 +588,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case taskDefsLoadedMsg:
+		if a.state != viewTaskDefs && a.state != viewTaskDefDetail {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -579,6 +598,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case taskDefLoadedMsg:
+		if a.state != viewTaskDefs && a.state != viewTaskDefDetail {
+			return a, nil
+		}
+		if msg.def != nil && fmt.Sprintf("%s:%d", msg.def.Family, msg.def.Revision) != a.selectedTaskDef {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -591,7 +616,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case standaloneTasksLoadedMsg:
-		if msg.stopped != a.taskScopeStopped {
+		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() || msg.stopped != a.taskScopeStopped {
 			return a, nil
 		}
 		a.loading = false
@@ -613,6 +638,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- Log messages ---
 	case logReadyMsg:
+		if msg.ecsGuard {
+			if a.state != msg.returnState || msg.cluster != a.selectedClusterName() {
+				return a, nil
+			}
+			if msg.taskARN != "" {
+				task := a.taskForCurrentView()
+				if task == nil || task.TaskARN != msg.taskARN || msg.service != a.selectedServiceName() {
+					return a, nil
+				}
+			} else {
+				service := a.serviceView.SelectedService()
+				if service == nil || service.Name != msg.service {
+					return a, nil
+				}
+			}
+			a.prevState = msg.returnState
+		}
 		a.state = viewLogs
 		follow := true
 		lookback := 10 * time.Second
@@ -716,6 +758,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- ECS detail messages ---
 	case envVarsReadyMsg:
+		if (!msg.resolved && a.state != msg.returnState) ||
+			(msg.resolved && (a.state != viewEnvVars || msg.taskDefinition != a.envTaskDefinition || msg.container != a.envContainer)) {
+			return a, nil
+		}
 		a.prevState = msg.returnState
 		a.envTaskDefinition = msg.taskDefinition
 		a.envContainer = msg.container
@@ -727,6 +773,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case taskDefDiffReadyMsg:
+		if a.state != msg.returnState {
+			return a, nil
+		}
 		a.state = viewTaskDefDiff
 		a.diffView = views.NewTaskDefDiff(msg.title, msg.diff)
 		a.diffView = a.diffView.SetSize(a.width, a.height-3)
@@ -744,6 +793,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case taskDefinitionRegisteredMsg:
+		if a.state != viewTaskDefDetail || msg.baseDefinition != a.selectedTaskDef {
+			return a, nil
+		}
 		a.loading = false
 		a.taskDefinitionDocument = ""
 		if msg.definition == nil {
@@ -758,6 +810,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.loadTaskDefinitions()
 
 	case metricsLoadedMsg:
+		if a.state != viewMetrics || msg.cluster != a.selectedClusterName() ||
+			msg.service != a.metricsServiceName ||
+			(a.metricsTaskScope && (a.selectedTask == nil || msg.taskARN != a.selectedTask.TaskARN)) {
+			return a, nil
+		}
 		a.metricsView = a.metricsView.SetMetrics(msg.metrics)
 		a.metricsView = a.metricsView.SetAlarms(msg.alarms)
 		a.metricsView = a.metricsView.SetScaleIn(msg.scaleKnown, msg.scaleSuspended)
@@ -1230,6 +1287,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.refreshCurrentView()
 
 	case runTaskStartedMsg:
+		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() {
+			return a, nil
+		}
 		a.flashMessage = fmt.Sprintf("Started %d task(s) from %s", msg.count, msg.taskDefinition)
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		a.taskScopeStopped = false
@@ -1664,6 +1724,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewTasks:
 			switch k {
+			case a.kb.ServiceDetail:
+				return a.showServiceDetail()
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			case a.kb.TaskScope:
 				return a.toggleTaskScope()
 			case a.kb.LoadMore:
@@ -1679,6 +1745,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewTaskDetail:
 			switch k {
+			case a.kb.ServiceDetail:
+				if a.selectedService != nil {
+					return a.showServiceDetail()
+				}
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			case a.kb.EnvVars:
 				return a.showEnvVars()
 			case a.kb.TaskLogs:
@@ -1718,6 +1792,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewStandaloneTasks:
 			switch k {
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			case a.kb.TaskScope:
 				return a.toggleTaskScope()
 			case a.kb.LoadMore:
@@ -1735,6 +1813,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewServiceDetail:
 			switch k {
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			case a.kb.TaskDefDiff:
 				return a.showTaskDefDiff()
 			}
@@ -2502,6 +2584,9 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewTasks:
 		context = []kv{
 			{"enter", "Task detail"},
+			{kb.ServiceDetail, "Service detail"},
+			{kb.StandaloneTasks, "Toggle standalone tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.TaskLogs, "Tail logs"},
 			{kb.TaskScope, "Switch Active/Recently stopped"},
 		}
@@ -2518,6 +2603,9 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		}
 	case viewTaskDetail:
 		context = []kv{
+			{kb.ServiceDetail, "Service detail"},
+			{kb.StandaloneTasks, "Toggle standalone tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.EnvVars, "View environment variables"},
 			{kb.TaskLogs, "Tail logs"},
 			{kb.Metrics, "Task CPU/memory metrics"},
@@ -2541,6 +2629,8 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewServiceDetail:
 		context = []kv{
 			{"tab", "Switch between Deployments and Events"},
+			{kb.StandaloneTasks, "Toggle standalone tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.TaskDefDiff, "Task definition deployment diff"},
 			{"j/k", "Scroll"},
 		}
@@ -2560,6 +2650,8 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewStandaloneTasks:
 		context = []kv{
 			{"enter", "Task detail"},
+			{kb.StandaloneTasks, "Return to services/tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.TaskLogs, "Tail logs"},
 			{kb.TaskScope, "Switch Active/Recently stopped"},
 			{kb.RunTask, "Run standalone task"},
@@ -2887,6 +2979,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 	case viewTasks:
 		if t := a.taskView.SelectedTask(); t != nil {
 			a.selectedTask = t
+			a.taskDetailReturnState = viewTasks
 			a.state = viewTaskDetail
 			a.detailView = views.NewTaskDetail(t)
 			return a, nil
@@ -2896,6 +2989,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 	case viewStandaloneTasks:
 		if t := a.standaloneView.SelectedTask(); t != nil {
 			a.selectedTask = t
+			a.taskDetailReturnState = viewStandaloneTasks
 			a.state = viewTaskDetail
 			a.detailView = views.NewTaskDetail(t)
 			return a, nil
@@ -3103,31 +3197,36 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.loading = true
 		return a, a.loadServices()
 	case viewTaskDetail:
-		if a.prevState == viewStandaloneTasks {
+		if a.taskDetailReturnState == viewStandaloneTasks {
 			a.state = viewStandaloneTasks
 		} else {
 			a.state = viewTasks
 		}
 		a.selectedTask = nil
+		a.loading = false
 		return a, nil
 	case viewTaskDefs:
 		a.selectedTaskDef = ""
-		if a.prevState == viewServices {
-			a.state = viewServices
-			return a, nil
-		}
-		if a.prevState == viewClusters {
-			a.state = viewClusters
+		switch a.taskDefsReturnState {
+		case viewClusters, viewServices, viewTasks, viewTaskDetail, viewStandaloneTasks, viewServiceDetail:
+			a.state = a.taskDefsReturnState
+			a.loading = false
 			return a, nil
 		}
 		return a.showModePicker()
 	case viewTaskDefDetail:
 		a.state = viewTaskDefs
 		a.selectedTaskDef = ""
+		a.loading = false
 		return a, nil
 	case viewServiceDetail:
-		a.state = viewServices
-		a.selectedService = nil
+		if a.serviceDetailReturnState == viewTasks || a.serviceDetailReturnState == viewTaskDetail {
+			a.state = a.serviceDetailReturnState
+		} else {
+			a.state = viewServices
+			a.selectedService = nil
+		}
+		a.loading = false
 		return a, nil
 	case viewLogs:
 		if a.prevState == viewLogSearch {
@@ -3155,9 +3254,12 @@ func (a App) goBack() (App, tea.Cmd) {
 			return a, nil
 		}
 		if a.selectedTask != nil {
-			if a.prevState == viewStandaloneTasks {
+			switch a.prevState {
+			case viewTaskDetail:
+				a.state = viewTaskDetail
+			case viewStandaloneTasks:
 				a.state = viewStandaloneTasks
-			} else {
+			default:
 				a.state = viewTasks
 			}
 			return a, nil
@@ -3165,8 +3267,7 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewServices
 		return a, nil
 	case viewStandaloneTasks:
-		a.state = viewServices
-		return a, nil
+		return a.returnFromStandaloneTasks()
 	case viewTaskDefDiff:
 		a.state = a.diffReturnState
 		return a, nil

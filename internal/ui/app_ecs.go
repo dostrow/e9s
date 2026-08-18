@@ -18,6 +18,20 @@ import (
 
 const taskHistoryBatchSize = 50
 
+func (a App) selectedClusterName() string {
+	if a.selectedCluster == nil {
+		return ""
+	}
+	return a.selectedCluster.Name
+}
+
+func (a App) selectedServiceName() string {
+	if a.selectedService == nil {
+		return ""
+	}
+	return a.selectedService.Name
+}
+
 // --- Service Operations ---
 
 func (a App) promptForceDeploy() (App, tea.Cmd) {
@@ -117,17 +131,25 @@ func (a App) doStopTask() tea.Cmd {
 }
 
 func (a App) showServiceDetail() (App, tea.Cmd) {
-	if s := a.serviceView.SelectedService(); s != nil {
-		a.selectedService = s
-		a.state = viewServiceDetail
-		a.serviceDetailView = views.NewServiceDetail(s)
-		return a, a.loadServices()
+	var service *model.Service
+	if a.state == viewServices {
+		service = a.serviceView.SelectedService()
+	} else {
+		service = a.selectedService
 	}
-	return a, nil
+	if service == nil {
+		return a, nil
+	}
+	a.serviceDetailReturnState = a.state
+	a.selectedService = service
+	a.state = viewServiceDetail
+	a.serviceDetailView = views.NewServiceDetail(service)
+	a.loading = true
+	return a, a.loadServices()
 }
 
 func (a App) openTaskDefinitions() (App, tea.Cmd) {
-	a.prevState = a.state
+	a.taskDefsReturnState = a.state
 	a.state = viewTaskDefs
 	a.selectedTaskDef = ""
 	a.taskDefsView = views.NewTaskDefs()
@@ -163,7 +185,7 @@ func (a App) loadTaskDefinitionDetail(taskDef string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return taskDefLoadedMsg{def: def}
+		return taskDefLoadedMsg{taskDefinition: taskDef, def: def}
 	}
 }
 
@@ -178,13 +200,38 @@ func (a App) refreshSelectedTaskDefinition() tea.Cmd {
 // --- Standalone Tasks ---
 
 func (a App) showStandaloneTasks() (App, tea.Cmd) {
+	if a.state == viewStandaloneTasks {
+		return a.returnFromStandaloneTasks()
+	}
+	if a.state == viewTaskDetail && a.taskDetailReturnState == viewStandaloneTasks {
+		a.state = viewStandaloneTasks
+		return a.returnFromStandaloneTasks()
+	}
+	a.standaloneReturnState = a.state
+	a.standaloneReturnService = a.selectedService
+	a.standaloneReturnTask = a.selectedTask
 	a.state = viewStandaloneTasks
-	a.prevState = viewServices
+	a.selectedService = nil
+	a.selectedTask = nil
 	a.taskScopeStopped = false
 	a.taskNextToken = ""
 	a.standaloneView = views.NewStandaloneTasks().SetScope(false)
 	a.loading = true
 	return a, a.loadStandaloneTasks()
+}
+
+func (a App) returnFromStandaloneTasks() (App, tea.Cmd) {
+	returnState := a.standaloneReturnState
+	if returnState != viewServices && returnState != viewTasks && returnState != viewTaskDetail && returnState != viewServiceDetail {
+		returnState = viewServices
+	}
+	a.state = returnState
+	a.selectedService = a.standaloneReturnService
+	a.selectedTask = a.standaloneReturnTask
+	a.standaloneReturnService = nil
+	a.standaloneReturnTask = nil
+	a.loading = false
+	return a, nil
 }
 
 func (a App) loadStandaloneTasks() tea.Cmd {
@@ -200,13 +247,13 @@ func (a App) loadStandaloneTasks() tea.Cmd {
 				return errMsg{err}
 			}
 			sortStoppedTasks(page.Tasks)
-			return standaloneTasksLoadedMsg{tasks: page.Tasks, stopped: true, nextToken: page.NextToken}
+			return standaloneTasksLoadedMsg{cluster: clusterName, tasks: page.Tasks, stopped: true, nextToken: page.NextToken}
 		}
 		tasks, err := a.ecs.ListStandaloneTasks(a.ctx, clusterName)
 		if err != nil {
 			return errMsg{err}
 		}
-		return standaloneTasksLoadedMsg{tasks: tasks}
+		return standaloneTasksLoadedMsg{cluster: clusterName, tasks: tasks}
 	}
 }
 
@@ -248,14 +295,14 @@ func (a App) loadMoreStoppedTasks() (App, tea.Cmd) {
 				return errMsg{err}
 			}
 			sortStoppedTasks(page.Tasks)
-			return standaloneTasksLoadedMsg{tasks: page.Tasks, stopped: true, append: true, nextToken: page.NextToken}
+			return standaloneTasksLoadedMsg{cluster: cluster, tasks: page.Tasks, stopped: true, append: true, nextToken: page.NextToken}
 		}
 		page, err := a.ecs.ListStoppedServiceTasks(a.ctx, cluster, serviceName, nextToken, taskHistoryBatchSize)
 		if err != nil {
 			return errMsg{err}
 		}
 		sortStoppedTasks(page.Tasks)
-		return tasksLoadedMsg{tasks: page.Tasks, stopped: true, append: true, nextToken: page.NextToken}
+		return tasksLoadedMsg{cluster: cluster, service: serviceName, tasks: page.Tasks, stopped: true, append: true, nextToken: page.NextToken}
 	}
 }
 
@@ -306,7 +353,7 @@ func (a App) runStandaloneTask(request model.RunTaskRequest) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return runTaskStartedMsg{count: len(tasks), taskDefinition: request.TaskDefinition}
+		return runTaskStartedMsg{count: len(tasks), taskDefinition: request.TaskDefinition, cluster: request.Cluster}
 	}
 }
 
@@ -329,8 +376,9 @@ func (a App) showTaskDefDiff() (App, tea.Cmd) {
 			return errMsg{err}
 		}
 		return taskDefDiffReadyMsg{
-			title: fmt.Sprintf("%s → %s", oldTD, newTD),
-			diff:  diff,
+			title:       fmt.Sprintf("%s → %s", oldTD, newTD),
+			diff:        diff,
+			returnState: viewServiceDetail,
 		}
 	}
 }
@@ -353,8 +401,9 @@ func (a App) showSelectedTaskDefDiff() (App, tea.Cmd) {
 			return errMsg{err}
 		}
 		return taskDefDiffReadyMsg{
-			title: fmt.Sprintf("%s:%d → %s:%d", previous.Family, previous.Revision, definition.Family, definition.Revision),
-			diff:  diff,
+			title:       fmt.Sprintf("%s:%d → %s:%d", previous.Family, previous.Revision, definition.Family, definition.Revision),
+			diff:        diff,
+			returnState: viewTaskDefDetail,
 		}
 	}
 }
@@ -408,12 +457,13 @@ func (a App) editSelectedTaskDefinition() (App, tea.Cmd) {
 
 func (a App) registerEditedTaskDefinition() tea.Cmd {
 	document := a.taskDefinitionDocument
+	baseDefinition := a.selectedTaskDef
 	return func() tea.Msg {
 		definition, err := a.ecs.RegisterTaskDefinitionJSON(a.ctx, document)
 		if err != nil {
 			return errMsg{err}
 		}
-		return taskDefinitionRegisteredMsg{definition: definition}
+		return taskDefinitionRegisteredMsg{baseDefinition: baseDefinition, definition: definition}
 	}
 }
 
@@ -527,8 +577,12 @@ func (a App) loadMetrics() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
+		taskARN := ""
+		if selectedTask != nil {
+			taskARN = selectedTask.TaskARN
+		}
 		if taskScope {
-			return metricsLoadedMsg{metrics: metrics}
+			return metricsLoadedMsg{cluster: cluster, service: service, taskARN: taskARN, metrics: metrics}
 		}
 		var warnings []string
 		alarms, err := a.ecs.ListServiceAlarms(a.ctx, cluster, service)
@@ -540,6 +594,7 @@ func (a App) loadMetrics() tea.Cmd {
 			warnings = append(warnings, "Scale-in status unavailable: "+scaleErr.Error())
 		}
 		return metricsLoadedMsg{
+			cluster: cluster, service: service,
 			metrics: metrics, alarms: alarms,
 			scaleKnown: scaleErr == nil, scaleSuspended: suspended,
 			warnings: warnings,
@@ -760,15 +815,23 @@ func (a App) openTaskLogs() (App, tea.Cmd) {
 
 func (a App) doLogForContainer(containerName string) tea.Cmd {
 	t := a.selectedTask
+	returnState := a.prevState
+	cluster := a.selectedClusterName()
+	service := a.selectedServiceName()
 	return func() tea.Msg {
 		source, err := a.ecs.ContainerLogSource(a.ctx, *t, containerName)
 		if err != nil {
 			return errMsg{err}
 		}
 		return logReadyMsg{
-			title:    fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
-			logGroup: source.Group,
-			streams:  source.Streams,
+			title:       fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
+			logGroup:    source.Group,
+			streams:     source.Streams,
+			ecsGuard:    true,
+			returnState: returnState,
+			cluster:     cluster,
+			service:     service,
+			taskARN:     t.TaskARN,
 		}
 	}
 }
@@ -779,6 +842,7 @@ func (a App) openServiceLogs() (App, tea.Cmd) {
 		return a, nil
 	}
 	a.selectedService = s
+	a.prevState = a.state
 	clusterName := ""
 	if a.selectedCluster != nil {
 		clusterName = a.selectedCluster.Name
@@ -791,9 +855,13 @@ func (a App) openServiceLogs() (App, tea.Cmd) {
 			return errMsg{err}
 		}
 		return logReadyMsg{
-			title:    serviceName + " (all tasks)",
-			logGroup: source.Group,
-			streams:  source.Streams,
+			title:       serviceName + " (all tasks)",
+			logGroup:    source.Group,
+			streams:     source.Streams,
+			ecsGuard:    true,
+			returnState: viewServices,
+			cluster:     clusterName,
+			service:     serviceName,
 		}
 	}
 }
@@ -958,7 +1026,7 @@ func (a App) loadServices() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return servicesLoadedMsg{services}
+		return servicesLoadedMsg{cluster: clusterName, services: services}
 	}
 }
 
@@ -979,13 +1047,13 @@ func (a App) loadTasks() tea.Cmd {
 				return errMsg{err}
 			}
 			sortStoppedTasks(page.Tasks)
-			return tasksLoadedMsg{tasks: page.Tasks, stopped: true, nextToken: page.NextToken}
+			return tasksLoadedMsg{cluster: clusterName, service: serviceName, tasks: page.Tasks, stopped: true, nextToken: page.NextToken}
 		}
 		tasks, err := a.ecs.ListTasks(a.ctx, clusterName, serviceName)
 		if err != nil {
 			return errMsg{err}
 		}
-		return tasksLoadedMsg{tasks: tasks}
+		return tasksLoadedMsg{cluster: clusterName, service: serviceName, tasks: tasks}
 	}
 }
 
@@ -1002,8 +1070,8 @@ func (a App) reloadSelectedTask() tea.Cmd {
 			return errMsg{err}
 		}
 		if tasks != nil {
-			return taskDetailRefreshedMsg{task: tasks}
+			return taskDetailRefreshedMsg{taskARN: taskARN, task: tasks}
 		}
-		return taskDetailRefreshedMsg{task: nil}
+		return taskDetailRefreshedMsg{taskARN: taskARN, task: nil}
 	}
 }
