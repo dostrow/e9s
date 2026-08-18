@@ -80,6 +80,16 @@ columnview row:selected {
   font-size: 12px;
 }
 
+.log-toolbar {
+  background: #151820;
+  border-bottom: 1px solid #343a46;
+  padding: 8px;
+}
+
+.destructive-action {
+  color: #f38ba8;
+}
+
 .status-bar {
   background: #191c24;
   border-top: 1px solid #343a46;

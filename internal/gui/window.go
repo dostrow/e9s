@@ -26,6 +26,8 @@ type mainWindow struct {
 
 	requestCancel context.CancelFunc
 	generation    uint64
+	logCancel     context.CancelFunc
+	logGeneration uint64
 
 	currentPage        string
 	selectedCluster    string
@@ -40,8 +42,20 @@ type mainWindow struct {
 	resourceStack      *gtk.Stack
 	search             *gtk.SearchEntry
 	backButton         *gtk.Button
+	logsButton         *gtk.Button
+	deployButton       *gtk.Button
 	breadcrumb         *gtk.Label
 	detailBuffer       *gtk.TextBuffer
+	detailStack        *gtk.Stack
+	logView            *gtk.TextView
+	logTextBuffer      *gtk.TextBuffer
+	logSearch          *gtk.SearchEntry
+	logPauseButton     *gtk.Button
+	logStore           *boundedLogs
+	logSource          model.LogSource
+	logLastTS          int64
+	logFollowing       bool
+	showingLogs        bool
 	status             *gtk.Label
 	spinner            *gtk.Spinner
 	lastSuccessfulLoad time.Time
@@ -96,12 +110,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
 	refresh.ConnectClicked(w.refresh)
+	w.logsButton = gtk.NewButtonWithLabel("Logs")
+	w.logsButton.SetSensitive(false)
+	w.logsButton.ConnectClicked(w.openServiceLogs)
+	w.deployButton = gtk.NewButtonWithLabel("Force deploy")
+	w.deployButton.SetSensitive(false)
+	w.deployButton.AddCSSClass("destructive-action")
+	w.deployButton.ConnectClicked(w.confirmForceDeployment)
 
 	header := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	header.AddCSSClass("toolbar")
 	header.Append(w.backButton)
 	header.Append(title)
 	header.Append(w.breadcrumb)
+	header.Append(w.logsButton)
+	header.Append(w.deployButton)
 	header.Append(refresh)
 
 	sidebar := gtk.NewBox(gtk.OrientationVertical, 6)
@@ -160,9 +183,16 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	detailScroll.SetHExpand(true)
 	detailScroll.SetChild(detail)
 
+	w.detailStack = gtk.NewStack()
+	w.detailStack.SetVExpand(true)
+	w.detailStack.SetHExpand(true)
+	w.detailStack.AddNamed(detailScroll, "detail")
+	w.detailStack.AddNamed(w.buildLogPane(), "logs")
+	w.detailStack.SetVisibleChildName("detail")
+
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	contentSplit.SetStartChild(resourcePane)
-	contentSplit.SetEndChild(detailScroll)
+	contentSplit.SetEndChild(w.detailStack)
 	contentSplit.SetPosition(700)
 	contentSplit.SetResizeStartChild(true)
 	contentSplit.SetResizeEndChild(true)
@@ -195,14 +225,26 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "refresh", []string{"<Control>r"}, w.refresh)
-	w.addAction(app, "search", []string{"slash"}, func() { w.search.GrabFocus() })
+	w.addAction(app, "search", []string{"slash"}, func() {
+		if w.showingLogs {
+			w.logSearch.GrabFocus()
+		} else {
+			w.search.GrabFocus()
+		}
+	})
 	w.addAction(app, "back", []string{"Escape"}, w.goBack)
 	w.addAction(app, "modes", []string{"<Control>p"}, func() {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.detailBuffer.SetText("KEYBOARD SHORTCUTS\n\nEnter       Open selected row\nEscape      Back to clusters\n/           Focus filter\nCtrl+R      Refresh\nCtrl+P      Module switcher placeholder\n?           Show this help")
+		w.detailBuffer.SetText("KEYBOARD SHORTCUTS\n\nEnter          Open selected row\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help")
+		w.detailStack.SetVisibleChildName("detail")
 	})
+	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
+	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
+	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
+	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
+	w.addAction(app, "force-deploy", []string{"<Control><Shift>r"}, w.confirmForceDeployment)
 }
 
 func (w *mainWindow) addAction(app *gtk.Application, name string, accels []string, run func()) {
@@ -225,6 +267,10 @@ func (w *mainWindow) startRequest(label string) (context.Context, uint64) {
 }
 
 func (w *mainWindow) finishRequest(ctx context.Context, generation uint64, err error, apply func()) {
+	w.finishRequestWithStatus(ctx, generation, err, "", apply)
+}
+
+func (w *mainWindow) finishRequestWithStatus(ctx context.Context, generation uint64, err error, success string, apply func()) {
 	glib.IdleAdd(func() {
 		if ctx.Err() != nil || generation != w.generation {
 			return
@@ -237,7 +283,10 @@ func (w *mainWindow) finishRequest(ctx context.Context, generation uint64, err e
 		}
 		w.lastSuccessfulLoad = time.Now()
 		apply()
-		w.setStatus("Updated "+w.lastSuccessfulLoad.Format("15:04:05"), false)
+		if success == "" {
+			success = "Updated " + w.lastSuccessfulLoad.Format("15:04:05")
+		}
+		w.setStatus(success, false)
 	})
 }
 
@@ -250,6 +299,8 @@ func (w *mainWindow) loadClusters() {
 			w.currentPage = pageClusters
 			w.selectedCluster = ""
 			w.selectedService = ""
+			w.logsButton.SetSensitive(false)
+			w.deployButton.SetSensitive(false)
 			w.breadcrumb.SetLabel("ECS / Clusters")
 			w.backButton.SetSensitive(false)
 			w.search.SetPlaceholderText("Filter clusters…")
@@ -271,6 +322,8 @@ func (w *mainWindow) loadServices(cluster string) {
 	w.currentPage = pageServices
 	w.selectedCluster = cluster
 	w.selectedService = ""
+	w.logsButton.SetSensitive(false)
+	w.deployButton.SetSensitive(false)
 	w.breadcrumb.SetLabel("ECS / " + cluster)
 	w.backButton.SetSensitive(true)
 	w.search.SetPlaceholderText("Filter services…")
@@ -300,6 +353,11 @@ func (w *mainWindow) loadServices(cluster string) {
 
 func (w *mainWindow) loadServiceDetail(service model.Service) {
 	w.selectedService = service.Name
+	w.logsButton.SetSensitive(true)
+	w.deployButton.SetSensitive(true)
+	if !w.showingLogs {
+		w.detailStack.SetVisibleChildName("detail")
+	}
 	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + service.Name)
 	w.detailBuffer.SetText("Loading tasks and service details…")
 
@@ -377,6 +435,10 @@ func (w *mainWindow) applyServiceFilter() {
 }
 
 func (w *mainWindow) goBack() {
+	if w.showingLogs {
+		w.closeLogs()
+		return
+	}
 	if w.currentPage != pageServices {
 		return
 	}
@@ -388,6 +450,8 @@ func (w *mainWindow) goBack() {
 	w.currentPage = pageClusters
 	w.selectedCluster = ""
 	w.selectedService = ""
+	w.logsButton.SetSensitive(false)
+	w.deployButton.SetSensitive(false)
 	w.allServices = nil
 	w.search.SetText("")
 	w.search.SetPlaceholderText("Filter clusters…")
@@ -408,6 +472,14 @@ func (w *mainWindow) refresh() {
 	w.loadClusters()
 }
 
+func (w *mainWindow) scheduleRefresh() {
+	glib.IdleAdd(func() {
+		if w.ctx.Err() == nil {
+			w.refresh()
+		}
+	})
+}
+
 func (w *mainWindow) autoRefresh() {
 	interval := w.options.RefreshInterval
 	if interval <= 0 {
@@ -420,11 +492,7 @@ func (w *mainWindow) autoRefresh() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-			glib.IdleAdd(func() {
-				if w.ctx.Err() == nil {
-					w.refresh()
-				}
-			})
+			w.scheduleRefresh()
 		}
 	}
 }

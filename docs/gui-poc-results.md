@@ -203,3 +203,59 @@ GDK_BACKEND=wayland /tmp/e9s-gui --refresh 30     PASS
 Proceed to live logs and the guarded force-deployment action. The read-only
 cluster -> service -> detail slice uses the shared backend, remains responsive,
 and satisfies the Phase 2 exit criterion.
+
+## Phase 3: Live logs and guarded deployment
+
+Status: passed on 2026-08-17.
+
+### Service log workflow
+
+After selecting a service, the GUI resolves its active task log streams through
+the shared ECS service and follows them through the shared log query service.
+CloudWatch calls run outside the GTK thread on a two-second polling cadence, and
+navigation, pause, or application shutdown cancels the polling context.
+
+The log view includes:
+
+- a 2,000-entry hard bound with old backing arrays released after trimming;
+- automatic scrolling while following;
+- pause and resume without discarding buffered entries;
+- case-insensitive filtering across messages and stream names;
+- copy through GTK's native Wayland clipboard;
+- clear; and
+- explicit exit back to the service inspector.
+
+GTK only receives immutable log pages on its main loop. A separate log generation
+prevents a late page or error from a cancelled session from updating a newer log
+view.
+
+### Force deployment workflow
+
+The Force deploy action is enabled only after selecting a service. It opens a
+modal Yes/No confirmation dialog naming the target service. Confirmation calls
+the same shared `ECS.ForceDeployment` method used by the TUI, displays operation
+progress and success/error status, and schedules a service refresh after success.
+
+The GUI intentionally uses modified shortcuts for actions that could otherwise
+fire while typing in a filter: `Ctrl+Shift+R` forces deployment,
+`Ctrl+Space` pauses logs, and `Ctrl+Shift+C` copies logs.
+
+### Verification
+
+Pure Go tests exercise log trimming, capacity bounds, filtering, sanitization,
+and clearing without GTK or AWS credentials. Shared service tests continue to
+cover the actual log-query routing, cancellation, and deployment arguments.
+
+```text
+go test ./...                                      PASS
+go test -race ./internal/gui ./internal/service    PASS
+go vet ./...                                       PASS
+go build -o /tmp/e9s-tui .                        PASS
+go build -tags gui -o /tmp/e9s-gui ./cmd/e9s-gui PASS
+GDK_BACKEND=wayland /tmp/e9s-gui --refresh 30     PASS
+```
+
+### Phase decision
+
+Proceed to final evaluation. The PoC now demonstrates a continuous, bounded read
+workflow and a confirmed write workflow through the same backend used by the TUI.
