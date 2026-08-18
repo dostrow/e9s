@@ -59,3 +59,35 @@ func TestSavedLogPathCarriesHighlightsToSearchAndTail(t *testing.T) {
 		t.Fatalf("saved browser path = %q", got.logBrowseSavedPath)
 	}
 }
+
+func TestLogCorrelationCarriesAutomaticAndConfiguredHighlights(t *testing.T) {
+	automatic := model.LogHighlightRule{
+		Pattern: "request failed", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+	}
+	configured := model.LogHighlightRule{
+		Pattern: "timeout", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightWarning,
+	}
+	a := App{
+		logCorrelationTS:        120_000,
+		logCorrelationGroups:    []string{"/aws/ecs/api"},
+		logCorrelationStreams:   []string{"api/one"},
+		logCorrelationRules:     []model.LogHighlightRule{automatic},
+		logSearchHighlightRules: []model.LogHighlightRule{configured},
+	}
+
+	got, cmd := a.handleLogCorrelationWindowPick("±30 seconds")
+	if cmd == nil {
+		t.Fatal("correlation returned no command")
+	}
+	msg, ok := cmd().(logReadyMsg)
+	if !ok {
+		t.Fatalf("message = %T", cmd())
+	}
+	want := []model.LogHighlightRule{automatic, configured}
+	if !reflect.DeepEqual(msg.highlightRules, want) {
+		t.Fatalf("highlight rules = %#v, want %#v", msg.highlightRules, want)
+	}
+	if got.logCorrelationRules != nil {
+		t.Fatalf("correlation rules were not cleared: %#v", got.logCorrelationRules)
+	}
+}

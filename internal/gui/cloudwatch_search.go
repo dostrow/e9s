@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/service"
 )
@@ -261,15 +262,21 @@ func (w *mainWindow) promptLogCorrelation() {
 			return
 		}
 		window := windows[selected]
-		spec := *w.logSearchSpec
-		spec.Filter = ""
-		spec.Lookback = 0
-		spec.StartTime = max(int64(0), entry.Timestamp-window.Milliseconds())
-		spec.EndTime = entry.Timestamp + window.Milliseconds()
-		spec.Title = "Correlate: " + cloudWatchScopeTitle(spec.Groups, spec.Streams)
+		spec := correlatedCloudWatchSearch(*w.logSearchSpec, entry, window)
 		w.runCloudWatchSearch(spec)
 	})
 	dialog.Present()
+}
+
+func correlatedCloudWatchSearch(spec cloudWatchSearch, entry model.LogEntry, window time.Duration) cloudWatchSearch {
+	automaticRules := highlight.CorrelationRules(spec.Filter, entry.Message)
+	spec.HighlightRules = append(automaticRules, spec.HighlightRules...)
+	spec.Filter = ""
+	spec.Lookback = 0
+	spec.StartTime = max(int64(0), entry.Timestamp-window.Milliseconds())
+	spec.EndTime = entry.Timestamp + window.Milliseconds()
+	spec.Title = "Correlate: " + cloudWatchScopeTitle(spec.Groups, spec.Streams)
+	return spec
 }
 
 func splitLogScope(value string) []string {

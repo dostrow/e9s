@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/config"
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
@@ -380,6 +381,7 @@ func (a App) startLogCorrelation() (App, tea.Cmd) {
 	a.logCorrelationActive = true
 	a.logCorrelationTS = entry.Timestamp
 	a.logCorrelationPattern = a.logSearchView.Pattern()
+	a.logCorrelationRules = highlight.CorrelationRules(a.logCorrelationPattern, entry.Message)
 	a.logCorrelationGroups = nil
 	a.logCorrelationStreams = nil
 
@@ -445,18 +447,22 @@ func (a App) handleLogCorrelationWindowPick(value string) (App, tea.Cmd) {
 	if len(groups) > 0 {
 		logGroup = groups[0]
 	}
+	rules := append([]model.LogHighlightRule(nil), a.logCorrelationRules...)
+	rules = append(rules, a.logSearchHighlightRules...)
 
 	a.prevState = viewLogSearch
 	a.logCorrelationActive = false
+	a.logCorrelationRules = nil
 	return a, func() tea.Msg {
 		return logReadyMsg{
-			title:     title,
-			logGroup:  logGroup,
-			logGroups: groups,
-			streams:   streams,
-			follow:    &follow,
-			startMs:   startMs,
-			endMs:     endMs,
+			title:          title,
+			logGroup:       logGroup,
+			logGroups:      groups,
+			streams:        streams,
+			follow:         &follow,
+			startMs:        startMs,
+			endMs:          endMs,
+			highlightRules: rules,
 		}
 	}
 }

@@ -5,10 +5,99 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/dostrow/e9s/internal/model"
 )
+
+// CorrelationRules builds temporary rules that keep the originating search
+// visible in an unfiltered correlation window. When a CloudWatch expression
+// has no usable literal, the selected event's first non-empty line is used.
+func CorrelationRules(pattern, message string) []model.LogHighlightRule {
+	pattern = strings.TrimSpace(pattern)
+	candidates := correlationCandidates(pattern)
+	seen := make(map[string]struct{}, len(candidates))
+	rules := make([]model.LogHighlightRule, 0, len(candidates))
+	messageLower := strings.ToLower(message)
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		key := strings.ToLower(candidate)
+		if candidate == "" || !strings.Contains(messageLower, key) {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		rules = append(rules, model.LogHighlightRule{
+			Pattern: candidate,
+			Match:   model.LogHighlightLiteralCI,
+			Style:   model.LogHighlightError,
+		})
+	}
+	if len(rules) > 0 {
+		return rules
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(message, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return []model.LogHighlightRule{{
+				Pattern: line,
+				Match:   model.LogHighlightLiteral,
+				Style:   model.LogHighlightDefault,
+			}}
+		}
+	}
+	return nil
+}
+
+func correlationCandidates(pattern string) []string {
+	if pattern == "" {
+		return nil
+	}
+	if pattern[0] != '{' && pattern[0] != '[' {
+		if len(pattern) >= 2 && pattern[0] == '"' && pattern[len(pattern)-1] == '"' {
+			if value, err := strconv.Unquote(pattern); err == nil {
+				return []string{value}
+			}
+		}
+		return []string{strings.ReplaceAll(pattern, `"`, "")}
+	}
+
+	var candidates []string
+	for start := strings.IndexByte(pattern, '"'); start >= 0; {
+		end := start + 1
+		escaped := false
+		for end < len(pattern) {
+			char := pattern[end]
+			if char == '"' && !escaped {
+				break
+			}
+			if char == '\\' {
+				escaped = !escaped
+			} else {
+				escaped = false
+			}
+			end++
+		}
+		if end >= len(pattern) {
+			break
+		}
+		raw := pattern[start : end+1]
+		if value, err := strconv.Unquote(raw); err == nil {
+			candidates = append(candidates, value)
+		}
+		next := end + 1
+		if offset := strings.IndexByte(pattern[next:], '"'); offset >= 0 {
+			start = next + offset
+		} else {
+			break
+		}
+	}
+	return candidates
+}
 
 type compiledRule struct {
 	style model.LogHighlightStyle

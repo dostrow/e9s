@@ -76,3 +76,41 @@ func TestZeroWidthRegexMatchesAreIgnored(t *testing.T) {
 		t.Fatalf("Spans() = %#v, want no spans", got)
 	}
 }
+
+func TestCorrelationRulesPreferMatchedSearchLiterals(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		message string
+		want    []string
+	}{
+		{name: "quoted literal", pattern: `"request failed"`, message: "Request Failed for job", want: []string{"request failed"}},
+		{name: "plain with quotes", pattern: `message "with quotes"`, message: `message with quotes`, want: []string{"message with quotes"}},
+		{name: "structured values", pattern: `{ $.level = "error" && $.service = "api" }`, message: `{"level":"ERROR","service":"api"}`, want: []string{"error", "api"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules := CorrelationRules(tt.pattern, tt.message)
+			patterns := make([]string, len(rules))
+			for i, rule := range rules {
+				patterns[i] = rule.Pattern
+				if rule.Match != model.LogHighlightLiteralCI || rule.Style != model.LogHighlightError {
+					t.Fatalf("rule = %#v", rule)
+				}
+			}
+			if !reflect.DeepEqual(patterns, tt.want) {
+				t.Fatalf("patterns = %#v, want %#v", patterns, tt.want)
+			}
+		})
+	}
+}
+
+func TestCorrelationRulesFallBackToSelectedLine(t *testing.T) {
+	rules := CorrelationRules(`[status_code = 500]`, "\n selected log line \ncontinued")
+	want := []model.LogHighlightRule{{
+		Pattern: "selected log line", Match: model.LogHighlightLiteral, Style: model.LogHighlightDefault,
+	}}
+	if !reflect.DeepEqual(rules, want) {
+		t.Fatalf("rules = %#v, want %#v", rules, want)
+	}
+}

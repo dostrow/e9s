@@ -68,6 +68,28 @@ func TestBuildCloudWatchSearchRejectsStreamsAcrossGroups(t *testing.T) {
 	}
 }
 
+func TestCorrelatedCloudWatchSearchAddsTemporaryRule(t *testing.T) {
+	existing := model.LogHighlightRule{
+		Pattern: "timeout", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightWarning,
+	}
+	original := cloudWatchSearch{
+		Groups: []string{"/aws/ecs/api"}, Streams: []string{"api/one"},
+		Filter: `"request failed"`, Lookback: time.Hour, HighlightRules: []model.LogHighlightRule{existing},
+	}
+	entry := model.LogEntry{Timestamp: 120_000, Message: "Request Failed for job 42"}
+
+	got := correlatedCloudWatchSearch(original, entry, 30*time.Second)
+	if got.Filter != "" || got.Lookback != 0 || got.StartTime != 90_000 || got.EndTime != 150_000 {
+		t.Fatalf("correlated search = %#v", got)
+	}
+	if len(got.HighlightRules) != 2 || got.HighlightRules[0].Pattern != "request failed" || got.HighlightRules[1] != existing {
+		t.Fatalf("highlight rules = %#v", got.HighlightRules)
+	}
+	if len(original.HighlightRules) != 1 || original.HighlightRules[0] != existing {
+		t.Fatalf("original rules mutated: %#v", original.HighlightRules)
+	}
+}
+
 func TestQuoteCloudWatchFilter(t *testing.T) {
 	tests := map[string]string{
 		"error":                 `"error"`,

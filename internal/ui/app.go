@@ -196,6 +196,7 @@ type App struct {
 	logCorrelationActive     bool
 	logCorrelationTS         int64
 	logCorrelationPattern    string
+	logCorrelationRules      []model.LogHighlightRule
 	logCorrelationGroups     []string
 	logCorrelationStreams    []string
 	logSaveGroup             string
