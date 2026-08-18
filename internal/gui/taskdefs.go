@@ -105,6 +105,10 @@ func (w *mainWindow) openTaskDefinitions() {
 	if w.currentPage == pageTaskDefinitions {
 		return
 	}
+	w.loadTaskDefinitions()
+}
+
+func (w *mainWindow) loadTaskDefinitions() {
 	w.resetWorkspaceForBrowserChange()
 	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
 		w.clearTaskBrowser()
