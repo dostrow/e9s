@@ -9,6 +9,11 @@ window {
   padding: 10px 14px;
 }
 
+.breadcrumb {
+  color: #bac2de;
+  font-weight: 600;
+}
+
 .app-title {
   color: #89b4fa;
   font-size: 20px;
@@ -23,6 +28,51 @@ columnview row:selected {
   background: #33415c;
 }
 
+.table-cell {
+  padding: 5px 8px;
+}
+
+.mode-sidebar {
+  background: #151820;
+  border-right: 1px solid #343a46;
+  padding: 14px 10px;
+}
+
+.section-title {
+  color: #6c7086;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.active-mode {
+  background: #33415c;
+  border-radius: 6px;
+  color: #89b4fa;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
+.muted {
+  color: #7f849c;
+}
+
+.resource-pane {
+  padding: 10px;
+}
+
+.resource-search {
+  margin-bottom: 2px;
+}
+
+.inspector {
+  background: #0d0f14;
+  color: #cdd6f4;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 14px;
+}
+
 .log-view {
   background: #0d0f14;
   color: #cdd6f4;
@@ -35,4 +85,9 @@ columnview row:selected {
   border-top: 1px solid #343a46;
   color: #a6adc8;
   padding: 7px 12px;
+}
+
+.error {
+  color: #f38ba8;
+  font-weight: 600;
 }

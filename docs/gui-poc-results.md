@@ -133,3 +133,73 @@ go build -tags gui ./cmd/e9s-gui     PASS
 Proceed to the read-only GTK workflow. Both frontends can now depend on the same
 ECS and CloudWatch behavior without sharing toolkit state, and the existing TUI
 suite passes without observable workflow changes.
+
+## Phase 2: Read-only GTK ECS workflow
+
+Status: passed on 2026-08-17.
+
+### Application startup
+
+`e9s-gui` now has its own Cobra entry point with the TUI's profile, region,
+cluster, refresh-interval, and YAML-default precedence. It creates the same shared
+AWS client and injects shared ECS and log services into the GTK frontend. GTK code
+does not construct or call AWS SDK clients directly.
+
+The GUI remains behind the `gui` build tag, so the normal TUI package graph does
+not compile or link GTK.
+
+### Read-only workflow
+
+The synthetic Phase 0 content has been replaced by a real ECS workflow:
+
+- load and filter clusters;
+- open a cluster and load/filter services;
+- open a service and load its tasks;
+- inspect status, counts, task definition, launch type, deployments, tasks, and
+  recent service events;
+- refresh manually with `Ctrl+R` or on the configured interval; and
+- preserve an open service across refresh when it still exists.
+
+The layout uses a module sidebar, virtualized `GtkColumnView` resource tables,
+master/detail panes, a monospace inspector, a breadcrumb, and a profile/region
+status bar. `Enter`, `Escape`, `/`, `Ctrl+R`, `Ctrl+P`, and `?` provide the initial
+keyboard-first navigation surface.
+
+### Concurrency and lifecycle
+
+All AWS operations run in goroutines. Every navigation or refresh starts a new
+cancellable request and cancels the previous request. Results are scheduled onto
+the GTK main loop and applied only when both their context and generation are
+still current. Application shutdown cancels the root context, including the
+periodic refresh loop and active AWS request.
+
+Loading, empty, success, and error states appear in the inspector and status bar;
+slow or failed AWS operations do not block GTK input or rendering.
+
+### Testable presentation logic
+
+Cluster filtering, service filtering, and service-detail formatting are pure Go
+functions in a non-GTK source file. Their tests run as part of ordinary
+`go test ./...`, without a display or GTK development headers.
+
+### Runtime evidence
+
+The real GUI executable mapped under Hyprland with `xwayland: false` and used
+approximately 133 MiB RSS after startup. The window remained responsive while
+the initial ECS request ran in the background.
+
+### Verification
+
+```text
+go test ./...                                      PASS
+go test -race ./internal/gui ./internal/service    PASS
+go build -o /tmp/e9s-tui .                        PASS
+go build -tags gui -o /tmp/e9s-gui ./cmd/e9s-gui PASS
+GDK_BACKEND=wayland /tmp/e9s-gui --refresh 30     PASS
+```
+
+### Phase decision
+
+Proceed to live logs and the guarded force-deployment action. The read-only
+cluster -> service -> detail slice uses the shared backend, remains responsive,
+and satisfies the Phase 2 exit criterion.
