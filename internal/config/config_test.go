@@ -132,6 +132,31 @@ func TestLogPathCRUD(t *testing.T) {
 	}
 }
 
+func TestCompleteLogPathCRUD(t *testing.T) {
+	cfg := DefaultConfig()
+	entry := LogPathEntry{
+		Name: "errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
+		Streams: []string{"api/one", "api/two"}, Filter: `"error"`, Lookback: "1h",
+	}
+	if !cfg.UpsertLogPath(entry) {
+		t.Fatal("UpsertLogPath() new = false")
+	}
+	entry.Streams[0] = "mutated"
+	if cfg.LogPaths[0].Streams[0] != "api/one" {
+		t.Fatal("UpsertLogPath() retained caller slice")
+	}
+	if !cfg.RenameLogPath("errors", "API errors") {
+		t.Fatal("RenameLogPath() = false")
+	}
+	cfg.UpsertLogPath(LogPathEntry{Name: "deployments", LogGroup: "/aws/ecs/api"})
+	if !cfg.MoveLogPath("deployments", -1) || cfg.LogPaths[0].Name != "deployments" {
+		t.Fatalf("MoveLogPath() paths = %#v", cfg.LogPaths)
+	}
+	if cfg.RenameLogPath("deployments", "API errors") {
+		t.Fatal("RenameLogPath() allowed a duplicate name")
+	}
+}
+
 func TestS3SearchCRUD(t *testing.T) {
 	cfg := DefaultConfig()
 

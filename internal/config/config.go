@@ -22,7 +22,12 @@ type LogPathEntry struct {
 	Name      string   `yaml:"name"`
 	LogGroup  string   `yaml:"log_group"`
 	LogGroups []string `yaml:"log_groups,omitempty"` // multi-group search
-	Stream    string   `yaml:"stream,omitempty"`     // optional — empty means all streams
+	Stream    string   `yaml:"stream,omitempty"`     // legacy single-stream scope
+	Streams   []string `yaml:"streams,omitempty"`
+	Filter    string   `yaml:"filter,omitempty"`
+	Lookback  string   `yaml:"lookback,omitempty"`
+	StartTime int64    `yaml:"start_time,omitempty"`
+	EndTime   int64    `yaml:"end_time,omitempty"`
 }
 
 type SQSQueueEntry struct {
@@ -500,32 +505,63 @@ func (c *Config) RemoveLogPath(name string) {
 
 // AddLogPath adds or updates a saved log path.
 func (c *Config) AddLogPath(name, logGroup, stream string) bool {
-	for i, p := range c.LogPaths {
-		if p.Name == name {
-			c.LogPaths[i].LogGroup = logGroup
-			c.LogPaths[i].LogGroups = nil
-			c.LogPaths[i].Stream = stream
-			return false
-		}
-	}
-	c.LogPaths = append(c.LogPaths, LogPathEntry{Name: name, LogGroup: logGroup, Stream: stream})
-	return true
+	return c.UpsertLogPath(LogPathEntry{Name: name, LogGroup: logGroup, Stream: stream})
 }
 
 // AddLogPathMultiGroup adds or updates a saved multi-group log path.
 func (c *Config) AddLogPathMultiGroup(name string, groups []string) bool {
-	for i, p := range c.LogPaths {
-		if p.Name == name {
-			c.LogPaths[i].LogGroup = groups[0]
-			c.LogPaths[i].LogGroups = groups
-			c.LogPaths[i].Stream = ""
+	if len(groups) == 0 {
+		return false
+	}
+	return c.UpsertLogPath(LogPathEntry{Name: name, LogGroup: groups[0], LogGroups: groups})
+}
+
+// UpsertLogPath adds or replaces a complete saved CloudWatch Logs destination.
+// The slices are copied so callers can safely reuse their input.
+func (c *Config) UpsertLogPath(entry LogPathEntry) bool {
+	entry.LogGroups = append([]string(nil), entry.LogGroups...)
+	entry.Streams = append([]string(nil), entry.Streams...)
+	for i, path := range c.LogPaths {
+		if path.Name == entry.Name {
+			c.LogPaths[i] = entry
 			return false
 		}
 	}
-	c.LogPaths = append(c.LogPaths, LogPathEntry{
-		Name:      name,
-		LogGroup:  groups[0],
-		LogGroups: groups,
-	})
+	c.LogPaths = append(c.LogPaths, entry)
 	return true
+}
+
+// RenameLogPath renames a saved destination. It refuses duplicate names.
+func (c *Config) RenameLogPath(oldName, newName string) bool {
+	if oldName == newName {
+		return true
+	}
+	for _, path := range c.LogPaths {
+		if path.Name == newName {
+			return false
+		}
+	}
+	for i := range c.LogPaths {
+		if c.LogPaths[i].Name == oldName {
+			c.LogPaths[i].Name = newName
+			return true
+		}
+	}
+	return false
+}
+
+// MoveLogPath moves a saved destination one slot in the requested direction.
+func (c *Config) MoveLogPath(name string, direction int) bool {
+	for i := range c.LogPaths {
+		if c.LogPaths[i].Name != name {
+			continue
+		}
+		to := i + direction
+		if to < 0 || to >= len(c.LogPaths) {
+			return false
+		}
+		c.LogPaths[i], c.LogPaths[to] = c.LogPaths[to], c.LogPaths[i]
+		return true
+	}
+	return false
 }

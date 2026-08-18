@@ -27,6 +27,7 @@ const (
 	pageTaskDefinitions = "task-definitions"
 	pageLogGroups       = "cloudwatch-log-groups"
 	pageLogStreams      = "cloudwatch-log-streams"
+	pageSavedLogSearch  = "cloudwatch-saved-search"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -93,10 +94,15 @@ type mainWindow struct {
 	taskDefinitionsNavButton    *gtk.ToggleButton
 	logGroupsNavButton          *gtk.ToggleButton
 	cloudWatchModuleItems       *gtk.Box
+	savedLogsLabel              *gtk.Label
+	savedLogNavButtons          []*gtk.ToggleButton
+	activeSavedLog              string
 	peekLogStreamButton         *gtk.Button
 	followLogStreamButton       *gtk.Button
 	followLogGroupButton        *gtk.Button
 	searchLogsButton            *gtk.Button
+	saveLogSearchButton         *gtk.Button
+	manageSavedLogButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -278,6 +284,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.followLogGroupButton.ConnectClicked(w.followSelectedLogGroup)
 	w.searchLogsButton = gtk.NewButtonWithLabel("Search logs")
 	w.searchLogsButton.ConnectClicked(w.promptCloudWatchSearch)
+	w.saveLogSearchButton = gtk.NewButtonWithLabel("Save search")
+	w.saveLogSearchButton.ConnectClicked(w.promptSaveLogSearch)
+	w.manageSavedLogButton = gtk.NewButtonWithLabel("Manage saved…")
+	w.manageSavedLogButton.ConnectClicked(w.promptManageSavedLog)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -321,6 +331,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.followLogStreamButton)
 	header.Append(w.followLogGroupButton)
 	header.Append(w.searchLogsButton)
+	header.Append(w.saveLogSearchButton)
+	header.Append(w.manageSavedLogButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -348,6 +360,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.cloudWatchModuleItems.AddCSSClass("module-subitems")
 	w.cloudWatchModuleItems.Append(w.logGroupsNavButton)
+	w.rebuildSavedLogRail()
 	cloudWatch := gtk.NewExpander("CloudWatch Logs")
 	cloudWatch.SetExpanded(true)
 	cloudWatch.SetChild(w.cloudWatchModuleItems)
@@ -432,6 +445,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
 	w.resourceStack.AddNamed(logGroupScroll, pageLogGroups)
 	w.resourceStack.AddNamed(logStreamScroll, pageLogStreams)
+	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
+	savedLogScope.SetXAlign(0)
+	savedLogScope.SetYAlign(0)
+	savedLogScope.SetMarginTop(12)
+	savedLogScope.SetMarginStart(12)
+	w.resourceStack.AddNamed(savedLogScope, pageSavedLogSearch)
 	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -749,6 +768,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 		w.logGeneration++
 	}
 	w.logFollowing = false
+	w.logSearchSpec = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1309,6 +1329,16 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	cloudWatchPage := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch
+	if foreground && cloudWatchPage && !w.reloadSavedLogConfig() {
+		return
+	}
+	if w.currentPage == pageSavedLogSearch {
+		if path, found := w.activeSavedLogPath(); found {
+			w.openSavedLog(path)
+		}
+		return
+	}
 	if w.currentPage == pageLogStreams {
 		w.refreshLogStreams(foreground)
 		return
@@ -1572,7 +1602,13 @@ func (w *mainWindow) updateActionSensitivity() {
 	if w.clustersNavButton != nil {
 		w.clustersNavButton.SetActive(isECSPage(w.currentPage) && w.currentPage != pageTaskDefinitions)
 		w.taskDefinitionsNavButton.SetActive(w.currentPage == pageTaskDefinitions)
-		w.logGroupsNavButton.SetActive(w.currentPage == pageLogGroups || w.currentPage == pageLogStreams)
+		w.logGroupsNavButton.SetActive(w.activeSavedLog == "" && (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams))
+		cloudWatchPage := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch
+		for i, path := range w.options.ConfigLogPaths() {
+			if i < len(w.savedLogNavButtons) {
+				w.savedLogNavButtons[i].SetActive(cloudWatchPage && path.Name == w.activeSavedLog)
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -1601,7 +1637,7 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
 	w.taskLogsButton.SetVisible(taskSelected)
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
-	logGroupSelected := (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams) && w.selectedLogGroup != ""
+	logGroupSelected := (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch) && w.selectedLogGroup != ""
 	logStreamSelected := w.currentPage == pageLogStreams && w.selectedLogStream != ""
 	w.peekLogStreamButton.SetVisible(logStreamSelected)
 	w.peekLogStreamButton.SetSensitive(logStreamSelected && w.options.Logs != nil)
@@ -1609,9 +1645,15 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.followLogStreamButton.SetSensitive(logStreamSelected && w.options.Logs != nil)
 	w.followLogGroupButton.SetVisible(logGroupSelected)
 	w.followLogGroupButton.SetSensitive(logGroupSelected && w.options.Logs != nil)
-	cloudWatchBrowser := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams
+	cloudWatchBrowser := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch
 	w.searchLogsButton.SetVisible(cloudWatchBrowser)
 	w.searchLogsButton.SetSensitive(cloudWatchBrowser && logGroupSelected && w.options.Logs != nil)
+	hasSearch := w.showingLogs && w.logSearchSpec != nil
+	w.saveLogSearchButton.SetVisible(hasSearch && w.activeSavedLog == "")
+	w.saveLogSearchButton.SetSensitive(hasSearch && w.options.Config != nil)
+	managingSaved := cloudWatchBrowser && w.activeSavedLog != "" && w.options.Config != nil
+	w.manageSavedLogButton.SetVisible(managingSaved)
+	w.manageSavedLogButton.SetSensitive(managingSaved)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

@@ -29,6 +29,7 @@ func (w *mainWindow) openLogGroupsModule() {
 
 func (w *mainWindow) loadLogGroups() {
 	w.resetWorkspaceForBrowserChange()
+	w.activeSavedLog = ""
 	w.clearLogGroupBrowser()
 	w.currentPage = pageLogGroups
 	w.selectedCluster = ""
@@ -122,6 +123,7 @@ func (w *mainWindow) openLogGroupAt(position uint) {
 	if int(position) >= len(w.filteredLogGroups) {
 		return
 	}
+	w.activeSavedLog = ""
 	w.loadLogStreams(w.filteredLogGroups[position].Name)
 }
 

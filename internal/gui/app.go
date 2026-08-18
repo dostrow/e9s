@@ -10,6 +10,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -51,6 +52,8 @@ type LogService interface {
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
+	Config          *config.Config
+	ReloadConfig    func() config.Config
 	DefaultCluster  string
 	Profile         string
 	Region          string

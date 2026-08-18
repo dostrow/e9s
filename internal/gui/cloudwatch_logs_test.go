@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -80,6 +81,37 @@ func TestQuoteCloudWatchFilter(t *testing.T) {
 		if got := quoteCloudWatchFilter(input); got != want {
 			t.Errorf("quoteCloudWatchFilter(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestSearchFromSavedLogUsesRelativeLookback(t *testing.T) {
+	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
+	path := config.LogPathEntry{
+		Name: "API errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
+		Streams: []string{"api/one"}, Filter: `"error"`, Lookback: "6h",
+	}
+	spec, err := searchFromSavedLog(path, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Title != path.Name || spec.Lookback != 6*time.Hour {
+		t.Fatalf("spec = %#v", spec)
+	}
+	if got := spec.EndTime - spec.StartTime; got != (6 * time.Hour).Milliseconds() {
+		t.Fatalf("range = %dms", got)
+	}
+}
+
+func TestLegacySavedLogScope(t *testing.T) {
+	path := config.LogPathEntry{Name: "api", LogGroup: "/aws/ecs/api", Stream: "api/one"}
+	if savedLogHasQuery(path) {
+		t.Fatal("legacy destination unexpectedly has a query")
+	}
+	if got := savedLogGroups(path); !reflect.DeepEqual(got, []string{"/aws/ecs/api"}) {
+		t.Fatalf("groups = %#v", got)
+	}
+	if got := savedLogStreams(path); !reflect.DeepEqual(got, []string{"api/one"}) {
+		t.Fatalf("streams = %#v", got)
 	}
 }
 

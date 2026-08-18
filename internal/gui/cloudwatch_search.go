@@ -30,6 +30,7 @@ type cloudWatchSearch struct {
 	Groups    []string
 	Streams   []string
 	Filter    string
+	Lookback  time.Duration
 	StartTime int64
 	EndTime   int64
 	Title     string
@@ -49,13 +50,20 @@ func (w *mainWindow) promptCloudWatchSearch() {
 	content.SetMarginStart(16)
 	content.SetMarginEnd(16)
 
+	defaultGroups := []string{w.selectedLogGroup}
+	defaultStreams := []string(nil)
+	if w.currentPage == pageLogStreams && w.selectedLogStream != "" {
+		defaultStreams = []string{w.selectedLogStream}
+	}
+	if path, ok := w.activeSavedLogPath(); ok {
+		defaultGroups = savedLogGroups(path)
+		defaultStreams = savedLogStreams(path)
+	}
 	groups := gtk.NewEntry()
-	groups.SetText(w.selectedLogGroup)
+	groups.SetText(strings.Join(defaultGroups, ", "))
 	groups.SetPlaceholderText("Comma-separated log groups")
 	streams := gtk.NewEntry()
-	if w.currentPage == pageLogStreams && w.selectedLogStream != "" {
-		streams.SetText(w.selectedLogStream)
-	}
+	streams.SetText(strings.Join(defaultStreams, ", "))
 	streams.SetPlaceholderText("Comma-separated streams; blank searches whole group")
 	filter := gtk.NewEntry()
 	filter.SetPlaceholderText("Plain text or a CloudWatch filter expression")
@@ -71,6 +79,18 @@ func (w *mainWindow) promptCloudWatchSearch() {
 	from.SetText(now.Add(-time.Hour).Format("2006-01-02 15:04"))
 	to := gtk.NewEntry()
 	to.SetText(now.Format("2006-01-02 15:04"))
+	if w.logSearchSpec != nil {
+		filter.SetText(w.logSearchSpec.Filter)
+		from.SetText(time.UnixMilli(w.logSearchSpec.StartTime).UTC().Format("2006-01-02 15:04"))
+		to.SetText(time.UnixMilli(w.logSearchSpec.EndTime).UTC().Format("2006-01-02 15:04"))
+		preset.SetSelected(uint(len(cloudWatchTimePresets) - 1))
+		for i, candidate := range cloudWatchTimePresets[:len(cloudWatchTimePresets)-1] {
+			if candidate.duration == w.logSearchSpec.Lookback {
+				preset.SetSelected(uint(i))
+				break
+			}
+		}
+	}
 	errorLabel := gtk.NewLabel("")
 	errorLabel.SetXAlign(0)
 	errorLabel.SetWrap(true)
@@ -127,9 +147,11 @@ func buildCloudWatchSearch(groupsText, streamsText, filterText string, preset in
 
 	now = now.UTC()
 	var start, end time.Time
+	var lookback time.Duration
 	if preset >= 0 && preset < len(cloudWatchTimePresets)-1 {
+		lookback = cloudWatchTimePresets[preset].duration
 		end = now
-		start = end.Add(-cloudWatchTimePresets[preset].duration)
+		start = end.Add(-lookback)
 	} else if preset == len(cloudWatchTimePresets)-1 {
 		var err error
 		start, err = parseCloudWatchUTCTime(fromText)
@@ -149,7 +171,7 @@ func buildCloudWatchSearch(groupsText, streamsText, filterText string, preset in
 
 	filter := quoteCloudWatchFilter(filterText)
 	return cloudWatchSearch{
-		Groups: groups, Streams: streams, Filter: filter,
+		Groups: groups, Streams: streams, Filter: filter, Lookback: lookback,
 		StartTime: start.UnixMilli(), EndTime: end.UnixMilli(),
 		Title: cloudWatchSearchTitle(groups, streams, filter),
 	}, nil
@@ -178,6 +200,7 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 func (w *mainWindow) showCloudWatchSearchResults(spec cloudWatchSearch, page model.LogPage) {
 	w.logSearchSpec = &spec
 	w.showLogSnapshotData(model.LogSource{Group: spec.Groups[0], Streams: spec.Streams}, spec.Title, page)
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) loadAdjacentCloudWatchRange(direction int) {
@@ -192,6 +215,7 @@ func (w *mainWindow) loadAdjacentCloudWatchRange(direction int) {
 	shift := int64(direction) * width
 	spec.StartTime += shift
 	spec.EndTime += shift
+	spec.Lookback = 0
 	if spec.EndTime > time.Now().UnixMilli() {
 		spec.EndTime = time.Now().UnixMilli()
 		spec.StartTime = spec.EndTime - width
@@ -233,6 +257,7 @@ func (w *mainWindow) promptLogCorrelation() {
 		window := windows[selected]
 		spec := *w.logSearchSpec
 		spec.Filter = ""
+		spec.Lookback = 0
 		spec.StartTime = max(int64(0), entry.Timestamp-window.Milliseconds())
 		spec.EndTime = entry.Timestamp + window.Milliseconds()
 		spec.Title = "Correlate: " + cloudWatchScopeTitle(spec.Groups, spec.Streams)

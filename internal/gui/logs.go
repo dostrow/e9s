@@ -154,11 +154,13 @@ func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
 	w.updateLogSearchControls()
 	w.startLogFollow(source, false)
 	w.setStatus("Following logs for "+title, false)
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) showLogSnapshot(source model.LogSource, title string, page model.LogPage) {
 	w.logSearchSpec = nil
 	w.showLogSnapshotData(source, title, page)
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, page model.LogPage) {
@@ -382,4 +384,5 @@ func (w *mainWindow) closeLogs() {
 	w.showingLogs = false
 	w.detailStack.SetVisibleChildName("detail")
 	w.setStatus("Log follow stopped", false)
+	w.updateActionSensitivity()
 }
