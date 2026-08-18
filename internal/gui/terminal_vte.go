@@ -69,4 +69,11 @@ func (terminal *vteTerminal) Stop() {
 	C.e9s_vte_terminal_stop((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
 }
 
+func (terminal *vteTerminal) SetFontScale(scale float64) {
+	C.e9s_vte_terminal_set_font_scale(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+		C.double(scale),
+	)
+}
+
 func vteAvailable() bool { return true }

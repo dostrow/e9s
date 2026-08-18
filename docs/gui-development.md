@@ -110,6 +110,9 @@ memory than a cached rebuild.
 7. Close the window during an active request and confirm the process exits.
 8. Open ECS Exec, resize the tiled window, type in the remote shell, and confirm
    Disconnect terminates the local Session Manager plugin process.
+9. Place the pointer over each pane and use Ctrl+mouse-wheel to confirm the
+   browser and workspace zoom independently. Confirm Ctrl++/Ctrl+- affect the
+   focused or most recently pointed-to pane and Ctrl+0 resets it.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

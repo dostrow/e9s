@@ -38,6 +38,11 @@ type mainWindow struct {
 	generation    uint64
 	logCancel     context.CancelFunc
 	logGeneration uint64
+	browserPane   *gtk.Widget
+	workspacePane *gtk.Widget
+	browserZoom   int
+	workspaceZoom int
+	zoomTarget    paneZoomTarget
 
 	currentPage                 string
 	detailContent               string
@@ -329,6 +334,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	contentSplit.SetPosition(700)
 	contentSplit.SetResizeStartChild(true)
 	contentSplit.SetResizeEndChild(true)
+	w.installPaneZoom(&resourcePane.Widget, &w.detailStack.Widget)
 
 	mainSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	mainSplit.SetStartChild(sidebar)
@@ -378,7 +384,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the task-definition editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
@@ -399,6 +405,13 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "force-deploy", []string{"<Control><Shift>r"}, w.confirmForceDeployment)
 	w.addAction(app, "scale-service", []string{"<Control><Shift>s"}, w.promptScaleService)
 	w.addAction(app, "stop-task", []string{"<Control><Shift>x"}, w.confirmStopTask)
+	w.addAction(app, "zoom-in", zoomInAccelerators, func() {
+		w.adjustActivePaneZoom(1)
+	})
+	w.addAction(app, "zoom-out", zoomOutAccelerators, func() {
+		w.adjustActivePaneZoom(-1)
+	})
+	w.addAction(app, "zoom-reset", zoomResetAccelerators, w.resetActivePaneZoom)
 }
 
 func (w *mainWindow) addAction(app *gtk.Application, name string, accels []string, run func()) {

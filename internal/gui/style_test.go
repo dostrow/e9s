@@ -21,3 +21,12 @@ func TestApplicationCSSDoesNotOverrideGTKPalette(t *testing.T) {
 		}
 	}
 }
+
+func TestApplicationCSSDefinesEveryZoomLevel(t *testing.T) {
+	for level := zoomMinimum; level <= zoomMaximum; level += zoomStep {
+		selector := "." + zoomClass(level)
+		if !strings.Contains(styleCSS, selector) {
+			t.Errorf("application CSS is missing %s", selector)
+		}
+	}
+}

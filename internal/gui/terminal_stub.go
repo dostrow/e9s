@@ -36,4 +36,6 @@ func (terminal *vteTerminal) Spawn(string, []string) error {
 
 func (terminal *vteTerminal) Stop() {}
 
+func (terminal *vteTerminal) SetFontScale(float64) {}
+
 func vteAvailable() bool { return false }
