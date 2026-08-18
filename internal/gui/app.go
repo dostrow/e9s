@@ -28,6 +28,12 @@ type ECSService interface {
 	ListServiceAlarms(context.Context, string, string) ([]model.AlarmState, error)
 	ScaleInSuspended(context.Context, string, string) (bool, error)
 	SetScaleInSuspended(context.Context, string, string, bool) error
+	ListTaskDefinitions(context.Context, string) ([]model.TaskDefRef, error)
+	GetTaskDefinition(context.Context, string) (*model.TaskDefSummary, error)
+	TaskDefinitionDiff(context.Context, string, string) (string, error)
+	TaskDefinitionEditorDocument(string) (string, error)
+	RegisterTaskDefinitionJSON(context.Context, string) (*model.TaskDefSummary, error)
+	TaskDefinitionEnvironment(context.Context, string, string, bool) ([]model.EnvVar, error)
 	ContainerLogSource(context.Context, model.Task, string) (model.LogSource, error)
 	ServiceLogSource(context.Context, string, string) (model.LogSource, error)
 }

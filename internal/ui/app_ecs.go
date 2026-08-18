@@ -131,7 +131,7 @@ func (a App) openTaskDefinitions() (App, tea.Cmd) {
 
 func (a App) loadTaskDefinitions() tea.Cmd {
 	return func() tea.Msg {
-		defs, err := a.client.ListTaskDefinitions(context.Background(), "")
+		defs, err := a.ecs.ListTaskDefinitions(a.ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -151,9 +151,8 @@ func (a App) openSelectedTaskDefinition() (App, tea.Cmd) {
 }
 
 func (a App) loadTaskDefinitionDetail(taskDef string) tea.Cmd {
-	client := a.client
 	return func() tea.Msg {
-		def, err := client.GetTaskDefinition(context.Background(), taskDef)
+		def, err := a.ecs.GetTaskDefinition(a.ctx, taskDef)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -239,21 +238,15 @@ func (a App) showTaskDefDiff() (App, tea.Cmd) {
 		return a, nil
 	}
 
-	client := a.client
 	deps := a.selectedService.Deployments
 	oldTD := deps[1].TaskDefinition
 	newTD := deps[0].TaskDefinition
 
 	return a, func() tea.Msg {
-		oldDef, err := client.GetTaskDefinition(context.Background(), oldTD)
+		diff, err := a.ecs.TaskDefinitionDiff(a.ctx, oldTD, newTD)
 		if err != nil {
-			return errMsg{fmt.Errorf("fetching old task def: %w", err)}
+			return errMsg{err}
 		}
-		newDef, err := client.GetTaskDefinition(context.Background(), newTD)
-		if err != nil {
-			return errMsg{fmt.Errorf("fetching new task def: %w", err)}
-		}
-		diff := e9saws.DiffTaskDefinitions(oldDef, newDef)
 		return taskDefDiffReadyMsg{
 			title: fmt.Sprintf("%s → %s", oldTD, newTD),
 			diff:  diff,
@@ -435,22 +428,15 @@ func (a App) showEnvVars() (App, tea.Cmd) {
 
 func (a App) doShowEnvVars(containerName string) tea.Cmd {
 	t := a.selectedTask
-	client := a.client
 	return func() tea.Msg {
-		td, err := client.GetTaskDefinition(context.Background(), t.TaskDefinition)
+		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, t.TaskDefinition, containerName, true)
 		if err != nil {
 			return errMsg{err}
 		}
-		for _, c := range td.Containers {
-			if c.Name == containerName {
-				resolved := client.ResolveEnvVars(context.Background(), c.EnvVars)
-				return envVarsReadyMsg{
-					title:   fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
-					envVars: resolved,
-				}
-			}
+		return envVarsReadyMsg{
+			title:   fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
+			envVars: environment,
 		}
-		return errMsg{fmt.Errorf("container %q not found in task definition", containerName)}
 	}
 }
 
@@ -478,21 +464,18 @@ func (a App) showTaskDefEnvVars() (App, tea.Cmd) {
 
 func (a App) doShowTaskDefEnvVars(containerName string) tea.Cmd {
 	td := a.taskDefDetailView.TaskDef()
-	client := a.client
 	return func() tea.Msg {
 		if td == nil {
 			return errMsg{fmt.Errorf("no task definition selected")}
 		}
-		for _, c := range td.Containers {
-			if c.Name == containerName {
-				resolved := client.ResolveEnvVars(context.Background(), c.EnvVars)
-				return envVarsReadyMsg{
-					title:   fmt.Sprintf("%s:%d/%s", td.Family, td.Revision, containerName),
-					envVars: resolved,
-				}
-			}
+		environment, err := a.ecs.TaskDefinitionEnvironment(a.ctx, td.ARN, containerName, true)
+		if err != nil {
+			return errMsg{err}
 		}
-		return errMsg{fmt.Errorf("container %q not found in task definition", containerName)}
+		return envVarsReadyMsg{
+			title:   fmt.Sprintf("%s:%d/%s", td.Family, td.Revision, containerName),
+			envVars: environment,
+		}
 	}
 }
 

@@ -23,6 +23,9 @@ type fakeECSAPI struct {
 	alarms        []model.AlarmState
 	suspended     bool
 	suspensionSet []any
+	definitions   []model.TaskDefRef
+	definition    *model.TaskDefSummary
+	registered    string
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -72,6 +75,27 @@ func (f *fakeECSAPI) ScaleInSuspended(context.Context, string, string) (bool, er
 func (f *fakeECSAPI) SetScaleInSuspended(_ context.Context, cluster, service string, suspended bool) error {
 	f.suspensionSet = []any{cluster, service, suspended}
 	return f.err
+}
+
+func (f *fakeECSAPI) ListTaskDefinitions(context.Context, string) ([]model.TaskDefRef, error) {
+	return f.definitions, f.err
+}
+
+func (f *fakeECSAPI) GetTaskDefinition(context.Context, string) (*model.TaskDefSummary, error) {
+	return f.definition, f.err
+}
+
+func (f *fakeECSAPI) RegisterTaskDefinitionJSON(_ context.Context, raw string) (*model.TaskDefSummary, error) {
+	f.registered = raw
+	return f.definition, f.err
+}
+
+func (f *fakeECSAPI) ResolveEnvVars(_ context.Context, environment []model.EnvVar) []model.EnvVar {
+	resolved := append([]model.EnvVar(nil), environment...)
+	for i := range resolved {
+		resolved[i].ResolvedValue = "resolved:" + resolved[i].Value
+	}
+	return resolved
 }
 
 func (f *fakeECSAPI) GetLogConfig(context.Context, string, string) (string, string, error) {
@@ -242,5 +266,28 @@ func TestECSMetricsAlarmsAndScaleIn(t *testing.T) {
 	}
 	if len(api.suspensionSet) != 3 || api.suspensionSet[0] != "prod" || api.suspensionSet[1] != "api" || api.suspensionSet[2] != false {
 		t.Fatalf("suspension arguments = %#v", api.suspensionSet)
+	}
+}
+
+func TestECSTaskDefinitionWorkflows(t *testing.T) {
+	api := &fakeECSAPI{
+		definitions: []model.TaskDefRef{{ARN: "arn:api:2", Family: "api", Revision: 2}},
+		definition: &model.TaskDefSummary{
+			Family: "api", Revision: 2,
+			Containers: []model.TaskDefContainer{{Name: "api", EnvVars: []model.EnvVar{{Name: "TOKEN", Value: "secret"}}}},
+		},
+	}
+	svc := NewECS(api)
+	definitions, err := svc.ListTaskDefinitions(context.Background(), " api ")
+	if err != nil || len(definitions) != 1 {
+		t.Fatalf("ListTaskDefinitions() = %#v, %v", definitions, err)
+	}
+	environment, err := svc.TaskDefinitionEnvironment(context.Background(), "api:2", "api", true)
+	if err != nil || len(environment) != 1 || environment[0].ResolvedValue != "resolved:secret" {
+		t.Fatalf("TaskDefinitionEnvironment() = %#v, %v", environment, err)
+	}
+	registered, err := svc.RegisterTaskDefinitionJSON(context.Background(), `{"Family":"api"}`)
+	if err != nil || registered.Family != "api" || api.registered == "" {
+		t.Fatalf("RegisterTaskDefinitionJSON() = %#v, %v", registered, err)
 	}
 }

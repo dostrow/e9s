@@ -25,6 +25,10 @@ type ECSAPI interface {
 	ListAlarms(context.Context, string, string) ([]model.AlarmState, error)
 	ScaleInSuspended(context.Context, string, string) (bool, error)
 	SetScaleInSuspended(context.Context, string, string, bool) error
+	ListTaskDefinitions(context.Context, string) ([]model.TaskDefRef, error)
+	GetTaskDefinition(context.Context, string) (*model.TaskDefSummary, error)
+	RegisterTaskDefinitionJSON(context.Context, string) (*model.TaskDefSummary, error)
+	ResolveEnvVars(context.Context, []model.EnvVar) []model.EnvVar
 	GetLogConfig(context.Context, string, string) (string, string, error)
 	ResolveTaskLogStreams(context.Context, []model.Task) (string, []string, error)
 }
@@ -154,6 +158,69 @@ func (s *ECS) SetScaleInSuspended(ctx context.Context, cluster, service string, 
 		return fmt.Errorf("set scale-in suspension for ECS service %q in %q: %w", service, cluster, err)
 	}
 	return nil
+}
+
+func (s *ECS) ListTaskDefinitions(ctx context.Context, familyPrefix string) ([]model.TaskDefRef, error) {
+	definitions, err := s.api.ListTaskDefinitions(ctx, strings.TrimSpace(familyPrefix))
+	if err != nil {
+		return nil, fmt.Errorf("list ECS task definitions: %w", err)
+	}
+	return definitions, nil
+}
+
+func (s *ECS) GetTaskDefinition(ctx context.Context, taskDefinition string) (*model.TaskDefSummary, error) {
+	definition, err := s.api.GetTaskDefinition(ctx, strings.TrimSpace(taskDefinition))
+	if err != nil {
+		return nil, fmt.Errorf("get ECS task definition %q: %w", taskDefinition, err)
+	}
+	if definition == nil {
+		return nil, fmt.Errorf("get ECS task definition %q: empty response", taskDefinition)
+	}
+	return definition, nil
+}
+
+func (s *ECS) TaskDefinitionDiff(ctx context.Context, oldRef, newRef string) (string, error) {
+	oldDefinition, err := s.GetTaskDefinition(ctx, oldRef)
+	if err != nil {
+		return "", err
+	}
+	newDefinition, err := s.GetTaskDefinition(ctx, newRef)
+	if err != nil {
+		return "", err
+	}
+	return aws.DiffTaskDefinitions(oldDefinition, newDefinition), nil
+}
+
+func (s *ECS) TaskDefinitionEditorDocument(raw string) (string, error) {
+	return aws.PrepareTaskDefinitionJSON(raw)
+}
+
+func (s *ECS) RegisterTaskDefinitionJSON(ctx context.Context, raw string) (*model.TaskDefSummary, error) {
+	definition, err := s.api.RegisterTaskDefinitionJSON(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("register ECS task definition: %w", err)
+	}
+	if definition == nil {
+		return nil, fmt.Errorf("register ECS task definition: empty response")
+	}
+	return definition, nil
+}
+
+func (s *ECS) TaskDefinitionEnvironment(ctx context.Context, taskDefinition, container string, resolveSecrets bool) ([]model.EnvVar, error) {
+	definition, err := s.GetTaskDefinition(ctx, taskDefinition)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range definition.Containers {
+		if candidate.Name == container {
+			environment := append([]model.EnvVar(nil), candidate.EnvVars...)
+			if resolveSecrets {
+				environment = s.api.ResolveEnvVars(ctx, environment)
+			}
+			return environment, nil
+		}
+	}
+	return nil, fmt.Errorf("container %q not found in task definition %q", container, taskDefinition)
 }
 
 func (s *ECS) ContainerLogSource(ctx context.Context, task model.Task, container string) (model.LogSource, error) {

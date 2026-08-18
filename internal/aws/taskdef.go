@@ -5,53 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	awsPkg "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	smSvc "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	ssmSvc "github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type TaskDefRef struct {
-	ARN      string
-	Family   string
-	Revision int
-}
-
-type TaskDefSummary struct {
-	ARN                     string
-	Family                  string
-	Revision                int
-	Status                  string
-	CPU                     string
-	Memory                  string
-	NetworkMode             string
-	TaskRoleArn             string
-	ExecutionRoleArn        string
-	RequiresCompatibilities []string
-	RegisteredAt            time.Time
-	Containers              []TaskDefContainer
-	RawJSON                 string
-}
-
-type TaskDefContainer struct {
-	Name       string
-	Image      string
-	CPU        int
-	Memory     int
-	Essential  bool
-	EnvVars    []EnvVar
-	EnvVarKeys []string // kept for diff compatibility
-}
-
-type EnvVar struct {
-	Name          string
-	Value         string // plain value for env, ARN for secrets
-	ResolvedValue string // resolved secret value (populated by ResolveEnvVars)
-	Source        string // "" for plain env, "secrets-manager" or "ssm" for secrets
-}
+type TaskDefRef = model.TaskDefRef
+type TaskDefSummary = model.TaskDefSummary
+type TaskDefContainer = model.TaskDefContainer
+type EnvVar = model.EnvVar
 
 // ListTaskDefinitions returns active task definitions in descending revision order.
 func (c *Client) ListTaskDefinitions(ctx context.Context, familyPrefix string) ([]TaskDefRef, error) {
@@ -90,8 +56,14 @@ func (c *Client) GetTaskDefinition(ctx context.Context, taskDef string) (*TaskDe
 	if err != nil {
 		return nil, err
 	}
+	if out.TaskDefinition == nil {
+		return nil, fmt.Errorf("ECS returned no task definition for %q", taskDef)
+	}
 
-	td := out.TaskDefinition
+	return summarizeTaskDefinition(out.TaskDefinition), nil
+}
+
+func summarizeTaskDefinition(td *ecstypes.TaskDefinition) *TaskDefSummary {
 	summary := &TaskDefSummary{
 		ARN:              derefStrAws(td.TaskDefinitionArn),
 		Family:           derefStrAws(td.Family),
@@ -161,7 +133,67 @@ func (c *Client) GetTaskDefinition(ctx context.Context, taskDef string) (*TaskDe
 	raw, _ := json.MarshalIndent(td, "", "  ")
 	summary.RawJSON = string(raw)
 
-	return summary, nil
+	return summary
+}
+
+var taskDefinitionResponseFields = []string{
+	"Compatibilities", "DeregisteredAt", "RegisteredAt", "RegisteredBy",
+	"RequiresAttributes", "Revision", "Status", "TaskDefinitionArn",
+}
+
+// PrepareTaskDefinitionJSON removes read-only response fields and validates
+// that the document can be registered as a new task-definition revision.
+func PrepareTaskDefinitionJSON(raw string) (string, error) {
+	_, document, err := prepareTaskDefinitionInput(raw)
+	return document, err
+}
+
+func prepareTaskDefinitionInput(raw string) (*ecs.RegisterTaskDefinitionInput, string, error) {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &document); err != nil {
+		return nil, "", fmt.Errorf("invalid task-definition JSON: %w", err)
+	}
+	if document == nil {
+		return nil, "", fmt.Errorf("task-definition JSON must be an object")
+	}
+	for key := range document {
+		for _, readOnly := range taskDefinitionResponseFields {
+			if strings.EqualFold(key, readOnly) {
+				delete(document, key)
+				break
+			}
+		}
+	}
+	clean, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return nil, "", fmt.Errorf("format task-definition JSON: %w", err)
+	}
+	var input ecs.RegisterTaskDefinitionInput
+	if err := json.Unmarshal(clean, &input); err != nil {
+		return nil, "", fmt.Errorf("invalid task-definition fields: %w", err)
+	}
+	if input.Family == nil || strings.TrimSpace(*input.Family) == "" {
+		return nil, "", fmt.Errorf("task-definition Family is required")
+	}
+	if len(input.ContainerDefinitions) == 0 {
+		return nil, "", fmt.Errorf("task-definition ContainerDefinitions is required")
+	}
+	return &input, string(clean), nil
+}
+
+func (c *Client) RegisterTaskDefinitionJSON(ctx context.Context, raw string) (*TaskDefSummary, error) {
+	input, _, err := prepareTaskDefinitionInput(raw)
+	if err != nil {
+		return nil, err
+	}
+	out, err := c.ECS.RegisterTaskDefinition(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if out.TaskDefinition == nil {
+		return nil, fmt.Errorf("ECS registered the task definition but returned no definition")
+	}
+	return summarizeTaskDefinition(out.TaskDefinition), nil
 }
 
 func parseTaskDefARN(arn string) (string, int) {

@@ -19,6 +19,7 @@ const (
 	pageServices        = "services"
 	pageTasks           = "tasks"
 	pageStandaloneTasks = "standalone-tasks"
+	pageTaskDefinitions = "task-definitions"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -38,62 +39,80 @@ type mainWindow struct {
 	logCancel     context.CancelFunc
 	logGeneration uint64
 
-	currentPage        string
-	detailContent      string
-	selectedCluster    string
-	selectedService    string
-	selectedTask       string
-	allClusters        []model.Cluster
-	filteredClusters   []model.Cluster
-	allServices        []model.Service
-	filteredServices   []model.Service
-	allTasks           []model.Task
-	filteredTasks      []model.Task
-	clusterTable       *stringTable
-	serviceTable       *stringTable
-	taskTable          *stringTable
-	resourceStack      *gtk.Stack
-	search             *gtk.SearchEntry
-	backButton         *gtk.Button
-	logsButton         *gtk.Button
-	taskLogsButton     *gtk.Button
-	standaloneButton   *gtk.Button
-	runTaskButton      *gtk.Button
-	metricsButton      *gtk.Button
-	scaleButton        *gtk.Button
-	stopTaskButton     *gtk.Button
-	deployButton       *gtk.Button
-	breadcrumb         *gtk.Label
-	detailBuffer       *gtk.TextBuffer
-	detailText         string
-	detailStack        *gtk.Stack
-	metricsCPUAvg      *gtk.ProgressBar
-	metricsCPUMax      *gtk.ProgressBar
-	metricsMemAvg      *gtk.ProgressBar
-	metricsMemMax      *gtk.ProgressBar
-	metricsAlarmTable  *stringTable
-	metricsScaleButton *gtk.Button
-	metricsScaleLabel  *gtk.Label
-	metricsTimestamp   *gtk.Label
-	metricsSnapshot    *model.ServiceMetrics
-	metricsAlarms      []model.AlarmState
-	scaleInSuspended   bool
-	scaleInKnown       bool
-	showingMetrics     bool
-	logView            *gtk.TextView
-	logTextBuffer      *gtk.TextBuffer
-	logSearch          *gtk.SearchEntry
-	logPauseButton     *gtk.Button
-	logStore           *boundedLogs
-	logIndentTags      map[int]*gtk.TextTag
-	logSource          model.LogSource
-	logTitle           string
-	logLastTS          int64
-	logFollowing       bool
-	showingLogs        bool
-	status             *gtk.Label
-	spinner            *gtk.Spinner
-	lastSuccessfulLoad time.Time
+	currentPage                 string
+	detailContent               string
+	selectedCluster             string
+	selectedService             string
+	selectedTask                string
+	allClusters                 []model.Cluster
+	filteredClusters            []model.Cluster
+	allServices                 []model.Service
+	filteredServices            []model.Service
+	allTasks                    []model.Task
+	filteredTasks               []model.Task
+	allTaskDefinitions          []model.TaskDefRef
+	filteredTaskDefinitions     []model.TaskDefRef
+	selectedTaskDefinition      *model.TaskDefSummary
+	taskDefinitionReturnPage    string
+	clusterTable                *stringTable
+	serviceTable                *stringTable
+	taskTable                   *stringTable
+	taskDefinitionTable         *stringTable
+	resourceStack               *gtk.Stack
+	search                      *gtk.SearchEntry
+	backButton                  *gtk.Button
+	logsButton                  *gtk.Button
+	taskLogsButton              *gtk.Button
+	standaloneButton            *gtk.Button
+	runTaskButton               *gtk.Button
+	metricsButton               *gtk.Button
+	taskDefinitionsButton       *gtk.Button
+	scaleButton                 *gtk.Button
+	stopTaskButton              *gtk.Button
+	deployButton                *gtk.Button
+	breadcrumb                  *gtk.Label
+	detailBuffer                *gtk.TextBuffer
+	detailText                  string
+	detailStack                 *gtk.Stack
+	metricsCPUAvg               *gtk.ProgressBar
+	metricsCPUMax               *gtk.ProgressBar
+	metricsMemAvg               *gtk.ProgressBar
+	metricsMemMax               *gtk.ProgressBar
+	metricsAlarmTable           *stringTable
+	metricsScaleButton          *gtk.Button
+	metricsScaleLabel           *gtk.Label
+	metricsTimestamp            *gtk.Label
+	metricsSnapshot             *model.ServiceMetrics
+	metricsAlarms               []model.AlarmState
+	scaleInSuspended            bool
+	scaleInKnown                bool
+	showingMetrics              bool
+	taskDefinitionBuffer        *gtk.TextBuffer
+	taskDefinitionSummaryButton *gtk.Button
+	taskDefinitionEnvButton     *gtk.Button
+	taskDefinitionRevealButton  *gtk.Button
+	taskDefinitionDiffButton    *gtk.Button
+	taskDefinitionEditButton    *gtk.Button
+	taskDefinitionEnvContainer  string
+	taskDefinitionViewMode      string
+	editorBuffer                *gtk.TextBuffer
+	showingEditor               bool
+	editorDirty                 bool
+	editorLoading               bool
+	logView                     *gtk.TextView
+	logTextBuffer               *gtk.TextBuffer
+	logSearch                   *gtk.SearchEntry
+	logPauseButton              *gtk.Button
+	logStore                    *boundedLogs
+	logIndentTags               map[int]*gtk.TextTag
+	logSource                   model.LogSource
+	logTitle                    string
+	logLastTS                   int64
+	logFollowing                bool
+	showingLogs                 bool
+	status                      *gtk.Label
+	spinner                     *gtk.Spinner
+	lastSuccessfulLoad          time.Time
 }
 
 func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *mainWindow {
@@ -128,9 +147,15 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "IP", field: 5},
 		{title: "TASK DEFINITION", field: 6},
 	})
+	w.taskDefinitionTable = newStringTable([]columnSpec{
+		{title: "FAMILY", field: 0, expand: true},
+		{title: "REVISION", field: 1},
+		{title: "TASK DEFINITION ARN", field: 2, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
+	w.taskDefinitionTable.view.ConnectActivate(w.openTaskDefinitionAt)
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -171,6 +196,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.metricsButton = gtk.NewButtonWithLabel("Metrics")
 	w.metricsButton.SetSensitive(false)
 	w.metricsButton.ConnectClicked(w.openServiceMetrics)
+	w.taskDefinitionsButton = gtk.NewButtonWithLabel("Task defs")
+	w.taskDefinitionsButton.ConnectClicked(w.openTaskDefinitions)
 	w.scaleButton = gtk.NewButtonWithLabel("Scale")
 	w.scaleButton.SetSensitive(false)
 	w.scaleButton.ConnectClicked(w.promptScaleService)
@@ -191,6 +218,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.standaloneButton)
 	header.Append(w.runTaskButton)
 	header.Append(w.metricsButton)
+	header.Append(w.taskDefinitionsButton)
 	header.Append(w.logsButton)
 	header.Append(w.taskLogsButton)
 	header.Append(w.scaleButton)
@@ -232,6 +260,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	taskScroll.SetVExpand(true)
 	taskScroll.SetHExpand(true)
 	taskScroll.SetChild(w.taskTable.view)
+	taskDefinitionScroll := gtk.NewScrolledWindow()
+	taskDefinitionScroll.SetVExpand(true)
+	taskDefinitionScroll.SetHExpand(true)
+	taskDefinitionScroll.SetChild(w.taskDefinitionTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -239,6 +271,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(clusterScroll, pageClusters)
 	w.resourceStack.AddNamed(serviceScroll, pageServices)
 	w.resourceStack.AddNamed(taskScroll, pageTasks)
+	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
 	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -266,6 +299,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(detailScroll, "detail")
 	w.detailStack.AddNamed(w.buildLogPane(), "logs")
 	w.detailStack.AddNamed(w.buildMetricsPane(), "metrics")
+	w.detailStack.AddNamed(w.buildTaskDefinitionPane(), "task-definition")
+	w.detailStack.AddNamed(w.buildTaskDefinitionEditor(), "editor")
 	w.detailStack.SetVisibleChildName("detail")
 
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
@@ -315,7 +350,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close logs or metrics\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+S         Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
@@ -324,11 +359,16 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "run-task", []string{"<Control>Return"}, w.promptRunTask)
 	w.addAction(app, "metrics", []string{"m"}, w.openServiceMetrics)
 	w.addAction(app, "toggle-scale-in", []string{"<Control><Shift>a"}, w.confirmToggleScaleIn)
+	w.addAction(app, "task-definitions", []string{"<Shift>t"}, w.openTaskDefinitions)
+	w.addAction(app, "task-definition-env", []string{"e"}, w.openTaskDefinitionEnvironment)
+	w.addAction(app, "task-definition-diff", []string{"d"}, w.openTaskDefinitionDiff)
+	w.addAction(app, "task-definition-edit", []string{"<Control>e"}, w.openTaskDefinitionEditor)
+	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.confirmRegisterTaskDefinition)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
 	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
 	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
 	w.addAction(app, "force-deploy", []string{"<Control><Shift>r"}, w.confirmForceDeployment)
-	w.addAction(app, "scale-service", []string{"<Control>s"}, w.promptScaleService)
+	w.addAction(app, "scale-service", []string{"<Control><Shift>s"}, w.promptScaleService)
 	w.addAction(app, "stop-task", []string{"<Control><Shift>x"}, w.confirmStopTask)
 }
 
@@ -556,6 +596,10 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageTaskDefinitions {
+		w.applyTaskDefinitionFilter()
+		return
+	}
 	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
 		w.applyTaskFilter()
 		return
@@ -602,6 +646,10 @@ func (w *mainWindow) applyServiceFilter() {
 }
 
 func (w *mainWindow) goBack() {
+	if w.showingEditor {
+		w.closeTaskDefinitionEditor()
+		return
+	}
 	if w.showingLogs {
 		w.closeLogs()
 		return
@@ -628,6 +676,10 @@ func (w *mainWindow) goBack() {
 		w.setDetail(clusterSummary(w.selectedCluster, len(w.allServices)), detailClusterSummary)
 		w.applyServiceFilter()
 		w.setStatus("Ready", false)
+		return
+	}
+	if w.currentPage == pageTaskDefinitions {
+		w.restoreTaskDefinitionReturnPage()
 		return
 	}
 	if w.currentPage != pageServices {
@@ -659,6 +711,16 @@ func (w *mainWindow) refresh() {
 }
 
 func (w *mainWindow) refreshCurrent(foreground bool) {
+	if w.showingEditor {
+		if foreground {
+			w.setStatus("Editor has unsaved content; close it before refreshing", false)
+		}
+		return
+	}
+	if w.currentPage == pageTaskDefinitions {
+		w.refreshTaskDefinitions(foreground)
+		return
+	}
 	if w.showingMetrics {
 		w.loadServiceMetrics(foreground)
 		return
