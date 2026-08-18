@@ -27,6 +27,10 @@ Each module should be delivered in independently committed phases. A phase is
 complete only when its shared service behavior, GUI state transitions, stale
 response protection, tests, and relevant Hyprland smoke checks pass.
 
+After CloudWatch Logs, run the Windows and macOS spike defined in the
+[`GUI portability notes`](gui-portability.md). This checkpoint informs eventual
+distribution plans without blocking Linux module development.
+
 ## CloudWatch Logs navigation decision
 
 CloudWatch Logs is a collapsible top-level Module Rail entry. Its default fixed
@@ -113,4 +117,3 @@ the query.
 - Exercise rapid navigation, cancellation, polling, large result sets, zoom,
   keyboard focus, theme behavior, and long-running follow sessions.
 - Update the development guide and record any intentional frontend differences.
-

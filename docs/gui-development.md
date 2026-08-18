@@ -155,3 +155,5 @@ and recommendation from the initial experiment.
 
 The agreed module order, CloudWatch Logs phases, and Module Rail behavior for
 saved searches are recorded in the [`GUI expansion roadmap`](gui-roadmap.md).
+Cross-platform constraints and the future Windows/macOS packaging spike are
+recorded in the [`GUI portability notes`](gui-portability.md).
