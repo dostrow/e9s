@@ -68,7 +68,7 @@ func Run(options Options) error {
 		}
 		installStyles()
 		window = newMainWindow(ctx, app, options)
-		window.loadTaskDefinitions()
+		window.loadClusters()
 		window.window.Present()
 	})
 	app.ConnectShutdown(cancel)

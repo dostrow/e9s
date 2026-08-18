@@ -155,7 +155,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w := &mainWindow{
 		ctx:           ctx,
 		options:       options,
-		currentPage:   pageTaskDefinitions,
+		currentPage:   pageClusters,
 		detailContent: detailIntro,
 	}
 
@@ -224,7 +224,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	title := gtk.NewLabel("e9s")
 	title.AddCSSClass("app-title")
-	w.breadcrumbText = "ECS / Task definitions"
+	w.breadcrumbText = "ECS / Clusters"
 	w.breadcrumb = w.newBreadcrumbArea()
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
@@ -305,7 +305,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
-	w.search.SetPlaceholderText("Filter task definitions…")
+	w.search.SetPlaceholderText("Filter clusters…")
 	w.search.ConnectSearchChanged(w.applyFilter)
 	w.search.AddCSSClass("resource-search")
 	w.activeTasksButton = gtk.NewToggleButtonWithLabel("Active")
@@ -365,7 +365,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(taskScroll, pageTasks)
 	w.resourceStack.AddNamed(stoppedTaskScroll, pageStoppedTasks)
 	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
-	w.resourceStack.SetVisibleChildName(pageTaskDefinitions)
+	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
 	resourcePane.AddCSSClass("resource-pane")
@@ -374,7 +374,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	resourcePane.Append(w.resourceStack)
 
 	w.detailBuffer = gtk.NewTextBuffer(nil)
-	w.detailText = "Select a task definition and press Enter to inspect it."
+	w.detailText = "Select a cluster and press Enter to browse its services."
 	w.detailBuffer.SetText(w.detailText)
 	w.detailParentButton = gtk.NewButtonWithLabel("Back to service details")
 	w.detailParentButton.ConnectClicked(w.showParentDetails)
@@ -405,7 +405,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildTaskDefinitionPane(), "task-definition")
 	w.detailStack.AddNamed(w.buildTaskDefinitionEditor(), "editor")
 	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
-	w.detailStack.SetVisibleChildName("task-definition")
+	w.detailStack.SetVisibleChildName("detail")
 
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	contentSplit.SetStartChild(resourcePane)
