@@ -1,9 +1,9 @@
 package gui
 
 import (
-	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -11,6 +11,17 @@ import (
 type boundedLogs struct {
 	max     int
 	entries []model.LogEntry
+}
+
+type formattedLogBuffer struct {
+	text  string
+	lines []formattedLogLine
+}
+
+type formattedLogLine struct {
+	start  int
+	end    int
+	prefix string
 }
 
 func newBoundedLogs(maxEntries int) *boundedLogs {
@@ -38,20 +49,42 @@ func (b *boundedLogs) len() int {
 }
 
 func (b *boundedLogs) text(filter string) string {
+	return b.format(filter).text
+}
+
+func (b *boundedLogs) format(filter string) formattedLogBuffer {
 	filter = strings.ToLower(strings.TrimSpace(filter))
 	var out strings.Builder
+	formatted := formattedLogBuffer{
+		lines: make([]formattedLogLine, 0, len(b.entries)),
+	}
+	offset := 0
 	for _, entry := range b.entries {
 		if filter != "" && !strings.Contains(strings.ToLower(entry.Message+" "+entry.Stream), filter) {
 			continue
 		}
 		timestamp := time.UnixMilli(entry.Timestamp).Local().Format("2006-01-02 15:04:05.000")
-		if entry.Stream == "" {
-			fmt.Fprintf(&out, "%s  %s\n", timestamp, sanitizeLogText(entry.Message))
-		} else {
-			fmt.Fprintf(&out, "%s  [%s]  %s\n", timestamp, entry.Stream, sanitizeLogText(entry.Message))
+		prefix := timestamp + "  "
+		if entry.Stream != "" {
+			prefix += "[" + entry.Stream + "]  "
 		}
+		message := sanitizeLogText(entry.Message)
+		if strings.Contains(message, "\n") {
+			message = strings.ReplaceAll(message, "\n", "\n"+strings.Repeat(" ", utf8.RuneCountInString(prefix)))
+		}
+		line := prefix + message
+		lineLength := utf8.RuneCountInString(line)
+		formatted.lines = append(formatted.lines, formattedLogLine{
+			start:  offset,
+			end:    offset + lineLength,
+			prefix: prefix,
+		})
+		out.WriteString(line)
+		out.WriteByte('\n')
+		offset += lineLength + 1
 	}
-	return out.String()
+	formatted.text = out.String()
+	return formatted
 }
 
 func sanitizeLogText(value string) string {

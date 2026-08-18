@@ -44,11 +44,12 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	w.logView.SetEditable(false)
 	w.logView.SetCursorVisible(false)
 	w.logView.SetMonospace(true)
-	w.logView.SetWrapMode(gtk.WrapNone)
+	w.logView.SetWrapMode(gtk.WrapWordChar)
 	w.logView.AddCSSClass("log-view")
 	logScroll := gtk.NewScrolledWindow()
 	logScroll.SetVExpand(true)
 	logScroll.SetHExpand(true)
+	logScroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	logScroll.SetChild(w.logView)
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -173,10 +174,41 @@ func (w *mainWindow) renderLogs() {
 	if w.logStore == nil || w.logTextBuffer == nil {
 		return
 	}
-	w.logTextBuffer.SetText(w.logStore.text(w.logSearch.Text()))
+	formatted := w.logStore.format(w.logSearch.Text())
+	w.logTextBuffer.SetText(formatted.text)
+	if w.logIndentTags == nil {
+		w.logIndentTags = make(map[int]*gtk.TextTag)
+	}
+	prefixWidths := make(map[string]int)
+	for _, line := range formatted.lines {
+		prefixWidth, measured := prefixWidths[line.prefix]
+		if !measured {
+			layout := w.logView.CreatePangoLayout(line.prefix)
+			prefixWidth, _ = layout.PixelSize()
+			prefixWidths[line.prefix] = prefixWidth
+		}
+		tag := w.logIndentTags[prefixWidth]
+		if tag == nil {
+			tag = newHangingIndentTag(prefixWidth)
+			w.logTextBuffer.TagTable().Add(tag)
+			w.logIndentTags[prefixWidth] = tag
+		}
+		w.logTextBuffer.ApplyTag(
+			tag,
+			w.logTextBuffer.IterAtOffset(line.start),
+			w.logTextBuffer.IterAtOffset(line.end),
+		)
+	}
 	if w.logFollowing {
 		w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
 	}
+}
+
+func newHangingIndentTag(prefixWidth int) *gtk.TextTag {
+	tag := gtk.NewTextTag("")
+	tag.SetObjectProperty("left-margin", prefixWidth)
+	tag.SetObjectProperty("indent", -prefixWidth)
+	return tag
 }
 
 func (w *mainWindow) copyLogs() {

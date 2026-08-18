@@ -59,6 +59,7 @@ type mainWindow struct {
 	logSearch          *gtk.SearchEntry
 	logPauseButton     *gtk.Button
 	logStore           *boundedLogs
+	logIndentTags      map[int]*gtk.TextTag
 	logSource          model.LogSource
 	logLastTS          int64
 	logFollowing       bool

@@ -58,6 +58,54 @@ func TestSanitizeLogTextNormalizesLineEndings(t *testing.T) {
 	}
 }
 
+func TestFormattedLogsDescribeMessageAlignedWrapping(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{{
+		Timestamp: 1,
+		Stream:    "api/worker",
+		Message:   "first line\nsecond line",
+	}})
+
+	formatted := logs.format("")
+	if len(formatted.lines) != 1 {
+		t.Fatalf("format() produced %d line spans, want 1", len(formatted.lines))
+	}
+	line := formatted.lines[0]
+	if line.start != 0 || line.end <= line.start {
+		t.Fatalf("format() span = [%d,%d)", line.start, line.end)
+	}
+	if !strings.HasSuffix(line.prefix, "[api/worker]  ") {
+		t.Fatalf("format() prefix = %q", line.prefix)
+	}
+	wantContinuation := "\n" + strings.Repeat(" ", len([]rune(line.prefix))) + "second line"
+	if !strings.Contains(formatted.text, wantContinuation) {
+		t.Fatalf("format() did not align the explicit continuation:\n%q", formatted.text)
+	}
+	if got := string([]rune(formatted.text)[line.start:line.end]); strings.HasSuffix(got, "\n") {
+		t.Fatalf("format() span includes the terminating paragraph newline: %q", got)
+	}
+}
+
+func TestFormattedLogsOffsetsAccountForUnicode(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{
+		{Timestamp: 1, Stream: "λ", Message: "snowman ☃"},
+		{Timestamp: 2, Message: "next"},
+	})
+
+	formatted := logs.format("")
+	if len(formatted.lines) != 2 {
+		t.Fatalf("format() produced %d line spans, want 2", len(formatted.lines))
+	}
+	first := formatted.lines[0]
+	if formatted.lines[1].start != first.end+1 {
+		t.Fatalf("second span starts at %d, want %d", formatted.lines[1].start, first.end+1)
+	}
+	if got := string([]rune(formatted.text)[first.start:first.end]); !strings.Contains(got, "snowman ☃") {
+		t.Fatalf("first span points to %q", got)
+	}
+}
+
 func TestBoundedLogsExtendedSession(t *testing.T) {
 	const extendedMax = 2000
 	logs := newBoundedLogs(extendedMax)
