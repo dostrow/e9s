@@ -337,12 +337,12 @@ func (w *mainWindow) loadOlderLogEntries() {
 		w.logFollowing = false
 		w.logPauseButton.SetLabel("Resume")
 	}
-	start := max(int64(0), cutoff-(15*time.Minute).Milliseconds())
 	ctx, generation := w.startRequest("Loading older log events…")
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, w.logSource.Group, model.LogQuery{
-			Streams:   append([]string(nil), w.logSource.Streams...),
-			StartTime: start, EndTime: cutoff - 1, Limit: 500,
+			Streams:    append([]string(nil), w.logSource.Streams...),
+			BeforeTime: cutoff,
+			Limit:      500,
 		})
 		w.finishRequestWithStatus(ctx, generation, err, fmt.Sprintf("Loaded %d older log events", len(page.Entries)), func() {
 			w.logStore.prepend(page.Entries)

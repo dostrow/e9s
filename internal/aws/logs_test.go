@@ -21,6 +21,9 @@ type fakeGetLogEventsAPI struct {
 
 func (f *fakeGetLogEventsAPI) GetLogEvents(_ context.Context, input *cloudwatchlogs.GetLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error) {
 	cloned := *input
+	if input.EndTime != nil {
+		cloned.EndTime = int64PtrLogs(*input.EndTime)
+	}
 	if input.NextToken != nil {
 		cloned.NextToken = strPtrLogs(*input.NextToken)
 	}
@@ -158,7 +161,7 @@ func TestNewestStreamLogsWalksBackwardAcrossPartialAndEmptyPages(t *testing.T) {
 		},
 	}
 
-	entries, lastTS, err := newestStreamLogs(context.Background(), api, "group", "stream", 3)
+	entries, lastTS, err := newestStreamLogs(context.Background(), api, "group", "stream", 2000, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,6 +174,9 @@ func TestNewestStreamLogsWalksBackwardAcrossPartialAndEmptyPages(t *testing.T) {
 	if api.inputs[0].Limit == nil || *api.inputs[0].Limit != 3 {
 		t.Fatalf("Limit = %v, want 3", api.inputs[0].Limit)
 	}
+	if api.inputs[0].EndTime == nil || *api.inputs[0].EndTime != 2000 {
+		t.Fatalf("EndTime = %v, want 2000", api.inputs[0].EndTime)
+	}
 	if api.inputs[1].NextToken == nil || *api.inputs[1].NextToken != "back-1" ||
 		api.inputs[2].NextToken == nil || *api.inputs[2].NextToken != "back-2" {
 		t.Fatalf("backward tokens = %v, %v", api.inputs[1].NextToken, api.inputs[2].NextToken)
@@ -180,6 +186,37 @@ func TestNewestStreamLogsWalksBackwardAcrossPartialAndEmptyPages(t *testing.T) {
 	}
 	if entries[0].Stream != "stream" || lastTS != 1003 {
 		t.Fatalf("stream = %q, lastTS = %d", entries[0].Stream, lastTS)
+	}
+}
+
+func TestEarlierLogGroupEntriesExpandsAcrossQuietWindow(t *testing.T) {
+	api := &fakeFilterLogEventsAPI{
+		t: t,
+		pages: []*cloudwatchlogs.FilterLogEventsOutput{
+			{},
+			{Events: []cwltypes.FilteredLogEvent{logEvent(1000, "older")}},
+		},
+	}
+	const before = int64(60 * 60 * 1000)
+
+	entries, err := earlierLogGroupEntries(context.Background(), api, "group", before, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Message != "older" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if len(api.inputs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(api.inputs))
+	}
+	if api.inputs[0].StartTime == nil || *api.inputs[0].StartTime != before-(15*60*1000) {
+		t.Fatalf("first StartTime = %v", api.inputs[0].StartTime)
+	}
+	if api.inputs[1].StartTime == nil || *api.inputs[1].StartTime != 0 {
+		t.Fatalf("expanded StartTime = %v, want 0", api.inputs[1].StartTime)
+	}
+	if api.inputs[1].EndTime == nil || *api.inputs[1].EndTime != before {
+		t.Fatalf("EndTime = %v, want %d", api.inputs[1].EndTime, before)
 	}
 }
 

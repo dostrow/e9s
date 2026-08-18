@@ -105,6 +105,9 @@ func (f *fakeLogsAPI) TailMultiStreamLogs(ctx context.Context, _ string, _ []str
 func (f *fakeLogsAPI) TailLogGroup(ctx context.Context, _ string, start int64, limit int) ([]model.LogEntry, int64, error) {
 	return f.tailResult(ctx, "tail-group", start, limit)
 }
+func (f *fakeLogsAPI) FetchEarlierLogs(ctx context.Context, _ string, _ []string, _ int64, limit int) ([]model.LogEntry, error) {
+	return f.rangeResult(ctx, "before", limit)
+}
 
 func TestLogsDispatchesQueries(t *testing.T) {
 	tests := []struct {
@@ -118,6 +121,7 @@ func TestLogsDispatchesQueries(t *testing.T) {
 		{name: "tail group", query: model.LogQuery{Tail: true}, want: "tail-group"},
 		{name: "tail stream", query: model.LogQuery{Tail: true, Streams: []string{"one"}}, want: "tail-stream"},
 		{name: "tail streams", query: model.LogQuery{Tail: true, Streams: []string{"one", "two"}}, want: "tail-streams"},
+		{name: "before", query: model.LogQuery{BeforeTime: 100, Streams: []string{"one"}}, want: "before"},
 		{name: "range group", query: model.LogQuery{EndTime: 100}, want: "range-group"},
 		{name: "range stream", query: model.LogQuery{EndTime: 100, Streams: []string{"one"}}, want: "range-stream"},
 		{name: "range streams", query: model.LogQuery{EndTime: 100, Streams: []string{"one", "two"}}, want: "range-streams"},

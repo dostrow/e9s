@@ -739,18 +739,14 @@ func (m LogViewerModel) fetchLogs() tea.Cmd {
 
 func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
 	logGroup := m.logGroup
-	streams := m.streams
-	// Fetch 30 seconds before the earliest line
+	streams := append([]string(nil), m.streams...)
 	endTime := m.firstTS
-	startTime := endTime - 30*1000
-	startTime = max(0, startTime)
 
 	return func() tea.Msg {
 		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
-			Streams:   streams,
-			StartTime: startTime,
-			EndTime:   max(int64(0), endTime-1),
-			Limit:     100,
+			Streams:    streams,
+			BeforeTime: endTime,
+			Limit:      100,
 		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}

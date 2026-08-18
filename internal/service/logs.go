@@ -25,6 +25,7 @@ type LogsAPI interface {
 	TailLogs(context.Context, string, string, int64, int) ([]model.LogEntry, int64, error)
 	TailMultiStreamLogs(context.Context, string, []string, int64, int) ([]model.LogEntry, int64, error)
 	TailLogGroup(context.Context, string, int64, int) ([]model.LogEntry, int64, error)
+	FetchEarlierLogs(context.Context, string, []string, int64, int) ([]model.LogEntry, error)
 }
 
 // Logs routes a UI-neutral query to the appropriate CloudWatch operation.
@@ -81,6 +82,13 @@ func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (m
 	}
 	if query.Filter != "" {
 		return s.search(ctx, group, query)
+	}
+	if query.BeforeTime > 0 {
+		entries, err := s.api.FetchEarlierLogs(ctx, group, query.Streams, query.BeforeTime, query.Limit)
+		if err != nil {
+			return model.LogPage{}, fmt.Errorf("fetch logs before %d from %q: %w", query.BeforeTime, group, err)
+		}
+		return page(entries, 0), nil
 	}
 
 	if query.EndTime > 0 || len(query.Groups) > 1 {

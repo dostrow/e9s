@@ -88,9 +88,13 @@ type LogQuery struct {
 	Streams   []string
 	StartTime int64
 	EndTime   int64
-	Limit     int
-	Tail      bool
-	Filter    string
+	// BeforeTime requests the newest entries strictly before this timestamp.
+	// It is used for gap-tolerant backward pagination and is mutually exclusive
+	// with StartTime and EndTime.
+	BeforeTime int64
+	Limit      int
+	Tail       bool
+	Filter     string
 	// FallbackLimit requests the newest N entries without the time constraint
 	// when the primary query returns no events.
 	FallbackLimit int
