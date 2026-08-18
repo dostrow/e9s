@@ -1,5 +1,7 @@
 package model
 
+import "sort"
+
 // LogHighlightMatch describes how a log highlight pattern is interpreted.
 type LogHighlightMatch string
 
@@ -111,4 +113,44 @@ type LogPage struct {
 	Entries       []LogEntry
 	LastTimestamp int64
 	UsedFallback  bool
+}
+
+// CenterLogEntries returns a bounded, chronological window centered on anchor.
+// The anchor is inserted when a capped upstream range omitted it, guaranteeing
+// that a search-to-log jump retains the exact selected event.
+func CenterLogEntries(entries []LogEntry, anchor LogEntry, limit int) []LogEntry {
+	centered := append([]LogEntry(nil), entries...)
+	anchorKey := anchor.Key()
+	anchorIndex := -1
+	for i, entry := range centered {
+		if entry.Key() == anchorKey {
+			anchorIndex = i
+			break
+		}
+	}
+	if anchorIndex < 0 {
+		centered = append(centered, anchor)
+	}
+	sort.SliceStable(centered, func(i, j int) bool {
+		return centered[i].Timestamp < centered[j].Timestamp
+	})
+	for i, entry := range centered {
+		if entry.Key() == anchorKey {
+			anchorIndex = i
+			break
+		}
+	}
+	if limit <= 0 || len(centered) <= limit {
+		return centered
+	}
+	start := anchorIndex - limit/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + limit
+	if end > len(centered) {
+		end = len(centered)
+		start = end - limit
+	}
+	return append([]LogEntry(nil), centered[start:end]...)
 }

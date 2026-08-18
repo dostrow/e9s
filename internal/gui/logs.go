@@ -541,6 +541,20 @@ func (w *mainWindow) renderLogs() {
 	}
 }
 
+func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
+	if w.logStore == nil || w.logView == nil || w.logTextBuffer == nil {
+		return
+	}
+	formatted := w.logStore.formatWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now())
+	key := entry.Key()
+	for _, line := range formatted.lines {
+		if line.entry.Key() == key {
+			w.logView.ScrollToIter(w.logTextBuffer.IterAtOffset(line.start), 0, true, 0, 0.5)
+			return
+		}
+	}
+}
+
 func (w *mainWindow) applyContextLogHighlights(rules []model.LogHighlightRule, preferSaved bool) {
 	if preferSaved {
 		if path, ok := w.activeSavedLogPath(); ok {

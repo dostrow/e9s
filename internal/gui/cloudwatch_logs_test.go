@@ -85,6 +85,9 @@ func TestCorrelatedCloudWatchSearchAddsTemporaryRule(t *testing.T) {
 	if len(got.HighlightRules) != 2 || got.HighlightRules[0].Pattern != "request failed" || got.HighlightRules[1] != existing {
 		t.Fatalf("highlight rules = %#v", got.HighlightRules)
 	}
+	if got.Anchor == nil || got.Anchor.Key() != entry.Key() {
+		t.Fatalf("anchor = %#v, want %#v", got.Anchor, entry)
+	}
 	if len(original.HighlightRules) != 1 || original.HighlightRules[0] != existing {
 		t.Fatalf("original rules mutated: %#v", original.HighlightRules)
 	}

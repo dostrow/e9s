@@ -74,8 +74,9 @@ type LogViewerModel struct {
 	highlightError   string
 
 	jumpTargetTS  int64 // if > 0, scroll to nearest line after first load
-	initialLoaded bool  // whether first batch has loaded
-	initialFetch  bool  // whether the recent-window/fallback request completed
+	jumpTarget    *model.LogEntry
+	initialLoaded bool // whether first batch has loaded
+	initialFetch  bool // whether the recent-window/fallback request completed
 
 	firstTS      int64 // earliest timestamp in buffer (for backward fetch)
 	lastTS       int64
@@ -179,6 +180,17 @@ func (m LogViewerModel) WithContext(ctx context.Context) LogViewerModel {
 	return m
 }
 
+// WithJumpTarget anchors the initial bounded range to an exact search result.
+func (m LogViewerModel) WithJumpTarget(entry model.LogEntry) LogViewerModel {
+	if entry.ID == "" && entry.Timestamp == 0 && entry.Message == "" && entry.Stream == "" {
+		return m
+	}
+	anchor := entry
+	m.jumpTarget = &anchor
+	m.jumpTargetTS = entry.Timestamp
+	return m
+}
+
 func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 	if m.highlightManager {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
@@ -188,11 +200,15 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case LogsLoadedMsg:
 		m.initialFetch = true
+		entries := msg.Entries
+		if m.jumpTarget != nil && !m.initialLoaded {
+			entries = model.CenterLogEntries(entries, *m.jumpTarget, maxLogLines)
+		}
 		if m.seen == nil {
-			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(msg.Entries))
+			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(entries))
 		}
 		added := 0
-		for _, e := range msg.Entries {
+		for _, e := range entries {
 			if _, exists := m.seen[e.Key()]; exists {
 				continue
 			}
@@ -238,7 +254,11 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		// On first load with a jump target, scroll to the target timestamp
 		if m.jumpTargetTS > 0 && !m.initialLoaded {
 			m.initialLoaded = true
-			m.scrollToTimestamp(m.jumpTargetTS)
+			if m.jumpTarget != nil {
+				m.scrollToEntry(*m.jumpTarget)
+			} else {
+				m.scrollToTimestamp(m.jumpTargetTS)
+			}
 			// If we have a search, also set the searchIdx to the nearest match
 			if len(m.matchIndices) > 0 {
 				m.searchIdx = 0
@@ -485,6 +505,24 @@ func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 	maxScroll := len(m.lines) - visible
 	maxScroll = max(0, maxScroll)
 	m.scroll = min(m.scroll, maxScroll)
+}
+
+func (m *LogViewerModel) scrollToEntry(entry model.LogEntry) {
+	targetLine := -1
+	key := entry.Key()
+	for i, line := range m.lines {
+		if line.key() == key {
+			targetLine = i
+			break
+		}
+	}
+	if targetLine < 0 {
+		m.scrollToTimestamp(entry.Timestamp)
+		return
+	}
+	visible := m.visibleLines()
+	m.scroll = max(0, targetLine-visible/2)
+	m.scroll = min(m.scroll, max(0, len(m.lines)-visible))
 }
 
 func (m *LogViewerModel) scrollToMatch(matchIdx int) {

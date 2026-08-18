@@ -37,6 +37,7 @@ type cloudWatchSearch struct {
 	EndTime        int64
 	Title          string
 	HighlightRules []model.LogHighlightRule
+	Anchor         *model.LogEntry
 }
 
 func (w *mainWindow) promptCloudWatchSearch() {
@@ -190,13 +191,27 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 	spec.Groups = append([]string(nil), spec.Groups...)
 	spec.Streams = append([]string(nil), spec.Streams...)
 	spec.HighlightRules = append([]model.LogHighlightRule(nil), spec.HighlightRules...)
+	if spec.Anchor != nil {
+		anchor := *spec.Anchor
+		spec.Anchor = &anchor
+	}
+	limit := cloudWatchSearchLimit
+	if spec.Anchor != nil {
+		limit = maxGUILogEntries
+	}
 	query := model.LogQuery{
 		Groups: append([]string(nil), spec.Groups...), Streams: append([]string(nil), spec.Streams...),
-		Filter: spec.Filter, StartTime: spec.StartTime, EndTime: spec.EndTime, Limit: cloudWatchSearchLimit,
+		Filter: spec.Filter, StartTime: spec.StartTime, EndTime: spec.EndTime, Limit: limit,
 	}
 	ctx, generation := w.startRequest("Searching CloudWatch logs…")
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, spec.Groups[0], query)
+		if err == nil && spec.Anchor != nil {
+			page.Entries = model.CenterLogEntries(page.Entries, *spec.Anchor, limit)
+			if len(page.Entries) > 0 {
+				page.LastTimestamp = page.Entries[len(page.Entries)-1].Timestamp
+			}
+		}
 		status := fmt.Sprintf("Found %d events • %s", len(page.Entries), formatCloudWatchRange(spec.StartTime, spec.EndTime))
 		w.finishRequestWithStatus(ctx, generation, err, status, func() {
 			w.showCloudWatchSearchResults(spec, page)
@@ -207,6 +222,9 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 func (w *mainWindow) showCloudWatchSearchResults(spec cloudWatchSearch, page model.LogPage) {
 	w.logSearchSpec = &spec
 	w.showLogSnapshotData(model.LogSource{Group: spec.Groups[0], Streams: spec.Streams}, spec.Title, page)
+	if spec.Anchor != nil {
+		w.scrollLogEntryToCenter(*spec.Anchor)
+	}
 	w.updateActionSensitivity()
 }
 
@@ -223,6 +241,7 @@ func (w *mainWindow) loadAdjacentCloudWatchRange(direction int) {
 	spec.StartTime += shift
 	spec.EndTime += shift
 	spec.Lookback = 0
+	spec.Anchor = nil
 	if spec.EndTime > time.Now().UnixMilli() {
 		spec.EndTime = time.Now().UnixMilli()
 		spec.StartTime = spec.EndTime - width
@@ -276,6 +295,8 @@ func correlatedCloudWatchSearch(spec cloudWatchSearch, entry model.LogEntry, win
 	spec.StartTime = max(int64(0), entry.Timestamp-window.Milliseconds())
 	spec.EndTime = entry.Timestamp + window.Milliseconds()
 	spec.Title = "Correlate: " + cloudWatchScopeTitle(spec.Groups, spec.Streams)
+	anchor := entry
+	spec.Anchor = &anchor
 	return spec
 }
 

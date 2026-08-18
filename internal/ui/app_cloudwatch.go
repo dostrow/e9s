@@ -382,6 +382,8 @@ func (a App) startLogCorrelation() (App, tea.Cmd) {
 	a.logCorrelationTS = entry.Timestamp
 	a.logCorrelationPattern = a.logSearchView.Pattern()
 	a.logCorrelationRules = highlight.CorrelationRules(a.logCorrelationPattern, entry.Message)
+	anchor := *entry
+	a.logCorrelationEntry = &anchor
 	a.logCorrelationGroups = nil
 	a.logCorrelationStreams = nil
 
@@ -449,10 +451,16 @@ func (a App) handleLogCorrelationWindowPick(value string) (App, tea.Cmd) {
 	}
 	rules := append([]model.LogHighlightRule(nil), a.logCorrelationRules...)
 	rules = append(rules, a.logSearchHighlightRules...)
+	var anchor *model.LogEntry
+	if a.logCorrelationEntry != nil {
+		entry := *a.logCorrelationEntry
+		anchor = &entry
+	}
 
 	a.prevState = viewLogSearch
 	a.logCorrelationActive = false
 	a.logCorrelationRules = nil
+	a.logCorrelationEntry = nil
 	return a, func() tea.Msg {
 		return logReadyMsg{
 			title:          title,
@@ -463,6 +471,7 @@ func (a App) handleLogCorrelationWindowPick(value string) (App, tea.Cmd) {
 			startMs:        startMs,
 			endMs:          endMs,
 			highlightRules: rules,
+			anchor:         anchor,
 		}
 	}
 }

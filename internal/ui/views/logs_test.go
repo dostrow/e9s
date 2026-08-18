@@ -1,6 +1,7 @@
 package views
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,32 @@ func TestNewLogViewerInRange_SetsAbsoluteWindow(t *testing.T) {
 	}
 	if m.tailMode {
 		t.Fatal("range viewer should not be in tail mode")
+	}
+}
+
+func TestRangeViewerKeepsExactJumpTargetCenteredWhenCapped(t *testing.T) {
+	anchor := model.LogEntry{ID: "selected", Timestamp: 1500, Message: "selected"}
+	m := NewLogViewerInRange("range", nil, "/aws/ecs/example", nil, 0, 3000, "selected")
+	m = m.WithJumpTarget(anchor)
+	m.width, m.height = 120, 30
+	entries := make([]model.LogEntry, 0, 3000)
+	for i := 0; i < 3000; i++ {
+		if i == 1500 {
+			continue
+		}
+		entries = append(entries, model.LogEntry{ID: fmt.Sprintf("event-%d", i), Timestamp: int64(i), Message: "event"})
+	}
+
+	m, _ = m.Update(LogsLoadedMsg{Entries: entries, LastTS: 2999})
+	if len(m.lines) != maxLogLines {
+		t.Fatalf("lines = %d, want %d", len(m.lines), maxLogLines)
+	}
+	if m.lines[maxLogLines/2].key() != anchor.Key() {
+		t.Fatalf("center line = %#v, want anchor %#v", m.lines[maxLogLines/2], anchor)
+	}
+	visible := m.visibleLines()
+	if m.scroll != maxLogLines/2-visible/2 {
+		t.Fatalf("scroll = %d, want %d", m.scroll, maxLogLines/2-visible/2)
 	}
 }
 

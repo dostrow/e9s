@@ -38,6 +38,7 @@ type LogSearchJumpMsg struct {
 	Stream    string
 	Timestamp int64
 	Pattern   string
+	Entry     aws.LogEntry
 }
 
 type LogSearchModel struct {
@@ -107,6 +108,8 @@ func (m LogSearchModel) Update(msg tea.Msg) (LogSearchModel, tea.Cmd) {
 					// We need to split it back into the actual group and stream
 					logGroup, stream = splitGroupStream(entry.Stream, m.logGroup)
 				}
+				anchor := entry
+				anchor.Stream = stream
 
 				return m, func() tea.Msg {
 					return LogSearchJumpMsg{
@@ -114,6 +117,7 @@ func (m LogSearchModel) Update(msg tea.Msg) (LogSearchModel, tea.Cmd) {
 						Stream:    stream,
 						Timestamp: entry.Timestamp,
 						Pattern:   m.pattern,
+						Entry:     anchor,
 					}
 				}
 			}

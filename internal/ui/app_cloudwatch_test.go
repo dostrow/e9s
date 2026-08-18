@@ -72,6 +72,7 @@ func TestLogCorrelationCarriesAutomaticAndConfiguredHighlights(t *testing.T) {
 		logCorrelationGroups:    []string{"/aws/ecs/api"},
 		logCorrelationStreams:   []string{"api/one"},
 		logCorrelationRules:     []model.LogHighlightRule{automatic},
+		logCorrelationEntry:     &model.LogEntry{ID: "selected", Timestamp: 120_000, Message: "request failed"},
 		logSearchHighlightRules: []model.LogHighlightRule{configured},
 	}
 
@@ -87,7 +88,13 @@ func TestLogCorrelationCarriesAutomaticAndConfiguredHighlights(t *testing.T) {
 	if !reflect.DeepEqual(msg.highlightRules, want) {
 		t.Fatalf("highlight rules = %#v, want %#v", msg.highlightRules, want)
 	}
+	if msg.anchor == nil || msg.anchor.ID != "selected" {
+		t.Fatalf("anchor = %#v", msg.anchor)
+	}
 	if got.logCorrelationRules != nil {
 		t.Fatalf("correlation rules were not cleared: %#v", got.logCorrelationRules)
+	}
+	if got.logCorrelationEntry != nil {
+		t.Fatalf("correlation entry was not cleared: %#v", got.logCorrelationEntry)
 	}
 }

@@ -197,6 +197,7 @@ type App struct {
 	logCorrelationTS         int64
 	logCorrelationPattern    string
 	logCorrelationRules      []model.LogHighlightRule
+	logCorrelationEntry      *model.LogEntry
 	logCorrelationGroups     []string
 	logCorrelationStreams    []string
 	logSaveGroup             string
@@ -682,6 +683,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
+		if msg.anchor != nil {
+			a.logView = a.logView.WithJumpTarget(*msg.anchor)
+		}
 		a.logView = a.logView.WithContext(a.ctx)
 		a.logView = a.logView.SetHighlightRules(msg.highlightRules)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
@@ -699,6 +703,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.prevState = viewLogSearch
 		a.state = viewLogs
 		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = a.logView.WithJumpTarget(msg.Entry)
 		a.activeLogPathName = a.logSearchSavedPath
 		a.logView = a.logView.WithContext(a.ctx)
 		a.logView = a.logView.SetHighlightRules(a.logSearchHighlightRules)

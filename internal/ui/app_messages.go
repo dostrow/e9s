@@ -58,6 +58,7 @@ type logReadyMsg struct {
 	startMs        int64         // absolute range start (paused viewer)
 	endMs          int64         // absolute range end (paused viewer)
 	highlightRules []model.LogHighlightRule
+	anchor         *model.LogEntry
 	savedLogPath   string
 	ecsGuard       bool
 	returnState    viewState
