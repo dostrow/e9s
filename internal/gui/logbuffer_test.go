@@ -97,6 +97,15 @@ func TestFormattedLogsDescribeMessageAlignedWrapping(t *testing.T) {
 	if !strings.Contains(formatted.text, wantContinuation) {
 		t.Fatalf("format() did not align the explicit continuation:\n%q", formatted.text)
 	}
+	if len(line.segments) != 2 || line.segments[0].text != "first line" || line.segments[1].text != "second line" {
+		t.Fatalf("format() message segments = %#v", line.segments)
+	}
+	runes := []rune(formatted.text)
+	for _, segment := range line.segments {
+		if got := string(runes[segment.start : segment.start+len([]rune(segment.text))]); got != segment.text {
+			t.Fatalf("segment at %d points to %q, want %q", segment.start, got, segment.text)
+		}
+	}
 	if got := string([]rune(formatted.text)[line.start:line.end]); strings.HasSuffix(got, "\n") {
 		t.Fatalf("format() span includes the terminating paragraph newline: %q", got)
 	}
@@ -119,6 +128,45 @@ func TestFormattedLogsOffsetsAccountForUnicode(t *testing.T) {
 	}
 	if got := string([]rune(formatted.text)[first.start:first.end]); !strings.Contains(got, "snowman ☃") {
 		t.Fatalf("first span points to %q", got)
+	}
+}
+
+func TestFormattedLogHighlightsMapMessageOffsets(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{{
+		Timestamp: 1,
+		Stream:    "λ",
+		Message:   "🔥 ERROR first\nsecond error",
+	}})
+	formatted := logs.format("")
+	rules := []model.LogHighlightRule{
+		{Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError},
+		{Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightWarning},
+	}
+	highlights, err := formatLogHighlights(formatted, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(highlights) != 2 {
+		t.Fatalf("highlights = %#v", highlights)
+	}
+	runes := []rune(formatted.text)
+	for _, span := range highlights {
+		if got := strings.ToLower(string(runes[span.start:span.end])); got != "error" {
+			t.Fatalf("highlight [%d,%d) points to %q", span.start, span.end, got)
+		}
+	}
+	if highlights[0].style != model.LogHighlightError || highlights[1].style != model.LogHighlightWarning {
+		t.Fatalf("highlight styles = %#v", highlights)
+	}
+}
+
+func TestFormattedLogHighlightsRejectInvalidRegex(t *testing.T) {
+	_, err := formatLogHighlights(formattedLogBuffer{}, []model.LogHighlightRule{{
+		Pattern: "[", Match: model.LogHighlightRegex, Style: model.LogHighlightDefault,
+	}})
+	if err == nil {
+		t.Fatal("formatLogHighlights() error = nil")
 	}
 }
 

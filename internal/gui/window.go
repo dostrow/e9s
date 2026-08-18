@@ -169,8 +169,11 @@ type mainWindow struct {
 	logOlderButton              *gtk.Button
 	logNewerButton              *gtk.Button
 	logCorrelateButton          *gtk.Button
+	logHighlightsButton         *gtk.Button
 	logStore                    *boundedLogs
 	logIndentTags               map[int]*gtk.TextTag
+	logHighlightTags            map[model.LogHighlightStyle]*gtk.TextTag
+	logHighlightRules           []model.LogHighlightRule
 	logSource                   model.LogSource
 	logTitle                    string
 	logLastTS                   int64
@@ -787,6 +790,9 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	}
 	w.logFollowing = false
 	w.logSearchSpec = nil
+	w.logHighlightRules = nil
+	w.updateLogHighlightButton()
+	w.activeSavedLog = ""
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {

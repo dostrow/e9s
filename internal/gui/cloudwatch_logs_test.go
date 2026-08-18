@@ -86,9 +86,13 @@ func TestQuoteCloudWatchFilter(t *testing.T) {
 
 func TestSearchFromSavedLogUsesRelativeLookback(t *testing.T) {
 	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
+	rules := []model.LogHighlightRule{{
+		Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+	}}
 	path := config.LogPathEntry{
 		Name: "API errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
 		Streams: []string{"api/one"}, Filter: `"error"`, Lookback: "6h",
+		HighlightRules: rules,
 	}
 	spec, err := searchFromSavedLog(path, now)
 	if err != nil {
@@ -99,6 +103,25 @@ func TestSearchFromSavedLogUsesRelativeLookback(t *testing.T) {
 	}
 	if got := spec.EndTime - spec.StartTime; got != (6 * time.Hour).Milliseconds() {
 		t.Fatalf("range = %dms", got)
+	}
+	if !reflect.DeepEqual(spec.HighlightRules, rules) {
+		t.Fatalf("highlight rules = %#v", spec.HighlightRules)
+	}
+	path.HighlightRules[0].Pattern = "mutated"
+	if spec.HighlightRules[0].Pattern != "error" {
+		t.Fatal("search spec retained saved-search highlight slice")
+	}
+}
+
+func TestLogHighlightOptionIndices(t *testing.T) {
+	if got := highlightMatchOptionIndex(model.LogHighlightRegex); got != 2 {
+		t.Fatalf("regex option index = %d", got)
+	}
+	if got := highlightStyleOptionIndex(model.LogHighlightWarning); got != 3 {
+		t.Fatalf("warning option index = %d", got)
+	}
+	if got := highlightMatchOptionIndex("unknown"); got != 0 {
+		t.Fatalf("unknown match option index = %d", got)
 	}
 }
 

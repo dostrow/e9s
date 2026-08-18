@@ -10,6 +10,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -35,6 +37,8 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	w.logCorrelateButton.ConnectClicked(w.promptLogCorrelation)
 	w.logTimestampButton = gtk.NewButtonWithLabel("Time: Local")
 	w.logTimestampButton.ConnectClicked(w.cycleLogTimestamps)
+	w.logHighlightsButton = gtk.NewButtonWithLabel("Highlights…")
+	w.logHighlightsButton.ConnectClicked(w.promptLogHighlights)
 	copyButton := gtk.NewButtonWithLabel("Copy")
 	copyButton.ConnectClicked(w.copyLogs)
 	clearButton := gtk.NewButtonWithLabel("Clear")
@@ -54,6 +58,7 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	toolbar.Append(w.logNewerButton)
 	toolbar.Append(w.logCorrelateButton)
 	toolbar.Append(w.logTimestampButton)
+	toolbar.Append(w.logHighlightsButton)
 	toolbar.Append(copyButton)
 	toolbar.Append(clearButton)
 	toolbar.Append(exportButton)
@@ -161,6 +166,7 @@ func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
 	w.detailStack.SetVisibleChildName("logs")
 	w.logTitle = title
 	w.logSearchSpec = nil
+	w.applyContextLogHighlights(nil, true)
 	w.logPauseButton.SetVisible(true)
 	w.updateLogSearchControls()
 	w.startLogFollow(source, false)
@@ -182,6 +188,12 @@ func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, p
 	w.logFollowing = false
 	w.logSource = source
 	w.logTitle = title
+	var rules []model.LogHighlightRule
+	preferSaved := w.logSearchSpec == nil
+	if w.logSearchSpec != nil {
+		rules = w.logSearchSpec.HighlightRules
+	}
+	w.applyContextLogHighlights(rules, preferSaved)
 	w.logStore = newBoundedLogs(maxGUILogEntries)
 	w.logStore.append(page.Entries)
 	w.logLastTS = page.LastTimestamp
@@ -386,9 +398,106 @@ func (w *mainWindow) renderLogs() {
 			w.logTextBuffer.IterAtOffset(line.end),
 		)
 	}
+	w.applyLogHighlightTags(formatted)
 	if w.logFollowing {
 		w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
 	}
+}
+
+func (w *mainWindow) applyContextLogHighlights(rules []model.LogHighlightRule, preferSaved bool) {
+	if preferSaved {
+		if path, ok := w.activeSavedLogPath(); ok {
+			rules = path.HighlightRules
+		}
+	}
+	if err := w.setLogHighlightRules(rules); err != nil {
+		w.logHighlightRules = nil
+		w.updateLogHighlightButton()
+		w.setStatus("Log highlights: "+err.Error(), true)
+	}
+}
+
+func (w *mainWindow) setLogHighlightRules(rules []model.LogHighlightRule) error {
+	if _, err := highlight.Compile(rules); err != nil {
+		return err
+	}
+	w.logHighlightRules = append([]model.LogHighlightRule(nil), rules...)
+	if w.logSearchSpec != nil {
+		w.logSearchSpec.HighlightRules = append([]model.LogHighlightRule(nil), rules...)
+	}
+	w.updateLogHighlightButton()
+	return nil
+}
+
+func (w *mainWindow) updateLogHighlightButton() {
+	if w.logHighlightsButton == nil {
+		return
+	}
+	if len(w.logHighlightRules) == 0 {
+		w.logHighlightsButton.SetLabel("Highlights…")
+		return
+	}
+	w.logHighlightsButton.SetLabel(fmt.Sprintf("Highlights (%d)…", len(w.logHighlightRules)))
+}
+
+func (w *mainWindow) applyLogHighlightTags(formatted formattedLogBuffer) {
+	spans, err := formatLogHighlights(formatted, w.logHighlightRules)
+	if err != nil || len(w.logHighlightRules) == 0 {
+		return
+	}
+	w.ensureLogHighlightTags()
+	for _, span := range spans {
+		tag := w.logHighlightTags[span.style]
+		if tag == nil {
+			continue
+		}
+		w.logTextBuffer.ApplyTag(
+			tag,
+			w.logTextBuffer.IterAtOffset(span.start),
+			w.logTextBuffer.IterAtOffset(span.end),
+		)
+	}
+}
+
+func (w *mainWindow) ensureLogHighlightTags() {
+	if w.logHighlightTags == nil {
+		w.logHighlightTags = make(map[model.LogHighlightStyle]*gtk.TextTag)
+		for _, style := range []model.LogHighlightStyle{
+			model.LogHighlightDefault, model.LogHighlightInfo, model.LogHighlightSuccess,
+			model.LogHighlightWarning, model.LogHighlightError,
+		} {
+			tag := gtk.NewTextTag("")
+			tag.SetObjectProperty("weight", int(pango.WeightBold))
+			w.logTextBuffer.TagTable().Add(tag)
+			w.logHighlightTags[style] = tag
+		}
+	}
+	styleContext := w.logView.StyleContext()
+	colorNames := map[model.LogHighlightStyle][]string{
+		model.LogHighlightInfo:    {"accent_color", "theme_selected_bg_color"},
+		model.LogHighlightSuccess: {"success_color"},
+		model.LogHighlightWarning: {"warning_color"},
+		model.LogHighlightError:   {"error_color"},
+	}
+	for style, names := range colorNames {
+		color := styleContext.Color()
+		for _, name := range names {
+			if candidate, ok := styleContext.LookupColor(name); ok {
+				color = candidate
+				break
+			}
+		}
+		w.logHighlightTags[style].SetObjectProperty("foreground", color.String())
+	}
+	accent := styleContext.Color().Copy()
+	for _, name := range []string{"accent_bg_color", "theme_selected_bg_color", "accent_color"} {
+		if candidate, ok := styleContext.LookupColor(name); ok {
+			accent = candidate.Copy()
+			break
+		}
+	}
+	accent.SetAlpha(0.28)
+	w.logHighlightTags[model.LogHighlightDefault].SetObjectProperty("background", accent.String())
 }
 
 func newHangingIndentTag(prefixWidth int) *gtk.TextTag {
@@ -474,6 +583,8 @@ func (w *mainWindow) closeLogs() {
 	w.logGeneration++
 	w.logFollowing = false
 	w.showingLogs = false
+	w.logHighlightRules = nil
+	w.updateLogHighlightButton()
 	w.detailStack.SetVisibleChildName("detail")
 	w.setStatus("Log follow stopped", false)
 	w.updateActionSensitivity()

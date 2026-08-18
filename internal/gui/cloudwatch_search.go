@@ -28,13 +28,14 @@ var cloudWatchTimePresets = []struct {
 }
 
 type cloudWatchSearch struct {
-	Groups    []string
-	Streams   []string
-	Filter    string
-	Lookback  time.Duration
-	StartTime int64
-	EndTime   int64
-	Title     string
+	Groups         []string
+	Streams        []string
+	Filter         string
+	Lookback       time.Duration
+	StartTime      int64
+	EndTime        int64
+	Title          string
+	HighlightRules []model.LogHighlightRule
 }
 
 func (w *mainWindow) promptCloudWatchSearch() {
@@ -53,12 +54,14 @@ func (w *mainWindow) promptCloudWatchSearch() {
 
 	defaultGroups := []string{w.selectedLogGroup}
 	defaultStreams := []string(nil)
+	defaultHighlightRules := []model.LogHighlightRule(nil)
 	if w.currentPage == pageLogStreams && w.selectedLogStream != "" {
 		defaultStreams = []string{w.selectedLogStream}
 	}
 	if path, ok := w.activeSavedLogPath(); ok {
 		defaultGroups = savedLogGroups(path)
 		defaultStreams = savedLogStreams(path)
+		defaultHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
 	}
 	groups := gtk.NewEntry()
 	groups.SetText(strings.Join(defaultGroups, ", "))
@@ -123,6 +126,7 @@ func (w *mainWindow) promptCloudWatchSearch() {
 			errorLabel.SetLabel(err.Error())
 			return
 		}
+		spec.HighlightRules = defaultHighlightRules
 		dialog.Destroy()
 		w.runCloudWatchSearch(spec)
 	})
@@ -184,6 +188,7 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 	}
 	spec.Groups = append([]string(nil), spec.Groups...)
 	spec.Streams = append([]string(nil), spec.Streams...)
+	spec.HighlightRules = append([]model.LogHighlightRule(nil), spec.HighlightRules...)
 	query := model.LogQuery{
 		Groups: append([]string(nil), spec.Groups...), Streams: append([]string(nil), spec.Streams...),
 		Filter: spec.Filter, StartTime: spec.StartTime, EndTime: spec.EndTime, Limit: cloudWatchSearchLimit,

@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -22,10 +23,22 @@ type formattedLogBuffer struct {
 }
 
 type formattedLogLine struct {
-	start  int
-	end    int
-	prefix string
-	entry  model.LogEntry
+	start    int
+	end      int
+	prefix   string
+	entry    model.LogEntry
+	segments []formattedLogSegment
+}
+
+type formattedLogSegment struct {
+	start int
+	text  string
+}
+
+type formattedLogHighlight struct {
+	start int
+	end   int
+	style model.LogHighlightStyle
 }
 
 type logTimestampMode int
@@ -149,16 +162,30 @@ func (b *boundedLogs) formatWithTimestamps(filter string, mode logTimestampMode,
 			prefix += "[" + entry.Stream + "]  "
 		}
 		message := sanitizeLogText(entry.Message)
-		if strings.Contains(message, "\n") {
-			message = strings.ReplaceAll(message, "\n", "\n"+strings.Repeat(" ", utf8.RuneCountInString(prefix)))
+		parts := strings.Split(message, "\n")
+		var lineBuilder strings.Builder
+		lineBuilder.WriteString(prefix)
+		segments := make([]formattedLogSegment, 0, len(parts))
+		lineOffset := utf8.RuneCountInString(prefix)
+		for i, part := range parts {
+			if i > 0 {
+				indent := strings.Repeat(" ", utf8.RuneCountInString(prefix))
+				lineBuilder.WriteByte('\n')
+				lineBuilder.WriteString(indent)
+				lineOffset += 1 + utf8.RuneCountInString(indent)
+			}
+			segments = append(segments, formattedLogSegment{start: offset + lineOffset, text: part})
+			lineBuilder.WriteString(part)
+			lineOffset += utf8.RuneCountInString(part)
 		}
-		line := prefix + message
+		line := lineBuilder.String()
 		lineLength := utf8.RuneCountInString(line)
 		formatted.lines = append(formatted.lines, formattedLogLine{
-			start:  offset,
-			end:    offset + lineLength,
-			prefix: prefix,
-			entry:  entry,
+			start:    offset,
+			end:      offset + lineLength,
+			prefix:   prefix,
+			entry:    entry,
+			segments: segments,
 		})
 		out.WriteString(line)
 		out.WriteByte('\n')
@@ -166,6 +193,26 @@ func (b *boundedLogs) formatWithTimestamps(filter string, mode logTimestampMode,
 	}
 	formatted.text = out.String()
 	return formatted
+}
+
+func formatLogHighlights(formatted formattedLogBuffer, rules []model.LogHighlightRule) ([]formattedLogHighlight, error) {
+	matcher, err := highlight.Compile(rules)
+	if err != nil {
+		return nil, err
+	}
+	var highlights []formattedLogHighlight
+	for _, line := range formatted.lines {
+		for _, segment := range line.segments {
+			for _, span := range matcher.Spans(segment.text) {
+				highlights = append(highlights, formattedLogHighlight{
+					start: segment.start + span.Start,
+					end:   segment.start + span.End,
+					style: span.Style,
+				})
+			}
+		}
+	}
+	return highlights, nil
 }
 
 func formatLogTimestamp(timestamp int64, mode logTimestampMode, now time.Time) string {

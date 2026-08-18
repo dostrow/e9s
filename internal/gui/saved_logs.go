@@ -155,6 +155,7 @@ func (w *mainWindow) promptSaveLogSearch() {
 			Name: name, LogGroup: spec.Groups[0], LogGroups: append([]string(nil), spec.Groups...),
 			Streams: append([]string(nil), spec.Streams...), Filter: spec.Filter,
 			StartTime: spec.StartTime, EndTime: spec.EndTime,
+			HighlightRules: append([]model.LogHighlightRule(nil), w.logHighlightRules...),
 		}
 		if len(spec.Streams) == 1 {
 			path.Stream = spec.Streams[0]
@@ -353,6 +354,7 @@ func cloneLogPaths(paths []config.LogPathEntry) []config.LogPathEntry {
 	for i := range cloned {
 		cloned[i].LogGroups = append([]string(nil), cloned[i].LogGroups...)
 		cloned[i].Streams = append([]string(nil), cloned[i].Streams...)
+		cloned[i].HighlightRules = append([]model.LogHighlightRule(nil), cloned[i].HighlightRules...)
 	}
 	return cloned
 }
@@ -397,6 +399,7 @@ func searchFromSavedLog(path config.LogPathEntry, now time.Time) (cloudWatchSear
 	return cloudWatchSearch{
 		Groups: groups, Streams: streams, Filter: path.Filter, Lookback: lookback,
 		StartTime: start, EndTime: end, Title: path.Name,
+		HighlightRules: append([]model.LogHighlightRule(nil), path.HighlightRules...),
 	}, nil
 }
 
