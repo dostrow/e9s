@@ -256,7 +256,8 @@ func (w *mainWindow) peekSelectedLogStream() {
 	ctx, generation := w.startRequest("Loading recent events from " + stream.Name + "…")
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, group, model.LogQuery{
-			Streams: []string{stream.Name}, StartTime: start.UnixMilli(), EndTime: end.UnixMilli(), Limit: 500,
+			Streams: []string{stream.Name}, StartTime: start.UnixMilli(), EndTime: end.UnixMilli(),
+			Limit: 500, FallbackLimit: 10,
 		})
 		w.finishRequestWithStatus(ctx, generation, err, fmt.Sprintf("Loaded %d events from %s", len(page.Entries), stream.Name), func() {
 			w.showLogSnapshot(model.LogSource{Group: group, Streams: []string{stream.Name}}, stream.Name, page)

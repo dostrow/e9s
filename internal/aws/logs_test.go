@@ -63,6 +63,9 @@ func TestTailLogsPaginatesAcrossPages(t *testing.T) {
 	if entries[2].Message != "third" || entries[3].Message != "fourth" {
 		t.Fatalf("unexpected entry order: %#v", entries)
 	}
+	if entries[3].ID != "fourth" {
+		t.Fatalf("event ID = %q, want fourth", entries[3].ID)
+	}
 	if lastTS != 1001 {
 		t.Fatalf("lastTS = %d, want 1001", lastTS)
 	}
@@ -223,6 +226,7 @@ func logEvent(ts int64, msg string) cwltypes.FilteredLogEvent {
 	return cwltypes.FilteredLogEvent{
 		Timestamp: int64PtrLogs(ts),
 		Message:   strPtrLogs(msg),
+		EventId:   strPtrLogs(msg),
 	}
 }
 

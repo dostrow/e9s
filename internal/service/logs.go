@@ -88,7 +88,7 @@ func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (m
 		if err != nil {
 			return model.LogPage{}, fmt.Errorf("fetch log range: %w", err)
 		}
-		return page(entries, query.StartTime), nil
+		return s.withRecentFallback(ctx, group, query, page(entries, query.StartTime))
 	}
 
 	var (
@@ -97,14 +97,7 @@ func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (m
 		err     error
 	)
 	if query.Tail {
-		switch len(query.Streams) {
-		case 0:
-			entries, lastTS, err = s.api.TailLogGroup(ctx, group, query.StartTime, query.Limit)
-		case 1:
-			entries, lastTS, err = s.api.TailLogs(ctx, group, query.Streams[0], query.StartTime, query.Limit)
-		default:
-			entries, lastTS, err = s.api.TailMultiStreamLogs(ctx, group, query.Streams, query.StartTime, query.Limit)
-		}
+		entries, lastTS, err = s.tail(ctx, group, query.Streams, query.StartTime, query.Limit)
 	} else {
 		switch len(query.Streams) {
 		case 0:
@@ -118,7 +111,37 @@ func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (m
 	if err != nil {
 		return model.LogPage{}, fmt.Errorf("fetch logs from %q: %w", group, err)
 	}
-	return model.LogPage{Entries: entries, LastTimestamp: lastTS}, nil
+	return s.withRecentFallback(ctx, group, query, model.LogPage{Entries: entries, LastTimestamp: lastTS})
+}
+
+func (s *Logs) withRecentFallback(ctx context.Context, group string, query model.LogQuery, primary model.LogPage) (model.LogPage, error) {
+	if len(primary.Entries) > 0 || query.FallbackLimit <= 0 || query.StartTime <= 0 || len(query.Groups) > 1 {
+		return primary, nil
+	}
+	if len(query.Groups) == 1 {
+		group = query.Groups[0]
+	}
+	entries, _, err := s.tail(ctx, group, query.Streams, 0, query.FallbackLimit)
+	if err != nil {
+		return model.LogPage{}, fmt.Errorf("fetch latest logs from %q: %w", group, err)
+	}
+	if len(entries) == 0 {
+		return primary, nil
+	}
+	fallback := page(entries, 0)
+	fallback.UsedFallback = true
+	return fallback, nil
+}
+
+func (s *Logs) tail(ctx context.Context, group string, streams []string, startTime int64, limit int) ([]model.LogEntry, int64, error) {
+	switch len(streams) {
+	case 0:
+		return s.api.TailLogGroup(ctx, group, startTime, limit)
+	case 1:
+		return s.api.TailLogs(ctx, group, streams[0], startTime, limit)
+	default:
+		return s.api.TailMultiStreamLogs(ctx, group, streams, startTime, limit)
+	}
 }
 
 func (s *Logs) search(ctx context.Context, group string, query model.LogQuery) (model.LogPage, error) {

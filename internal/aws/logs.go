@@ -73,25 +73,10 @@ func (c *Client) FetchLogs(ctx context.Context, logGroup, logStream string, star
 	entries := make([]LogEntry, 0, len(out.Events))
 	lastTS := startTime
 	for _, ev := range out.Events {
-		ts := int64(0)
-		if ev.Timestamp != nil {
-			ts = *ev.Timestamp
-		}
-		msg := ""
-		if ev.Message != nil {
-			msg = *ev.Message
-		}
-		stream := ""
-		if ev.LogStreamName != nil {
-			stream = *ev.LogStreamName
-		}
-		entries = append(entries, LogEntry{
-			Timestamp: ts,
-			Message:   msg,
-			Stream:    stream,
-		})
-		if ts > lastTS {
-			lastTS = ts
+		entry := eventToLogEntry(ev)
+		entries = append(entries, entry)
+		if entry.Timestamp > lastTS {
+			lastTS = entry.Timestamp
 		}
 	}
 
@@ -556,6 +541,9 @@ func boolPtr(b bool) *bool {
 
 func eventToLogEntry(ev cwltypes.FilteredLogEvent) LogEntry {
 	entry := LogEntry{}
+	if ev.EventId != nil {
+		entry.ID = *ev.EventId
+	}
 	if ev.Timestamp != nil {
 		entry.Timestamp = *ev.Timestamp
 	}

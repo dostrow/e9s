@@ -3,6 +3,7 @@ package views
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,7 +15,10 @@ import (
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
-const maxLogLines = 1000
+const (
+	maxLogLines    = 1000
+	logPollOverlap = 30 * time.Second
+)
 
 // LogsLoadedMsg is sent when new log entries arrive.
 type LogsLoadedMsg struct {
@@ -39,6 +43,7 @@ type LogViewerModel struct {
 	streams   []string
 
 	lines    []logLine
+	seen     map[model.LogEntryKey]struct{}
 	scroll   int
 	follow   bool // auto-scroll to bottom
 	tailMode bool // true if opened for live tailing; false for historical/jump
@@ -53,6 +58,7 @@ type LogViewerModel struct {
 
 	jumpTargetTS  int64 // if > 0, scroll to nearest line after first load
 	initialLoaded bool  // whether first batch has loaded
+	initialFetch  bool  // whether the recent-window/fallback request completed
 
 	firstTS      int64 // earliest timestamp in buffer (for backward fetch)
 	lastTS       int64
@@ -64,20 +70,21 @@ type LogViewerModel struct {
 }
 
 type logLine struct {
+	entryKey  model.LogEntryKey
 	timestamp int64
 	stream    string
 	message   string
 }
 
 func NewLogViewer(title string, logs *service.Logs, logGroup string, streams []string) LogViewerModel {
-	return NewLogViewerWithOptions(title, logs, logGroup, streams, true, 5*time.Minute)
+	return NewLogViewerWithOptions(title, logs, logGroup, streams, true, 15*time.Minute)
 }
 
 func NewLogViewerWithOptions(title string, logs *service.Logs, logGroup string, streams []string, follow bool, lookback time.Duration) LogViewerModel {
-	startTS := int64(0)
-	if !follow {
-		startTS = time.Now().Add(-lookback).UnixMilli()
+	if lookback <= 0 {
+		lookback = 15 * time.Minute
 	}
+	startTS := time.Now().Add(-lookback).UnixMilli()
 
 	return LogViewerModel{
 		title:        title,
@@ -158,15 +165,34 @@ func (m LogViewerModel) WithContext(ctx context.Context) LogViewerModel {
 func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case LogsLoadedMsg:
+		m.initialFetch = true
+		if m.seen == nil {
+			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(msg.Entries))
+		}
+		added := 0
 		for _, e := range msg.Entries {
+			if _, exists := m.seen[e.Key()]; exists {
+				continue
+			}
+			m.seen[e.Key()] = struct{}{}
 			m.lines = append(m.lines, logLine{
+				entryKey:  e.Key(),
 				timestamp: e.Timestamp,
 				stream:    e.Stream,
 				message:   sanitizeLogMessage(e.Message),
 			})
+			added++
+		}
+		if added > 0 {
+			sort.SliceStable(m.lines, func(i, j int) bool {
+				return m.lines[i].timestamp < m.lines[j].timestamp
+			})
 		}
 		if len(m.lines) > maxLogLines {
 			trimmed := len(m.lines) - maxLogLines
+			for _, line := range m.lines[:trimmed] {
+				delete(m.seen, line.key())
+			}
 			m.lines = m.lines[trimmed:]
 			// Adjust scroll position so viewport doesn't drift
 			if !m.follow {
@@ -176,22 +202,16 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			m.rebuildMatchIndices()
 		}
 		// Track earliest timestamp in buffer
-		if len(m.lines) > 0 && (m.firstTS == 0 || m.lines[0].timestamp < m.firstTS) {
+		if len(m.lines) > 0 {
 			m.firstTS = m.lines[0].timestamp
 		}
 		if msg.LastTS > m.lastTS {
-			m.lastTS = msg.LastTS + 1
+			m.lastTS = msg.LastTS
 		}
-		// Update match indices for new lines
+		// Rebuild matches because an overlapping poll may insert a late event
+		// before lines that are already buffered.
 		if m.search != "" {
-			lowerSearch := strings.ToLower(m.search)
-			startIdx := len(m.lines) - len(msg.Entries)
-			startIdx = max(0, startIdx)
-			for i := startIdx; i < len(m.lines); i++ {
-				if strings.Contains(strings.ToLower(m.lines[i].message), lowerSearch) {
-					m.matchIndices = append(m.matchIndices, i)
-				}
-			}
+			m.rebuildMatchIndices()
 		}
 		// On first load with a jump target, scroll to the target timestamp
 		if m.jumpTargetTS > 0 && !m.initialLoaded {
@@ -219,9 +239,17 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		if len(msg.Entries) == 0 {
 			return m, nil
 		}
+		if m.seen == nil {
+			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(msg.Entries))
+		}
 		var older []logLine
 		for _, e := range msg.Entries {
+			if _, exists := m.seen[e.Key()]; exists {
+				continue
+			}
+			m.seen[e.Key()] = struct{}{}
 			older = append(older, logLine{
+				entryKey:  e.Key(),
 				timestamp: e.Timestamp,
 				stream:    e.Stream,
 				message:   sanitizeLogMessage(e.Message),
@@ -237,8 +265,10 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		// Cap buffer from the end if needed
 		if len(m.lines) > maxLogLines {
 			excess := len(m.lines) - maxLogLines
+			for _, line := range m.lines[len(m.lines)-excess:] {
+				delete(m.seen, line.key())
+			}
 			m.lines = m.lines[:maxLogLines]
-			_ = excess // trimmed from end, no scroll adjust needed
 		}
 		m.rebuildMatchIndices()
 		return m, nil
@@ -633,19 +663,27 @@ func (m LogViewerModel) scheduleRefresh() tea.Cmd {
 
 func (m LogViewerModel) fetchLogs() tea.Cmd {
 	startTime := m.lastTS
+	if m.initialFetch && m.endTS == 0 {
+		startTime = max(int64(0), startTime-logPollOverlap.Milliseconds())
+	}
 	limit := 100
-	if m.tailMode {
+	if m.tailMode || !m.initialFetch {
 		limit = maxLogLines
+	}
+	fallbackLimit := 0
+	if !m.initialFetch {
+		fallbackLimit = 10
 	}
 
 	return func() tea.Msg {
 		query := model.LogQuery{
-			Groups:    append([]string(nil), m.logGroups...),
-			Streams:   append([]string(nil), m.streams...),
-			StartTime: startTime,
-			EndTime:   m.endTS,
-			Limit:     limit,
-			Tail:      m.tailMode,
+			Groups:        append([]string(nil), m.logGroups...),
+			Streams:       append([]string(nil), m.streams...),
+			StartTime:     startTime,
+			EndTime:       m.endTS,
+			Limit:         limit,
+			Tail:          m.endTS == 0,
+			FallbackLimit: fallbackLimit,
 		}
 		page, err := m.logs.Fetch(m.ctx, m.logGroup, query)
 		if err != nil {
@@ -667,6 +705,7 @@ func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
 		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
 			Streams:   streams,
 			StartTime: startTime,
+			EndTime:   max(int64(0), endTime-1),
 			Limit:     100,
 		})
 		if err != nil {
@@ -727,12 +766,17 @@ func (m LogViewerModel) fetchNewerLogs() tea.Cmd {
 			Streams:   streams,
 			StartTime: startTime,
 			Limit:     100,
+			Tail:      true,
 		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
 		return LogsLoadedMsg{Entries: page.Entries, LastTS: page.LastTimestamp}
 	}
+}
+
+func (l logLine) key() model.LogEntryKey {
+	return l.entryKey
 }
 
 func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]model.LogEntry, error) {

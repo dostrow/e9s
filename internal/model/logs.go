@@ -16,9 +16,26 @@ type LogStream struct {
 
 // LogEntry is a UI-neutral CloudWatch log event.
 type LogEntry struct {
+	ID        string
 	Timestamp int64
 	Message   string
 	Stream    string
+}
+
+// LogEntryKey is a stable, comparable identity used to suppress overlapping
+// results when CloudWatch polling keeps its timestamp cursor inclusive.
+type LogEntryKey struct {
+	ID        string
+	Timestamp int64
+	Message   string
+	Stream    string
+}
+
+func (e LogEntry) Key() LogEntryKey {
+	if e.ID != "" {
+		return LogEntryKey{ID: e.ID, Stream: e.Stream}
+	}
+	return LogEntryKey{Timestamp: e.Timestamp, Message: e.Message, Stream: e.Stream}
 }
 
 // LogSource identifies one CloudWatch log group and an optional set of streams.
@@ -38,6 +55,9 @@ type LogQuery struct {
 	Limit     int
 	Tail      bool
 	Filter    string
+	// FallbackLimit requests the newest N entries without the time constraint
+	// when the primary query returns no events.
+	FallbackLimit int
 }
 
 // LogPage is the result of a LogQuery. LastTimestamp is StartTime when no
@@ -45,4 +65,5 @@ type LogQuery struct {
 type LogPage struct {
 	Entries       []LogEntry
 	LastTimestamp int64
+	UsedFallback  bool
 }

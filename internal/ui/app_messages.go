@@ -53,7 +53,7 @@ type logReadyMsg struct {
 	logGroups   []string
 	streams     []string
 	follow      *bool         // nil = default (true), false = paused
-	lookback    time.Duration // 0 = default (5min)
+	lookback    time.Duration // 0 = default (15min)
 	search      string        // pre-set search pattern
 	startMs     int64         // absolute range start (paused viewer)
 	endMs       int64         // absolute range end (paused viewer)

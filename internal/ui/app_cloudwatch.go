@@ -94,14 +94,6 @@ func (a App) peekLogStream() (App, tea.Cmd) {
 	logGroup := a.logStreamsView.LogGroup()
 	f := false
 
-	// Use the stream's first event time for lookback so historical logs are visible.
-	// Fall back to 5 minutes if no event time is available.
-	lookback := 5 * time.Minute
-	if s.FirstEventTime > 0 {
-		firstEvent := time.UnixMilli(s.FirstEventTime)
-		lookback = time.Since(firstEvent) + time.Minute
-	}
-
 	streamName := s.Name
 	return a, func() tea.Msg {
 		return logReadyMsg{
@@ -109,7 +101,7 @@ func (a App) peekLogStream() (App, tea.Cmd) {
 			logGroup: logGroup,
 			streams:  []string{streamName},
 			follow:   &f,
-			lookback: lookback,
+			lookback: 15 * time.Minute,
 		}
 	}
 }
@@ -137,7 +129,7 @@ func (a App) startLogTail(logGroup string, streams []string, title string) tea.C
 			logGroup:  logGroup,
 			logGroups: []string{logGroup},
 			streams:   streams,
-			lookback:  10 * time.Second,
+			lookback:  15 * time.Minute,
 		}
 	}
 }

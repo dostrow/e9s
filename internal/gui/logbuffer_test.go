@@ -43,6 +43,21 @@ func TestBoundedLogsFiltersCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestBoundedLogsDeduplicatesOverlappingPollsButKeepsLateEvents(t *testing.T) {
+	logs := newBoundedLogs(10)
+	first := model.LogEntry{ID: "event-1", Timestamp: 100, Message: "running"}
+	late := model.LogEntry{ID: "event-2", Timestamp: 100, Message: "final line"}
+	logs.append([]model.LogEntry{first})
+	logs.append([]model.LogEntry{first, late})
+
+	if logs.len() != 2 {
+		t.Fatalf("len() = %d, want 2", logs.len())
+	}
+	if got := logs.firstTimestamp(); got != 100 {
+		t.Fatalf("firstTimestamp() = %d, want 100", got)
+	}
+}
+
 func TestBoundedLogsClear(t *testing.T) {
 	logs := newBoundedLogs(10)
 	logs.append([]model.LogEntry{{Message: "message"}})

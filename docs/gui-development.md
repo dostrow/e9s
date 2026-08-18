@@ -157,6 +157,9 @@ memory than a cached rebuild.
     Correlate at cursor, including while the buffered filter is active.
 23. Cycle Local, UTC, and Relative timestamps, copy and save the buffer, and
     confirm wrapped continuations remain aligned with the message text.
+    Repeat with a stream that has been quiet for more than 15 minutes: its last
+    10 lines should appear, Older should continue before their first timestamp,
+    and Resume should follow from their newest timestamp without duplicates.
 24. Save a group/stream destination and a complete search. Rename, reorder, and
     delete it through Manage saved, verify exact Module Rail highlighting, then
     edit `log_paths` externally and press Refresh to verify the rail reloads.

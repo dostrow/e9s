@@ -9,9 +9,12 @@ import (
 )
 
 type fakeLogsAPI struct {
-	called string
-	limit  int
-	err    error
+	called       string
+	limit        int
+	err          error
+	emptyResults int
+	tailStarts   []int64
+	tailLimits   []int
 }
 
 func (f *fakeLogsAPI) ListLogGroups(ctx context.Context, search string) ([]model.LogGroup, error) {
@@ -49,6 +52,10 @@ func (f *fakeLogsAPI) result(ctx context.Context, called string, limit int) ([]m
 	if err := ctx.Err(); err != nil {
 		return nil, 0, err
 	}
+	if f.emptyResults > 0 {
+		f.emptyResults--
+		return nil, 0, f.err
+	}
 	return []model.LogEntry{{Timestamp: 42, Message: called}}, 42, f.err
 }
 
@@ -78,14 +85,25 @@ func (f *fakeLogsAPI) FetchLogGroupRange(ctx context.Context, _ string, _, _ int
 func (f *fakeLogsAPI) FetchMultiGroupRange(ctx context.Context, _ []string, _, _ int64, limit int) ([]model.LogEntry, error) {
 	return f.rangeResult(ctx, "range-groups", limit)
 }
-func (f *fakeLogsAPI) TailLogs(ctx context.Context, _ string, _ string, _ int64, limit int) ([]model.LogEntry, int64, error) {
-	return f.result(ctx, "tail-stream", limit)
+
+func (f *fakeLogsAPI) tailResult(ctx context.Context, called string, start int64, limit int) ([]model.LogEntry, int64, error) {
+	f.tailStarts = append(f.tailStarts, start)
+	f.tailLimits = append(f.tailLimits, limit)
+	entries, last, err := f.result(ctx, called, limit)
+	if len(entries) == 0 && err == nil {
+		last = start
+	}
+	return entries, last, err
 }
-func (f *fakeLogsAPI) TailMultiStreamLogs(ctx context.Context, _ string, _ []string, _ int64, limit int) ([]model.LogEntry, int64, error) {
-	return f.result(ctx, "tail-streams", limit)
+
+func (f *fakeLogsAPI) TailLogs(ctx context.Context, _ string, _ string, start int64, limit int) ([]model.LogEntry, int64, error) {
+	return f.tailResult(ctx, "tail-stream", start, limit)
 }
-func (f *fakeLogsAPI) TailLogGroup(ctx context.Context, _ string, _ int64, limit int) ([]model.LogEntry, int64, error) {
-	return f.result(ctx, "tail-group", limit)
+func (f *fakeLogsAPI) TailMultiStreamLogs(ctx context.Context, _ string, _ []string, start int64, limit int) ([]model.LogEntry, int64, error) {
+	return f.tailResult(ctx, "tail-streams", start, limit)
+}
+func (f *fakeLogsAPI) TailLogGroup(ctx context.Context, _ string, start int64, limit int) ([]model.LogEntry, int64, error) {
+	return f.tailResult(ctx, "tail-group", start, limit)
 }
 
 func TestLogsDispatchesQueries(t *testing.T) {
@@ -144,6 +162,44 @@ func TestLogsRequiresGroup(t *testing.T) {
 	_, err := NewLogs(&fakeLogsAPI{}).Fetch(context.Background(), "", model.LogQuery{})
 	if err == nil {
 		t.Fatal("Fetch() error = nil, want validation error")
+	}
+}
+
+func TestLogsFallsBackToNewestEntriesAndAnchorsAtTheirTimestamp(t *testing.T) {
+	api := &fakeLogsAPI{emptyResults: 1}
+	page, err := NewLogs(api).Fetch(context.Background(), "group", model.LogQuery{
+		Streams: []string{"stream"}, StartTime: 100, Limit: 100, Tail: true, FallbackLimit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.UsedFallback || len(page.Entries) != 1 {
+		t.Fatalf("page = %#v", page)
+	}
+	if page.LastTimestamp != 42 {
+		t.Fatalf("fallback LastTimestamp = %d, want 42", page.LastTimestamp)
+	}
+	if len(api.tailStarts) != 2 || api.tailStarts[0] != 100 || api.tailStarts[1] != 0 {
+		t.Fatalf("tail starts = %#v, want [100 0]", api.tailStarts)
+	}
+	if api.tailLimits[1] != 10 {
+		t.Fatalf("fallback limit = %d, want 10", api.tailLimits[1])
+	}
+}
+
+func TestLogsFallsBackAfterEmptyPeekRange(t *testing.T) {
+	api := &fakeLogsAPI{emptyResults: 1}
+	page, err := NewLogs(api).Fetch(context.Background(), "group", model.LogQuery{
+		Streams: []string{"stream"}, StartTime: 100, EndTime: 200, Limit: 500, FallbackLimit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.UsedFallback || page.LastTimestamp != 42 {
+		t.Fatalf("page = %#v", page)
+	}
+	if len(api.tailStarts) != 1 || api.tailStarts[0] != 0 || api.tailLimits[0] != 10 {
+		t.Fatalf("fallback calls: starts=%#v limits=%#v", api.tailStarts, api.tailLimits)
 	}
 }
 

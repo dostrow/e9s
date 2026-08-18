@@ -48,6 +48,7 @@ Browse log groups (by prefix or substring search), drill into log streams, and i
 - **Log Search** — search across a time range (relative presets or custom UTC timestamps) using CloudWatch filter syntax; plain text is auto-quoted for literal matching
 - **Multi-Group Search** — select multiple log groups with `space`, search across all of them, and save the selection for future use
 - **Backward/Forward Fetch** — press `[`/`]` to load older or newer log chunks
+- **Quiet-stream fallback** — peeks and follows start with the prior 15 minutes; when that window is empty, the newest 10 lines are shown and become the scrollback/follow anchor
 - **Timestamp Modes** — cycle through relative, local, and UTC timestamps with `t`
 - **Copy/Edit** — copy log buffer to clipboard (`y`) or open in `$EDITOR` (`o`)
 - **Save to File** — export the current log buffer with `w`

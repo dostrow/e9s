@@ -16,6 +16,7 @@ import (
 const (
 	maxGUILogEntries = 2000
 	logPollInterval  = 2 * time.Second
+	logPollOverlap   = 30 * time.Second
 )
 
 func (w *mainWindow) buildLogPane() gtk.Widgetter {
@@ -24,10 +25,13 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	w.logPauseButton = gtk.NewButtonWithLabel("Pause")
 	w.logPauseButton.ConnectClicked(w.toggleLogFollow)
 	w.logOlderButton = gtk.NewButtonWithLabel("Older")
-	w.logOlderButton.ConnectClicked(func() { w.loadAdjacentCloudWatchRange(-1) })
+	w.logOlderButton.SetVisible(false)
+	w.logOlderButton.ConnectClicked(w.loadOlderLogEntries)
 	w.logNewerButton = gtk.NewButtonWithLabel("Newer")
+	w.logNewerButton.SetVisible(false)
 	w.logNewerButton.ConnectClicked(func() { w.loadAdjacentCloudWatchRange(1) })
 	w.logCorrelateButton = gtk.NewButtonWithLabel("Correlate at cursor")
+	w.logCorrelateButton.SetVisible(false)
 	w.logCorrelateButton.ConnectClicked(w.promptLogCorrelation)
 	w.logTimestampButton = gtk.NewButtonWithLabel("Time: Local")
 	w.logTimestampButton.ConnectClicked(w.cycleLogTimestamps)
@@ -183,17 +187,17 @@ func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, p
 	w.logLastTS = page.LastTimestamp
 	w.logSearch.SetText("")
 	w.logPauseButton.SetVisible(false)
-	w.updateLogSearchControls()
 	w.showingMetrics = false
 	w.showingLogs = true
 	w.detailStack.SetVisibleChildName("logs")
+	w.updateLogSearchControls()
 	w.renderLogs()
 }
 
 func (w *mainWindow) updateLogSearchControls() {
 	searchResult := w.logSearchSpec != nil
 	if w.logOlderButton != nil {
-		w.logOlderButton.SetVisible(searchResult)
+		w.logOlderButton.SetVisible(w.showingLogs)
 		w.logNewerButton.SetVisible(searchResult)
 		w.logCorrelateButton.SetVisible(searchResult)
 	}
@@ -226,23 +230,31 @@ func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	w.logPauseButton.SetLabel("Pause")
 	if !preserve || w.logStore == nil {
 		w.logStore = newBoundedLogs(maxGUILogEntries)
-		w.logLastTS = time.Now().Add(-10 * time.Second).UnixMilli()
+		w.logLastTS = time.Now().Add(-15 * time.Minute).UnixMilli()
 		w.logSearch.SetText("")
 		w.renderLogs()
 	}
 	startTime := w.logLastTS
 
-	go w.followLogs(ctx, generation, source, startTime)
+	go w.followLogs(ctx, generation, source, startTime, !preserve)
 }
 
-func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source model.LogSource, startTime int64) {
+func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source model.LogSource, startTime int64, allowFallback bool) {
 	next := startTime
 	for {
+		fallbackLimit := 0
+		queryStart := next
+		if allowFallback {
+			fallbackLimit = 10
+		} else {
+			queryStart = max(int64(0), next-logPollOverlap.Milliseconds())
+		}
 		page, err := w.options.Logs.Fetch(ctx, source.Group, model.LogQuery{
-			Streams:   append([]string(nil), source.Streams...),
-			StartTime: next,
-			Limit:     500,
-			Tail:      true,
+			Streams:       append([]string(nil), source.Streams...),
+			StartTime:     queryStart,
+			Limit:         500,
+			Tail:          true,
+			FallbackLimit: fallbackLimit,
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -250,8 +262,11 @@ func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source m
 			}
 			w.applyLogError(ctx, generation, err)
 		} else {
+			allowFallback = false
 			if page.LastTimestamp >= next {
-				next = page.LastTimestamp + 1
+				next = page.LastTimestamp
+			} else if page.UsedFallback {
+				next = page.LastTimestamp
 			}
 			w.applyLogPage(ctx, generation, page, next)
 		}
@@ -288,6 +303,40 @@ func (w *mainWindow) applyLogError(ctx context.Context, generation uint64, err e
 			w.setStatus("Log follow: "+err.Error(), true)
 		}
 	})
+}
+
+func (w *mainWindow) loadOlderLogEntries() {
+	if w.logSearchSpec != nil {
+		w.loadAdjacentCloudWatchRange(-1)
+		return
+	}
+	if !w.showingLogs || w.options.Logs == nil || w.logStore == nil || w.logSource.Group == "" {
+		return
+	}
+	cutoff := w.logStore.firstTimestamp()
+	if cutoff <= 0 {
+		return
+	}
+	if w.logFollowing {
+		if w.logCancel != nil {
+			w.logCancel()
+		}
+		w.logGeneration++
+		w.logFollowing = false
+		w.logPauseButton.SetLabel("Resume")
+	}
+	start := max(int64(0), cutoff-(15*time.Minute).Milliseconds())
+	ctx, generation := w.startRequest("Loading older log events…")
+	go func() {
+		page, err := w.options.Logs.Fetch(ctx, w.logSource.Group, model.LogQuery{
+			Streams:   append([]string(nil), w.logSource.Streams...),
+			StartTime: start, EndTime: cutoff - 1, Limit: 500,
+		})
+		w.finishRequestWithStatus(ctx, generation, err, fmt.Sprintf("Loaded %d older log events", len(page.Entries)), func() {
+			w.logStore.prepend(page.Entries)
+			w.renderLogs()
+		})
+	}()
 }
 
 func (w *mainWindow) toggleLogFollow() {

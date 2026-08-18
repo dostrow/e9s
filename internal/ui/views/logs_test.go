@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dostrow/e9s/internal/model"
 )
 
 func TestSanitizeLogMessage_StripsCR(t *testing.T) {
@@ -100,12 +102,30 @@ func TestWrapPlainText_Unicode(t *testing.T) {
 }
 
 func TestNewLogViewerWithOptions_TailStartsFromLatestWindow(t *testing.T) {
-	m := NewLogViewerWithOptions("tail", nil, "/aws/ecs/example", nil, true, 10*time.Second)
-	if m.lastTS != 0 {
-		t.Fatalf("tail mode should start from the newest logs, got lastTS=%d", m.lastTS)
+	before := time.Now().Add(-15*time.Minute - time.Second).UnixMilli()
+	m := NewLogViewer("tail", nil, "/aws/ecs/example", nil)
+	after := time.Now().Add(-15*time.Minute + time.Second).UnixMilli()
+	if m.lastTS < before || m.lastTS > after {
+		t.Fatalf("tail mode start timestamp %d outside recent window [%d, %d]", m.lastTS, before, after)
 	}
 	if !m.tailMode {
 		t.Fatal("tail mode should be enabled when follow=true")
+	}
+}
+
+func TestLogViewerKeepsInclusiveCursorAndDeduplicatesOverlappingPolls(t *testing.T) {
+	m := LogViewerModel{lastTS: 100, follow: false}
+	first := model.LogEntry{ID: "event-1", Timestamp: 100, Message: "running"}
+	late := model.LogEntry{ID: "event-2", Timestamp: 100, Message: "final line"}
+
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{first}, LastTS: 100})
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{first, late}, LastTS: 100})
+
+	if m.lastTS != 100 {
+		t.Fatalf("inclusive cursor = %d, want 100", m.lastTS)
+	}
+	if len(m.lines) != 2 || m.lines[1].message != "final line" {
+		t.Fatalf("lines = %#v", m.lines)
 	}
 }
 

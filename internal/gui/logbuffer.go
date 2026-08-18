@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -12,6 +13,7 @@ import (
 type boundedLogs struct {
 	max     int
 	entries []model.LogEntry
+	seen    map[model.LogEntryKey]struct{}
 }
 
 type formattedLogBuffer struct {
@@ -42,16 +44,80 @@ func newBoundedLogs(maxEntries int) *boundedLogs {
 }
 
 func (b *boundedLogs) append(entries []model.LogEntry) {
-	b.entries = append(b.entries, entries...)
+	b.ensureSeen()
+	for _, entry := range entries {
+		key := entry.Key()
+		if _, exists := b.seen[key]; exists {
+			continue
+		}
+		b.seen[key] = struct{}{}
+		b.entries = append(b.entries, entry)
+	}
+	sort.SliceStable(b.entries, func(i, j int) bool {
+		return b.entries[i].Timestamp < b.entries[j].Timestamp
+	})
 	if extra := len(b.entries) - b.max; extra > 0 {
+		for _, entry := range b.entries[:extra] {
+			delete(b.seen, entry.Key())
+		}
 		kept := make([]model.LogEntry, b.max)
 		copy(kept, b.entries[extra:])
 		b.entries = kept
 	}
 }
 
+func (b *boundedLogs) prepend(entries []model.LogEntry) {
+	b.ensureSeen()
+	older := make([]model.LogEntry, 0, len(entries))
+	for _, entry := range entries {
+		key := entry.Key()
+		if _, exists := b.seen[key]; exists {
+			continue
+		}
+		b.seen[key] = struct{}{}
+		older = append(older, entry)
+	}
+	if len(older) == 0 {
+		return
+	}
+	b.entries = append(older, b.entries...)
+	sort.SliceStable(b.entries, func(i, j int) bool {
+		return b.entries[i].Timestamp < b.entries[j].Timestamp
+	})
+	if extra := len(b.entries) - b.max; extra > 0 {
+		for _, entry := range b.entries[len(b.entries)-extra:] {
+			delete(b.seen, entry.Key())
+		}
+		b.entries = b.entries[:len(b.entries)-extra]
+	}
+}
+
+func (b *boundedLogs) ensureSeen() {
+	if b.seen != nil {
+		return
+	}
+	b.seen = make(map[model.LogEntryKey]struct{}, len(b.entries))
+	for _, entry := range b.entries {
+		b.seen[entry.Key()] = struct{}{}
+	}
+}
+
+func (b *boundedLogs) firstTimestamp() int64 {
+	if len(b.entries) == 0 {
+		return 0
+	}
+	first := b.entries[0].Timestamp
+	for _, entry := range b.entries[1:] {
+		if entry.Timestamp < first {
+			first = entry.Timestamp
+		}
+	}
+	return first
+}
+
 func (b *boundedLogs) clear() {
 	b.entries = nil
+	b.seen = nil
 }
 
 func (b *boundedLogs) len() int {
