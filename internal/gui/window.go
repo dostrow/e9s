@@ -26,6 +26,7 @@ const (
 	pageStoppedTasks    = "stopped-standalone-tasks"
 	pageTaskDefinitions = "task-definitions"
 	pageLogGroups       = "cloudwatch-log-groups"
+	pageLogStreams      = "cloudwatch-log-streams"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -34,6 +35,7 @@ const (
 	detailHelp           = "help"
 	detailError          = "error"
 	detailLogGroup       = "log-group"
+	detailLogStream      = "log-stream"
 )
 
 type mainWindow struct {
@@ -67,6 +69,9 @@ type mainWindow struct {
 	allLogGroups                []model.LogGroup
 	filteredLogGroups           []model.LogGroup
 	selectedLogGroup            string
+	allLogStreams               []model.LogStream
+	filteredLogStreams          []model.LogStream
+	selectedLogStream           string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -79,6 +84,7 @@ type mainWindow struct {
 	stoppedTaskTable            *stringTable
 	taskDefinitionTable         *stringTable
 	logGroupTable               *stringTable
+	logStreamTable              *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -87,6 +93,9 @@ type mainWindow struct {
 	taskDefinitionsNavButton    *gtk.ToggleButton
 	logGroupsNavButton          *gtk.ToggleButton
 	cloudWatchModuleItems       *gtk.Box
+	peekLogStreamButton         *gtk.Button
+	followLogStreamButton       *gtk.Button
+	followLogGroupButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -208,12 +217,20 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "LOG GROUP", field: 0, expand: true},
 		{title: "STORED", field: 1},
 	})
+	w.logStreamTable = newStringTable([]columnSpec{
+		{title: "LOG STREAM", field: 0, expand: true},
+		{title: "LAST EVENT", field: 1},
+		{title: "FIRST EVENT", field: 2},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
 	w.stoppedTaskTable.view.ConnectActivate(w.openStoppedTaskAt)
 	w.taskDefinitionTable.view.ConnectActivate(w.openTaskDefinitionAt)
 	w.logGroupTable.view.ConnectActivate(w.openLogGroupAt)
+	w.logStreamTable.view.ConnectActivate(w.peekLogStreamAt)
+	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
+	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -248,6 +265,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.taskLogsButton = gtk.NewButtonWithLabel("Task logs")
 	w.taskLogsButton.SetSensitive(false)
 	w.taskLogsButton.ConnectClicked(w.openTaskLogs)
+	w.peekLogStreamButton = gtk.NewButtonWithLabel("Peek stream")
+	w.peekLogStreamButton.ConnectClicked(w.peekSelectedLogStream)
+	w.followLogStreamButton = gtk.NewButtonWithLabel("Follow stream")
+	w.followLogStreamButton.ConnectClicked(w.followSelectedLogStream)
+	w.followLogGroupButton = gtk.NewButtonWithLabel("Follow group")
+	w.followLogGroupButton.ConnectClicked(w.followSelectedLogGroup)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -287,6 +310,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.execButton)
 	header.Append(w.logsButton)
 	header.Append(w.taskLogsButton)
+	header.Append(w.peekLogStreamButton)
+	header.Append(w.followLogStreamButton)
+	header.Append(w.followLogGroupButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -383,6 +409,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	logGroupScroll.SetVExpand(true)
 	logGroupScroll.SetHExpand(true)
 	logGroupScroll.SetChild(w.logGroupTable.view)
+	logStreamScroll := gtk.NewScrolledWindow()
+	logStreamScroll.SetVExpand(true)
+	logStreamScroll.SetHExpand(true)
+	logStreamScroll.SetChild(w.logStreamTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -393,6 +423,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(stoppedTaskScroll, pageStoppedTasks)
 	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
 	w.resourceStack.AddNamed(logGroupScroll, pageLogGroups)
+	w.resourceStack.AddNamed(logStreamScroll, pageLogStreams)
 	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -1105,6 +1136,10 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageLogStreams {
+		w.applyLogStreamFilter()
+		return
+	}
 	if w.currentPage == pageLogGroups {
 		w.applyLogGroupFilter()
 		return
@@ -1193,6 +1228,27 @@ func (w *mainWindow) navigateBrowserBack() {
 		w.closeTaskDefinitionEditorThen(w.navigateBrowserBack)
 		return
 	}
+	if w.currentPage == pageLogStreams {
+		w.resetWorkspaceForBrowserChange()
+		w.currentPage = pageLogGroups
+		w.selectedLogStream = ""
+		w.updateActionSensitivity()
+		w.search.SetText("")
+		w.search.SetPlaceholderText("Filter log groups…")
+		w.resourceStack.SetVisibleChildName(pageLogGroups)
+		w.applyLogGroupFilter()
+		w.backButton.SetSensitive(false)
+		if group, found := findLogGroup(w.allLogGroups, w.selectedLogGroup); found {
+			w.setBreadcrumb("CloudWatch Logs / Log groups / " + group.Name)
+			w.setDetail(formatLogGroupDetail(group), detailLogGroup)
+		} else {
+			w.selectedLogGroup = ""
+			w.setBreadcrumb("CloudWatch Logs / Log groups")
+			w.setDetail(logGroupsSummary(len(w.allLogGroups)), detailIntro)
+		}
+		w.setStatus("Ready", false)
+		return
+	}
 	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
 		w.resetWorkspaceForBrowserChange()
 		w.clearTaskBrowser()
@@ -1243,6 +1299,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if foreground {
 			w.setStatus("Editor has unsaved content; close it before refreshing", false)
 		}
+		return
+	}
+	if w.currentPage == pageLogStreams {
+		w.refreshLogStreams(foreground)
 		return
 	}
 	if w.currentPage == pageLogGroups {
@@ -1504,7 +1564,7 @@ func (w *mainWindow) updateActionSensitivity() {
 	if w.clustersNavButton != nil {
 		w.clustersNavButton.SetActive(isECSPage(w.currentPage) && w.currentPage != pageTaskDefinitions)
 		w.taskDefinitionsNavButton.SetActive(w.currentPage == pageTaskDefinitions)
-		w.logGroupsNavButton.SetActive(w.currentPage == pageLogGroups)
+		w.logGroupsNavButton.SetActive(w.currentPage == pageLogGroups || w.currentPage == pageLogStreams)
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -1533,6 +1593,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
 	w.taskLogsButton.SetVisible(taskSelected)
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
+	logGroupSelected := (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams) && w.selectedLogGroup != ""
+	logStreamSelected := w.currentPage == pageLogStreams && w.selectedLogStream != ""
+	w.peekLogStreamButton.SetVisible(logStreamSelected)
+	w.peekLogStreamButton.SetSensitive(logStreamSelected && w.options.Logs != nil)
+	w.followLogStreamButton.SetVisible(logStreamSelected)
+	w.followLogStreamButton.SetSensitive(logStreamSelected && w.options.Logs != nil)
+	w.followLogGroupButton.SetVisible(logGroupSelected)
+	w.followLogGroupButton.SetSensitive(logGroupSelected && w.options.Logs != nil)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

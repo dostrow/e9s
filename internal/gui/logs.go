@@ -68,14 +68,7 @@ func (w *mainWindow) openServiceLogs() {
 	go func() {
 		source, err := w.options.ECS.ServiceLogSource(ctx, cluster, service)
 		w.finishRequestWithStatus(ctx, generation, err, "Following logs for "+service, func() {
-			if w.showingTerminal {
-				w.closeTerminalNow(false)
-			}
-			w.showingMetrics = false
-			w.showingLogs = true
-			w.detailStack.SetVisibleChildName("logs")
-			w.logTitle = service
-			w.startLogFollow(source, false)
+			w.showLogFollow(source, service)
 		})
 	}()
 }
@@ -134,16 +127,41 @@ func (w *mainWindow) openTaskContainerLogs(task model.Task, container string) {
 		source, err := w.options.ECS.ContainerLogSource(ctx, task, container)
 		title := shortID(task.TaskID) + " / " + container
 		w.finishRequestWithStatus(ctx, generation, err, "Following logs for "+title, func() {
-			if w.showingTerminal {
-				w.closeTerminalNow(false)
-			}
-			w.showingMetrics = false
-			w.showingLogs = true
-			w.detailStack.SetVisibleChildName("logs")
-			w.logTitle = title
-			w.startLogFollow(source, false)
+			w.showLogFollow(source, title)
 		})
 	}()
+}
+
+func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
+	if w.showingTerminal {
+		w.closeTerminalNow(false)
+	}
+	w.showingMetrics = false
+	w.showingLogs = true
+	w.detailStack.SetVisibleChildName("logs")
+	w.logTitle = title
+	w.logPauseButton.SetVisible(true)
+	w.startLogFollow(source, false)
+	w.setStatus("Following logs for "+title, false)
+}
+
+func (w *mainWindow) showLogSnapshot(source model.LogSource, title string, page model.LogPage) {
+	if w.logCancel != nil {
+		w.logCancel()
+	}
+	w.logGeneration++
+	w.logFollowing = false
+	w.logSource = source
+	w.logTitle = title
+	w.logStore = newBoundedLogs(maxGUILogEntries)
+	w.logStore.append(page.Entries)
+	w.logLastTS = page.LastTimestamp
+	w.logSearch.SetText("")
+	w.logPauseButton.SetVisible(false)
+	w.showingMetrics = false
+	w.showingLogs = true
+	w.detailStack.SetVisibleChildName("logs")
+	w.renderLogs()
 }
 
 func taskContainerNames(task model.Task) []string {
@@ -166,6 +184,7 @@ func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	generation := w.logGeneration
 	w.logSource = source
 	w.logFollowing = true
+	w.logPauseButton.SetVisible(true)
 	w.logPauseButton.SetLabel("Pause")
 	if !preserve || w.logStore == nil {
 		w.logStore = newBoundedLogs(maxGUILogEntries)

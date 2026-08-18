@@ -36,3 +36,14 @@ func TestFormatByteSize(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterLogStreams(t *testing.T) {
+	streams := []model.LogStream{
+		{Name: "ecs/api/one"},
+		{Name: "ecs/worker/two"},
+	}
+	filtered := filterLogStreams(streams, "WORKER")
+	if len(filtered) != 1 || filtered[0].Name != "ecs/worker/two" {
+		t.Fatalf("filtered streams = %#v", filtered)
+	}
+}
