@@ -1,0 +1,109 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/dostrow/e9s/internal/model"
+)
+
+type fakeECSAPI struct {
+	clusters []model.Cluster
+	services []model.Service
+	tasks    []model.Task
+	err      error
+	forced   []string
+}
+
+func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
+	return f.clusters, f.err
+}
+
+func (f *fakeECSAPI) ListServices(context.Context, string) ([]model.Service, error) {
+	return f.services, f.err
+}
+
+func (f *fakeECSAPI) ListTasks(context.Context, string, string) ([]model.Task, error) {
+	return f.tasks, f.err
+}
+
+func (f *fakeECSAPI) ForceNewDeployment(_ context.Context, cluster, service string) error {
+	f.forced = []string{cluster, service}
+	return f.err
+}
+
+func (f *fakeECSAPI) GetLogConfig(context.Context, string, string) (string, string, error) {
+	return "/ecs/example", "ecs", f.err
+}
+
+func (f *fakeECSAPI) ResolveTaskLogStreams(context.Context, []model.Task) (string, []string, error) {
+	return "/ecs/example", []string{"ecs/api/task-1"}, f.err
+}
+
+func TestECSListsDomainValues(t *testing.T) {
+	api := &fakeECSAPI{
+		clusters: []model.Cluster{{Name: "prod"}},
+		services: []model.Service{{Name: "api"}},
+		tasks:    []model.Task{{TaskID: "task-1"}},
+	}
+	svc := NewECS(api)
+
+	clusters, err := svc.ListClusters(context.Background())
+	if err != nil || len(clusters) != 1 || clusters[0].Name != "prod" {
+		t.Fatalf("ListClusters() = %#v, %v", clusters, err)
+	}
+	services, err := svc.ListServices(context.Background(), "prod")
+	if err != nil || len(services) != 1 || services[0].Name != "api" {
+		t.Fatalf("ListServices() = %#v, %v", services, err)
+	}
+	tasks, err := svc.ListTasks(context.Background(), "prod", "api")
+	if err != nil || len(tasks) != 1 || tasks[0].TaskID != "task-1" {
+		t.Fatalf("ListTasks() = %#v, %v", tasks, err)
+	}
+}
+
+func TestECSLogSources(t *testing.T) {
+	api := &fakeECSAPI{tasks: []model.Task{{
+		TaskID:         "task-1",
+		TaskDefinition: "api:1",
+	}}}
+	svc := NewECS(api)
+
+	container, err := svc.ContainerLogSource(context.Background(), api.tasks[0], "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if container.Group != "/ecs/example" || len(container.Streams) != 1 || container.Streams[0] != "ecs/api/task-1" {
+		t.Fatalf("ContainerLogSource() = %#v", container)
+	}
+
+	service, err := svc.ServiceLogSource(context.Background(), "prod", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.Group != "/ecs/example" || len(service.Streams) != 1 {
+		t.Fatalf("ServiceLogSource() = %#v", service)
+	}
+}
+
+func TestECSWrapsOperationErrors(t *testing.T) {
+	svc := NewECS(&fakeECSAPI{err: errors.New("denied")})
+
+	_, err := svc.ListServices(context.Background(), "prod")
+	if err == nil || !strings.Contains(err.Error(), "list ECS services") || !errors.Is(err, svc.api.(*fakeECSAPI).err) {
+		t.Fatalf("ListServices() error = %v", err)
+	}
+}
+
+func TestECSForceDeployment(t *testing.T) {
+	api := &fakeECSAPI{}
+	svc := NewECS(api)
+	if err := svc.ForceDeployment(context.Background(), "prod", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.forced) != 2 || api.forced[0] != "prod" || api.forced[1] != "api" {
+		t.Fatalf("forced arguments = %#v", api.forced)
+	}
+}

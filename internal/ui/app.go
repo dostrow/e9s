@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -94,6 +96,10 @@ const (
 
 type App struct {
 	client              *e9saws.Client
+	ecs                 *service.ECS
+	logs                *service.Logs
+	ctx                 context.Context
+	cancel              context.CancelFunc
 	cfg                 *config.Config
 	mode                topMode
 	state               viewState
@@ -232,6 +238,7 @@ type App struct {
 }
 
 func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
+	ctx, cancel := context.WithCancel(context.Background())
 	idleTimeout := 5 * time.Minute
 	if cfg.Defaults.IdleTimeout > 0 {
 		idleTimeout = time.Duration(cfg.Defaults.IdleTimeout) * time.Second
@@ -239,6 +246,10 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 
 	app := App{
 		client:       client,
+		ecs:          service.NewECS(client),
+		logs:         service.NewLogs(client),
+		ctx:          ctx,
+		cancel:       cancel,
 		cfg:          cfg,
 		state:        viewClusters,
 		clusterView:  views.NewClusterList(),
@@ -571,15 +582,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.startMs > 0 || msg.endMs > 0 {
 			if len(msg.logGroups) > 1 {
-				a.logView = views.NewMultiGroupLogViewerInRange(msg.title, a.client, msg.logGroups, msg.startMs, msg.endMs, msg.search)
+				a.logView = views.NewMultiGroupLogViewerInRange(msg.title, a.logs, msg.logGroups, msg.startMs, msg.endMs, msg.search)
 			} else {
-				a.logView = views.NewLogViewerInRange(msg.title, a.client, msg.logGroup, msg.streams, msg.startMs, msg.endMs, msg.search)
+				a.logView = views.NewLogViewerInRange(msg.title, a.logs, msg.logGroup, msg.streams, msg.startMs, msg.endMs, msg.search)
 			}
 		} else if msg.search != "" {
-			a.logView = views.NewLogViewerWithSearch(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback, msg.search)
+			a.logView = views.NewLogViewerWithSearch(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback, msg.search)
 		} else {
-			a.logView = views.NewLogViewerWithOptions(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback)
+			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
+		a.logView = a.logView.WithContext(a.ctx)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -594,7 +606,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.prevState = viewLogSearch
 		a.state = viewLogs
-		a.logView = views.NewLogViewerAtTimestamp(title, a.client, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = a.logView.WithContext(a.ctx)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -1476,6 +1489,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global keys
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
+			if a.cancel != nil {
+				a.cancel()
+			}
 			return a, tea.Quit
 		case key.Matches(msg, theme.Keys.Back):
 			return a.goBack()

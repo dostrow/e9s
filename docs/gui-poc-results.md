@@ -76,3 +76,60 @@ Proceed to the shared-service extraction. GTK, gotk4, the required widgets, the
 main-loop handoff pattern, and native Wayland operation all passed the Phase 0
 exit criterion. Clipboard behavior and production log-history bounds remain part
 of the real workflow in later phases rather than the synthetic spike.
+
+## Phase 1: Shared ECS and log services
+
+Status: passed on 2026-08-17.
+
+### Shared model and services
+
+The new `internal/service` package has no Bubble Tea or GTK dependencies. It
+defines two capability-oriented services:
+
+- `ECS` wraps cluster, service, and task listing; force deployment; and task- or
+  service-level log-source resolution.
+- `Logs` accepts a UI-neutral `model.LogQuery` and dispatches single-stream,
+  multi-stream, whole-group, multi-group, tail, and fixed-range reads.
+
+Shared log entries, sources, queries, and pages now live in `internal/model`.
+`internal/aws.LogEntry` remains an alias so existing low-level callers and tests
+continue to compile while frontends use the model type.
+
+Every shared operation accepts a caller-owned `context.Context`. Operational
+errors are wrapped with the affected cluster, service, or log group while
+retaining their original cause.
+
+### TUI migration
+
+The ECS portion of the TUI now uses the shared ECS service for:
+
+- cluster, service, task, and standalone-task queries;
+- force deployment;
+- task container log-source resolution; and
+- service-wide log-source resolution.
+
+The TUI log viewer now uses the shared log query dispatcher for all fetch, tail,
+older/newer, and range operations. Its Bubble Tea messages, selection state,
+keyboard handling, rendering, and 1,000-line display bound remain frontend-owned.
+
+`ui.App` owns a cancellable lifecycle context. Relevant ECS and log commands use
+that context, and the normal quit path cancels it before returning `tea.Quit`.
+
+### Verification
+
+Tests use high-level fake AWS interfaces and do not require credentials. They
+cover query routing, default limits, log source construction, mutation arguments,
+error wrapping, and cancellation propagation.
+
+```text
+go test ./...                         PASS
+go test -race ./internal/service      PASS
+go build -o /tmp/e9s-tui .           PASS
+go build -tags gui ./cmd/e9s-gui     PASS
+```
+
+### Phase decision
+
+Proceed to the read-only GTK workflow. Both frontends can now depend on the same
+ECS and CloudWatch behavior without sharing toolkit state, and the existing TUI
+suite passes without observable workflow changes.

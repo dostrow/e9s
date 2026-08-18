@@ -38,7 +38,7 @@ func (a App) doForceDeploy() tea.Cmd {
 		service = a.selectedService.Name
 	}
 	return func() tea.Msg {
-		err := a.client.ForceNewDeployment(context.Background(), cluster, service)
+		err := a.ecs.ForceDeployment(a.ctx, cluster, service)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -185,7 +185,7 @@ func (a App) loadStandaloneTasks() tea.Cmd {
 		clusterName = a.selectedCluster.Name
 	}
 	return func() tea.Msg {
-		tasks, err := a.client.ListTasks(context.Background(), clusterName, "")
+		tasks, err := a.ecs.ListTasks(a.ctx, clusterName, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -526,18 +526,15 @@ func (a App) openTaskLogs() (App, tea.Cmd) {
 
 func (a App) doLogForContainer(containerName string) tea.Cmd {
 	t := a.selectedTask
-	client := a.client
 	return func() tea.Msg {
-		logGroup, streamPrefix, err := client.GetLogConfig(
-			context.Background(), t.TaskDefinition, containerName)
+		source, err := a.ecs.ContainerLogSource(a.ctx, *t, containerName)
 		if err != nil {
 			return errMsg{err}
 		}
-		stream := e9saws.BuildLogStreamName(streamPrefix, containerName, t.TaskID)
 		return logReadyMsg{
 			title:    fmt.Sprintf("%s/%s", t.TaskID[:min(8, len(t.TaskID))], containerName),
-			logGroup: logGroup,
-			streams:  []string{stream},
+			logGroup: source.Group,
+			streams:  source.Streams,
 		}
 	}
 }
@@ -548,7 +545,6 @@ func (a App) openServiceLogs() (App, tea.Cmd) {
 		return a, nil
 	}
 	a.selectedService = s
-	client := a.client
 	clusterName := ""
 	if a.selectedCluster != nil {
 		clusterName = a.selectedCluster.Name
@@ -556,21 +552,14 @@ func (a App) openServiceLogs() (App, tea.Cmd) {
 	serviceName := s.Name
 
 	return a, func() tea.Msg {
-		tasks, err := client.ListTasks(context.Background(), clusterName, serviceName)
+		source, err := a.ecs.ServiceLogSource(a.ctx, clusterName, serviceName)
 		if err != nil {
 			return errMsg{err}
-		}
-		logGroup, streams, err := client.ResolveTaskLogStreams(context.Background(), tasks)
-		if err != nil {
-			return errMsg{err}
-		}
-		if logGroup == "" || len(streams) == 0 {
-			return errMsg{fmt.Errorf("no log streams found for service '%s'", serviceName)}
 		}
 		return logReadyMsg{
 			title:    serviceName + " (all tasks)",
-			logGroup: logGroup,
-			streams:  streams,
+			logGroup: source.Group,
+			streams:  source.Streams,
 		}
 	}
 }
@@ -717,7 +706,7 @@ func (a App) tick() tea.Cmd {
 
 func (a App) loadClusters() tea.Cmd {
 	return func() tea.Msg {
-		clusters, err := a.client.ListClusters(context.Background())
+		clusters, err := a.ecs.ListClusters(a.ctx)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -731,7 +720,7 @@ func (a App) loadServices() tea.Cmd {
 		clusterName = a.selectedCluster.Name
 	}
 	return func() tea.Msg {
-		services, err := a.client.ListServices(context.Background(), clusterName)
+		services, err := a.ecs.ListServices(a.ctx, clusterName)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -749,7 +738,7 @@ func (a App) loadTasks() tea.Cmd {
 		serviceName = a.selectedService.Name
 	}
 	return func() tea.Msg {
-		tasks, err := a.client.ListTasks(context.Background(), clusterName, serviceName)
+		tasks, err := a.ecs.ListTasks(a.ctx, clusterName, serviceName)
 		if err != nil {
 			return errMsg{err}
 		}

@@ -9,7 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
@@ -17,7 +18,7 @@ const maxLogLines = 1000
 
 // LogsLoadedMsg is sent when new log entries arrive.
 type LogsLoadedMsg struct {
-	Entries []aws.LogEntry
+	Entries []model.LogEntry
 	LastTS  int64
 }
 
@@ -26,12 +27,13 @@ type LogsErrorMsg struct{ Err error }
 
 // LogsPrependedMsg is sent when older logs are loaded (backward fetch).
 type LogsPrependedMsg struct {
-	Entries []aws.LogEntry
+	Entries []model.LogEntry
 }
 
 type LogViewerModel struct {
 	title     string
-	client    *aws.Client
+	logs      *service.Logs
+	ctx       context.Context
 	logGroup  string
 	logGroups []string
 	streams   []string
@@ -67,11 +69,11 @@ type logLine struct {
 	message   string
 }
 
-func NewLogViewer(title string, client *aws.Client, logGroup string, streams []string) LogViewerModel {
-	return NewLogViewerWithOptions(title, client, logGroup, streams, true, 5*time.Minute)
+func NewLogViewer(title string, logs *service.Logs, logGroup string, streams []string) LogViewerModel {
+	return NewLogViewerWithOptions(title, logs, logGroup, streams, true, 5*time.Minute)
 }
 
-func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, streams []string, follow bool, lookback time.Duration) LogViewerModel {
+func NewLogViewerWithOptions(title string, logs *service.Logs, logGroup string, streams []string, follow bool, lookback time.Duration) LogViewerModel {
 	startTS := int64(0)
 	if !follow {
 		startTS = time.Now().Add(-lookback).UnixMilli()
@@ -79,7 +81,8 @@ func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, 
 
 	return LogViewerModel{
 		title:        title,
-		client:       client,
+		logs:         logs,
+		ctx:          context.Background(),
 		logGroup:     logGroup,
 		logGroups:    []string{logGroup},
 		streams:      streams,
@@ -91,23 +94,24 @@ func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, 
 	}
 }
 
-func NewLogViewerWithSearch(title string, client *aws.Client, logGroup string, streams []string, follow bool, lookback time.Duration, search string) LogViewerModel {
-	m := NewLogViewerWithOptions(title, client, logGroup, streams, follow, lookback)
+func NewLogViewerWithSearch(title string, logs *service.Logs, logGroup string, streams []string, follow bool, lookback time.Duration, search string) LogViewerModel {
+	m := NewLogViewerWithOptions(title, logs, logGroup, streams, follow, lookback)
 	m.search = search
 	return m
 }
 
 // NewLogViewerAtTimestamp creates a log viewer starting at an absolute timestamp.
 // Used for jump-from-search: loads a window around the timestamp, paused, with search highlighted.
-func NewLogViewerAtTimestamp(title string, client *aws.Client, logGroup string, streams []string, timestampMs int64, search string) LogViewerModel {
-	return NewLogViewerInRange(title, client, logGroup, streams, timestampMs-30*1000, timestampMs+30*1000, search)
+func NewLogViewerAtTimestamp(title string, logs *service.Logs, logGroup string, streams []string, timestampMs int64, search string) LogViewerModel {
+	return NewLogViewerInRange(title, logs, logGroup, streams, timestampMs-30*1000, timestampMs+30*1000, search)
 }
 
 // NewLogViewerInRange creates a paused viewer for a fixed time range.
-func NewLogViewerInRange(title string, client *aws.Client, logGroup string, streams []string, startMs, endMs int64, search string) LogViewerModel {
+func NewLogViewerInRange(title string, logs *service.Logs, logGroup string, streams []string, startMs, endMs int64, search string) LogViewerModel {
 	return LogViewerModel{
 		title:        title,
-		client:       client,
+		logs:         logs,
+		ctx:          context.Background(),
 		logGroup:     logGroup,
 		logGroups:    []string{logGroup},
 		streams:      streams,
@@ -122,10 +126,11 @@ func NewLogViewerInRange(title string, client *aws.Client, logGroup string, stre
 }
 
 // NewMultiGroupLogViewerInRange creates a paused viewer for a fixed time range across multiple groups.
-func NewMultiGroupLogViewerInRange(title string, client *aws.Client, logGroups []string, startMs, endMs int64, search string) LogViewerModel {
+func NewMultiGroupLogViewerInRange(title string, logs *service.Logs, logGroups []string, startMs, endMs int64, search string) LogViewerModel {
 	return LogViewerModel{
 		title:        title,
-		client:       client,
+		logs:         logs,
+		ctx:          context.Background(),
 		logGroup:     firstString(logGroups),
 		logGroups:    append([]string(nil), logGroups...),
 		follow:       false,
@@ -140,6 +145,14 @@ func NewMultiGroupLogViewerInRange(title string, client *aws.Client, logGroups [
 
 func (m LogViewerModel) Init() tea.Cmd {
 	return m.fetchLogs()
+}
+
+// WithContext binds log requests to the owning frontend lifecycle.
+func (m LogViewerModel) WithContext(ctx context.Context) LogViewerModel {
+	if ctx != nil {
+		m.ctx = ctx
+	}
+	return m
 }
 
 func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
@@ -626,56 +639,23 @@ func (m LogViewerModel) fetchLogs() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		var entries []aws.LogEntry
-		var lastTS int64
-		var err error
-
-		if m.endTS > 0 {
-			entries, err = m.fetchRangeEntries(startTime, m.endTS)
-			if len(entries) > 0 {
-				lastTS = entries[len(entries)-1].Timestamp
-			} else {
-				lastTS = startTime
-			}
-		} else if m.tailMode {
-			client := m.client
-			logGroup := m.logGroup
-			streams := m.streams
-			if len(streams) == 1 {
-				entries, lastTS, err = client.TailLogs(
-					context.Background(), logGroup, streams[0], startTime, limit)
-			} else if len(streams) > 1 {
-				entries, lastTS, err = client.TailMultiStreamLogs(
-					context.Background(), logGroup, streams, startTime, limit)
-			} else {
-				entries, lastTS, err = client.TailLogGroup(
-					context.Background(), logGroup, startTime, limit)
-			}
-		} else {
-			client := m.client
-			logGroup := m.logGroup
-			streams := m.streams
-			if len(streams) == 1 {
-				entries, lastTS, err = client.FetchLogs(
-					context.Background(), logGroup, streams[0], startTime, limit)
-			} else if len(streams) > 1 {
-				entries, lastTS, err = client.FetchMultiStreamLogs(
-					context.Background(), logGroup, streams, startTime, limit)
-			} else {
-				entries, lastTS, err = client.FetchLogGroup(
-					context.Background(), logGroup, startTime, limit)
-			}
+		query := model.LogQuery{
+			Groups:    append([]string(nil), m.logGroups...),
+			Streams:   append([]string(nil), m.streams...),
+			StartTime: startTime,
+			EndTime:   m.endTS,
+			Limit:     limit,
+			Tail:      m.tailMode,
 		}
-
+		page, err := m.logs.Fetch(m.ctx, m.logGroup, query)
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
-		return LogsLoadedMsg{Entries: entries, LastTS: lastTS}
+		return LogsLoadedMsg{Entries: page.Entries, LastTS: page.LastTimestamp}
 	}
 }
 
 func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
-	client := m.client
 	logGroup := m.logGroup
 	streams := m.streams
 	// Fetch 30 seconds before the earliest line
@@ -684,26 +664,17 @@ func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
 	startTime = max(0, startTime)
 
 	return func() tea.Msg {
-		var entries []aws.LogEntry
-		var err error
-
-		if len(streams) == 1 {
-			entries, _, err = client.FetchLogs(
-				context.Background(), logGroup, streams[0], startTime, 100)
-		} else if len(streams) > 1 {
-			entries, _, err = client.FetchMultiStreamLogs(
-				context.Background(), logGroup, streams, startTime, 100)
-		} else {
-			entries, _, err = client.FetchLogGroup(
-				context.Background(), logGroup, startTime, 100)
-		}
-
+		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
+			Streams:   streams,
+			StartTime: startTime,
+			Limit:     100,
+		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
 		// Filter to only entries before our current earliest
-		var older []aws.LogEntry
-		for _, e := range entries {
+		var older []model.LogEntry
+		for _, e := range page.Entries {
 			if e.Timestamp < endTime {
 				older = append(older, e)
 			}
@@ -723,7 +694,7 @@ func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) t
 			if cutoff == 0 {
 				cutoff = endTime
 			}
-			var older []aws.LogEntry
+			var older []model.LogEntry
 			for _, e := range entries {
 				if e.Timestamp < cutoff {
 					older = append(older, e)
@@ -732,7 +703,7 @@ func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) t
 			return LogsPrependedMsg{Entries: older}
 		}
 		cutoff := m.lastTS
-		var newer []aws.LogEntry
+		var newer []model.LogEntry
 		for _, e := range entries {
 			if e.Timestamp >= cutoff {
 				newer = append(newer, e)
@@ -747,50 +718,32 @@ func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) t
 }
 
 func (m LogViewerModel) fetchNewerLogs() tea.Cmd {
-	client := m.client
 	logGroup := m.logGroup
 	streams := m.streams
 	startTime := m.lastTS
 
 	return func() tea.Msg {
-		var entries []aws.LogEntry
-		var lastTS int64
-		var err error
-
-		if len(streams) == 1 {
-			entries, lastTS, err = client.FetchLogs(
-				context.Background(), logGroup, streams[0], startTime, 100)
-		} else if len(streams) > 1 {
-			entries, lastTS, err = client.FetchMultiStreamLogs(
-				context.Background(), logGroup, streams, startTime, 100)
-		} else {
-			entries, lastTS, err = client.FetchLogGroup(
-				context.Background(), logGroup, startTime, 100)
-		}
-
+		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
+			Streams:   streams,
+			StartTime: startTime,
+			Limit:     100,
+		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
-		return LogsLoadedMsg{Entries: entries, LastTS: lastTS}
+		return LogsLoadedMsg{Entries: page.Entries, LastTS: page.LastTimestamp}
 	}
 }
 
-func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]aws.LogEntry, error) {
-	client := m.client
-	logGroup := m.logGroup
-	logGroups := m.logGroups
-	streams := m.streams
-
-	if len(logGroups) > 1 {
-		return client.FetchMultiGroupRange(context.Background(), logGroups, startTime, endTime, maxLogLines)
-	}
-	if len(streams) == 1 {
-		return client.FetchLogsRange(context.Background(), logGroup, streams[0], startTime, endTime, maxLogLines)
-	}
-	if len(streams) > 1 {
-		return client.FetchMultiStreamLogsRange(context.Background(), logGroup, streams, startTime, endTime, maxLogLines)
-	}
-	return client.FetchLogGroupRange(context.Background(), logGroup, startTime, endTime, maxLogLines)
+func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]model.LogEntry, error) {
+	page, err := m.logs.Fetch(m.ctx, m.logGroup, model.LogQuery{
+		Groups:    append([]string(nil), m.logGroups...),
+		Streams:   append([]string(nil), m.streams...),
+		StartTime: startTime,
+		EndTime:   endTime,
+		Limit:     maxLogLines,
+	})
+	return page.Entries, err
 }
 
 func (m LogViewerModel) SetSearch(pattern string) LogViewerModel {

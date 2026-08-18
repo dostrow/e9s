@@ -12,11 +12,9 @@ import (
 	"github.com/dostrow/e9s/internal/model"
 )
 
-type LogEntry struct {
-	Timestamp int64
-	Message   string
-	Stream    string
-}
+// LogEntry is retained as an alias for compatibility with existing callers.
+// Shared frontend code should prefer model.LogEntry.
+type LogEntry = model.LogEntry
 
 type filterLogEventsAPI interface {
 	FilterLogEvents(context.Context, *cloudwatchlogs.FilterLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error)
