@@ -2,6 +2,8 @@ package gui
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,8 +70,15 @@ func filterTasks(tasks []model.Task, query string) []model.Task {
 			task.TaskDefinition,
 			task.AvailabilityZone,
 			task.PrivateIP,
+			task.StopCode,
 			task.StoppedReason,
 		}, " "))
+		for _, container := range task.Containers {
+			haystack += " " + strings.ToLower(container.Name+" "+container.Reason)
+			if container.ExitCode != nil {
+				haystack += " " + strconv.Itoa(*container.ExitCode)
+			}
+		}
 		if strings.Contains(haystack, query) {
 			filtered = append(filtered, task)
 		}
@@ -95,9 +104,56 @@ func clusterSummary(cluster string, serviceCount int) string {
 
 func standaloneTaskSummary(cluster string, tasks []model.Task) string {
 	if len(tasks) == 0 {
-		return "No standalone ECS tasks found in " + cluster + "."
+		return "No active standalone ECS tasks found in " + cluster + "."
 	}
-	return fmt.Sprintf("%s\n\n%d standalone tasks\n\nSelect a task and press Enter for details, logs, and task actions.", cluster, len(tasks))
+	return fmt.Sprintf("%s\n\n%d active standalone tasks\n\nSelect a task and press Enter for details, logs, and task actions.", cluster, len(tasks))
+}
+
+func stoppedStandaloneTaskSummary(cluster string, tasks []model.Task, hasMore bool) string {
+	if len(tasks) == 0 {
+		return "No recently stopped standalone ECS tasks are available in " + cluster + ".\n\nECS retains stopped task descriptions for at least one hour."
+	}
+	message := fmt.Sprintf("%s\n\n%d recently stopped standalone tasks loaded", cluster, len(tasks))
+	if hasMore {
+		message += " • more available"
+	}
+	return message + "\n\nSelect a task for exit status, stop details, containers, and logs."
+}
+
+func sortStoppedTasks(tasks []model.Task) {
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return tasks[i].StoppedAt.After(tasks[j].StoppedAt)
+	})
+}
+
+func appendUniqueTasks(existing, additions []model.Task) []model.Task {
+	seen := make(map[string]struct{}, len(existing)+len(additions))
+	for _, task := range existing {
+		seen[task.TaskARN] = struct{}{}
+	}
+	for _, task := range additions {
+		if _, found := seen[task.TaskARN]; found {
+			continue
+		}
+		existing = append(existing, task)
+		seen[task.TaskARN] = struct{}{}
+	}
+	return existing
+}
+
+func taskExitSummary(task model.Task) string {
+	var exits []string
+	for _, container := range task.Containers {
+		if container.ExitCode == nil {
+			continue
+		}
+		value := strconv.Itoa(*container.ExitCode)
+		if len(task.Containers) > 1 {
+			value = valueOrDash(container.Name) + "=" + value
+		}
+		exits = append(exits, value)
+	}
+	return valueOrDash(strings.Join(exits, ", "))
 }
 
 func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) string {
@@ -159,6 +215,9 @@ func formatTaskDetail(task model.Task) string {
 	fmt.Fprintf(&out, "Started           %s\n", formatTime(task.StartedAt))
 	if !task.StoppedAt.IsZero() {
 		fmt.Fprintf(&out, "Stopped           %s\n", formatTime(task.StoppedAt))
+	}
+	if task.StopCode != "" {
+		fmt.Fprintf(&out, "Stop code         %s\n", task.StopCode)
 	}
 	if task.StoppedReason != "" {
 		fmt.Fprintf(&out, "Stop reason       %s\n", task.StoppedReason)

@@ -17,6 +17,7 @@ type ECSAPI interface {
 	ListClusters(context.Context) ([]model.Cluster, error)
 	ListServices(context.Context, string) ([]model.Service, error)
 	ListTasks(context.Context, string, string) ([]model.Task, error)
+	ListStoppedTasksPage(context.Context, string, string, int) (model.TaskPage, error)
 	ForceNewDeployment(context.Context, string, string) error
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error
@@ -76,11 +77,42 @@ func (s *ECS) ListStandaloneTasks(ctx context.Context, cluster string) ([]model.
 	}
 	standalone := make([]model.Task, 0, len(tasks))
 	for _, task := range tasks {
-		if !strings.HasPrefix(task.Group, "service:") {
+		if !strings.HasPrefix(task.Group, "service:") && task.Status != "STOPPED" {
 			standalone = append(standalone, task)
 		}
 	}
 	return standalone, nil
+}
+
+// ListStoppedStandaloneTasks returns up to limit non-service stopped tasks.
+// ECS can only filter stopped tasks at cluster scope, so service-owned tasks
+// are removed while pages are consumed until the requested batch is full.
+func (s *ECS) ListStoppedStandaloneTasks(ctx context.Context, cluster, nextToken string, limit int) (model.TaskPage, error) {
+	if limit < 1 {
+		return model.TaskPage{}, fmt.Errorf("list stopped standalone tasks: limit must be at least 1")
+	}
+	result := model.TaskPage{NextToken: nextToken}
+	for len(result.Tasks) < limit {
+		pageLimit := min(limit-len(result.Tasks), 100)
+		page, err := s.api.ListStoppedTasksPage(ctx, cluster, result.NextToken, pageLimit)
+		if err != nil {
+			return model.TaskPage{}, fmt.Errorf("list stopped standalone tasks in %q: %w", cluster, err)
+		}
+		for _, task := range page.Tasks {
+			if !strings.HasPrefix(task.Group, "service:") && task.Status == "STOPPED" {
+				result.Tasks = append(result.Tasks, task)
+			}
+		}
+		previous := result.NextToken
+		result.NextToken = page.NextToken
+		if result.NextToken == "" {
+			break
+		}
+		if result.NextToken == previous {
+			return model.TaskPage{}, fmt.Errorf("list stopped standalone tasks in %q: ECS returned a repeated continuation token", cluster)
+		}
+	}
+	return result, nil
 }
 
 func (s *ECS) ForceDeployment(ctx context.Context, cluster, service string) error {

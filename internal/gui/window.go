@@ -15,10 +15,13 @@ import (
 )
 
 const (
+	stoppedTaskBatchSize = 50
+
 	pageClusters        = "clusters"
 	pageServices        = "services"
 	pageTasks           = "tasks"
 	pageStandaloneTasks = "standalone-tasks"
+	pageStoppedTasks    = "stopped-standalone-tasks"
 	pageTaskDefinitions = "task-definitions"
 
 	detailIntro          = "intro"
@@ -60,9 +63,12 @@ type mainWindow struct {
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
+	standaloneStopped           bool
+	standaloneNextToken         string
 	clusterTable                *stringTable
 	serviceTable                *stringTable
 	taskTable                   *stringTable
+	stoppedTaskTable            *stringTable
 	taskDefinitionTable         *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
@@ -74,6 +80,10 @@ type mainWindow struct {
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
 	runTaskButton               *gtk.Button
+	standaloneScopeBar          *gtk.Box
+	standaloneActiveButton      *gtk.ToggleButton
+	standaloneStoppedButton     *gtk.ToggleButton
+	standaloneLoadMoreButton    *gtk.Button
 	metricsButton               *gtk.Button
 	execButton                  *gtk.Button
 	scaleButton                 *gtk.Button
@@ -169,6 +179,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "IP", field: 5},
 		{title: "TASK DEFINITION", field: 6},
 	})
+	w.stoppedTaskTable = newStringTable([]columnSpec{
+		{title: "TASK", field: 0, expand: true},
+		{title: "STOPPED", field: 1},
+		{title: "EXIT", field: 2},
+		{title: "STOP CODE", field: 3},
+		{title: "TASK DEFINITION", field: 4},
+		{title: "REASON", field: 5, expand: true},
+	})
 	w.taskDefinitionTable = newStringTable([]columnSpec{
 		{title: "FAMILY", field: 0, expand: true},
 		{title: "REVISION", field: 1},
@@ -177,6 +195,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
+	w.stoppedTaskTable.view.ConnectActivate(w.openStoppedTaskAt)
 	w.taskDefinitionTable.view.ConnectActivate(w.openTaskDefinitionAt)
 
 	w.window = gtk.NewApplicationWindow(app)
@@ -287,6 +306,33 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.search.SetPlaceholderText("Filter clusters…")
 	w.search.ConnectSearchChanged(w.applyFilter)
 	w.search.AddCSSClass("resource-search")
+	w.standaloneActiveButton = gtk.NewToggleButtonWithLabel("Active")
+	w.standaloneActiveButton.SetActive(true)
+	w.standaloneActiveButton.ConnectClicked(func() {
+		if w.standaloneActiveButton.Active() {
+			w.switchStandaloneTaskScope(false)
+		}
+	})
+	w.standaloneStoppedButton = gtk.NewToggleButtonWithLabel("Recently stopped")
+	w.standaloneStoppedButton.SetGroup(w.standaloneActiveButton)
+	w.standaloneStoppedButton.ConnectClicked(func() {
+		if w.standaloneStoppedButton.Active() {
+			w.switchStandaloneTaskScope(true)
+		}
+	})
+	scopeButtons := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	scopeButtons.AddCSSClass("linked")
+	scopeButtons.Append(w.standaloneActiveButton)
+	scopeButtons.Append(w.standaloneStoppedButton)
+	w.standaloneLoadMoreButton = gtk.NewButtonWithLabel("Load more")
+	w.standaloneLoadMoreButton.ConnectClicked(w.loadMoreStoppedTasks)
+	spacer := gtk.NewLabel("")
+	spacer.SetHExpand(true)
+	w.standaloneScopeBar = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	w.standaloneScopeBar.Append(scopeButtons)
+	w.standaloneScopeBar.Append(spacer)
+	w.standaloneScopeBar.Append(w.standaloneLoadMoreButton)
+	w.standaloneScopeBar.SetVisible(false)
 
 	clusterScroll := gtk.NewScrolledWindow()
 	clusterScroll.SetVExpand(true)
@@ -300,6 +346,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	taskScroll.SetVExpand(true)
 	taskScroll.SetHExpand(true)
 	taskScroll.SetChild(w.taskTable.view)
+	stoppedTaskScroll := gtk.NewScrolledWindow()
+	stoppedTaskScroll.SetVExpand(true)
+	stoppedTaskScroll.SetHExpand(true)
+	stoppedTaskScroll.SetChild(w.stoppedTaskTable.view)
 	taskDefinitionScroll := gtk.NewScrolledWindow()
 	taskDefinitionScroll.SetVExpand(true)
 	taskDefinitionScroll.SetHExpand(true)
@@ -311,12 +361,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(clusterScroll, pageClusters)
 	w.resourceStack.AddNamed(serviceScroll, pageServices)
 	w.resourceStack.AddNamed(taskScroll, pageTasks)
+	w.resourceStack.AddNamed(stoppedTaskScroll, pageStoppedTasks)
 	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
 	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
 	resourcePane.AddCSSClass("resource-pane")
 	resourcePane.Append(w.search)
+	resourcePane.Append(w.standaloneScopeBar)
 	resourcePane.Append(w.resourceStack)
 
 	w.detailBuffer = gtk.NewTextBuffer(nil)
@@ -540,7 +592,11 @@ func (w *mainWindow) updateDetailParentAction(content string) {
 		return
 	}
 	if w.currentPage == pageStandaloneTasks {
-		w.detailParentButton.SetLabel("Back to standalone summary")
+		if w.standaloneStopped {
+			w.detailParentButton.SetLabel("Back to recently stopped tasks")
+		} else {
+			w.detailParentButton.SetLabel("Back to standalone summary")
+		}
 	} else {
 		w.detailParentButton.SetLabel("Back to service details")
 	}
@@ -557,11 +613,15 @@ func (w *mainWindow) showParentDetails() {
 		}
 	}
 	w.selectedTask = ""
-	w.taskTable.selection.SetSelected(gtk.InvalidListPosition)
+	if w.currentPage == pageStandaloneTasks && w.standaloneStopped {
+		w.stoppedTaskTable.selection.SetSelected(gtk.InvalidListPosition)
+	} else {
+		w.taskTable.selection.SetSelected(gtk.InvalidListPosition)
+	}
 	w.updateActionSensitivity()
 	if w.currentPage == pageStandaloneTasks {
-		w.setBreadcrumb("ECS / " + w.selectedCluster + " / Standalone tasks")
-		w.setDetail(standaloneTaskSummary(w.selectedCluster, w.allTasks), detailClusterSummary)
+		w.setBreadcrumb(w.standaloneTaskBreadcrumb())
+		w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
 		return
 	}
 	service, _ := findService(w.allServices, w.selectedService)
@@ -701,27 +761,95 @@ func (w *mainWindow) loadStandaloneTasks() {
 		w.standaloneReturnPage = w.currentPage
 		w.standaloneReturnService = w.selectedService
 	}
+	w.loadStandaloneTaskScope(false)
+}
+
+func (w *mainWindow) switchStandaloneTaskScope(stopped bool) {
+	if w.currentPage != pageStandaloneTasks || w.standaloneStopped == stopped {
+		return
+	}
+	w.loadStandaloneTaskScope(stopped)
+}
+
+func (w *mainWindow) loadStandaloneTaskScope(stopped bool) {
 	w.resetWorkspaceForBrowserChange()
 	w.currentPage = pageStandaloneTasks
 	w.selectedService = ""
 	w.selectedTask = ""
+	w.standaloneStopped = stopped
+	w.standaloneNextToken = ""
+	w.allTasks = nil
+	w.taskTable.selection.SetSelected(gtk.InvalidListPosition)
+	w.stoppedTaskTable.selection.SetSelected(gtk.InvalidListPosition)
+	w.standaloneActiveButton.SetActive(!stopped)
+	w.standaloneStoppedButton.SetActive(stopped)
 	w.updateActionSensitivity()
-	w.setBreadcrumb("ECS / " + w.selectedCluster + " / Standalone tasks")
+	w.setBreadcrumb(w.standaloneTaskBreadcrumb())
 	w.backButton.SetSensitive(true)
-	w.search.SetPlaceholderText("Filter standalone tasks…")
+	if stopped {
+		w.search.SetPlaceholderText("Filter recently stopped tasks…")
+	} else {
+		w.search.SetPlaceholderText("Filter active standalone tasks…")
+	}
 	w.search.SetText("")
-	w.resourceStack.SetVisibleChildName(pageTasks)
-	w.setDetail("Loading standalone tasks…", detailClusterSummary)
+	if stopped {
+		w.resourceStack.SetVisibleChildName(pageStoppedTasks)
+		w.applyTaskFilter()
+		w.setDetail("Loading recently stopped standalone tasks…", detailClusterSummary)
+	} else {
+		w.resourceStack.SetVisibleChildName(pageTasks)
+		w.applyTaskFilter()
+		w.setDetail("Loading active standalone tasks…", detailClusterSummary)
+	}
 
 	cluster := w.selectedCluster
-	ctx, generation := w.startRequest("Loading standalone tasks in " + cluster + "…")
+	label := "Loading active standalone tasks in " + cluster + "…"
+	if stopped {
+		label = "Loading recently stopped tasks in " + cluster + "…"
+	}
+	ctx, generation := w.startRequest(label)
 	go func() {
-		tasks, err := w.options.ECS.ListStandaloneTasks(ctx, cluster)
+		var (
+			tasks     []model.Task
+			nextToken string
+			err       error
+		)
+		if stopped {
+			page, pageErr := w.options.ECS.ListStoppedStandaloneTasks(ctx, cluster, "", stoppedTaskBatchSize)
+			tasks, nextToken, err = page.Tasks, page.NextToken, pageErr
+			sortStoppedTasks(tasks)
+		} else {
+			tasks, err = w.options.ECS.ListStandaloneTasks(ctx, cluster)
+		}
 		w.finishRequest(ctx, generation, err, func() {
 			w.allTasks = tasks
+			w.standaloneNextToken = nextToken
 			w.applyTaskFilter()
-			w.setDetail(standaloneTaskSummary(cluster, tasks), detailClusterSummary)
+			w.updateActionSensitivity()
+			w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
 		})
+	}()
+}
+
+func (w *mainWindow) loadMoreStoppedTasks() {
+	if w.currentPage != pageStandaloneTasks || !w.standaloneStopped || w.standaloneNextToken == "" {
+		return
+	}
+	cluster, nextToken := w.selectedCluster, w.standaloneNextToken
+	ctx, generation := w.startRequest("Loading more recently stopped tasks…")
+	go func() {
+		page, err := w.options.ECS.ListStoppedStandaloneTasks(ctx, cluster, nextToken, stoppedTaskBatchSize)
+		w.finishRequestWithStatus(ctx, generation, err,
+			fmt.Sprintf("Loaded %d more recently stopped tasks", len(page.Tasks)), func() {
+				w.allTasks = appendUniqueTasks(w.allTasks, page.Tasks)
+				sortStoppedTasks(w.allTasks)
+				w.standaloneNextToken = page.NextToken
+				w.applyTaskFilter()
+				w.updateActionSensitivity()
+				if w.selectedTask == "" && w.detailContent == detailClusterSummary {
+					w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
+				}
+			})
 	}()
 }
 
@@ -743,6 +871,21 @@ func (w *mainWindow) toggleStandaloneTasks() {
 	w.loadServices(cluster)
 }
 
+func (w *mainWindow) standaloneTaskBreadcrumb() string {
+	breadcrumb := "ECS / " + w.selectedCluster + " / Standalone tasks"
+	if w.standaloneStopped {
+		breadcrumb += " / Recently stopped"
+	}
+	return breadcrumb
+}
+
+func (w *mainWindow) standaloneTaskSummary() string {
+	if w.standaloneStopped {
+		return stoppedStandaloneTaskSummary(w.selectedCluster, w.allTasks, w.standaloneNextToken != "")
+	}
+	return standaloneTaskSummary(w.selectedCluster, w.allTasks)
+}
+
 func (w *mainWindow) openClusterAt(position uint) {
 	if int(position) >= len(w.filteredClusters) {
 		return
@@ -758,6 +901,14 @@ func (w *mainWindow) openServiceAt(position uint) {
 }
 
 func (w *mainWindow) openTaskAt(position uint) {
+	w.openTaskFromFiltered(position)
+}
+
+func (w *mainWindow) openStoppedTaskAt(position uint) {
+	w.openTaskFromFiltered(position)
+}
+
+func (w *mainWindow) openTaskFromFiltered(position uint) {
 	if int(position) >= len(w.filteredTasks) {
 		return
 	}
@@ -768,7 +919,7 @@ func (w *mainWindow) openTaskAt(position uint) {
 	w.selectedTask = task.TaskARN
 	w.updateActionSensitivity()
 	if w.currentPage == pageStandaloneTasks {
-		w.setBreadcrumb("ECS / " + w.selectedCluster + " / Standalone tasks / " + shortID(task.TaskID))
+		w.setBreadcrumb(w.standaloneTaskBreadcrumb() + " / " + shortID(task.TaskID))
 	} else {
 		w.setBreadcrumb("ECS / " + w.selectedCluster + " / " + w.selectedService + " / " + shortID(task.TaskID))
 	}
@@ -803,6 +954,16 @@ func (w *mainWindow) applyFilter() {
 
 func (w *mainWindow) applyTaskFilter() {
 	w.filteredTasks = filterTasks(w.allTasks, w.search.Text())
+	if w.currentPage == pageStandaloneTasks && w.standaloneStopped {
+		rows := make([]string, len(w.filteredTasks))
+		for i, task := range w.filteredTasks {
+			rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", task.TaskID,
+				formatTime(task.StoppedAt), taskExitSummary(task), valueOrDash(task.StopCode),
+				valueOrDash(task.TaskDefinition), valueOrDash(task.StoppedReason))
+		}
+		w.stoppedTaskTable.replace(rows)
+		return
+	}
 	rows := make([]string, len(w.filteredTasks))
 	for i, task := range w.filteredTasks {
 		rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s", task.TaskID,
@@ -937,16 +1098,37 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 }
 
 func (w *mainWindow) refreshStandaloneTasks(foreground bool) {
-	cluster, taskARN := w.selectedCluster, w.selectedTask
-	ctx, generation := w.startRefreshRequest("Refreshing standalone tasks in "+cluster+"…", foreground)
+	cluster, taskARN, stopped := w.selectedCluster, w.selectedTask, w.standaloneStopped
+	loaded := len(w.allTasks)
+	if loaded < stoppedTaskBatchSize {
+		loaded = stoppedTaskBatchSize
+	}
+	label := "Refreshing active standalone tasks in " + cluster + "…"
+	if stopped {
+		label = "Refreshing recently stopped tasks in " + cluster + "…"
+	}
+	ctx, generation := w.startRefreshRequest(label, foreground)
 	go func() {
-		tasks, err := w.options.ECS.ListStandaloneTasks(ctx, cluster)
+		var (
+			tasks     []model.Task
+			nextToken string
+			err       error
+		)
+		if stopped {
+			page, pageErr := w.options.ECS.ListStoppedStandaloneTasks(ctx, cluster, "", loaded)
+			tasks, nextToken, err = page.Tasks, page.NextToken, pageErr
+			sortStoppedTasks(tasks)
+		} else {
+			tasks, err = w.options.ECS.ListStandaloneTasks(ctx, cluster)
+		}
 		w.finishRefreshRequest(ctx, generation, err, func() {
 			w.allTasks = tasks
+			w.standaloneNextToken = nextToken
 			w.applyTaskFilter()
+			w.updateActionSensitivity()
 			if taskARN == "" {
 				if w.detailContent == detailClusterSummary {
-					w.setDetail(standaloneTaskSummary(cluster, tasks), detailClusterSummary)
+					w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
 				}
 				return
 			}
@@ -954,9 +1136,9 @@ func (w *mainWindow) refreshStandaloneTasks(foreground bool) {
 			if !found {
 				w.selectedTask = ""
 				w.updateActionSensitivity()
-				w.setBreadcrumb("ECS / " + cluster + " / Standalone tasks")
+				w.setBreadcrumb(w.standaloneTaskBreadcrumb())
 				if w.detailContent == detailTask {
-					w.setDetail("The selected task is no longer available.\n\n"+standaloneTaskSummary(cluster, tasks), detailClusterSummary)
+					w.setDetail("The selected task is no longer available.\n\n"+w.standaloneTaskSummary(), detailClusterSummary)
 				}
 				return
 			}
@@ -1105,6 +1287,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	serviceSelected := w.currentPage == pageTasks && w.selectedCluster != "" && w.selectedService != ""
 	standalonePage := w.currentPage == pageStandaloneTasks && w.selectedCluster != ""
 	taskSelected := (serviceSelected || standalonePage) && w.selectedTask != ""
+	taskRunning := false
+	taskStopped := false
+	if taskSelected {
+		if task, found := findTask(w.allTasks, w.selectedTask); found {
+			taskRunning = task.Status == "RUNNING"
+			taskStopped = task.Status == "STOPPED"
+		}
+	}
 	clusterBrowserPage := w.currentPage == pageServices || w.currentPage == pageTasks || standalonePage
 	w.standaloneButton.SetVisible(clusterBrowserPage)
 	w.standaloneButton.SetSensitive(clusterBrowserPage && w.selectedCluster != "")
@@ -1123,6 +1313,11 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
+	if w.standaloneScopeBar != nil {
+		w.standaloneScopeBar.SetVisible(standalonePage)
+		w.standaloneLoadMoreButton.SetVisible(standalonePage && w.standaloneStopped && w.standaloneNextToken != "")
+		w.standaloneLoadMoreButton.SetSensitive(w.standaloneNextToken != "")
+	}
 	w.metricsButton.SetVisible(serviceSelected || taskSelected)
 	w.metricsButton.SetSensitive(serviceSelected || taskSelected)
 	execEnabled := false
@@ -1136,7 +1331,7 @@ func (w *mainWindow) updateActionSensitivity() {
 			}
 		}
 	}
-	w.execButton.SetVisible(taskSelected)
+	w.execButton.SetVisible(taskSelected && taskRunning)
 	w.execButton.SetSensitive(execEnabled)
 	w.logsButton.SetVisible(serviceSelected)
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
@@ -1144,8 +1339,8 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
-	w.stopTaskButton.SetVisible(taskSelected)
-	w.stopTaskButton.SetSensitive(taskSelected)
+	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)
+	w.stopTaskButton.SetSensitive(taskSelected && !taskStopped)
 	w.deployButton.SetVisible(serviceSelected)
 	w.deployButton.SetSensitive(serviceSelected)
 }

@@ -98,8 +98,42 @@ func (c *Client) ListTasks(ctx context.Context, clusterARN, serviceName string) 
 	if len(taskARNs) == 0 {
 		return nil, nil
 	}
+	return c.describeTasks(ctx, clusterARN, taskARNs)
+}
 
-	// DescribeTasks accepts max 100 at a time
+// ListStoppedTasksPage returns one ECS page of stopped tasks. Callers retain
+// the opaque continuation token to fetch another page on demand.
+func (c *Client) ListStoppedTasksPage(ctx context.Context, clusterARN, nextToken string, maxResults int) (model.TaskPage, error) {
+	input := stoppedTasksInput(clusterARN, nextToken, maxResults)
+	page, err := c.ECS.ListTasks(ctx, input)
+	if err != nil {
+		return model.TaskPage{}, err
+	}
+	tasks, err := c.describeTasks(ctx, clusterARN, page.TaskArns)
+	if err != nil {
+		return model.TaskPage{}, err
+	}
+	return model.TaskPage{Tasks: tasks, NextToken: derefStrAws(page.NextToken)}, nil
+}
+
+func stoppedTasksInput(clusterARN, nextToken string, maxResults int) *ecs.ListTasksInput {
+	maxResults = min(max(maxResults, 1), 100)
+	limit := int32(maxResults)
+	input := &ecs.ListTasksInput{
+		Cluster:       &clusterARN,
+		DesiredStatus: ecstypes.DesiredStatusStopped,
+		MaxResults:    &limit,
+	}
+	if nextToken != "" {
+		input.NextToken = &nextToken
+	}
+	return input
+}
+
+func (c *Client) describeTasks(ctx context.Context, clusterARN string, taskARNs []string) ([]model.Task, error) {
+	if len(taskARNs) == 0 {
+		return nil, nil
+	}
 	var tasks []model.Task
 	for i := 0; i < len(taskARNs); i += 100 {
 		end := min(i+100, len(taskARNs))
@@ -110,8 +144,8 @@ func (c *Client) ListTasks(ctx context.Context, clusterARN, serviceName string) 
 		if err != nil {
 			return nil, err
 		}
-		for _, t := range desc.Tasks {
-			tasks = append(tasks, model.TransformTask(t))
+		for _, task := range desc.Tasks {
+			tasks = append(tasks, model.TransformTask(task))
 		}
 	}
 	return tasks, nil

@@ -154,6 +154,9 @@ func TestTransformTask(t *testing.T) {
 		HealthStatus:      types.HealthStatusHealthy,
 		LaunchType:        types.LaunchTypeFargate,
 		StartedAt:         timePtr(now),
+		StoppedAt:         timePtr(now.Add(time.Minute)),
+		StopCode:          types.TaskStopCodeEssentialContainerExited,
+		StoppedReason:     strPtr("essential container exited"),
 		Group:             strPtr("service:my-service"),
 		Containers: []types.Container{
 			{
@@ -183,6 +186,9 @@ func TestTransformTask(t *testing.T) {
 	}
 	if result.Status != "RUNNING" {
 		t.Errorf("Status = %q, want %q", result.Status, "RUNNING")
+	}
+	if result.StopCode != "EssentialContainerExited" || result.StoppedReason != "essential container exited" {
+		t.Errorf("stop details = %q, %q", result.StopCode, result.StoppedReason)
 	}
 	if result.PrivateIP != "10.0.1.42" {
 		t.Errorf("PrivateIP = %q, want %q", result.PrivateIP, "10.0.1.42")

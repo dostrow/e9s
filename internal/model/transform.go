@@ -72,6 +72,7 @@ func TransformTask(t types.Task) Task {
 		LaunchType:       string(t.LaunchType),
 		StartedAt:        derefTime(t.StartedAt),
 		StoppedAt:        derefTime(t.StoppedAt),
+		StopCode:         string(t.StopCode),
 		StoppedReason:    derefStr(t.StoppedReason),
 		AvailabilityZone: derefStr(t.AvailabilityZone),
 		Group:            derefStr(t.Group),

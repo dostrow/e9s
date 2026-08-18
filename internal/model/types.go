@@ -55,12 +55,19 @@ type Task struct {
 	LaunchType       string
 	StartedAt        time.Time
 	StoppedAt        time.Time
+	StopCode         string
 	StoppedReason    string
 	Containers       []Container
 	PrivateIP        string
 	AvailabilityZone string
 	Group            string // "service:name" or "family:name"
 	ExecAgentRunning bool   // whether the ExecuteCommandAgent managed agent is running
+}
+
+// TaskPage is a bounded page of tasks plus the opaque ECS continuation token.
+type TaskPage struct {
+	Tasks     []Task
+	NextToken string
 }
 
 type Container struct {

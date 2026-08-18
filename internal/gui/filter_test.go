@@ -57,9 +57,9 @@ func TestFindServicePreservesSelectedServiceAcrossRefresh(t *testing.T) {
 func TestFilterAndFindTasks(t *testing.T) {
 	tasks := []model.Task{
 		{TaskID: "task-api", TaskARN: "arn:api", Status: "RUNNING", PrivateIP: "10.0.0.1"},
-		{TaskID: "task-worker", TaskARN: "arn:worker", Status: "STOPPED", StoppedReason: "essential container exited"},
+		{TaskID: "task-worker", TaskARN: "arn:worker", Status: "STOPPED", StopCode: "EssentialContainerExited", StoppedReason: "essential container exited", Containers: []model.Container{{ExitCode: intPtr(17)}}},
 	}
-	for _, query := range []string{"worker", "stopped", "essential"} {
+	for _, query := range []string{"worker", "stopped", "essential", "17"} {
 		got := filterTasks(tasks, query)
 		if len(got) != 1 || got[0].TaskARN != "arn:worker" {
 			t.Fatalf("filterTasks(%q) = %#v", query, got)
@@ -69,6 +69,10 @@ func TestFilterAndFindTasks(t *testing.T) {
 	if !found || got.TaskID != "task-api" {
 		t.Fatalf("findTask() = %#v, %v", got, found)
 	}
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func TestClusterSummary(t *testing.T) {
@@ -82,12 +86,36 @@ func TestClusterSummary(t *testing.T) {
 }
 
 func TestStandaloneTaskSummary(t *testing.T) {
-	if got := standaloneTaskSummary("prod", nil); got != "No standalone ECS tasks found in prod." {
+	if got := standaloneTaskSummary("prod", nil); got != "No active standalone ECS tasks found in prod." {
 		t.Fatalf("standaloneTaskSummary(empty) = %q", got)
 	}
 	got := standaloneTaskSummary("prod", []model.Task{{TaskID: "one"}, {TaskID: "two"}})
-	if !strings.Contains(got, "2 standalone tasks") {
+	if !strings.Contains(got, "2 active standalone tasks") {
 		t.Fatalf("standaloneTaskSummary() = %q", got)
+	}
+}
+
+func TestStoppedStandaloneTaskPresentation(t *testing.T) {
+	now := time.Now()
+	zero, failed := 0, 17
+	tasks := []model.Task{
+		{TaskARN: "older", StoppedAt: now.Add(-time.Minute), Containers: []model.Container{{Name: "worker", ExitCode: &zero}}},
+		{TaskARN: "newer", StoppedAt: now, Containers: []model.Container{{Name: "app", ExitCode: &zero}, {Name: "sidecar", ExitCode: &failed}}},
+	}
+	sortStoppedTasks(tasks)
+	if tasks[0].TaskARN != "newer" {
+		t.Fatalf("sortStoppedTasks() = %#v", tasks)
+	}
+	if got := taskExitSummary(tasks[0]); got != "app=0, sidecar=17" {
+		t.Fatalf("taskExitSummary() = %q", got)
+	}
+	summary := stoppedStandaloneTaskSummary("prod", tasks, true)
+	if !strings.Contains(summary, "2 recently stopped") || !strings.Contains(summary, "more available") {
+		t.Fatalf("stoppedStandaloneTaskSummary() = %q", summary)
+	}
+	combined := appendUniqueTasks(tasks[:1], []model.Task{tasks[0], tasks[1]})
+	if len(combined) != 2 {
+		t.Fatalf("appendUniqueTasks() = %#v", combined)
 	}
 }
 
@@ -137,6 +165,7 @@ func TestFormatTaskDetail(t *testing.T) {
 		LaunchType:       "FARGATE",
 		AvailabilityZone: "us-east-1a",
 		PrivateIP:        "10.0.0.5",
+		StopCode:         "EssentialContainerExited",
 		StoppedReason:    "container failed",
 		Containers: []model.Container{{
 			Name: "api", Image: "example/api:42", Status: "STOPPED",
@@ -145,7 +174,7 @@ func TestFormatTaskDetail(t *testing.T) {
 	}
 
 	got := formatTaskDetail(task)
-	for _, want := range []string{"1234567890abcdef", "api:42", "10.0.0.5", "container failed", "example/api:42", "Exit code    17", "/ecs/api"} {
+	for _, want := range []string{"1234567890abcdef", "api:42", "10.0.0.5", "EssentialContainerExited", "container failed", "example/api:42", "Exit code    17", "/ecs/api"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatTaskDetail() missing %q:\n%s", want, got)
 		}

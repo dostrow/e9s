@@ -14,6 +14,8 @@ type fakeECSAPI struct {
 	clusters       []model.Cluster
 	services       []model.Service
 	tasks          []model.Task
+	stoppedPages   []model.TaskPage
+	stoppedCalls   []stoppedPageCall
 	err            error
 	forced         []string
 	scaled         []any
@@ -31,6 +33,11 @@ type fakeECSAPI struct {
 	execArgs       []string
 }
 
+type stoppedPageCall struct {
+	cluster, nextToken string
+	limit              int
+}
+
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
 	return f.clusters, f.err
 }
@@ -41,6 +48,15 @@ func (f *fakeECSAPI) ListServices(context.Context, string) ([]model.Service, err
 
 func (f *fakeECSAPI) ListTasks(context.Context, string, string) ([]model.Task, error) {
 	return f.tasks, f.err
+}
+
+func (f *fakeECSAPI) ListStoppedTasksPage(_ context.Context, cluster, nextToken string, limit int) (model.TaskPage, error) {
+	index := len(f.stoppedCalls)
+	f.stoppedCalls = append(f.stoppedCalls, stoppedPageCall{cluster: cluster, nextToken: nextToken, limit: limit})
+	if index >= len(f.stoppedPages) {
+		return model.TaskPage{}, f.err
+	}
+	return f.stoppedPages[index], f.err
 }
 
 func (f *fakeECSAPI) ForceNewDeployment(_ context.Context, cluster, service string) error {
@@ -215,9 +231,10 @@ func TestECSRejectsNegativeScale(t *testing.T) {
 
 func TestECSStandaloneTasks(t *testing.T) {
 	api := &fakeECSAPI{tasks: []model.Task{
-		{TaskID: "service-task", Group: "service:api"},
-		{TaskID: "scheduled-task", Group: "family:nightly"},
-		{TaskID: "plain-task"},
+		{TaskID: "service-task", Group: "service:api", Status: "RUNNING"},
+		{TaskID: "scheduled-task", Group: "family:nightly", Status: "RUNNING"},
+		{TaskID: "plain-task", Status: "PROVISIONING"},
+		{TaskID: "recently-stopped", Status: "STOPPED"},
 	}}
 	tasks, err := NewECS(api).ListStandaloneTasks(context.Background(), "prod")
 	if err != nil {
@@ -225,6 +242,38 @@ func TestECSStandaloneTasks(t *testing.T) {
 	}
 	if len(tasks) != 2 || tasks[0].TaskID != "scheduled-task" || tasks[1].TaskID != "plain-task" {
 		t.Fatalf("ListStandaloneTasks() = %#v", tasks)
+	}
+}
+
+func TestECSStoppedStandaloneTasksFillsBatchAcrossPages(t *testing.T) {
+	api := &fakeECSAPI{stoppedPages: []model.TaskPage{
+		{
+			Tasks: []model.Task{
+				{TaskID: "service-task", Group: "service:api", Status: "STOPPED"},
+				{TaskID: "standalone-1", Group: "family:nightly", Status: "STOPPED"},
+			},
+			NextToken: "page-2",
+		},
+		{
+			Tasks: []model.Task{
+				{TaskID: "standalone-2", Status: "STOPPED"},
+				{TaskID: "standalone-3", Group: "family:report", Status: "STOPPED"},
+			},
+			NextToken: "page-3",
+		},
+	}}
+	page, err := NewECS(api).ListStoppedStandaloneTasks(context.Background(), "prod", "", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Tasks) != 3 || page.Tasks[0].TaskID != "standalone-1" || page.Tasks[2].TaskID != "standalone-3" {
+		t.Fatalf("ListStoppedStandaloneTasks() tasks = %#v", page.Tasks)
+	}
+	if page.NextToken != "page-3" {
+		t.Fatalf("ListStoppedStandaloneTasks() token = %q", page.NextToken)
+	}
+	if len(api.stoppedCalls) != 2 || api.stoppedCalls[0].limit != 3 || api.stoppedCalls[1].nextToken != "page-2" || api.stoppedCalls[1].limit != 2 {
+		t.Fatalf("stopped page calls = %#v", api.stoppedCalls)
 	}
 }
 
