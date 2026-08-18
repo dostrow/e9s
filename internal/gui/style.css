@@ -33,8 +33,16 @@
   padding: 8px 10px;
 }
 
+.module-heading {
+  font-weight: 700;
+}
+
+.module-subitems {
+  margin-left: 10px;
+}
+
 .module-subitem {
-  padding-left: 18px;
+  padding-left: 12px;
 }
 
 .muted {

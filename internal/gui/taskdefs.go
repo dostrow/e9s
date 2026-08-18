@@ -109,7 +109,7 @@ func (w *mainWindow) openTaskDefinitions() {
 	w.currentPage = pageTaskDefinitions
 	w.selectedTaskDefinition = nil
 	w.updateActionSensitivity()
-	w.breadcrumb.SetLabel("ECS / Task definitions")
+	w.setBreadcrumb("ECS / Task definitions")
 	w.backButton.SetSensitive(false)
 	w.search.SetPlaceholderText("Filter task definitions…")
 	w.search.SetText("")
@@ -182,7 +182,7 @@ func (w *mainWindow) openTaskDefinition(ref model.TaskDefRef) {
 		definition, err := w.options.ECS.GetTaskDefinition(ctx, ref.ARN)
 		w.finishRequest(ctx, generation, err, func() {
 			w.selectedTaskDefinition = definition
-			w.breadcrumb.SetLabel(fmt.Sprintf("ECS / Task definitions / %s:%d", definition.Family, definition.Revision))
+			w.setBreadcrumb(fmt.Sprintf("ECS / Task definitions / %s:%d", definition.Family, definition.Revision))
 			w.showTaskDefinitionSummary()
 			w.setTaskDefinitionControls(true)
 		})
@@ -451,7 +451,7 @@ func (w *mainWindow) registerTaskDefinition(document string) {
 				w.selectedTaskDefinition = definition
 				w.showingEditor = false
 				w.editorDirty = false
-				w.breadcrumb.SetLabel(fmt.Sprintf("ECS / Task definitions / %s:%d", definition.Family, definition.Revision))
+				w.setBreadcrumb(fmt.Sprintf("ECS / Task definitions / %s:%d", definition.Family, definition.Revision))
 				w.showTaskDefinitionSummary()
 				w.refreshTaskDefinitions(false)
 			})

@@ -119,6 +119,15 @@ memory than a cached rebuild.
     the header toggle returns to the corresponding service view.
 12. Open logs, then use the header Back button or select another browser item;
     confirm log polling stops and the workspace shows the new context.
+13. Repeatedly switch between long and short breadcrumbs and confirm the header
+    fully repaints without remnants of the previous text.
+14. Collapse and expand ECS in the module rail and confirm its sub-items hide
+    and return without changing the current browser context.
+15. Select a service task, then use Back to service details in the workspace;
+    confirm the task browser remains visible and its row is unselected.
+16. Move through cluster, service, task, and standalone contexts and confirm the
+    header shows only applicable action groups; unavailable capabilities remain
+    visible but disabled within an applicable context.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

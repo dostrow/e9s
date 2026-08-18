@@ -67,6 +67,7 @@ type mainWindow struct {
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
+	headerBar                   *gtk.Box
 	clustersNavButton           *gtk.Button
 	taskDefinitionsNavButton    *gtk.Button
 	logsButton                  *gtk.Button
@@ -79,6 +80,8 @@ type mainWindow struct {
 	stopTaskButton              *gtk.Button
 	deployButton                *gtk.Button
 	breadcrumb                  *gtk.Label
+	detailToolbar               *gtk.Box
+	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
 	detailText                  string
 	detailStack                 *gtk.Stack
@@ -234,6 +237,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.deployButton.ConnectClicked(w.confirmForceDeployment)
 
 	header := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	w.headerBar = header
 	header.AddCSSClass("toolbar")
 	header.Append(w.backButton)
 	header.Append(title)
@@ -255,11 +259,16 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	modules := gtk.NewLabel("MODULES")
 	modules.SetXAlign(0)
 	modules.AddCSSClass("section-title")
-	ecs := gtk.NewLabel("ECS")
-	ecs.SetXAlign(0)
-	ecs.AddCSSClass("active-mode")
 	w.clustersNavButton = newModuleRailButton("Clusters", w.openClustersModule)
 	w.taskDefinitionsNavButton = newModuleRailButton("Task Defs", w.openTaskDefinitions)
+	moduleItems := gtk.NewBox(gtk.OrientationVertical, 2)
+	moduleItems.AddCSSClass("module-subitems")
+	moduleItems.Append(w.clustersNavButton)
+	moduleItems.Append(w.taskDefinitionsNavButton)
+	ecs := gtk.NewExpander("ECS")
+	ecs.SetExpanded(true)
+	ecs.SetChild(moduleItems)
+	ecs.AddCSSClass("module-heading")
 	comingSoon := gtk.NewLabel("More modules after PoC")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
@@ -309,6 +318,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailBuffer = gtk.NewTextBuffer(nil)
 	w.detailText = "Select a cluster and press Enter to browse its services."
 	w.detailBuffer.SetText(w.detailText)
+	w.detailParentButton = gtk.NewButtonWithLabel("Back to service details")
+	w.detailParentButton.ConnectClicked(w.showParentDetails)
+	w.detailToolbar = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	w.detailToolbar.AddCSSClass("log-toolbar")
+	w.detailToolbar.Append(w.detailParentButton)
+	w.detailToolbar.SetVisible(false)
 	detail := gtk.NewTextViewWithBuffer(w.detailBuffer)
 	detail.SetEditable(false)
 	detail.SetCursorVisible(false)
@@ -319,11 +334,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	detailScroll.SetVExpand(true)
 	detailScroll.SetHExpand(true)
 	detailScroll.SetChild(detail)
+	detailPane := gtk.NewBox(gtk.OrientationVertical, 0)
+	detailPane.Append(w.detailToolbar)
+	detailPane.Append(detailScroll)
 
 	w.detailStack = gtk.NewStack()
 	w.detailStack.SetVExpand(true)
 	w.detailStack.SetHExpand(true)
-	w.detailStack.AddNamed(detailScroll, "detail")
+	w.detailStack.AddNamed(detailPane, "detail")
 	w.detailStack.AddNamed(w.buildLogPane(), "logs")
 	w.detailStack.AddNamed(w.buildMetricsPane(), "metrics")
 	w.detailStack.AddNamed(w.buildTaskDefinitionPane(), "task-definition")
@@ -362,6 +380,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	root.Append(header)
 	root.Append(mainSplit)
 	root.Append(footer)
+	w.updateActionSensitivity()
 	return root
 }
 
@@ -489,12 +508,61 @@ func (w *mainWindow) finishRequestResult(ctx context.Context, generation uint64,
 }
 
 func (w *mainWindow) setDetail(text, content string) {
+	w.updateDetailParentAction(content)
 	if w.detailText == text && w.detailContent == content {
 		return
 	}
 	w.detailBuffer.SetText(text)
 	w.detailText = text
 	w.detailContent = content
+}
+
+func (w *mainWindow) setBreadcrumb(text string) {
+	w.breadcrumb.SetLabel(text)
+	w.breadcrumb.QueueResize()
+	w.breadcrumb.QueueDraw()
+	if w.headerBar != nil {
+		w.headerBar.QueueDraw()
+	}
+}
+
+func (w *mainWindow) updateDetailParentAction(content string) {
+	if w.detailToolbar == nil {
+		return
+	}
+	visible := content == detailTask && (w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks)
+	w.detailToolbar.SetVisible(visible)
+	if !visible {
+		return
+	}
+	if w.currentPage == pageStandaloneTasks {
+		w.detailParentButton.SetLabel("Back to standalone summary")
+	} else {
+		w.detailParentButton.SetLabel("Back to service details")
+	}
+}
+
+func (w *mainWindow) showParentDetails() {
+	if w.selectedTask == "" {
+		return
+	}
+	if w.currentPage == pageTasks {
+		if _, found := findService(w.allServices, w.selectedService); !found {
+			w.setStatus("The selected service is no longer available", true)
+			return
+		}
+	}
+	w.selectedTask = ""
+	w.taskTable.selection.SetSelected(gtk.InvalidListPosition)
+	w.updateActionSensitivity()
+	if w.currentPage == pageStandaloneTasks {
+		w.setBreadcrumb("ECS / " + w.selectedCluster + " / Standalone tasks")
+		w.setDetail(standaloneTaskSummary(w.selectedCluster, w.allTasks), detailClusterSummary)
+		return
+	}
+	service, _ := findService(w.allServices, w.selectedService)
+	w.setBreadcrumb("ECS / " + w.selectedCluster + " / " + service.Name)
+	w.setDetail(formatServiceDetail(w.selectedCluster, service, w.allTasks), detailService)
 }
 
 func (w *mainWindow) resetWorkspaceForBrowserChange() {
@@ -517,6 +585,9 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	}
 	w.showingEditor = false
 	w.editorDirty = false
+	if w.detailToolbar != nil {
+		w.detailToolbar.SetVisible(false)
+	}
 	w.detailStack.SetVisibleChildName("detail")
 }
 
@@ -539,7 +610,7 @@ func (w *mainWindow) loadClusters() {
 	w.selectedTask = ""
 	w.selectedTaskDefinition = nil
 	w.updateActionSensitivity()
-	w.breadcrumb.SetLabel("ECS / Clusters")
+	w.setBreadcrumb("ECS / Clusters")
 	w.backButton.SetSensitive(false)
 	w.search.SetPlaceholderText("Filter clusters…")
 	w.search.SetText("")
@@ -571,7 +642,7 @@ func (w *mainWindow) loadServices(cluster string) {
 	w.selectedService = ""
 	w.selectedTask = ""
 	w.updateActionSensitivity()
-	w.breadcrumb.SetLabel("ECS / " + cluster)
+	w.setBreadcrumb("ECS / " + cluster)
 	w.backButton.SetSensitive(true)
 	w.search.SetPlaceholderText("Filter services…")
 	w.search.SetText("")
@@ -599,7 +670,7 @@ func (w *mainWindow) loadTasks(service model.Service) {
 	w.selectedService = service.Name
 	w.selectedTask = ""
 	w.updateActionSensitivity()
-	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + service.Name)
+	w.setBreadcrumb("ECS / " + w.selectedCluster + " / " + service.Name)
 	w.backButton.SetSensitive(true)
 	w.search.SetPlaceholderText("Filter tasks…")
 	w.search.SetText("")
@@ -631,7 +702,7 @@ func (w *mainWindow) loadStandaloneTasks() {
 	w.selectedService = ""
 	w.selectedTask = ""
 	w.updateActionSensitivity()
-	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / Standalone tasks")
+	w.setBreadcrumb("ECS / " + w.selectedCluster + " / Standalone tasks")
 	w.backButton.SetSensitive(true)
 	w.search.SetPlaceholderText("Filter standalone tasks…")
 	w.search.SetText("")
@@ -693,9 +764,9 @@ func (w *mainWindow) openTaskAt(position uint) {
 	w.selectedTask = task.TaskARN
 	w.updateActionSensitivity()
 	if w.currentPage == pageStandaloneTasks {
-		w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / Standalone tasks / " + shortID(task.TaskID))
+		w.setBreadcrumb("ECS / " + w.selectedCluster + " / Standalone tasks / " + shortID(task.TaskID))
 	} else {
-		w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + w.selectedService + " / " + shortID(task.TaskID))
+		w.setBreadcrumb("ECS / " + w.selectedCluster + " / " + w.selectedService + " / " + shortID(task.TaskID))
 	}
 	w.setDetail(formatTaskDetail(task), detailTask)
 }
@@ -795,7 +866,7 @@ func (w *mainWindow) navigateBrowserBack() {
 		w.search.SetText("")
 		w.search.SetPlaceholderText("Filter services…")
 		w.resourceStack.SetVisibleChildName(pageServices)
-		w.breadcrumb.SetLabel("ECS / " + w.selectedCluster)
+		w.setBreadcrumb("ECS / " + w.selectedCluster)
 		w.setDetail(clusterSummary(w.selectedCluster, len(w.allServices)), detailClusterSummary)
 		w.applyServiceFilter()
 		w.setStatus("Ready", false)
@@ -814,7 +885,7 @@ func (w *mainWindow) navigateBrowserBack() {
 	w.search.SetText("")
 	w.search.SetPlaceholderText("Filter clusters…")
 	w.resourceStack.SetVisibleChildName(pageClusters)
-	w.breadcrumb.SetLabel("ECS / Clusters")
+	w.setBreadcrumb("ECS / Clusters")
 	w.backButton.SetSensitive(false)
 	w.setDetail("Select a cluster and press Enter to browse its services.", detailIntro)
 	w.applyClusterFilter()
@@ -879,7 +950,7 @@ func (w *mainWindow) refreshStandaloneTasks(foreground bool) {
 			if !found {
 				w.selectedTask = ""
 				w.updateActionSensitivity()
-				w.breadcrumb.SetLabel("ECS / " + cluster + " / Standalone tasks")
+				w.setBreadcrumb("ECS / " + cluster + " / Standalone tasks")
 				if w.detailContent == detailTask {
 					w.setDetail("The selected task is no longer available.\n\n"+standaloneTaskSummary(cluster, tasks), detailClusterSummary)
 				}
@@ -923,7 +994,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 			if !found {
 				w.selectedTask = ""
 				w.updateActionSensitivity()
-				w.breadcrumb.SetLabel("ECS / " + cluster + " / " + serviceName)
+				w.setBreadcrumb("ECS / " + cluster + " / " + serviceName)
 				if w.detailContent == detailTask {
 					w.setDetail("The selected task is no longer available.\n\n"+formatServiceDetail(cluster, service, tasks), detailService)
 				}
@@ -980,7 +1051,7 @@ func (w *mainWindow) refreshServices(foreground bool) {
 			if !found {
 				w.selectedService = ""
 				w.updateActionSensitivity()
-				w.breadcrumb.SetLabel("ECS / " + cluster)
+				w.setBreadcrumb("ECS / " + cluster)
 				if w.detailContent == detailService {
 					w.setDetail("The selected service is no longer available.\n\n"+clusterSummary(cluster, len(services)), detailClusterSummary)
 				}
@@ -1031,6 +1102,7 @@ func (w *mainWindow) updateActionSensitivity() {
 	standalonePage := w.currentPage == pageStandaloneTasks && w.selectedCluster != ""
 	taskSelected := (serviceSelected || standalonePage) && w.selectedTask != ""
 	clusterBrowserPage := w.currentPage == pageServices || w.currentPage == pageTasks || standalonePage
+	w.standaloneButton.SetVisible(clusterBrowserPage)
 	w.standaloneButton.SetSensitive(clusterBrowserPage && w.selectedCluster != "")
 	if standalonePage {
 		if w.standaloneReturnPage == pageTasks && w.standaloneReturnService != "" {
@@ -1045,7 +1117,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		setModuleRailActive(w.clustersNavButton, w.currentPage != pageTaskDefinitions)
 		setModuleRailActive(w.taskDefinitionsNavButton, w.currentPage == pageTaskDefinitions)
 	}
+	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
+	w.metricsButton.SetVisible(serviceSelected)
 	w.metricsButton.SetSensitive(serviceSelected)
 	execEnabled := false
 	if taskSelected && vteAvailable() {
@@ -1058,11 +1132,17 @@ func (w *mainWindow) updateActionSensitivity() {
 			}
 		}
 	}
+	w.execButton.SetVisible(taskSelected)
 	w.execButton.SetSensitive(execEnabled)
+	w.logsButton.SetVisible(serviceSelected)
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
+	w.taskLogsButton.SetVisible(taskSelected)
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
+	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
+	w.stopTaskButton.SetVisible(taskSelected)
 	w.stopTaskButton.SetSensitive(taskSelected)
+	w.deployButton.SetVisible(serviceSelected)
 	w.deployButton.SetSensitive(serviceSelected)
 }
 

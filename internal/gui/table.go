@@ -26,6 +26,8 @@ type stringTable struct {
 func newStringTable(columns []columnSpec) *stringTable {
 	model := gtk.NewStringList(nil)
 	selection := gtk.NewSingleSelection(model)
+	selection.SetAutoselect(false)
+	selection.SetCanUnselect(true)
 	view := gtk.NewColumnView(selection)
 	view.SetShowColumnSeparators(true)
 	view.SetShowRowSeparators(true)
