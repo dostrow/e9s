@@ -68,8 +68,8 @@ type mainWindow struct {
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
 	headerBar                   *gtk.Box
-	clustersNavButton           *gtk.Button
-	taskDefinitionsNavButton    *gtk.Button
+	clustersNavButton           *gtk.ToggleButton
+	taskDefinitionsNavButton    *gtk.ToggleButton
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -261,6 +261,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	modules.AddCSSClass("section-title")
 	w.clustersNavButton = newModuleRailButton("Clusters", w.openClustersModule)
 	w.taskDefinitionsNavButton = newModuleRailButton("Task Defs", w.openTaskDefinitions)
+	w.taskDefinitionsNavButton.SetGroup(w.clustersNavButton)
 	moduleItems := gtk.NewBox(gtk.OrientationVertical, 2)
 	moduleItems.AddCSSClass("module-subitems")
 	moduleItems.Append(w.clustersNavButton)
@@ -275,8 +276,6 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	comingSoon.AddCSSClass("muted")
 	sidebar.Append(modules)
 	sidebar.Append(ecs)
-	sidebar.Append(w.clustersNavButton)
-	sidebar.Append(w.taskDefinitionsNavButton)
 	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
@@ -384,10 +383,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	return root
 }
 
-func newModuleRailButton(label string, activate func()) *gtk.Button {
+func newModuleRailButton(label string, activate func()) *gtk.ToggleButton {
 	text := gtk.NewLabel(label)
 	text.SetXAlign(0)
-	button := gtk.NewButton()
+	button := gtk.NewToggleButton()
 	button.SetChild(text)
 	button.SetHAlign(gtk.AlignFill)
 	button.AddCSSClass("flat")
@@ -1114,8 +1113,8 @@ func (w *mainWindow) updateActionSensitivity() {
 		w.standaloneButton.SetLabel("Standalone")
 	}
 	if w.clustersNavButton != nil {
-		setModuleRailActive(w.clustersNavButton, w.currentPage != pageTaskDefinitions)
-		setModuleRailActive(w.taskDefinitionsNavButton, w.currentPage == pageTaskDefinitions)
+		w.clustersNavButton.SetActive(w.currentPage != pageTaskDefinitions)
+		w.taskDefinitionsNavButton.SetActive(w.currentPage == pageTaskDefinitions)
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -1144,12 +1143,4 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.stopTaskButton.SetSensitive(taskSelected)
 	w.deployButton.SetVisible(serviceSelected)
 	w.deployButton.SetSensitive(serviceSelected)
-}
-
-func setModuleRailActive(button *gtk.Button, active bool) {
-	if active {
-		button.AddCSSClass("active-mode")
-	} else {
-		button.RemoveCSSClass("active-mode")
-	}
 }
