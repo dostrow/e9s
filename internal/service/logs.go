@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -33,6 +34,23 @@ type Logs struct {
 
 func NewLogs(api LogsAPI) *Logs {
 	return &Logs{api: api}
+}
+
+// NormalizeFilterPattern turns plain text into a valid CloudWatch literal
+// filter while preserving JSON, space-delimited, and quoted expressions.
+func NormalizeFilterPattern(pattern string) string {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return ""
+	}
+	if pattern[0] == '{' || pattern[0] == '[' {
+		return pattern
+	}
+	if pattern[0] == '"' && len(pattern) > 1 && pattern[len(pattern)-1] == '"' &&
+		!strings.Contains(pattern[1:len(pattern)-1], `"`) {
+		return pattern
+	}
+	return `"` + strings.ReplaceAll(pattern, `"`, "") + `"`
 }
 
 func (s *Logs) ListGroups(ctx context.Context, search string) ([]model.LogGroup, error) {

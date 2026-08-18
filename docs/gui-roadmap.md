@@ -77,6 +77,10 @@ the query.
 
 ## CloudWatch Logs delivery phases
 
+All five phases were implemented on the GTK proof-of-concept branch. The
+module now shares group, stream, range, filter, and follow routing with the TUI;
+the frontend owns only GTK navigation, presentation, and dialogs.
+
 ### Phase 1: shared browsing service and module shell
 
 - Add UI-neutral log-group and log-stream listing services used by both TUI and
@@ -117,3 +121,9 @@ the query.
 - Exercise rapid navigation, cancellation, polling, large result sets, zoom,
   keyboard focus, theme behavior, and long-running follow sessions.
 - Update the development guide and record any intentional frontend differences.
+
+The parity pass retained two intentional frontend differences. Multi-scope
+selection is entered as a comma-separated scope in the GUI search dialog rather
+than using terminal-style marked rows, and buffered filtering hides non-matches
+instead of providing `n`/`N` match navigation. GTK selection, cursor placement,
+and the Correlate action provide the corresponding graphical navigation.

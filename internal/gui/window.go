@@ -101,6 +101,7 @@ type mainWindow struct {
 	followLogStreamButton       *gtk.Button
 	followLogGroupButton        *gtk.Button
 	searchLogsButton            *gtk.Button
+	saveLogDestinationButton    *gtk.Button
 	saveLogSearchButton         *gtk.Button
 	manageSavedLogButton        *gtk.Button
 	logsButton                  *gtk.Button
@@ -163,6 +164,7 @@ type mainWindow struct {
 	logTextBuffer               *gtk.TextBuffer
 	logSearch                   *gtk.SearchEntry
 	logPauseButton              *gtk.Button
+	logTimestampButton          *gtk.Button
 	logOlderButton              *gtk.Button
 	logNewerButton              *gtk.Button
 	logCorrelateButton          *gtk.Button
@@ -172,6 +174,7 @@ type mainWindow struct {
 	logTitle                    string
 	logLastTS                   int64
 	logFollowing                bool
+	logTimestampMode            logTimestampMode
 	logSearchSpec               *cloudWatchSearch
 	showingLogs                 bool
 	status                      *gtk.Label
@@ -284,6 +287,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.followLogGroupButton.ConnectClicked(w.followSelectedLogGroup)
 	w.searchLogsButton = gtk.NewButtonWithLabel("Search logs")
 	w.searchLogsButton.ConnectClicked(w.promptCloudWatchSearch)
+	w.saveLogDestinationButton = gtk.NewButtonWithLabel("Save destination")
+	w.saveLogDestinationButton.ConnectClicked(w.promptSaveLogDestination)
 	w.saveLogSearchButton = gtk.NewButtonWithLabel("Save search")
 	w.saveLogSearchButton.ConnectClicked(w.promptSaveLogSearch)
 	w.manageSavedLogButton = gtk.NewButtonWithLabel("Manage saved…")
@@ -331,6 +336,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.followLogStreamButton)
 	header.Append(w.followLogGroupButton)
 	header.Append(w.searchLogsButton)
+	header.Append(w.saveLogDestinationButton)
 	header.Append(w.saveLogSearchButton)
 	header.Append(w.manageSavedLogButton)
 	header.Append(w.scaleButton)
@@ -565,7 +571,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the task-definition editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
@@ -581,6 +587,11 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.confirmRegisterTaskDefinition)
 	w.addAction(app, "ecs-exec", []string{"<Control><Shift>e"}, w.openExec)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
+	w.addAction(app, "log-timestamps", []string{"t"}, func() {
+		if w.showingLogs {
+			w.cycleLogTimestamps()
+		}
+	})
 	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
 	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
 	w.addAction(app, "force-deploy", []string{"<Control><Shift>r"}, w.confirmForceDeployment)
@@ -1648,6 +1659,9 @@ func (w *mainWindow) updateActionSensitivity() {
 	cloudWatchBrowser := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch
 	w.searchLogsButton.SetVisible(cloudWatchBrowser)
 	w.searchLogsButton.SetSensitive(cloudWatchBrowser && logGroupSelected && w.options.Logs != nil)
+	canSaveDestination := w.activeSavedLog == "" && (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams) && logGroupSelected
+	w.saveLogDestinationButton.SetVisible(canSaveDestination)
+	w.saveLogDestinationButton.SetSensitive(canSaveDestination && w.options.Config != nil)
 	hasSearch := w.showingLogs && w.logSearchSpec != nil
 	w.saveLogSearchButton.SetVisible(hasSearch && w.activeSavedLog == "")
 	w.saveLogSearchButton.SetSensitive(hasSearch && w.options.Config != nil)

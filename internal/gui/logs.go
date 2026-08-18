@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
@@ -28,10 +29,14 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	w.logNewerButton.ConnectClicked(func() { w.loadAdjacentCloudWatchRange(1) })
 	w.logCorrelateButton = gtk.NewButtonWithLabel("Correlate at cursor")
 	w.logCorrelateButton.ConnectClicked(w.promptLogCorrelation)
+	w.logTimestampButton = gtk.NewButtonWithLabel("Time: Local")
+	w.logTimestampButton.ConnectClicked(w.cycleLogTimestamps)
 	copyButton := gtk.NewButtonWithLabel("Copy")
 	copyButton.ConnectClicked(w.copyLogs)
 	clearButton := gtk.NewButtonWithLabel("Clear")
 	clearButton.ConnectClicked(w.clearLogs)
+	exportButton := gtk.NewButtonWithLabel("Save buffer…")
+	exportButton.ConnectClicked(w.exportLogs)
 	w.logSearch = gtk.NewSearchEntry()
 	w.logSearch.SetPlaceholderText("Filter buffered logs…")
 	w.logSearch.SetHExpand(true)
@@ -44,8 +49,10 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	toolbar.Append(w.logOlderButton)
 	toolbar.Append(w.logNewerButton)
 	toolbar.Append(w.logCorrelateButton)
+	toolbar.Append(w.logTimestampButton)
 	toolbar.Append(copyButton)
 	toolbar.Append(clearButton)
+	toolbar.Append(exportButton)
 	toolbar.Append(w.logSearch)
 
 	w.logTextBuffer = gtk.NewTextBuffer(nil)
@@ -305,7 +312,7 @@ func (w *mainWindow) renderLogs() {
 	if w.logStore == nil || w.logTextBuffer == nil {
 		return
 	}
-	formatted := w.logStore.format(w.logSearch.Text())
+	formatted := w.logStore.formatWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now())
 	w.logTextBuffer.SetText(formatted.text)
 	if w.logIndentTags == nil {
 		w.logIndentTags = make(map[int]*gtk.TextTag)
@@ -345,7 +352,7 @@ func (w *mainWindow) copyLogs() {
 	if !w.showingLogs || w.logStore == nil || w.logStore.len() == 0 {
 		return
 	}
-	w.logView.Clipboard().SetText(w.logStore.text(""))
+	w.logView.Clipboard().SetText(w.logStore.formatWithTimestamps("", w.logTimestampMode, time.Now()).text)
 	w.setStatus(fmt.Sprintf("Copied %d log lines", w.logStore.len()), false)
 }
 
@@ -363,13 +370,49 @@ func (w *mainWindow) logEntryAtCursor() (model.LogEntry, bool) {
 		return model.LogEntry{}, false
 	}
 	offset := w.logTextBuffer.IterAtMark(w.logTextBuffer.GetInsert()).Offset()
-	formatted := w.logStore.format(w.logSearch.Text())
+	formatted := w.logStore.formatWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now())
 	for _, line := range formatted.lines {
 		if offset >= line.start && offset <= line.end {
 			return line.entry, true
 		}
 	}
 	return model.LogEntry{}, false
+}
+
+func (w *mainWindow) cycleLogTimestamps() {
+	w.logTimestampMode = (w.logTimestampMode + 1) % 3
+	labels := []string{"Time: Local", "Time: UTC", "Time: Relative"}
+	w.logTimestampButton.SetLabel(labels[w.logTimestampMode])
+	w.renderLogs()
+}
+
+func (w *mainWindow) exportLogs() {
+	if !w.showingLogs || w.logStore == nil || w.logStore.len() == 0 {
+		w.setStatus("There are no buffered logs to save", false)
+		return
+	}
+	contents := w.logStore.formatWithTimestamps("", w.logTimestampMode, time.Now()).text
+	lineCount := w.logStore.len()
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Save log buffer")
+	dialog.SetAcceptLabel("Save")
+	dialog.SetInitialName("e9s-logs.txt")
+	dialog.Save(w.ctx, &w.window.Window, func(result gio.AsyncResulter) {
+		file, err := dialog.SaveFinish(result)
+		if err != nil || file == nil {
+			return
+		}
+		go func() {
+			_, writeErr := file.ReplaceContents(w.ctx, contents, "", false, gio.FileCreateReplaceDestination)
+			glib.IdleAdd(func() {
+				if writeErr != nil {
+					w.setStatus("Save log buffer: "+writeErr.Error(), true)
+					return
+				}
+				w.setStatus(fmt.Sprintf("Saved %d buffered log lines", lineCount), false)
+			})
+		}()
+	})
 }
 
 func (w *mainWindow) closeLogs() {

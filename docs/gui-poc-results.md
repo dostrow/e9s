@@ -351,6 +351,28 @@ Qt does not currently offer a compelling benefit large enough to offset restarti
 the binding, event-loop, and widget work. Reconsider it only if gotk4 compatibility
 or release cadence prevents supporting the target distributions.
 
+### CloudWatch Logs module follow-up
+
+The second-module experiment is complete. The GTK frontend now browses groups
+and streams; peeks and follows streams or whole groups; searches single or
+comma-separated multi-group/stream scopes; supports relative and custom UTC
+ranges, adjacent windows, and cursor-based correlation; and renders results in
+the same bounded, wrapping Workspace log view used by ECS.
+
+Saved `log_paths` are dynamic CloudWatch Logs Module Rail destinations. Existing
+group, stream, and multi-group entries remain valid, while new entries may also
+store multiple streams, a normalized filter, a relative lookback, or fixed UTC
+bounds. Save and Manage saved are contextual Header Bar actions; rename,
+reorder, delete, active highlighting, and explicit config reload are supported.
+
+The parity pass moved TUI group listing, stream listing, filter normalization,
+and search dispatch through `service.Logs`, eliminating the duplicate frontend
+query path. Both frontends now share the same AWS routing and saved-search
+schema. The GUI additionally gained local/UTC/relative timestamps, clipboard
+copy, and portal-backed buffer export. Multi-scope entry and local match
+navigation intentionally follow native GUI metaphors as documented in the
+roadmap.
+
 ### Final verification
 
 ```text

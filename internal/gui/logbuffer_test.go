@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -127,5 +128,16 @@ func TestBoundedLogsExtendedSession(t *testing.T) {
 	text := logs.text("")
 	if strings.Contains(text, "event-000000") || !strings.Contains(text, "event-099999") {
 		t.Fatalf("extended session retained the wrong window")
+	}
+}
+
+func TestFormatLogTimestampModes(t *testing.T) {
+	event := time.Date(2026, time.August, 18, 12, 0, 0, 123000000, time.UTC)
+	now := event.Add(5 * time.Second)
+	if got := formatLogTimestamp(event.UnixMilli(), logTimestampUTC, now); got != "2026-08-18 12:00:00.123Z" {
+		t.Fatalf("UTC timestamp = %q", got)
+	}
+	if got := formatLogTimestamp(event.UnixMilli(), logTimestampRelative, now); got != "          5s ago" {
+		t.Fatalf("relative timestamp = %q", got)
 	}
 }

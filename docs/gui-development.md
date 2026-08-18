@@ -149,6 +149,20 @@ memory than a cached rebuild.
 20. Open one service's task browser, navigate away, and open another service.
     Confirm the previous task rows and selection disappear before the new AWS
     response arrives. Repeat while switching from tasks to Task Defs.
+21. Expand CloudWatch Logs, browse groups and streams, then peek and follow a
+    stream and a whole group. Confirm Browser context remains stable while the
+    Workspace switches between details and logs.
+22. Search one group, comma-separated groups, and comma-separated streams with
+    relative presets and a custom UTC range. Exercise Older, Newer, and
+    Correlate at cursor, including while the buffered filter is active.
+23. Cycle Local, UTC, and Relative timestamps, copy and save the buffer, and
+    confirm wrapped continuations remain aligned with the message text.
+24. Save a group/stream destination and a complete search. Rename, reorder, and
+    delete it through Manage saved, verify exact Module Rail highlighting, then
+    edit `log_paths` externally and press Refresh to verify the rail reloads.
+25. Rapidly switch between ECS, Log groups, streams, and saved searches while
+    requests or follow polling are active. Confirm old rows clear immediately
+    and no stale result replaces the new Browser or Workspace context.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

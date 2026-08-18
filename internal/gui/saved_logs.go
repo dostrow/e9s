@@ -175,6 +175,39 @@ func (w *mainWindow) promptSaveLogSearch() {
 	dialog.Present()
 }
 
+func (w *mainWindow) promptSaveLogDestination() {
+	if w.options.Config == nil || w.selectedLogGroup == "" {
+		return
+	}
+	group, stream := w.selectedLogGroup, ""
+	if w.currentPage == pageLogStreams {
+		stream = w.selectedLogStream
+	}
+	dialog, entry := w.newSavedLogNameDialog("Save CloudWatch destination", "Destination name", "")
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Save", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		name := strings.TrimSpace(entry.Text())
+		if name == "" {
+			return
+		}
+		dialog.Destroy()
+		path := config.LogPathEntry{Name: name, LogGroup: group, Stream: stream}
+		if !w.mutateSavedLogs(func(cfg *config.Config) { cfg.UpsertLogPath(path) }) {
+			return
+		}
+		w.activeSavedLog = name
+		w.rebuildSavedLogRail()
+		w.updateActionSensitivity()
+		w.setStatus("Saved CloudWatch destination as "+name, false)
+	})
+	dialog.Present()
+}
+
 func (w *mainWindow) promptManageSavedLog() {
 	if w.activeSavedLog == "" || w.options.Config == nil {
 		return

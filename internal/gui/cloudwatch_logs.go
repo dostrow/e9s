@@ -21,7 +21,7 @@ func isECSPage(page string) bool {
 }
 
 func (w *mainWindow) openLogGroupsModule() {
-	if w.currentPage == pageLogGroups {
+	if w.currentPage == pageLogGroups && w.activeSavedLog == "" {
 		return
 	}
 	w.loadLogGroups()
@@ -137,6 +137,7 @@ func (w *mainWindow) selectLogGroupRow() {
 		return
 	}
 	group := w.filteredLogGroups[position]
+	w.activeSavedLog = ""
 	if w.selectedLogGroup != group.Name {
 		w.resetWorkspaceForBrowserChange()
 	}
@@ -225,6 +226,7 @@ func (w *mainWindow) selectLogStreamRow() {
 		return
 	}
 	stream := w.filteredLogStreams[position]
+	w.activeSavedLog = ""
 	if w.selectedLogStream != stream.Name {
 		w.resetWorkspaceForBrowserChange()
 	}

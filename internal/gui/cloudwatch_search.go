@@ -9,6 +9,7 @@ import (
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 )
 
 const cloudWatchSearchLimit = 1000
@@ -284,18 +285,7 @@ func splitLogScope(value string) []string {
 }
 
 func quoteCloudWatchFilter(pattern string) string {
-	pattern = strings.TrimSpace(pattern)
-	if pattern == "" {
-		return ""
-	}
-	if pattern[0] == '{' || pattern[0] == '[' {
-		return pattern
-	}
-	if pattern[0] == '"' && len(pattern) > 1 && pattern[len(pattern)-1] == '"' &&
-		!strings.Contains(pattern[1:len(pattern)-1], `"`) {
-		return pattern
-	}
-	return `"` + strings.ReplaceAll(pattern, `"`, "") + `"`
+	return service.NormalizeFilterPattern(pattern)
 }
 
 func parseCloudWatchUTCTime(value string) (time.Time, error) {

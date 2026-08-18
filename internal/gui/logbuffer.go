@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,6 +25,14 @@ type formattedLogLine struct {
 	prefix string
 	entry  model.LogEntry
 }
+
+type logTimestampMode int
+
+const (
+	logTimestampLocal logTimestampMode = iota
+	logTimestampUTC
+	logTimestampRelative
+)
 
 func newBoundedLogs(maxEntries int) *boundedLogs {
 	if maxEntries <= 0 {
@@ -54,6 +63,10 @@ func (b *boundedLogs) text(filter string) string {
 }
 
 func (b *boundedLogs) format(filter string) formattedLogBuffer {
+	return b.formatWithTimestamps(filter, logTimestampLocal, time.Now())
+}
+
+func (b *boundedLogs) formatWithTimestamps(filter string, mode logTimestampMode, now time.Time) formattedLogBuffer {
 	filter = strings.ToLower(strings.TrimSpace(filter))
 	var out strings.Builder
 	formatted := formattedLogBuffer{
@@ -64,7 +77,7 @@ func (b *boundedLogs) format(filter string) formattedLogBuffer {
 		if filter != "" && !strings.Contains(strings.ToLower(entry.Message+" "+entry.Stream), filter) {
 			continue
 		}
-		timestamp := time.UnixMilli(entry.Timestamp).Local().Format("2006-01-02 15:04:05.000")
+		timestamp := formatLogTimestamp(entry.Timestamp, mode, now)
 		prefix := timestamp + "  "
 		if entry.Stream != "" {
 			prefix += "[" + entry.Stream + "]  "
@@ -87,6 +100,22 @@ func (b *boundedLogs) format(filter string) formattedLogBuffer {
 	}
 	formatted.text = out.String()
 	return formatted
+}
+
+func formatLogTimestamp(timestamp int64, mode logTimestampMode, now time.Time) string {
+	eventTime := time.UnixMilli(timestamp)
+	switch mode {
+	case logTimestampUTC:
+		return eventTime.UTC().Format("2006-01-02 15:04:05.000Z")
+	case logTimestampRelative:
+		age := now.Sub(eventTime)
+		if age < 0 {
+			age = 0
+		}
+		return fmt.Sprintf("%12s ago", age.Round(time.Millisecond))
+	default:
+		return eventTime.Local().Format("2006-01-02 15:04:05.000")
+	}
 }
 
 func sanitizeLogText(value string) string {

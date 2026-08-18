@@ -168,6 +168,22 @@ func TestLogsBrowsesGroupsAndStreams(t *testing.T) {
 	}
 }
 
+func TestNormalizeFilterPattern(t *testing.T) {
+	tests := map[string]string{
+		"error":                 `"error"`,
+		`"already quoted"`:      `"already quoted"`,
+		`message "with quotes"`: `"message with quotes"`,
+		`{ $.level = "error" }`: `{ $.level = "error" }`,
+		`[ip, user]`:            `[ip, user]`,
+		"":                      "",
+	}
+	for input, want := range tests {
+		if got := NormalizeFilterPattern(input); got != want {
+			t.Errorf("NormalizeFilterPattern(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestLogsRequiresGroupForStreamBrowsing(t *testing.T) {
 	_, err := NewLogs(&fakeLogsAPI{}).ListStreams(context.Background(), "", "")
 	if err == nil {

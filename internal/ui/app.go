@@ -711,39 +711,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
-	case views.LogSearchPartialMsg:
-		if a.state == viewLogSearch {
-			var viewCmd tea.Cmd
-			a.logSearchView, viewCmd = a.logSearchView.Update(msg)
-
-			// Chain the next group search if multi-group and not done
-			if !msg.Done && len(a.logSearchGroups) > 1 {
-				// Find which group just completed and chain the next
-				nextIdx := -1
-				for i, g := range a.logSearchGroups {
-					if g == msg.Source {
-						nextIdx = i + 1
-						break
-					}
-				}
-				if nextIdx > 0 && nextIdx < len(a.logSearchGroups) {
-					nextCmd := searchNextGroup(a.client, a.logSearchGroups, nextIdx,
-						a.logSearchFilter, a.logSearchStreams,
-						a.logSearchStartMs, a.logSearchEndMs)
-					return a, tea.Batch(viewCmd, nextCmd)
-				}
-			}
-			// For single-group paginated search, chain next page if not done
-			if !msg.Done && len(a.logSearchGroups) <= 1 && msg.NextToken != nil {
-				nextCmd := searchGroupPaginated(a.client, msg.Source, a.logSearchStreams,
-					a.logSearchFilter, a.logSearchStartMs, a.logSearchEndMs,
-					msg.NextToken, msg.Remaining)
-				return a, tea.Batch(viewCmd, nextCmd)
-			}
-			return a, viewCmd
-		}
-		return a, nil
-
 	case logGroupsLoadedMsg:
 		a.logGroupsView = a.logGroupsView.SetGroups(msg.groups)
 		a.loading = false
@@ -1544,19 +1511,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			lp := a.cfg.LogPaths[msg.Index]
-			if len(lp.LogGroups) > 1 {
-				// Multi-group saved entry — go straight to search
-				a.prevState = viewLogGroups
-				a.logSearchGroups = lp.LogGroups
-				a.logSearchGroup = lp.LogGroups[0]
-				a.logSearchStreams = nil
-				return a.promptLogSearchTimeRange()
-			}
-			if lp.Stream != "" {
-				return a, a.startLogTail(lp.LogGroup, []string{lp.Stream},
-					fmt.Sprintf("%s / %s", lp.LogGroup, lp.Stream))
-			}
-			return a.openLogStreams(lp.LogGroup)
+			return a.openSavedLogDestination(lp)
 		case PickerLogSearchTimeRange:
 			return a.handleTimeRangePick(msg.Value)
 		case PickerLogCorrelationWindow:
