@@ -106,8 +106,14 @@ func (w *mainWindow) openTaskDefinitions() {
 		return
 	}
 	w.resetWorkspaceForBrowserChange()
+	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
+		w.clearTaskBrowser()
+	}
 	w.currentPage = pageTaskDefinitions
 	w.selectedTaskDefinition = nil
+	w.allTaskDefinitions = nil
+	w.filteredTaskDefinitions = nil
+	w.taskDefinitionTable.clear()
 	w.updateActionSensitivity()
 	w.setBreadcrumb("ECS / Task definitions")
 	w.backButton.SetSensitive(false)

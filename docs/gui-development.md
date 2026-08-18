@@ -146,6 +146,9 @@ memory than a cached rebuild.
 19. Move through cluster, service, task, and standalone contexts and confirm the
     header shows only applicable action groups; unavailable capabilities remain
     visible but disabled within an applicable context.
+20. Open one service's task browser, navigate away, and open another service.
+    Confirm the previous task rows and selection disappear before the new AWS
+    response arrives. Repeat while switching from tasks to Task Defs.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

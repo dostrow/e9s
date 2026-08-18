@@ -52,6 +52,19 @@ func (t *stringTable) replace(rows []string) {
 	}
 }
 
+// clear synchronously removes every row and selection from the GTK model.
+// Context changes use this instead of replace(nil) so stale list items cannot
+// remain rendered while the next asynchronous request is in flight.
+func (t *stringTable) clear() {
+	t.selection.SetSelected(gtk.InvalidListPosition)
+	if t.count > 0 {
+		t.model.Splice(0, t.count, nil)
+	}
+	t.count = 0
+	t.rows = nil
+	t.view.QueueDraw()
+}
+
 func textColumn(spec columnSpec) *gtk.ColumnViewColumn {
 	factory := gtk.NewSignalListItemFactory()
 	factory.ConnectSetup(func(object *coreglib.Object) {

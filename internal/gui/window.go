@@ -661,6 +661,30 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.detailStack.SetVisibleChildName("detail")
 }
 
+func (w *mainWindow) clearTaskBrowser() {
+	w.selectedTask = ""
+	w.allTasks = nil
+	w.filteredTasks = nil
+	w.taskNextToken = ""
+	w.taskTable.clear()
+	w.stoppedTaskTable.clear()
+	if w.resourceStack != nil {
+		w.resourceStack.QueueDraw()
+	}
+}
+
+func (w *mainWindow) clearClusterBrowser() {
+	w.allClusters = nil
+	w.filteredClusters = nil
+	w.clusterTable.clear()
+}
+
+func (w *mainWindow) clearServiceBrowser() {
+	w.allServices = nil
+	w.filteredServices = nil
+	w.serviceTable.clear()
+}
+
 func (w *mainWindow) openClustersModule() {
 	if w.currentPage == pageClusters {
 		return
@@ -674,6 +698,10 @@ func (w *mainWindow) openClustersModule() {
 
 func (w *mainWindow) loadClusters() {
 	w.resetWorkspaceForBrowserChange()
+	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
+		w.clearTaskBrowser()
+	}
+	w.clearClusterBrowser()
 	w.currentPage = pageClusters
 	w.selectedCluster = ""
 	w.selectedService = ""
@@ -707,6 +735,10 @@ func (w *mainWindow) loadClusters() {
 
 func (w *mainWindow) loadServices(cluster string) {
 	w.resetWorkspaceForBrowserChange()
+	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
+		w.clearTaskBrowser()
+	}
+	w.clearServiceBrowser()
 	w.currentPage = pageServices
 	w.selectedCluster = cluster
 	w.selectedService = ""
@@ -742,12 +774,8 @@ func (w *mainWindow) loadServiceTaskScope(service model.Service, stopped bool) {
 	w.resetWorkspaceForBrowserChange()
 	w.currentPage = pageTasks
 	w.selectedService = service.Name
-	w.selectedTask = ""
 	w.showingStoppedTasks = stopped
-	w.taskNextToken = ""
-	w.allTasks = nil
-	w.taskTable.selection.SetSelected(gtk.InvalidListPosition)
-	w.stoppedTaskTable.selection.SetSelected(gtk.InvalidListPosition)
+	w.clearTaskBrowser()
 	w.activeTasksButton.SetActive(!stopped)
 	w.stoppedTasksButton.SetActive(stopped)
 	w.updateActionSensitivity()
@@ -830,12 +858,8 @@ func (w *mainWindow) loadStandaloneTaskScope(stopped bool) {
 	w.resetWorkspaceForBrowserChange()
 	w.currentPage = pageStandaloneTasks
 	w.selectedService = ""
-	w.selectedTask = ""
 	w.showingStoppedTasks = stopped
-	w.taskNextToken = ""
-	w.allTasks = nil
-	w.taskTable.selection.SetSelected(gtk.InvalidListPosition)
-	w.stoppedTaskTable.selection.SetSelected(gtk.InvalidListPosition)
+	w.clearTaskBrowser()
 	w.activeTasksButton.SetActive(!stopped)
 	w.stoppedTasksButton.SetActive(stopped)
 	w.updateActionSensitivity()
@@ -1105,10 +1129,9 @@ func (w *mainWindow) navigateBrowserBack() {
 	}
 	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
 		w.resetWorkspaceForBrowserChange()
+		w.clearTaskBrowser()
 		w.currentPage = pageServices
 		w.selectedService = ""
-		w.selectedTask = ""
-		w.allTasks = nil
 		w.updateActionSensitivity()
 		w.search.SetText("")
 		w.search.SetPlaceholderText("Filter services…")
