@@ -537,7 +537,7 @@ func (w *mainWindow) refreshTaskDefinitions(foreground bool) {
 				selected, err = w.options.ECS.GetTaskDefinition(ctx, selectedARN)
 			}
 		}
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allTaskDefinitions = definitions
 			w.applyTaskDefinitionFilter()
 			if selectedARN == "" {

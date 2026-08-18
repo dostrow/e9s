@@ -129,6 +129,7 @@ type mainWindow struct {
 	workspaceBusyBar            *gtk.Box
 	workspaceBusySpinner        *gtk.Spinner
 	workspaceBusyLabel          *gtk.Label
+	workspaceBusy               bool
 	metricsCPUAvg               *gtk.ProgressBar
 	metricsCPUMax               *gtk.ProgressBar
 	metricsMemAvg               *gtk.ProgressBar
@@ -722,6 +723,7 @@ func (w *mainWindow) startRefreshRequest(label string, foreground bool) (context
 	if foreground {
 		w.spinner.Start()
 		w.setStatus(label, false)
+		w.setWorkspaceBusy(label, true)
 	}
 	return ctx, w.generation
 }
@@ -731,21 +733,29 @@ func (w *mainWindow) finishRequest(ctx context.Context, generation uint64, err e
 }
 
 func (w *mainWindow) finishRequestWithStatus(ctx context.Context, generation uint64, err error, success string, apply func()) {
-	w.finishRequestResult(ctx, generation, err, success, true, apply)
+	w.finishRequestResult(ctx, generation, err, success, true, true, apply)
 }
 
-func (w *mainWindow) finishRefreshRequest(ctx context.Context, generation uint64, err error, apply func()) {
-	w.finishRequestResult(ctx, generation, err, "", false, apply)
+func (w *mainWindow) finishRefreshRequest(ctx context.Context, generation uint64, err error, foreground bool, apply func()) {
+	w.finishRequestResult(ctx, generation, err, "", false, foreground, apply)
 }
 
-func (w *mainWindow) finishRequestResult(ctx context.Context, generation uint64, err error, success string, showDetailError bool, apply func()) {
+func (w *mainWindow) finishRequestResult(ctx context.Context, generation uint64, err error, success string, showDetailError, foreground bool, apply func()) {
 	glib.IdleAdd(func() {
 		if ctx.Err() != nil || generation != w.generation {
 			return
 		}
-		w.spinner.Stop()
+		if !foreground && w.showingLogs {
+			return
+		}
+		if foreground {
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+		}
 		if err != nil {
-			w.setStatus(err.Error(), true)
+			if foreground || !w.workspaceBusy {
+				w.setStatus(err.Error(), true)
+			}
 			if showDetailError {
 				w.setDetail("ERROR\n\n"+err.Error(), detailError)
 			}
@@ -753,6 +763,9 @@ func (w *mainWindow) finishRequestResult(ctx context.Context, generation uint64,
 		}
 		w.lastSuccessfulLoad = time.Now()
 		apply()
+		if !foreground && w.workspaceBusy {
+			return
+		}
 		if success == "" {
 			success = "Updated " + w.lastSuccessfulLoad.Format("15:04:05")
 		}
@@ -775,10 +788,12 @@ func (w *mainWindow) setWorkspaceBusy(label string, busy bool) {
 		return
 	}
 	if !busy {
+		w.workspaceBusy = false
 		w.workspaceBusySpinner.Stop()
 		w.workspaceBusyBar.SetVisible(false)
 		return
 	}
+	w.workspaceBusy = true
 	w.workspaceBusyLabel.SetLabel(label)
 	w.workspaceBusySpinner.Start()
 	w.workspaceBusyBar.SetVisible(true)
@@ -1524,7 +1539,7 @@ func (w *mainWindow) refreshStandaloneTasks(foreground bool) {
 		} else {
 			tasks, err = w.options.ECS.ListStandaloneTasks(ctx, cluster)
 		}
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allTasks = tasks
 			w.taskNextToken = nextToken
 			w.applyTaskFilter()
@@ -1580,7 +1595,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 			}
 		}
 
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allServices = services
 			w.allTasks = tasks
 			w.taskNextToken = nextToken
@@ -1619,7 +1634,7 @@ func (w *mainWindow) refreshClusters(foreground bool) {
 	ctx, generation := w.startRefreshRequest("Refreshing ECS clusters…", foreground)
 	go func() {
 		clusters, err := w.options.ECS.ListClusters(ctx)
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allClusters = clusters
 			w.applyClusterFilter()
 			if w.detailContent == detailIntro && len(clusters) == 0 {
@@ -1646,7 +1661,7 @@ func (w *mainWindow) refreshServices(foreground bool) {
 			}
 		}
 
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allServices = services
 			w.applyServiceFilter()
 
@@ -1674,7 +1689,7 @@ func (w *mainWindow) refreshServices(foreground bool) {
 
 func (w *mainWindow) scheduleRefresh() {
 	glib.IdleAdd(func() {
-		if w.ctx.Err() == nil {
+		if w.ctx.Err() == nil && !w.workspaceBusy {
 			w.refreshCurrent(false)
 		}
 	})

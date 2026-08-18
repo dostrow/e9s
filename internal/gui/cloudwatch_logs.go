@@ -72,7 +72,7 @@ func (w *mainWindow) refreshLogGroups(foreground bool) {
 	ctx, generation := w.startRefreshRequest("Refreshing CloudWatch log groups…", foreground)
 	go func() {
 		groups, err := w.options.Logs.ListGroups(ctx, "")
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allLogGroups = groups
 			w.applyLogGroupFilter()
 			if selected == "" {
@@ -184,7 +184,7 @@ func (w *mainWindow) refreshLogStreams(foreground bool) {
 	ctx, generation := w.startRefreshRequest("Refreshing streams in "+group+"…", foreground)
 	go func() {
 		streams, err := w.options.Logs.ListStreams(ctx, group, "")
-		w.finishRefreshRequest(ctx, generation, err, func() {
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allLogStreams = streams
 			w.applyLogStreamFilter()
 			if selected == "" {

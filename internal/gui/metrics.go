@@ -167,7 +167,7 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 		if len(warnings) > 0 {
 			success += " • " + strings.Join(warnings, " • ")
 		}
-		w.finishRequestResult(ctx, generation, err, success, opening, func() {
+		w.finishRequestResult(ctx, generation, err, success, opening, foreground, func() {
 			if w.showingTerminal {
 				w.closeTerminalNow(false)
 			}
