@@ -578,6 +578,13 @@ func (w *mainWindow) setDetail(text, content string) {
 }
 
 func (w *mainWindow) setBreadcrumb(text string) {
+	// The initial route is constructed with its final breadcrumb. Replacing an
+	// identical label immediately after mapping can leave that first render
+	// node in the Wayland surface's damage history.
+	if w.breadcrumb.Label() == text {
+		return
+	}
+
 	// Replacing the label forces GTK to discard the complete previous text
 	// render node. Updating a GtkLabel in place can leave ascender pixels from a
 	// longer breadcrumb behind with some hinted fonts and fractional scaling.
