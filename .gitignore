@@ -1,6 +1,6 @@
 # Binary
 e9s
-e9s-*
+/e9s-*
 *.exe
 
 # IDE / tools

@@ -1,0 +1,38 @@
+window {
+  background: #111318;
+  color: #e6e9ef;
+}
+
+.toolbar {
+  background: #191c24;
+  border-bottom: 1px solid #343a46;
+  padding: 10px 14px;
+}
+
+.app-title {
+  color: #89b4fa;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+columnview {
+  background: #111318;
+}
+
+columnview row:selected {
+  background: #33415c;
+}
+
+.log-view {
+  background: #0d0f14;
+  color: #cdd6f4;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.status-bar {
+  background: #191c24;
+  border-top: 1px solid #343a46;
+  color: #a6adc8;
+  padding: 7px 12px;
+}
