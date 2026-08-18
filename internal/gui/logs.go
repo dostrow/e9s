@@ -381,9 +381,17 @@ func (w *mainWindow) loadOlderLogEntries() {
 				w.setStatus("No log events exist before "+time.UnixMilli(cutoff).Local().Format("2006-01-02 15:04:05.000"), false)
 				return
 			}
-			w.logStore.prepend(page.Entries)
+			added, evicted := w.logStore.prepend(page.Entries)
 			w.renderLogs()
-			w.setStatus(fmt.Sprintf("Loaded %d older log events • %d buffered lines", len(page.Entries), w.logStore.len()), false)
+			w.logView.ScrollToIter(w.logTextBuffer.StartIter(), 0, false, 0, 0)
+			status := fmt.Sprintf("Loaded %d older log events", added)
+			if evicted > 0 {
+				status += fmt.Sprintf(" • dropped %d newest", evicted)
+			}
+			status += fmt.Sprintf(" • %d buffered lines • %s–%s", w.logStore.len(),
+				formatLogTimestamp(w.logStore.firstTimestamp(), w.logTimestampMode, time.Now()),
+				formatLogTimestamp(w.logStore.lastTimestamp(), w.logTimestampMode, time.Now()))
+			w.setStatus(status, false)
 		})
 	}()
 }

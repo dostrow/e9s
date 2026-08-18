@@ -79,7 +79,7 @@ func (b *boundedLogs) append(entries []model.LogEntry) {
 	}
 }
 
-func (b *boundedLogs) prepend(entries []model.LogEntry) {
+func (b *boundedLogs) prepend(entries []model.LogEntry) (added, evicted int) {
 	b.ensureSeen()
 	older := make([]model.LogEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -91,18 +91,21 @@ func (b *boundedLogs) prepend(entries []model.LogEntry) {
 		older = append(older, entry)
 	}
 	if len(older) == 0 {
-		return
+		return 0, 0
 	}
+	added = len(older)
 	b.entries = append(older, b.entries...)
 	sort.SliceStable(b.entries, func(i, j int) bool {
 		return b.entries[i].Timestamp < b.entries[j].Timestamp
 	})
 	if extra := len(b.entries) - b.max; extra > 0 {
+		evicted = extra
 		for _, entry := range b.entries[len(b.entries)-extra:] {
 			delete(b.seen, entry.Key())
 		}
 		b.entries = b.entries[:len(b.entries)-extra]
 	}
+	return added, evicted
 }
 
 func (b *boundedLogs) ensureSeen() {
@@ -126,6 +129,19 @@ func (b *boundedLogs) firstTimestamp() int64 {
 		}
 	}
 	return first
+}
+
+func (b *boundedLogs) lastTimestamp() int64 {
+	if len(b.entries) == 0 {
+		return 0
+	}
+	last := b.entries[0].Timestamp
+	for _, entry := range b.entries[1:] {
+		if entry.Timestamp > last {
+			last = entry.Timestamp
+		}
+	}
+	return last
 }
 
 func (b *boundedLogs) clear() {

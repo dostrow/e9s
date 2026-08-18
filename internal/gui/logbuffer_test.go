@@ -30,6 +30,31 @@ func TestBoundedLogsTrimsOldestEntries(t *testing.T) {
 	}
 }
 
+func TestBoundedLogsPrependTrimsNewestEntries(t *testing.T) {
+	logs := newBoundedLogs(3)
+	logs.append([]model.LogEntry{
+		{Timestamp: 3, Message: "three"},
+		{Timestamp: 4, Message: "four"},
+		{Timestamp: 5, Message: "five"},
+	})
+
+	added, evicted := logs.prepend([]model.LogEntry{
+		{Timestamp: 1, Message: "one"},
+		{Timestamp: 2, Message: "two"},
+	})
+	if added != 2 || evicted != 2 {
+		t.Fatalf("prepend() = added %d, evicted %d; want 2, 2", added, evicted)
+	}
+	if logs.len() != 3 || logs.firstTimestamp() != 1 || logs.lastTimestamp() != 3 {
+		t.Fatalf("retained timestamps = %d–%d (%d entries), want 1–3 (3 entries)",
+			logs.firstTimestamp(), logs.lastTimestamp(), logs.len())
+	}
+	text := logs.text("")
+	if !strings.Contains(text, "one") || !strings.Contains(text, "two") || strings.Contains(text, "five") {
+		t.Fatalf("text() = %q", text)
+	}
+}
+
 func TestBoundedLogsFiltersCaseInsensitively(t *testing.T) {
 	logs := newBoundedLogs(10)
 	logs.append([]model.LogEntry{
