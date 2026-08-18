@@ -17,7 +17,7 @@ type ECSAPI interface {
 	ListClusters(context.Context) ([]model.Cluster, error)
 	ListServices(context.Context, string) ([]model.Service, error)
 	ListTasks(context.Context, string, string) ([]model.Task, error)
-	ListStoppedTasksPage(context.Context, string, string, int) (model.TaskPage, error)
+	ListStoppedTasksPage(context.Context, string, string, string, int) (model.TaskPage, error)
 	ForceNewDeployment(context.Context, string, string) error
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error
@@ -88,18 +88,33 @@ func (s *ECS) ListStandaloneTasks(ctx context.Context, cluster string) ([]model.
 // ECS can only filter stopped tasks at cluster scope, so service-owned tasks
 // are removed while pages are consumed until the requested batch is full.
 func (s *ECS) ListStoppedStandaloneTasks(ctx context.Context, cluster, nextToken string, limit int) (model.TaskPage, error) {
+	return s.listStoppedTasks(ctx, cluster, "", nextToken, limit, func(task model.Task) bool {
+		return !strings.HasPrefix(task.Group, "service:")
+	})
+}
+
+// ListStoppedServiceTasks returns a bounded page of recently stopped tasks for
+// a single ECS service.
+func (s *ECS) ListStoppedServiceTasks(ctx context.Context, cluster, service, nextToken string, limit int) (model.TaskPage, error) {
+	if strings.TrimSpace(service) == "" {
+		return model.TaskPage{}, fmt.Errorf("list stopped service tasks: service is required")
+	}
+	return s.listStoppedTasks(ctx, cluster, service, nextToken, limit, func(model.Task) bool { return true })
+}
+
+func (s *ECS) listStoppedTasks(ctx context.Context, cluster, service, nextToken string, limit int, include func(model.Task) bool) (model.TaskPage, error) {
 	if limit < 1 {
-		return model.TaskPage{}, fmt.Errorf("list stopped standalone tasks: limit must be at least 1")
+		return model.TaskPage{}, fmt.Errorf("list stopped tasks: limit must be at least 1")
 	}
 	result := model.TaskPage{NextToken: nextToken}
 	for len(result.Tasks) < limit {
 		pageLimit := min(limit-len(result.Tasks), 100)
-		page, err := s.api.ListStoppedTasksPage(ctx, cluster, result.NextToken, pageLimit)
+		page, err := s.api.ListStoppedTasksPage(ctx, cluster, service, result.NextToken, pageLimit)
 		if err != nil {
-			return model.TaskPage{}, fmt.Errorf("list stopped standalone tasks in %q: %w", cluster, err)
+			return model.TaskPage{}, fmt.Errorf("list stopped tasks in %q: %w", cluster, err)
 		}
 		for _, task := range page.Tasks {
-			if !strings.HasPrefix(task.Group, "service:") && task.Status == "STOPPED" {
+			if task.Status == "STOPPED" && include(task) {
 				result.Tasks = append(result.Tasks, task)
 			}
 		}
@@ -109,7 +124,7 @@ func (s *ECS) ListStoppedStandaloneTasks(ctx context.Context, cluster, nextToken
 			break
 		}
 		if result.NextToken == previous {
-			return model.TaskPage{}, fmt.Errorf("list stopped standalone tasks in %q: ECS returned a repeated continuation token", cluster)
+			return model.TaskPage{}, fmt.Errorf("list stopped tasks in %q: ECS returned a repeated continuation token", cluster)
 		}
 	}
 	return result, nil

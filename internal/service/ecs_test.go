@@ -34,8 +34,8 @@ type fakeECSAPI struct {
 }
 
 type stoppedPageCall struct {
-	cluster, nextToken string
-	limit              int
+	cluster, service, nextToken string
+	limit                       int
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -50,9 +50,9 @@ func (f *fakeECSAPI) ListTasks(context.Context, string, string) ([]model.Task, e
 	return f.tasks, f.err
 }
 
-func (f *fakeECSAPI) ListStoppedTasksPage(_ context.Context, cluster, nextToken string, limit int) (model.TaskPage, error) {
+func (f *fakeECSAPI) ListStoppedTasksPage(_ context.Context, cluster, service, nextToken string, limit int) (model.TaskPage, error) {
 	index := len(f.stoppedCalls)
-	f.stoppedCalls = append(f.stoppedCalls, stoppedPageCall{cluster: cluster, nextToken: nextToken, limit: limit})
+	f.stoppedCalls = append(f.stoppedCalls, stoppedPageCall{cluster: cluster, service: service, nextToken: nextToken, limit: limit})
 	if index >= len(f.stoppedPages) {
 		return model.TaskPage{}, f.err
 	}
@@ -274,6 +274,25 @@ func TestECSStoppedStandaloneTasksFillsBatchAcrossPages(t *testing.T) {
 	}
 	if len(api.stoppedCalls) != 2 || api.stoppedCalls[0].limit != 3 || api.stoppedCalls[1].nextToken != "page-2" || api.stoppedCalls[1].limit != 2 {
 		t.Fatalf("stopped page calls = %#v", api.stoppedCalls)
+	}
+}
+
+func TestECSStoppedServiceTasksUsesServiceFilter(t *testing.T) {
+	api := &fakeECSAPI{stoppedPages: []model.TaskPage{{
+		Tasks: []model.Task{
+			{TaskID: "stopped-1", Group: "service:api", Status: "STOPPED"},
+			{TaskID: "still-stopping", Group: "service:api", Status: "STOPPING"},
+		},
+	}}}
+	page, err := NewECS(api).ListStoppedServiceTasks(context.Background(), "prod", "api", "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Tasks) != 1 || page.Tasks[0].TaskID != "stopped-1" {
+		t.Fatalf("ListStoppedServiceTasks() tasks = %#v", page.Tasks)
+	}
+	if len(api.stoppedCalls) != 1 || api.stoppedCalls[0].service != "api" || api.stoppedCalls[0].limit != 2 {
+		t.Fatalf("stopped service page calls = %#v", api.stoppedCalls)
 	}
 }
 

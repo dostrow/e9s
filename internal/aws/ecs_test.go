@@ -11,14 +11,17 @@ import (
 )
 
 func TestStoppedTasksInput(t *testing.T) {
-	input := stoppedTasksInput("prod", "next-page", 50)
+	input := stoppedTasksInput("prod", "api", "next-page", 50)
 	if sdkaws.ToString(input.Cluster) != "prod" || input.DesiredStatus != types.DesiredStatusStopped {
 		t.Fatalf("stoppedTasksInput() = %#v", input)
 	}
 	if sdkaws.ToString(input.NextToken) != "next-page" || sdkaws.ToInt32(input.MaxResults) != 50 {
 		t.Fatalf("pagination = %#v", input)
 	}
-	if got := sdkaws.ToInt32(stoppedTasksInput("prod", "", 500).MaxResults); got != 100 {
+	if sdkaws.ToString(input.ServiceName) != "api" {
+		t.Fatalf("service filter = %q", sdkaws.ToString(input.ServiceName))
+	}
+	if got := sdkaws.ToInt32(stoppedTasksInput("prod", "", "", 500).MaxResults); got != 100 {
 		t.Fatalf("clamped max results = %d", got)
 	}
 }

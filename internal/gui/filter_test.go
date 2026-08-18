@@ -153,6 +153,20 @@ func TestFormatServiceDetail(t *testing.T) {
 	}
 }
 
+func TestFormatServiceStoppedTasksDetail(t *testing.T) {
+	exitCode := 137
+	stoppedAt := time.Date(2026, 8, 18, 10, 30, 0, 0, time.Local)
+	got := formatServiceStoppedTasksDetail("prod", model.Service{Name: "api"}, []model.Task{{
+		TaskID: "1234567890abcdef", StoppedAt: stoppedAt, StopCode: "EssentialContainerExited",
+		Containers: []model.Container{{Name: "api", ExitCode: &exitCode}},
+	}}, true)
+	for _, want := range []string{"RECENTLY STOPPED TASKS", "1 LOADED", "MORE AVAILABLE", "1234567890ab", "exit 137", "EssentialContainerExited"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatServiceStoppedTasksDetail() missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestFormatTaskDetail(t *testing.T) {
 	exitCode := 17
 	task := model.Task{

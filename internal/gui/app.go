@@ -21,6 +21,7 @@ type ECSService interface {
 	ListTasks(context.Context, string, string) ([]model.Task, error)
 	ListStandaloneTasks(context.Context, string) ([]model.Task, error)
 	ListStoppedStandaloneTasks(context.Context, string, string, int) (model.TaskPage, error)
+	ListStoppedServiceTasks(context.Context, string, string, string, int) (model.TaskPage, error)
 	ForceDeployment(context.Context, string, string) error
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error

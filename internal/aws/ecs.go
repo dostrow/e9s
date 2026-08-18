@@ -103,8 +103,8 @@ func (c *Client) ListTasks(ctx context.Context, clusterARN, serviceName string) 
 
 // ListStoppedTasksPage returns one ECS page of stopped tasks. Callers retain
 // the opaque continuation token to fetch another page on demand.
-func (c *Client) ListStoppedTasksPage(ctx context.Context, clusterARN, nextToken string, maxResults int) (model.TaskPage, error) {
-	input := stoppedTasksInput(clusterARN, nextToken, maxResults)
+func (c *Client) ListStoppedTasksPage(ctx context.Context, clusterARN, serviceName, nextToken string, maxResults int) (model.TaskPage, error) {
+	input := stoppedTasksInput(clusterARN, serviceName, nextToken, maxResults)
 	page, err := c.ECS.ListTasks(ctx, input)
 	if err != nil {
 		return model.TaskPage{}, err
@@ -116,13 +116,16 @@ func (c *Client) ListStoppedTasksPage(ctx context.Context, clusterARN, nextToken
 	return model.TaskPage{Tasks: tasks, NextToken: derefStrAws(page.NextToken)}, nil
 }
 
-func stoppedTasksInput(clusterARN, nextToken string, maxResults int) *ecs.ListTasksInput {
+func stoppedTasksInput(clusterARN, serviceName, nextToken string, maxResults int) *ecs.ListTasksInput {
 	maxResults = min(max(maxResults, 1), 100)
 	limit := int32(maxResults)
 	input := &ecs.ListTasksInput{
 		Cluster:       &clusterARN,
 		DesiredStatus: ecstypes.DesiredStatusStopped,
 		MaxResults:    &limit,
+	}
+	if serviceName != "" {
+		input.ServiceName = &serviceName
 	}
 	if nextToken != "" {
 		input.NextToken = &nextToken

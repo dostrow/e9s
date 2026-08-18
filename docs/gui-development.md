@@ -85,7 +85,8 @@ go build -tags "gui vte" ./cmd/e9s-gui
 ## Current scope
 
 The GUI provides cluster, service, service-task, and standalone-task browsing,
-including recent stopped-task diagnostics loaded in 50-task pages;
+including recent stopped-task diagnostics for both service and standalone
+tasks loaded in 50-task pages;
 task-definition inspection, diffing, environment lookup, and revision editing;
 service and per-container logs; service-wide and selected-task metrics, service
 alarms; scaling and guarded ECS mutations; and ECS Exec in an embedded VTE
@@ -130,16 +131,19 @@ memory than a cached rebuild.
 13. Switch Standalone tasks between Active and Recently stopped. Confirm the
     latter is newest-first, exposes exit and stop details, and offers Load more
     only when ECS provides another page.
-14. Open logs, then use the header Back button or select another browser item;
+14. Repeat Active/Recently stopped switching for a service task browser. Select
+    a stopped task, inspect its containers, open its logs, and return directly
+    to the service details without leaving the task browser.
+15. Open logs, then use the header Back button or select another browser item;
     confirm log polling stops and the workspace shows the new context.
-15. Repeatedly switch between long and short breadcrumbs and confirm the header
+16. Repeatedly switch between long and short breadcrumbs and confirm the header
     fully repaints without remnants of the previous text.
-16. Collapse and expand ECS in the module rail and confirm its sub-items hide
+17. Collapse and expand ECS in the module rail and confirm its sub-items hide
     and return without changing the current browser context. Confirm the active
     sub-item remains highlighted using the current GTK theme.
-17. Select a service task, then use Back to service details in the workspace;
+18. Select a service task, then use Back to service details in the workspace;
     confirm the task browser remains visible and its row is unselected.
-18. Move through cluster, service, task, and standalone contexts and confirm the
+19. Move through cluster, service, task, and standalone contexts and confirm the
     header shows only applicable action groups; unavailable capabilities remain
     visible but disabled within an applicable context.
 

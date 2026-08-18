@@ -157,6 +157,18 @@ func taskExitSummary(task model.Task) string {
 }
 
 func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) string {
+	return formatServiceDetailWithTasks(cluster, svc, tasks, "TASKS", false)
+}
+
+func formatServiceStoppedTasksDetail(cluster string, svc model.Service, tasks []model.Task, hasMore bool) string {
+	heading := fmt.Sprintf("RECENTLY STOPPED TASKS — %d LOADED", len(tasks))
+	if hasMore {
+		heading += " — MORE AVAILABLE"
+	}
+	return formatServiceDetailWithTasks(cluster, svc, tasks, heading, true)
+}
+
+func formatServiceDetailWithTasks(cluster string, svc model.Service, tasks []model.Task, taskHeading string, stopped bool) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s / %s\n\n", cluster, svc.Name)
 	fmt.Fprintf(&out, "Status            %s\n", valueOrDash(svc.Status))
@@ -180,14 +192,19 @@ func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) 
 			valueOrDash(deployment.TaskDefinition))
 	}
 
-	out.WriteString("\nTASKS\n")
+	fmt.Fprintf(&out, "\n%s\n", taskHeading)
 	if len(tasks) == 0 {
 		out.WriteString("  No tasks\n")
 	}
 	for _, task := range tasks {
-		fmt.Fprintf(&out, "  %-12s %-12s %-10s %-16s %s\n",
-			shortID(task.TaskID), valueOrDash(task.Status), valueOrDash(task.HealthStatus),
-			valueOrDash(task.AvailabilityZone), valueOrDash(task.PrivateIP))
+		if stopped {
+			fmt.Fprintf(&out, "  %-12s %s  exit %-16s %s\n",
+				shortID(task.TaskID), formatTime(task.StoppedAt), taskExitSummary(task), valueOrDash(task.StopCode))
+		} else {
+			fmt.Fprintf(&out, "  %-12s %-12s %-10s %-16s %s\n",
+				shortID(task.TaskID), valueOrDash(task.Status), valueOrDash(task.HealthStatus),
+				valueOrDash(task.AvailabilityZone), valueOrDash(task.PrivateIP))
+		}
 	}
 
 	out.WriteString("\nRECENT EVENTS\n")
