@@ -402,8 +402,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 			w.switchTaskScope(true)
 		}
 	})
-	scopeButtons := gtk.NewBox(gtk.OrientationHorizontal, 0)
-	scopeButtons.AddCSSClass("linked")
+	scopeButtons := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	scopeButtons.Append(w.activeTasksButton)
 	scopeButtons.Append(w.stoppedTasksButton)
 	w.loadMoreTasksButton = gtk.NewButtonWithLabel("Load more")

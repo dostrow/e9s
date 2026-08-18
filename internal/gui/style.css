@@ -68,6 +68,14 @@
   padding: 8px;
 }
 
+/* GTK dialog action areas are linked button boxes in several themes. Keep
+ * ordinary actions visually distinct with the same eight-pixel gap used by
+ * application-owned button groups. */
+.dialog-action-area > button {
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
 .status-bar {
   border-top: 1px solid alpha(currentColor, 0.14);
   padding: 7px 12px;

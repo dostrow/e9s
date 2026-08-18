@@ -159,7 +159,7 @@ func (w *mainWindow) promptLogHighlights() {
 				working = append(working[:index], working[index+1:]...)
 				rebuildRows()
 			})
-			actions := gtk.NewBox(gtk.OrientationHorizontal, 4)
+			actions := gtk.NewBox(gtk.OrientationHorizontal, 8)
 			actions.SetSizeRequest(132, -1)
 			actions.Append(up)
 			actions.Append(down)
