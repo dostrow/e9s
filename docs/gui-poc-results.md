@@ -259,3 +259,105 @@ GDK_BACKEND=wayland /tmp/e9s-gui --refresh 30     PASS
 
 Proceed to final evaluation. The PoC now demonstrates a continuous, bounded read
 workflow and a confirmed write workflow through the same backend used by the TUI.
+
+## Phase 4: Evaluation and documentation
+
+Status: passed with constraints on 2026-08-17.
+
+### Measurements
+
+Measurements were taken from cached builds on the Ubuntu/Hyprland development
+system. They are comparative observations, not release benchmarks.
+
+| Check | Result |
+| --- | ---: |
+| GTK process start to mapped Wayland surface | 353 ms |
+| GTK process RSS immediately after startup | 142,388 KiB |
+| Cached GUI build | 2.02 s, 829,884 KiB maximum RSS |
+| Cached TUI build | 1.11 s, 680,832 KiB maximum RSS |
+| GUI binary | 31,928,648 bytes |
+| TUI binary | 32,134,907 bytes |
+
+The log buffer was exercised with 100,000 synthetic events in 1,000 batches. It
+retained exactly the newest 2,000 entries with a capacity of 2,000. This verifies
+that retained log storage does not grow with session duration; it is not a
+substitute for profiling a long authenticated CloudWatch session.
+
+Refresh and log results use independent cancellation contexts and generation
+checks. The race-enabled GUI and service tests passed, and repeated mapping,
+resizing, and shutdown did not leave a GUI process running.
+
+### Wayland, tiling, and scaling
+
+Hyprland reported the real PoC window as mapped with class
+`com.github.dostrow.e9s.gui` and `xwayland: false`. The surface remained mapped at
+960x720 and 1280x800 floating sizes. It also mapped as a 1520x963 tiled client on
+a 1920x1280 display temporarily set to scale 1.25; the monitor was restored to
+scale 1.0 after the check.
+
+A faithful screenshot could not be captured during final evaluation because the
+active compositor surface was locked. Native capture contained only the lock
+screen, while the Broadway automation fallback produced a blank canvas. No image
+is included rather than presenting an inaccurate screenshot. Visual interaction,
+dark-theme details, and clipboard paste should be repeated with an unlocked
+session using the checklist in [`gui-development.md`](gui-development.md).
+
+### Build and dependency findings
+
+The verified system used Ubuntu 25.10, GTK 4.20.1, GLib 2.86.0, gcc 15.2,
+`libgtk-4-dev`, `libglib2.0-dev`, and `pkg-config`. Repeatable Ubuntu/Debian, Arch,
+and Fedora setup commands are recorded in
+[`gui-development.md`](gui-development.md).
+
+gotk4 remains the principal technical constraint. Version `v0.3.1` supplies the
+required widgets and runs reliably in this slice, but later binding releases did
+not compile against the available GLib headers. The pinned version produces
+non-fatal generated-C warnings, and its first clean build compiles a large wrapper.
+Pinning and testing the complete native dependency matrix in CI would be required
+before treating the GUI as a supported release artifact.
+
+Build tags successfully contain that cost. The normal TUI build passes without
+GTK installed in its package graph, and `CGO_ENABLED=0 go build .` still succeeds.
+
+### Shared-core evaluation
+
+The service seam held up well for the vertical slice. Both frontends share AWS
+configuration, ECS queries and mutation, log-source resolution, log query routing,
+error context, and caller-owned cancellation. Toolkit models, selections,
+navigation, formatting, and event-loop integration remain frontend-owned.
+
+The main friction was not the service boundary; it was adapting GTK's main-loop
+and object-model conventions to Go. Generation checks and immutable result values
+kept stale goroutine results out of newer views without forcing GTK concepts into
+the shared packages.
+
+### Go/no-go decision
+
+**Go, with constraints.** GTK 4 is the better next experiment than a Qt rewrite
+for this repository. It provides native Wayland operation, dense desktop widgets,
+keyboard and clipboard integration, and acceptable runtime behavior. More
+importantly, the PoC proves the TUI and GUI can share connection, query, mutation,
+and log logic without compromising the TUI build.
+
+Proceed incrementally rather than declaring the GUI production-ready:
+
+1. keep the TUI first-class and GTK behind a separate command/build tag;
+2. pin gotk4 and the tested GTK/GLib matrix in GUI CI;
+3. repeat unlocked visual, clipboard, and long authenticated log-follow profiling;
+4. port one additional module to validate that the shared services generalize;
+5. decide on packaging only after the second module and native dependency CI pass.
+
+Qt does not currently offer a compelling benefit large enough to offset restarting
+the binding, event-loop, and widget work. Reconsider it only if gotk4 compatibility
+or release cadence prevents supporting the target distributions.
+
+### Final verification
+
+```text
+go test ./...                                      PASS
+go test -race ./internal/gui ./internal/service    PASS
+go vet ./...                                       PASS
+go build .                                         PASS
+go build -tags gui ./cmd/e9s-gui                  PASS
+CGO_ENABLED=0 go build .                           PASS
+```

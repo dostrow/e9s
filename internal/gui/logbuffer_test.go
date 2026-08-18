@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,5 +55,29 @@ func TestSanitizeLogTextNormalizesLineEndings(t *testing.T) {
 	got := sanitizeLogText("first\r\nsecond\r\n")
 	if got != "first\nsecond" {
 		t.Fatalf("sanitizeLogText() = %q", got)
+	}
+}
+
+func TestBoundedLogsExtendedSession(t *testing.T) {
+	const extendedMax = 2000
+	logs := newBoundedLogs(extendedMax)
+	for batch := 0; batch < 1000; batch++ {
+		entries := make([]model.LogEntry, 100)
+		for i := range entries {
+			sequence := batch*len(entries) + i
+			entries[i] = model.LogEntry{
+				Timestamp: int64(sequence),
+				Message:   fmt.Sprintf("event-%06d", sequence),
+			}
+		}
+		logs.append(entries)
+	}
+
+	if logs.len() != extendedMax || cap(logs.entries) != extendedMax {
+		t.Fatalf("after 100,000 events len=%d cap=%d", logs.len(), cap(logs.entries))
+	}
+	text := logs.text("")
+	if strings.Contains(text, "event-000000") || !strings.Contains(text, "event-099999") {
+		t.Fatalf("extended session retained the wrong window")
 	}
 }

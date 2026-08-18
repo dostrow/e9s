@@ -177,6 +177,22 @@ Or install directly to your `$GOPATH/bin`:
 go install github.com/dostrow/e9s@latest
 ```
 
+### Experimental GTK 4 GUI
+
+The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
+for the ECS vertical slice. It shares ECS connection, query, mutation, and log
+services with the TUI while remaining a separate, build-tagged executable.
+
+```bash
+# Requires GTK 4 development files, a C compiler, and pkg-config
+make build-gui
+GDK_BACKEND=wayland ./e9s-gui
+```
+
+See the [GUI development guide](docs/gui-development.md) for distro packages and
+the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
+decision.
+
 ### Cross-compile
 
 ```bash
