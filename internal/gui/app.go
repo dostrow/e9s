@@ -43,6 +43,8 @@ type ECSService interface {
 }
 
 type LogService interface {
+	ListGroups(context.Context, string) ([]model.LogGroup, error)
+	ListStreams(context.Context, string, string) ([]model.LogStream, error)
 	Fetch(context.Context, string, model.LogQuery) (model.LogPage, error)
 }
 

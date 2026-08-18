@@ -336,17 +336,10 @@ func (c *Client) TailLogGroup(ctx context.Context, logGroup string, startTime in
 	return tailLogs(ctx, c.Logs, input, startTime, limit)
 }
 
-type LogGroupInfo struct {
-	Name        string
-	StoredBytes int64
-	StreamCount int
-}
-
-type LogStreamInfo struct {
-	Name           string
-	LastEventTime  int64
-	FirstEventTime int64
-}
+// LogGroupInfo and LogStreamInfo remain aliases for compatibility with the TUI.
+// Shared frontend code should prefer the corresponding model types.
+type LogGroupInfo = model.LogGroup
+type LogStreamInfo = model.LogStream
 
 // ListLogGroups returns log groups matching a search term.
 // If the term starts with "/" it's treated as a prefix, otherwise as a substring pattern.

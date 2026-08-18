@@ -14,6 +14,22 @@ type fakeLogsAPI struct {
 	err    error
 }
 
+func (f *fakeLogsAPI) ListLogGroups(ctx context.Context, search string) ([]model.LogGroup, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f.called = "list-groups:" + search
+	return []model.LogGroup{{Name: "/aws/ecs/api", StoredBytes: 42}}, f.err
+}
+
+func (f *fakeLogsAPI) ListLogStreams(ctx context.Context, group, prefix string) ([]model.LogStream, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	f.called = "list-streams:" + group + ":" + prefix
+	return []model.LogStream{{Name: "ecs/api/one", LastEventTime: 42}}, f.err
+}
+
 func (f *fakeLogsAPI) result(ctx context.Context, called string, limit int) ([]model.LogEntry, int64, error) {
 	f.called, f.limit = called, limit
 	if err := ctx.Err(); err != nil {
@@ -110,5 +126,33 @@ func TestLogsRequiresGroup(t *testing.T) {
 	_, err := NewLogs(&fakeLogsAPI{}).Fetch(context.Background(), "", model.LogQuery{})
 	if err == nil {
 		t.Fatal("Fetch() error = nil, want validation error")
+	}
+}
+
+func TestLogsBrowsesGroupsAndStreams(t *testing.T) {
+	api := &fakeLogsAPI{}
+	logs := NewLogs(api)
+
+	groups, err := logs.ListGroups(context.Background(), "/aws/ecs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.called != "list-groups:/aws/ecs" || len(groups) != 1 || groups[0].Name != "/aws/ecs/api" {
+		t.Fatalf("groups = %#v, called = %q", groups, api.called)
+	}
+
+	streams, err := logs.ListStreams(context.Background(), "/aws/ecs/api", "ecs/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.called != "list-streams:/aws/ecs/api:ecs/" || len(streams) != 1 || streams[0].Name != "ecs/api/one" {
+		t.Fatalf("streams = %#v, called = %q", streams, api.called)
+	}
+}
+
+func TestLogsRequiresGroupForStreamBrowsing(t *testing.T) {
+	_, err := NewLogs(&fakeLogsAPI{}).ListStreams(context.Background(), "", "")
+	if err == nil {
+		t.Fatal("ListStreams() error = nil, want validation error")
 	}
 }

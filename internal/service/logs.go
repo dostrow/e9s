@@ -10,6 +10,8 @@ import (
 // LogsAPI is the low-level CloudWatch Logs behavior used by the shared query
 // dispatcher. The AWS client satisfies this interface.
 type LogsAPI interface {
+	ListLogGroups(context.Context, string) ([]model.LogGroup, error)
+	ListLogStreams(context.Context, string, string) ([]model.LogStream, error)
 	FetchLogs(context.Context, string, string, int64, int) ([]model.LogEntry, int64, error)
 	FetchMultiStreamLogs(context.Context, string, []string, int64, int) ([]model.LogEntry, int64, error)
 	FetchLogGroup(context.Context, string, int64, int) ([]model.LogEntry, int64, error)
@@ -29,6 +31,25 @@ type Logs struct {
 
 func NewLogs(api LogsAPI) *Logs {
 	return &Logs{api: api}
+}
+
+func (s *Logs) ListGroups(ctx context.Context, search string) ([]model.LogGroup, error) {
+	groups, err := s.api.ListLogGroups(ctx, search)
+	if err != nil {
+		return nil, fmt.Errorf("list CloudWatch log groups: %w", err)
+	}
+	return groups, nil
+}
+
+func (s *Logs) ListStreams(ctx context.Context, group, prefix string) ([]model.LogStream, error) {
+	if group == "" {
+		return nil, fmt.Errorf("list CloudWatch log streams: log group is required")
+	}
+	streams, err := s.api.ListLogStreams(ctx, group, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("list CloudWatch log streams for %q: %w", group, err)
+	}
+	return streams, nil
 }
 
 func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (model.LogPage, error) {

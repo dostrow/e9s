@@ -25,6 +25,7 @@ const (
 	pageStandaloneTasks = "standalone-tasks"
 	pageStoppedTasks    = "stopped-standalone-tasks"
 	pageTaskDefinitions = "task-definitions"
+	pageLogGroups       = "cloudwatch-log-groups"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -32,6 +33,7 @@ const (
 	detailTask           = "task"
 	detailHelp           = "help"
 	detailError          = "error"
+	detailLogGroup       = "log-group"
 )
 
 type mainWindow struct {
@@ -62,6 +64,9 @@ type mainWindow struct {
 	filteredTasks               []model.Task
 	allTaskDefinitions          []model.TaskDefRef
 	filteredTaskDefinitions     []model.TaskDefRef
+	allLogGroups                []model.LogGroup
+	filteredLogGroups           []model.LogGroup
+	selectedLogGroup            string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -73,12 +78,15 @@ type mainWindow struct {
 	taskTable                   *stringTable
 	stoppedTaskTable            *stringTable
 	taskDefinitionTable         *stringTable
+	logGroupTable               *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
 	headerBar                   *gtk.Box
 	clustersNavButton           *gtk.ToggleButton
 	taskDefinitionsNavButton    *gtk.ToggleButton
+	logGroupsNavButton          *gtk.ToggleButton
+	cloudWatchModuleItems       *gtk.Box
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -196,11 +204,16 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "REVISION", field: 1},
 		{title: "TASK DEFINITION ARN", field: 2, expand: true},
 	})
+	w.logGroupTable = newStringTable([]columnSpec{
+		{title: "LOG GROUP", field: 0, expand: true},
+		{title: "STORED", field: 1},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
 	w.stoppedTaskTable.view.ConnectActivate(w.openStoppedTaskAt)
 	w.taskDefinitionTable.view.ConnectActivate(w.openTaskDefinitionAt)
+	w.logGroupTable.view.ConnectActivate(w.openLogGroupAt)
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -296,12 +309,22 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ecs.SetExpanded(true)
 	ecs.SetChild(moduleItems)
 	ecs.AddCSSClass("module-heading")
-	comingSoon := gtk.NewLabel("More modules after PoC")
+	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
+	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
+	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.cloudWatchModuleItems.AddCSSClass("module-subitems")
+	w.cloudWatchModuleItems.Append(w.logGroupsNavButton)
+	cloudWatch := gtk.NewExpander("CloudWatch Logs")
+	cloudWatch.SetExpanded(true)
+	cloudWatch.SetChild(w.cloudWatchModuleItems)
+	cloudWatch.AddCSSClass("module-heading")
+	comingSoon := gtk.NewLabel("More modules planned")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
 	comingSoon.AddCSSClass("muted")
 	sidebar.Append(modules)
 	sidebar.Append(ecs)
+	sidebar.Append(cloudWatch)
 	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
@@ -356,6 +379,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	taskDefinitionScroll.SetVExpand(true)
 	taskDefinitionScroll.SetHExpand(true)
 	taskDefinitionScroll.SetChild(w.taskDefinitionTable.view)
+	logGroupScroll := gtk.NewScrolledWindow()
+	logGroupScroll.SetVExpand(true)
+	logGroupScroll.SetHExpand(true)
+	logGroupScroll.SetChild(w.logGroupTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -365,6 +392,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(taskScroll, pageTasks)
 	w.resourceStack.AddNamed(stoppedTaskScroll, pageStoppedTasks)
 	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
+	w.resourceStack.AddNamed(logGroupScroll, pageLogGroups)
 	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -416,7 +444,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.installPaneZoom(&resourcePane.Widget, &w.detailStack.Widget)
 
 	mainSplit := gtk.NewPaned(gtk.OrientationHorizontal)
-	mainSplit.SetStartChild(sidebar)
+	sidebarScroll := gtk.NewScrolledWindow()
+	sidebarScroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	sidebarScroll.SetChild(sidebar)
+	mainSplit.SetStartChild(sidebarScroll)
 	mainSplit.SetEndChild(contentSplit)
 	mainSplit.SetPosition(165)
 	mainSplit.SetResizeStartChild(false)
@@ -465,7 +496,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	})
 	w.addAction(app, "back", []string{"Escape"}, w.goBack)
 	w.addAction(app, "modes", []string{"<Control>p"}, func() {
-		w.setStatus("ECS is the only module in this proof of concept", false)
+		w.setStatus("Choose ECS or CloudWatch Logs from the Module Rail", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
 		if w.showingTerminal {
@@ -1074,6 +1105,10 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageLogGroups {
+		w.applyLogGroupFilter()
+		return
+	}
 	if w.currentPage == pageTaskDefinitions {
 		w.applyTaskDefinitionFilter()
 		return
@@ -1208,6 +1243,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if foreground {
 			w.setStatus("Editor has unsaved content; close it before refreshing", false)
 		}
+		return
+	}
+	if w.currentPage == pageLogGroups {
+		w.refreshLogGroups(foreground)
 		return
 	}
 	if w.currentPage == pageTaskDefinitions {
@@ -1463,8 +1502,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		w.standaloneButton.SetLabel("Standalone")
 	}
 	if w.clustersNavButton != nil {
-		w.clustersNavButton.SetActive(w.currentPage != pageTaskDefinitions)
+		w.clustersNavButton.SetActive(isECSPage(w.currentPage) && w.currentPage != pageTaskDefinitions)
 		w.taskDefinitionsNavButton.SetActive(w.currentPage == pageTaskDefinitions)
+		w.logGroupsNavButton.SetActive(w.currentPage == pageLogGroups)
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)

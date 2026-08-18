@@ -1,5 +1,19 @@
 package model
 
+// LogGroup is the UI-neutral summary used by log browsers.
+type LogGroup struct {
+	Name        string
+	StoredBytes int64
+	StreamCount int
+}
+
+// LogStream is the UI-neutral summary used by stream browsers.
+type LogStream struct {
+	Name           string
+	LastEventTime  int64
+	FirstEventTime int64
+}
+
 // LogEntry is a UI-neutral CloudWatch log event.
 type LogEntry struct {
 	Timestamp int64
