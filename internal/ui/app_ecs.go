@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/atotto/clipboard"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
+
+const taskHistoryBatchSize = 50
 
 // --- Service Operations ---
 
@@ -78,6 +82,10 @@ func (a App) doScale(count int) tea.Cmd {
 func (a App) promptStopTask() (App, tea.Cmd) {
 	t := a.taskView.SelectedTask()
 	if t == nil {
+		return a, nil
+	}
+	if t.Status == "STOPPED" {
+		a.err = fmt.Errorf("task %q is already stopped", t.TaskID)
 		return a, nil
 	}
 	a.selectedTask = t
@@ -172,7 +180,9 @@ func (a App) refreshSelectedTaskDefinition() tea.Cmd {
 func (a App) showStandaloneTasks() (App, tea.Cmd) {
 	a.state = viewStandaloneTasks
 	a.prevState = viewServices
-	a.standaloneView = views.NewStandaloneTasks()
+	a.taskScopeStopped = false
+	a.taskNextToken = ""
+	a.standaloneView = views.NewStandaloneTasks().SetScope(false)
 	a.loading = true
 	return a, a.loadStandaloneTasks()
 }
@@ -182,13 +192,77 @@ func (a App) loadStandaloneTasks() tea.Cmd {
 	if a.selectedCluster != nil {
 		clusterName = a.selectedCluster.Name
 	}
+	stopped := a.taskScopeStopped
 	return func() tea.Msg {
+		if stopped {
+			page, err := a.ecs.ListStoppedStandaloneTasks(a.ctx, clusterName, "", taskHistoryBatchSize)
+			if err != nil {
+				return errMsg{err}
+			}
+			sortStoppedTasks(page.Tasks)
+			return standaloneTasksLoadedMsg{tasks: page.Tasks, stopped: true, nextToken: page.NextToken}
+		}
 		tasks, err := a.ecs.ListStandaloneTasks(a.ctx, clusterName)
 		if err != nil {
 			return errMsg{err}
 		}
-		return standaloneTasksLoadedMsg{tasks}
+		return standaloneTasksLoadedMsg{tasks: tasks}
 	}
+}
+
+func (a App) toggleTaskScope() (App, tea.Cmd) {
+	if a.state != viewTasks && a.state != viewStandaloneTasks {
+		return a, nil
+	}
+	a.taskScopeStopped = !a.taskScopeStopped
+	a.taskNextToken = ""
+	a.selectedTask = nil
+	a.loading = true
+	if a.state == viewStandaloneTasks {
+		a.standaloneView = a.standaloneView.SetScope(a.taskScopeStopped)
+		return a, a.loadStandaloneTasks()
+	}
+	a.taskView = a.taskView.SetScope(a.taskScopeStopped)
+	return a, a.loadTasks()
+}
+
+func (a App) loadMoreStoppedTasks() (App, tea.Cmd) {
+	if !a.taskScopeStopped || a.taskNextToken == "" || (a.state != viewTasks && a.state != viewStandaloneTasks) {
+		return a, nil
+	}
+	cluster := ""
+	serviceName := ""
+	if a.selectedCluster != nil {
+		cluster = a.selectedCluster.Name
+	}
+	if a.selectedService != nil {
+		serviceName = a.selectedService.Name
+	}
+	nextToken := a.taskNextToken
+	standalone := a.state == viewStandaloneTasks
+	a.loading = true
+	return a, func() tea.Msg {
+		if standalone {
+			page, err := a.ecs.ListStoppedStandaloneTasks(a.ctx, cluster, nextToken, taskHistoryBatchSize)
+			if err != nil {
+				return errMsg{err}
+			}
+			sortStoppedTasks(page.Tasks)
+			return standaloneTasksLoadedMsg{tasks: page.Tasks, stopped: true, append: true, nextToken: page.NextToken}
+		}
+		page, err := a.ecs.ListStoppedServiceTasks(a.ctx, cluster, serviceName, nextToken, taskHistoryBatchSize)
+		if err != nil {
+			return errMsg{err}
+		}
+		sortStoppedTasks(page.Tasks)
+		return tasksLoadedMsg{tasks: page.Tasks, stopped: true, append: true, nextToken: page.NextToken}
+	}
+}
+
+func sortStoppedTasks(tasks []model.Task) {
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return tasks[i].StoppedAt.After(tasks[j].StoppedAt)
+	})
 }
 
 func (a App) openStandaloneTaskLogs() (App, tea.Cmd) {
@@ -217,6 +291,10 @@ func (a App) openStandaloneTaskLogs() (App, tea.Cmd) {
 func (a App) promptStopStandaloneTask() (App, tea.Cmd) {
 	t := a.standaloneView.SelectedTask()
 	if t == nil {
+		return a, nil
+	}
+	if t.Status == "STOPPED" {
+		a.err = fmt.Errorf("task %q is already stopped", t.TaskID)
 		return a, nil
 	}
 	a.selectedTask = t
@@ -703,12 +781,21 @@ func (a App) loadTasks() tea.Cmd {
 	if a.selectedService != nil {
 		serviceName = a.selectedService.Name
 	}
+	stopped := a.taskScopeStopped
 	return func() tea.Msg {
+		if stopped {
+			page, err := a.ecs.ListStoppedServiceTasks(a.ctx, clusterName, serviceName, "", taskHistoryBatchSize)
+			if err != nil {
+				return errMsg{err}
+			}
+			sortStoppedTasks(page.Tasks)
+			return tasksLoadedMsg{tasks: page.Tasks, stopped: true, nextToken: page.NextToken}
+		}
 		tasks, err := a.ecs.ListTasks(a.ctx, clusterName, serviceName)
 		if err != nil {
 			return errMsg{err}
 		}
-		return tasksLoadedMsg{tasks}
+		return tasksLoadedMsg{tasks: tasks}
 	}
 }
 

@@ -12,8 +12,18 @@ import (
 
 type clustersLoadedMsg struct{ clusters []model.Cluster }
 type servicesLoadedMsg struct{ services []model.Service }
-type tasksLoadedMsg struct{ tasks []model.Task }
-type standaloneTasksLoadedMsg struct{ tasks []model.Task }
+type tasksLoadedMsg struct {
+	tasks     []model.Task
+	stopped   bool
+	append    bool
+	nextToken string
+}
+type standaloneTasksLoadedMsg struct {
+	tasks     []model.Task
+	stopped   bool
+	append    bool
+	nextToken string
+}
 type taskDetailRefreshedMsg struct{ task *model.Task }
 type taskDefsLoadedMsg struct{ defs []e9saws.TaskDefRef }
 type taskDefLoadedMsg struct{ def *e9saws.TaskDefSummary }

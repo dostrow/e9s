@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
@@ -11,6 +13,7 @@ import (
 
 type TaskDetailModel struct {
 	task   *model.Task
+	scroll int
 	width  int
 	height int
 }
@@ -19,11 +22,41 @@ func NewTaskDetail(task *model.Task) TaskDetailModel {
 	return TaskDetailModel{task: task}
 }
 
+func (m TaskDetailModel) Update(msg tea.Msg) (TaskDetailModel, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch {
+	case key.Matches(keyMsg, theme.Keys.Up):
+		m.scroll = max(0, m.scroll-1)
+	case key.Matches(keyMsg, theme.Keys.Down):
+		m.scroll++
+	case keyMsg.String() == "pgup":
+		m.scroll = max(0, m.scroll-m.visibleLines())
+	case keyMsg.String() == "pgdown":
+		m.scroll += m.visibleLines()
+	case keyMsg.String() == "g":
+		m.scroll = 0
+	case keyMsg.String() == "G":
+		m.scroll = max(0, len(m.lines())-m.visibleLines())
+	}
+	return m, nil
+}
+
 func (m TaskDetailModel) View() string {
 	if m.task == nil {
 		return theme.HelpStyle.Render("  No task selected")
 	}
 
+	lines := m.lines()
+	visible := m.visibleLines()
+	start := max(0, min(m.scroll, max(0, len(lines)-visible)))
+	end := min(start+visible, len(lines))
+	return strings.Join(lines[start:end], "\n")
+}
+
+func (m TaskDetailModel) lines() []string {
 	t := m.task
 	var lines []string
 
@@ -43,6 +76,9 @@ func (m TaskDetailModel) View() string {
 	}
 	if !t.StoppedAt.IsZero() {
 		lines = append(lines, fmt.Sprintf("  %-20s %s", "Stopped:", t.StoppedAt.Format("2006-01-02 15:04:05")))
+	}
+	if t.StopCode != "" {
+		lines = append(lines, fmt.Sprintf("  %-20s %s", "Stop Code:", t.StopCode))
 	}
 	if t.StoppedReason != "" {
 		lines = append(lines, fmt.Sprintf("  %-20s %s", "Stop Reason:", t.StoppedReason))
@@ -87,13 +123,15 @@ func (m TaskDetailModel) View() string {
 		}
 	}
 
-	// Truncate to fit terminal height (leave room for status bar + help line)
-	maxLines := m.height - 2
-	if maxLines > 0 && len(lines) > maxLines {
-		lines = lines[:maxLines]
-	}
+	return lines
+}
 
-	return strings.Join(lines, "\n")
+func (m TaskDetailModel) visibleLines() int {
+	lines := m.height - 2
+	if lines < 1 {
+		return 20
+	}
+	return lines
 }
 
 func (m TaskDetailModel) SetSize(w, h int) TaskDetailModel {

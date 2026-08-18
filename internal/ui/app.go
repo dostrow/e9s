@@ -161,6 +161,8 @@ type App struct {
 	selectedService       *model.Service
 	selectedTask          *model.Task
 	selectedTaskDef       string
+	taskScopeStopped      bool
+	taskNextToken         string
 	execContainerName     string
 	scaleInCluster        string
 	scaleInService        string
@@ -523,10 +525,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tasksLoadedMsg:
+		if msg.stopped != a.taskScopeStopped {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
-		a.taskView = a.taskView.SetTasks(msg.tasks)
+		a.taskNextToken = msg.nextToken
+		if msg.append {
+			a.taskView = a.taskView.AppendTasks(msg.tasks)
+		} else {
+			a.taskView = a.taskView.SetTasks(msg.tasks)
+		}
+		a.taskView = a.taskView.SetHasMore(msg.nextToken != "")
 		return a, nil
 
 	case taskDetailRefreshedMsg:
@@ -558,10 +569,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case standaloneTasksLoadedMsg:
+		if msg.stopped != a.taskScopeStopped {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
-		a.standaloneView = a.standaloneView.SetTasks(msg.tasks)
+		a.taskNextToken = msg.nextToken
+		if msg.append {
+			a.standaloneView = a.standaloneView.AppendTasks(msg.tasks)
+		} else {
+			a.standaloneView = a.standaloneView.SetTasks(msg.tasks)
+		}
+		a.standaloneView = a.standaloneView.SetHasMore(msg.nextToken != "")
 		return a, nil
 
 	case errMsg:
@@ -1562,6 +1582,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewTasks:
 			switch k {
+			case a.kb.TaskScope:
+				return a.toggleTaskScope()
+			case a.kb.LoadMore:
+				return a.loadMoreStoppedTasks()
 			case a.kb.StopTask:
 				return a.promptStopTask()
 			case a.kb.TaskLogs:
@@ -1600,6 +1624,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewStandaloneTasks:
 			switch k {
+			case a.kb.TaskScope:
+				return a.toggleTaskScope()
+			case a.kb.LoadMore:
+				return a.loadMoreStoppedTasks()
 			case a.kb.TaskLogs:
 				return a.openStandaloneTaskLogs()
 			case a.kb.StopTask:
@@ -1860,6 +1888,8 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.serviceView, cmd = a.serviceView.Update(msg)
 	case viewTasks:
 		a.taskView, cmd = a.taskView.Update(msg)
+	case viewTaskDetail:
+		a.detailView, cmd = a.detailView.Update(msg)
 	case viewServiceDetail:
 		a.serviceDetailView, cmd = a.serviceDetailView.Update(msg)
 	case viewTaskDefs:
@@ -2362,12 +2392,23 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Task detail"},
 			{kb.TaskLogs, "Tail logs"},
-			{kb.StopTask, "Stop task"},
-			{kb.ECSExec, "ECS Exec (shell into container)"},
+			{kb.TaskScope, "Switch Active/Recently stopped"},
+		}
+		if a.taskScopeStopped {
+			if a.taskNextToken != "" {
+				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
+			}
+		} else {
+			context = append(context,
+				kv{kb.StopTask, "Stop task"},
+				kv{kb.ECSExec, "ECS Exec (shell into container)"},
+			)
 		}
 	case viewTaskDetail:
 		context = []kv{
 			{kb.EnvVars, "View environment variables"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
 		}
 	case viewTaskDefs:
 		context = []kv{
@@ -2404,7 +2445,14 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "Task detail"},
 			{kb.TaskLogs, "Tail logs"},
-			{kb.StopTask, "Stop task"},
+			{kb.TaskScope, "Switch Active/Recently stopped"},
+		}
+		if a.taskScopeStopped {
+			if a.taskNextToken != "" {
+				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
+			}
+		} else {
+			context = append(context, kv{kb.StopTask, "Stop task"})
 		}
 	case viewTaskDefDiff:
 		context = []kv{
@@ -2702,7 +2750,9 @@ func (a App) drillDown() (App, tea.Cmd) {
 		if s := a.serviceView.SelectedService(); s != nil {
 			a.selectedService = s
 			a.state = viewTasks
-			a.taskView = views.NewTaskList(s.Name)
+			a.taskScopeStopped = false
+			a.taskNextToken = ""
+			a.taskView = views.NewTaskList(s.Name).SetScope(false)
 			a.loading = true
 			return a, a.loadTasks()
 		}

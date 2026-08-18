@@ -3,6 +3,7 @@ package views
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -24,6 +25,39 @@ func TestTaskListViewShowsAvailabilityZoneColumn(t *testing.T) {
 	}
 	if !strings.Contains(view, "us-east-1a") {
 		t.Fatalf("expected availability zone in task list view:\n%s", view)
+	}
+}
+
+func TestTaskListViewShowsStoppedDiagnosticsAndPagination(t *testing.T) {
+	exitCode := 137
+	m := NewTaskList("api").SetSize(160, 24).SetScope(true).SetTasks([]model.Task{
+		{
+			TaskID:         "stopped-task-123",
+			Status:         "STOPPED",
+			StoppedAt:      time.Now().Add(-time.Minute),
+			StopCode:       "EssentialContainerExited",
+			StoppedReason:  "essential container exited",
+			TaskDefinition: "api:42",
+			Containers:     []model.Container{{Name: "api", ExitCode: &exitCode}},
+		},
+	}).SetHasMore(true)
+
+	view := m.View()
+	for _, expected := range []string{"Recently stopped", "loads 50 more", "EXIT", "STOP CODE", "137", "EssentialContainerExited", "api:42"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("expected %q in stopped task view:\n%s", expected, view)
+		}
+	}
+}
+
+func TestTaskListAppendTasksDeduplicatesPages(t *testing.T) {
+	m := NewTaskList("api").SetTasks([]model.Task{{TaskARN: "arn:task/1", TaskID: "1"}})
+	m = m.AppendTasks([]model.Task{
+		{TaskARN: "arn:task/1", TaskID: "1"},
+		{TaskARN: "arn:task/2", TaskID: "2"},
+	})
+	if got := len(m.tasks); got != 2 {
+		t.Fatalf("AppendTasks produced %d tasks, want 2", got)
 	}
 }
 

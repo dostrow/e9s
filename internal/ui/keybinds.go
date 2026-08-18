@@ -24,6 +24,8 @@ type KeyBindings struct {
 	ECSExec         string
 	EnvVars         string
 	ToggleScaleIn   string
+	TaskScope       string
+	LoadMore        string
 
 	// Log viewer
 	LogFollow     string
@@ -129,6 +131,8 @@ func NewKeyBindings() KeyBindings {
 		ECSExec:         "e",
 		EnvVars:         "E",
 		ToggleScaleIn:   "I",
+		TaskScope:       "tab",
+		LoadMore:        "]",
 
 		// Log viewer
 		LogFollow:     "f",
@@ -256,6 +260,10 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.EnvVars = key
 		case "toggle_scale_in":
 			kb.ToggleScaleIn = key
+		case "task_scope":
+			kb.TaskScope = key
+		case "load_more":
+			kb.LoadMore = key
 
 		// Log viewer
 		case "log_follow":
