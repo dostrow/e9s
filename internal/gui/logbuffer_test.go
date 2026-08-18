@@ -55,6 +55,27 @@ func TestBoundedLogsPrependTrimsNewestEntries(t *testing.T) {
 	}
 }
 
+func TestBoundedLogsAppendNewerTrimsOldestAndSuppressesBoundaryOverlap(t *testing.T) {
+	logs := newBoundedLogs(3)
+	logs.append([]model.LogEntry{
+		{Timestamp: 1, Message: "one"},
+		{Timestamp: 2, Message: "two"},
+		{Timestamp: 3, Message: "three", Stream: "api"},
+	})
+
+	added, evicted := logs.appendNewer([]model.LogEntry{
+		{ID: "now-has-an-id", Timestamp: 3, Message: "three", Stream: "api"},
+		{ID: "four", Timestamp: 4, Message: "four", Stream: "api"},
+	})
+	if added != 1 || evicted != 1 {
+		t.Fatalf("appendNewer() = added %d, evicted %d; want 1, 1", added, evicted)
+	}
+	if logs.len() != 3 || logs.firstTimestamp() != 2 || logs.lastTimestamp() != 4 {
+		t.Fatalf("retained timestamps = %d–%d (%d entries), want 2–4 (3 entries)",
+			logs.firstTimestamp(), logs.lastTimestamp(), logs.len())
+	}
+}
+
 func TestBoundedLogsFiltersCaseInsensitively(t *testing.T) {
 	logs := newBoundedLogs(10)
 	logs.append([]model.LogEntry{

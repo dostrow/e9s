@@ -220,6 +220,37 @@ func TestEarlierLogGroupEntriesExpandsAcrossQuietWindow(t *testing.T) {
 	}
 }
 
+func TestFirstLogEntriesPaginatesPastEmptyPagesAndHonorsBounds(t *testing.T) {
+	api := &fakeFilterLogEventsAPI{
+		t: t,
+		pages: []*cloudwatchlogs.FilterLogEventsOutput{
+			{NextToken: strPtrLogs("page-2")},
+			{Events: []cwltypes.FilteredLogEvent{
+				logEvent(100, "at-cutoff"),
+				logEvent(101, "first"),
+				logEvent(102, "second"),
+				logEvent(201, "past-frontier"),
+			}},
+		},
+	}
+	group := "group"
+	start, end := int64(100), int64(201)
+	entries, err := firstLogEntries(context.Background(), api, &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &group,
+		StartTime:    &start,
+		EndTime:      &end,
+	}, 100, 200, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].Message != "at-cutoff" || entries[1].Message != "first" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if len(api.inputs) != 2 || api.inputs[1].NextToken == nil || *api.inputs[1].NextToken != "page-2" {
+		t.Fatalf("inputs = %#v", api.inputs)
+	}
+}
+
 func TestFetchLogsRangeIncludesEndTimeAndPaginates(t *testing.T) {
 	api := &fakeFilterLogEventsAPI{
 		t: t,

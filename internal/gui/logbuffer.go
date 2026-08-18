@@ -56,7 +56,7 @@ func newBoundedLogs(maxEntries int) *boundedLogs {
 	return &boundedLogs{max: maxEntries}
 }
 
-func (b *boundedLogs) append(entries []model.LogEntry) {
+func (b *boundedLogs) append(entries []model.LogEntry) (added, evicted int) {
 	b.ensureSeen()
 	for _, entry := range entries {
 		key := entry.Key()
@@ -65,11 +65,13 @@ func (b *boundedLogs) append(entries []model.LogEntry) {
 		}
 		b.seen[key] = struct{}{}
 		b.entries = append(b.entries, entry)
+		added++
 	}
 	sort.SliceStable(b.entries, func(i, j int) bool {
 		return b.entries[i].Timestamp < b.entries[j].Timestamp
 	})
 	if extra := len(b.entries) - b.max; extra > 0 {
+		evicted = extra
 		for _, entry := range b.entries[:extra] {
 			delete(b.seen, entry.Key())
 		}
@@ -77,6 +79,36 @@ func (b *boundedLogs) append(entries []model.LogEntry) {
 		copy(kept, b.entries[extra:])
 		b.entries = kept
 	}
+	return added, evicted
+}
+
+// appendNewer appends a forward page while suppressing the inclusive boundary
+// overlap. CloudWatch's stream API does not expose event IDs, while its group
+// API does, so boundary records are also compared by their rendered identity.
+func (b *boundedLogs) appendNewer(entries []model.LogEntry) (added, evicted int) {
+	boundary := b.lastTimestamp()
+	type contentKey struct {
+		timestamp int64
+		message   string
+		stream    string
+	}
+	existingBoundary := make(map[contentKey]struct{})
+	for _, entry := range b.entries {
+		if entry.Timestamp == boundary {
+			existingBoundary[contentKey{entry.Timestamp, entry.Message, entry.Stream}] = struct{}{}
+		}
+	}
+	filtered := make([]model.LogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Timestamp == boundary {
+			key := contentKey{entry.Timestamp, entry.Message, entry.Stream}
+			if _, exists := existingBoundary[key]; exists {
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+	return b.append(filtered)
 }
 
 func (b *boundedLogs) prepend(entries []model.LogEntry) (added, evicted int) {
@@ -142,6 +174,16 @@ func (b *boundedLogs) lastTimestamp() int64 {
 		}
 	}
 	return last
+}
+
+func (b *boundedLogs) countTimestamp(timestamp int64) int {
+	count := 0
+	for _, entry := range b.entries {
+		if entry.Timestamp == timestamp {
+			count++
+		}
+	}
+	return count
 }
 
 func (b *boundedLogs) clear() {

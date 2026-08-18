@@ -92,9 +92,14 @@ type LogQuery struct {
 	// It is used for gap-tolerant backward pagination and is mutually exclusive
 	// with StartTime and EndTime.
 	BeforeTime int64
-	Limit      int
-	Tail       bool
-	Filter     string
+	// AfterTime requests the oldest entries at or after this timestamp, up to
+	// UntilTime when it is non-zero. The inclusive boundary lets callers
+	// suppress overlap without skipping events that share a millisecond.
+	AfterTime int64
+	UntilTime int64
+	Limit     int
+	Tail      bool
+	Filter    string
 	// FallbackLimit requests the newest N entries without the time constraint
 	// when the primary query returns no events.
 	FallbackLimit int

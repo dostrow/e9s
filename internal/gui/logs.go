@@ -31,7 +31,7 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	w.logOlderButton.ConnectClicked(w.loadOlderLogEntries)
 	w.logNewerButton = gtk.NewButtonWithLabel("Newer")
 	w.logNewerButton.SetVisible(false)
-	w.logNewerButton.ConnectClicked(func() { w.loadAdjacentCloudWatchRange(1) })
+	w.logNewerButton.ConnectClicked(w.loadNewerLogEntries)
 	w.logCorrelateButton = gtk.NewButtonWithLabel("Correlate at cursor")
 	w.logCorrelateButton.SetVisible(false)
 	w.logCorrelateButton.ConnectClicked(w.promptLogCorrelation)
@@ -186,6 +186,8 @@ func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, p
 	}
 	w.logGeneration++
 	w.setWorkspaceBusy("", false)
+	w.logNewerKnown = 0
+	w.logNewestKnownTS = 0
 	w.logFollowing = false
 	w.logSource = source
 	w.logTitle = title
@@ -212,7 +214,8 @@ func (w *mainWindow) updateLogSearchControls() {
 	if w.logOlderButton != nil {
 		w.logOlderButton.SetVisible(w.showingLogs)
 		w.logOlderButton.SetSensitive(w.showingLogs)
-		w.logNewerButton.SetVisible(searchResult)
+		w.logNewerButton.SetVisible(searchResult || w.logNewerKnown > 0)
+		w.logNewerButton.SetSensitive(w.showingLogs)
 		w.logCorrelateButton.SetVisible(searchResult)
 	}
 	if w.logView != nil {
@@ -235,6 +238,8 @@ func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 		w.logCancel()
 	}
 	w.setWorkspaceBusy("Loading log events…", true)
+	w.logNewerKnown = 0
+	w.logNewestKnownTS = 0
 	if w.logOlderButton != nil {
 		w.logOlderButton.SetSensitive(false)
 	}
@@ -381,12 +386,97 @@ func (w *mainWindow) loadOlderLogEntries() {
 				w.setStatus("No log events exist before "+time.UnixMilli(cutoff).Local().Format("2006-01-02 15:04:05.000"), false)
 				return
 			}
+			previousNewest := w.logStore.lastTimestamp()
 			added, evicted := w.logStore.prepend(page.Entries)
+			if evicted > 0 {
+				w.logNewerKnown += evicted
+				w.logNewestKnownTS = max(w.logNewestKnownTS, previousNewest)
+			}
+			w.updateLogSearchControls()
 			w.renderLogs()
 			w.logView.ScrollToIter(w.logTextBuffer.StartIter(), 0, false, 0, 0)
 			status := fmt.Sprintf("Loaded %d older log events", added)
 			if evicted > 0 {
 				status += fmt.Sprintf(" • dropped %d newest", evicted)
+			}
+			status += fmt.Sprintf(" • %d buffered lines • %s–%s", w.logStore.len(),
+				formatLogTimestamp(w.logStore.firstTimestamp(), w.logTimestampMode, time.Now()),
+				formatLogTimestamp(w.logStore.lastTimestamp(), w.logTimestampMode, time.Now()))
+			w.setStatus(status, false)
+		})
+	}()
+}
+
+func (w *mainWindow) loadNewerLogEntries() {
+	if w.logSearchSpec != nil {
+		w.loadAdjacentCloudWatchRange(1)
+		return
+	}
+	if !w.showingLogs || w.options.Logs == nil || w.logNewerKnown <= 0 || w.logNewestKnownTS <= 0 || w.logStore == nil || w.logSource.Group == "" {
+		return
+	}
+	cutoff := w.logStore.lastTimestamp()
+	if cutoff > w.logNewestKnownTS {
+		w.logNewerKnown = 0
+		w.updateLogSearchControls()
+		return
+	}
+	frontier := w.logNewestKnownTS
+	batchSize := min(500, w.logNewerKnown)
+	queryLimit := batchSize + w.logStore.countTimestamp(cutoff)
+	source := model.LogSource{
+		Group:   w.logSource.Group,
+		Streams: append([]string(nil), w.logSource.Streams...),
+	}
+	if w.logCancel != nil {
+		w.logCancel()
+	}
+	ctx, cancel := context.WithCancel(w.ctx)
+	w.logCancel = cancel
+	w.logGeneration++
+	generation := w.logGeneration
+	w.logOlderButton.SetSensitive(false)
+	w.logNewerButton.SetSensitive(false)
+	w.spinner.Start()
+	w.setStatus("Loading newer log events…", false)
+	w.setWorkspaceBusy("Loading newer log events…", true)
+	go func() {
+		page, err := w.options.Logs.Fetch(ctx, source.Group, model.LogQuery{
+			Streams:   source.Streams,
+			AfterTime: cutoff,
+			UntilTime: frontier,
+			Limit:     queryLimit,
+		})
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.logGeneration || !w.showingLogs {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.logOlderButton.SetSensitive(true)
+			if err != nil {
+				w.logNewerButton.SetSensitive(true)
+				w.setStatus("Loading newer logs failed: "+err.Error(), true)
+				return
+			}
+			if len(page.Entries) == 0 {
+				w.logNewerKnown = 0
+				w.updateLogSearchControls()
+				w.setStatus("No newer buffered-history events remain", false)
+				return
+			}
+			added, evicted := w.logStore.appendNewer(page.Entries)
+			if added == 0 {
+				w.logNewerKnown = 0
+			} else {
+				w.logNewerKnown = max(0, w.logNewerKnown-added)
+			}
+			w.updateLogSearchControls()
+			w.renderLogs()
+			w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
+			status := fmt.Sprintf("Loaded %d newer log events", added)
+			if evicted > 0 {
+				status += fmt.Sprintf(" • dropped %d oldest", evicted)
 			}
 			status += fmt.Sprintf(" • %d buffered lines • %s–%s", w.logStore.len(),
 				formatLogTimestamp(w.logStore.firstTimestamp(), w.logTimestampMode, time.Now()),
@@ -566,6 +656,9 @@ func (w *mainWindow) clearLogs() {
 		return
 	}
 	w.logStore.clear()
+	w.logNewerKnown = 0
+	w.logNewestKnownTS = 0
+	w.updateLogSearchControls()
 	w.renderLogs()
 	w.setStatus("Log buffer cleared", false)
 }
@@ -630,6 +723,8 @@ func (w *mainWindow) closeLogs() {
 	w.logGeneration++
 	w.setWorkspaceBusy("", false)
 	w.logFollowing = false
+	w.logNewerKnown = 0
+	w.logNewestKnownTS = 0
 	w.showingLogs = false
 	w.logHighlightRules = nil
 	w.updateLogHighlightButton()

@@ -173,6 +173,8 @@ type mainWindow struct {
 	logTimestampButton          *gtk.Button
 	logOlderButton              *gtk.Button
 	logNewerButton              *gtk.Button
+	logNewerKnown               int
+	logNewestKnownTS            int64
 	logCorrelateButton          *gtk.Button
 	logHighlightsButton         *gtk.Button
 	logStore                    *boundedLogs
@@ -904,6 +906,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 		w.logGeneration++
 	}
 	w.logFollowing = false
+	w.logNewerKnown = 0
+	w.logNewestKnownTS = 0
 	w.logSearchSpec = nil
 	w.logHighlightRules = nil
 	w.updateLogHighlightButton()

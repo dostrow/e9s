@@ -409,6 +409,74 @@ func (c *Client) FetchEarlierLogs(ctx context.Context, logGroup string, logStrea
 	return entries, nil
 }
 
+// FetchLaterLogs returns the oldest entries at or after afterTime, bounded by
+// untilTime when supplied. It is used to move a capped log buffer back toward
+// records previously evicted from its newest end.
+func (c *Client) FetchLaterLogs(ctx context.Context, logGroup string, logStreams []string, afterTime, untilTime int64, limit int) ([]LogEntry, error) {
+	if afterTime < 0 || (untilTime > 0 && untilTime < afterTime) {
+		return nil, nil
+	}
+	startTime := afterTime
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &logGroup,
+		StartTime:    &startTime,
+	}
+	if len(logStreams) > 0 {
+		input.LogStreamNames = append([]string(nil), logStreams...)
+	}
+	if untilTime > 0 {
+		endTime := untilTime + 1
+		input.EndTime = &endTime
+	}
+	return firstLogEntries(ctx, c.Logs, input, afterTime, untilTime, limit)
+}
+
+func firstLogEntries(ctx context.Context, api filterLogEventsAPI, input *cloudwatchlogs.FilterLogEventsInput, afterTime, untilTime int64, limit int) ([]LogEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	req := *input
+	entries := make([]LogEntry, 0, limit)
+	seen := make(map[model.LogEntryKey]struct{}, limit)
+	seenTokens := make(map[string]struct{})
+	var nextToken *string
+	for len(entries) < limit {
+		req.NextToken = nextToken
+		req.Limit = intPtr(int32(min(limit-len(entries), 10000)))
+		out, err := api.FilterLogEvents(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+		for _, event := range out.Events {
+			entry := eventToLogEntry(event)
+			if entry.Timestamp < afterTime || (untilTime > 0 && entry.Timestamp > untilTime) {
+				continue
+			}
+			if _, exists := seen[entry.Key()]; exists {
+				continue
+			}
+			seen[entry.Key()] = struct{}{}
+			entries = append(entries, entry)
+			if len(entries) >= limit {
+				break
+			}
+		}
+		if len(entries) >= limit || out.NextToken == nil || *out.NextToken == "" {
+			break
+		}
+		token := *out.NextToken
+		if _, repeated := seenTokens[token]; repeated {
+			break
+		}
+		seenTokens[token] = struct{}{}
+		nextToken = &token
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	return entries, nil
+}
+
 func earlierLogGroupEntries(ctx context.Context, api filterLogEventsAPI, logGroup string, beforeTime int64, limit int) ([]LogEntry, error) {
 	window := (15 * time.Minute).Milliseconds()
 	for {
