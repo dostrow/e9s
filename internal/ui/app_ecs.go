@@ -273,11 +273,10 @@ func (a App) toggleScaleIn() (App, tea.Cmd) {
 		clusterName = a.selectedCluster.Name
 	}
 	serviceName := s.Name
-	client := a.client
 
 	// Check current state, then confirm toggle
 	return a, func() tea.Msg {
-		suspended, err := client.ScaleInSuspended(context.Background(), clusterName, serviceName)
+		suspended, err := a.ecs.ScaleInSuspended(a.ctx, clusterName, serviceName)
 		if err != nil {
 			return errMsg{fmt.Errorf("scale-in status: %w (auto-scaling may not be configured)", err)}
 		}
@@ -286,12 +285,11 @@ func (a App) toggleScaleIn() (App, tea.Cmd) {
 }
 
 func (a App) doToggleScaleIn() tea.Cmd {
-	client := a.client
 	cluster := a.scaleInCluster
 	service := a.scaleInService
 	newState := !a.scaleInCurrentState
 	return func() tea.Msg {
-		err := client.SetScaleInSuspended(context.Background(), cluster, service, newState)
+		err := a.ecs.SetScaleInSuspended(a.ctx, cluster, service, newState)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -317,7 +315,6 @@ func (a App) showMetrics() (App, tea.Cmd) {
 }
 
 func (a App) loadMetrics() tea.Cmd {
-	client := a.client
 	cluster := ""
 	service := ""
 	if a.selectedCluster != nil {
@@ -327,11 +324,11 @@ func (a App) loadMetrics() tea.Cmd {
 		service = a.selectedService.Name
 	}
 	return func() tea.Msg {
-		metrics, err := client.GetServiceMetrics(context.Background(), cluster, service, 15*time.Minute)
+		metrics, err := a.ecs.GetServiceMetrics(a.ctx, cluster, service, 15*time.Minute)
 		if err != nil {
 			return errMsg{err}
 		}
-		alarms, err := client.ListAlarms(context.Background(), cluster, service)
+		alarms, err := a.ecs.ListServiceAlarms(a.ctx, cluster, service)
 		if err != nil {
 			return metricsLoadedMsg{metrics: metrics}
 		}

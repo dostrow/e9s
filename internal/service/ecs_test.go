@@ -5,19 +5,24 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dostrow/e9s/internal/model"
 )
 
 type fakeECSAPI struct {
-	clusters []model.Cluster
-	services []model.Service
-	tasks    []model.Task
-	err      error
-	forced   []string
-	scaled   []any
-	stopped  []string
-	run      model.RunTaskRequest
+	clusters      []model.Cluster
+	services      []model.Service
+	tasks         []model.Task
+	err           error
+	forced        []string
+	scaled        []any
+	stopped       []string
+	run           model.RunTaskRequest
+	metrics       *model.ServiceMetrics
+	alarms        []model.AlarmState
+	suspended     bool
+	suspensionSet []any
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -50,6 +55,23 @@ func (f *fakeECSAPI) StopTask(_ context.Context, cluster, taskARN, reason string
 func (f *fakeECSAPI) RunTask(_ context.Context, request model.RunTaskRequest) ([]model.Task, error) {
 	f.run = request
 	return f.tasks, f.err
+}
+
+func (f *fakeECSAPI) GetServiceMetrics(context.Context, string, string, time.Duration) (*model.ServiceMetrics, error) {
+	return f.metrics, f.err
+}
+
+func (f *fakeECSAPI) ListAlarms(context.Context, string, string) ([]model.AlarmState, error) {
+	return f.alarms, f.err
+}
+
+func (f *fakeECSAPI) ScaleInSuspended(context.Context, string, string) (bool, error) {
+	return f.suspended, f.err
+}
+
+func (f *fakeECSAPI) SetScaleInSuspended(_ context.Context, cluster, service string, suspended bool) error {
+	f.suspensionSet = []any{cluster, service, suspended}
+	return f.err
 }
 
 func (f *fakeECSAPI) GetLogConfig(context.Context, string, string) (string, string, error) {
@@ -193,5 +215,32 @@ func TestECSRunTaskNormalizesAndValidates(t *testing.T) {
 				t.Fatal("RunTask() succeeded, want validation error")
 			}
 		})
+	}
+}
+
+func TestECSMetricsAlarmsAndScaleIn(t *testing.T) {
+	api := &fakeECSAPI{
+		metrics:   &model.ServiceMetrics{CPUAvg: 23.5},
+		alarms:    []model.AlarmState{{Name: "high-cpu", State: "OK"}},
+		suspended: true,
+	}
+	svc := NewECS(api)
+	metrics, err := svc.GetServiceMetrics(context.Background(), "prod", "api", 15*time.Minute)
+	if err != nil || metrics.CPUAvg != 23.5 {
+		t.Fatalf("GetServiceMetrics() = %#v, %v", metrics, err)
+	}
+	alarms, err := svc.ListServiceAlarms(context.Background(), "prod", "api")
+	if err != nil || len(alarms) != 1 || alarms[0].Name != "high-cpu" {
+		t.Fatalf("ListServiceAlarms() = %#v, %v", alarms, err)
+	}
+	suspended, err := svc.ScaleInSuspended(context.Background(), "prod", "api")
+	if err != nil || !suspended {
+		t.Fatalf("ScaleInSuspended() = %v, %v", suspended, err)
+	}
+	if err := svc.SetScaleInSuspended(context.Background(), "prod", "api", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.suspensionSet) != 3 || api.suspensionSet[0] != "prod" || api.suspensionSet[1] != "api" || api.suspensionSet[2] != false {
+		t.Fatalf("suspension arguments = %#v", api.suspensionSet)
 	}
 }

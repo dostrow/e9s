@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/model"
@@ -20,6 +21,10 @@ type ECSAPI interface {
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error
 	RunTask(context.Context, model.RunTaskRequest) ([]model.Task, error)
+	GetServiceMetrics(context.Context, string, string, time.Duration) (*model.ServiceMetrics, error)
+	ListAlarms(context.Context, string, string) ([]model.AlarmState, error)
+	ScaleInSuspended(context.Context, string, string) (bool, error)
+	SetScaleInSuspended(context.Context, string, string, bool) error
 	GetLogConfig(context.Context, string, string) (string, string, error)
 	ResolveTaskLogStreams(context.Context, []model.Task) (string, []string, error)
 }
@@ -118,6 +123,37 @@ func (s *ECS) RunTask(ctx context.Context, request model.RunTaskRequest) ([]mode
 		return nil, fmt.Errorf("run ECS task %q in %q: %w", request.TaskDefinition, request.Cluster, err)
 	}
 	return tasks, nil
+}
+
+func (s *ECS) GetServiceMetrics(ctx context.Context, cluster, service string, period time.Duration) (*model.ServiceMetrics, error) {
+	metrics, err := s.api.GetServiceMetrics(ctx, cluster, service, period)
+	if err != nil {
+		return nil, fmt.Errorf("get metrics for ECS service %q in %q: %w", service, cluster, err)
+	}
+	return metrics, nil
+}
+
+func (s *ECS) ListServiceAlarms(ctx context.Context, cluster, service string) ([]model.AlarmState, error) {
+	alarms, err := s.api.ListAlarms(ctx, cluster, service)
+	if err != nil {
+		return nil, fmt.Errorf("list alarms for ECS service %q in %q: %w", service, cluster, err)
+	}
+	return alarms, nil
+}
+
+func (s *ECS) ScaleInSuspended(ctx context.Context, cluster, service string) (bool, error) {
+	suspended, err := s.api.ScaleInSuspended(ctx, cluster, service)
+	if err != nil {
+		return false, fmt.Errorf("get scale-in status for ECS service %q in %q: %w", service, cluster, err)
+	}
+	return suspended, nil
+}
+
+func (s *ECS) SetScaleInSuspended(ctx context.Context, cluster, service string, suspended bool) error {
+	if err := s.api.SetScaleInSuspended(ctx, cluster, service, suspended); err != nil {
+		return fmt.Errorf("set scale-in suspension for ECS service %q in %q: %w", service, cluster, err)
+	}
+	return nil
 }
 
 func (s *ECS) ContainerLogSource(ctx context.Context, task model.Task, container string) (model.LogSource, error) {

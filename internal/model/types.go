@@ -87,3 +87,18 @@ type RunTaskRequest struct {
 	EnableExecuteCommand bool
 	Group                string
 }
+
+type ServiceMetrics struct {
+	CPUAvg    float64
+	CPUMax    float64
+	MemAvg    float64
+	MemMax    float64
+	Timestamp time.Time
+}
+
+type AlarmState struct {
+	Name       string
+	State      string
+	MetricName string
+	UpdatedAt  time.Time
+}

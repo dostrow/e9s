@@ -59,6 +59,7 @@ type mainWindow struct {
 	taskLogsButton     *gtk.Button
 	standaloneButton   *gtk.Button
 	runTaskButton      *gtk.Button
+	metricsButton      *gtk.Button
 	scaleButton        *gtk.Button
 	stopTaskButton     *gtk.Button
 	deployButton       *gtk.Button
@@ -66,6 +67,19 @@ type mainWindow struct {
 	detailBuffer       *gtk.TextBuffer
 	detailText         string
 	detailStack        *gtk.Stack
+	metricsCPUAvg      *gtk.ProgressBar
+	metricsCPUMax      *gtk.ProgressBar
+	metricsMemAvg      *gtk.ProgressBar
+	metricsMemMax      *gtk.ProgressBar
+	metricsAlarmTable  *stringTable
+	metricsScaleButton *gtk.Button
+	metricsScaleLabel  *gtk.Label
+	metricsTimestamp   *gtk.Label
+	metricsSnapshot    *model.ServiceMetrics
+	metricsAlarms      []model.AlarmState
+	scaleInSuspended   bool
+	scaleInKnown       bool
+	showingMetrics     bool
 	logView            *gtk.TextView
 	logTextBuffer      *gtk.TextBuffer
 	logSearch          *gtk.SearchEntry
@@ -154,6 +168,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.runTaskButton = gtk.NewButtonWithLabel("Run task")
 	w.runTaskButton.SetSensitive(false)
 	w.runTaskButton.ConnectClicked(w.promptRunTask)
+	w.metricsButton = gtk.NewButtonWithLabel("Metrics")
+	w.metricsButton.SetSensitive(false)
+	w.metricsButton.ConnectClicked(w.openServiceMetrics)
 	w.scaleButton = gtk.NewButtonWithLabel("Scale")
 	w.scaleButton.SetSensitive(false)
 	w.scaleButton.ConnectClicked(w.promptScaleService)
@@ -173,6 +190,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.breadcrumb)
 	header.Append(w.standaloneButton)
 	header.Append(w.runTaskButton)
+	header.Append(w.metricsButton)
 	header.Append(w.logsButton)
 	header.Append(w.taskLogsButton)
 	header.Append(w.scaleButton)
@@ -247,6 +265,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.SetHExpand(true)
 	w.detailStack.AddNamed(detailScroll, "detail")
 	w.detailStack.AddNamed(w.buildLogPane(), "logs")
+	w.detailStack.AddNamed(w.buildMetricsPane(), "metrics")
 	w.detailStack.SetVisibleChildName("detail")
 
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
@@ -296,13 +315,15 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+S         Scale service\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close logs or metrics\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+S         Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
 	w.addAction(app, "task-logs", []string{"<Control><Shift>l"}, w.openTaskLogs)
 	w.addAction(app, "standalone-tasks", []string{"<Shift>s"}, w.loadStandaloneTasks)
 	w.addAction(app, "run-task", []string{"<Control>Return"}, w.promptRunTask)
+	w.addAction(app, "metrics", []string{"m"}, w.openServiceMetrics)
+	w.addAction(app, "toggle-scale-in", []string{"<Control><Shift>a"}, w.confirmToggleScaleIn)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
 	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
 	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
@@ -408,6 +429,7 @@ func (w *mainWindow) loadClusters() {
 }
 
 func (w *mainWindow) loadServices(cluster string) {
+	w.showingMetrics = false
 	w.currentPage = pageServices
 	w.selectedCluster = cluster
 	w.selectedService = ""
@@ -436,6 +458,7 @@ func (w *mainWindow) loadServices(cluster string) {
 }
 
 func (w *mainWindow) loadTasks(service model.Service) {
+	w.showingMetrics = false
 	w.currentPage = pageTasks
 	w.selectedService = service.Name
 	w.selectedTask = ""
@@ -466,6 +489,7 @@ func (w *mainWindow) loadStandaloneTasks() {
 	if w.selectedCluster == "" {
 		return
 	}
+	w.showingMetrics = false
 	w.currentPage = pageStandaloneTasks
 	w.selectedService = ""
 	w.selectedTask = ""
@@ -582,6 +606,10 @@ func (w *mainWindow) goBack() {
 		w.closeLogs()
 		return
 	}
+	if w.showingMetrics {
+		w.closeMetrics()
+		return
+	}
 	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
 		if w.requestCancel != nil {
 			w.requestCancel()
@@ -631,6 +659,10 @@ func (w *mainWindow) refresh() {
 }
 
 func (w *mainWindow) refreshCurrent(foreground bool) {
+	if w.showingMetrics {
+		w.loadServiceMetrics(foreground)
+		return
+	}
 	if w.currentPage == pageStandaloneTasks && w.selectedCluster != "" {
 		w.refreshStandaloneTasks(foreground)
 		return
@@ -818,6 +850,7 @@ func (w *mainWindow) updateActionSensitivity() {
 	clusterSelected := w.currentPage != pageClusters && w.selectedCluster != ""
 	w.standaloneButton.SetSensitive(clusterSelected && !standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
+	w.metricsButton.SetSensitive(serviceSelected)
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
 	w.scaleButton.SetSensitive(serviceSelected)

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	aastypes "github.com/aws/aws-sdk-go-v2/service/applicationautoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -36,5 +37,21 @@ func TestBuildRunTaskInputUsesClusterDefaults(t *testing.T) {
 	input := buildRunTaskInput(model.RunTaskRequest{Cluster: "prod", TaskDefinition: "batch:1", Count: 1})
 	if input.LaunchType != "" || input.NetworkConfiguration != nil {
 		t.Fatalf("defaults unexpectedly overridden: %#v", input)
+	}
+}
+
+func TestScaleInSuspendedStatePreservesOtherControls(t *testing.T) {
+	scaleOut, scheduled, scaleIn := true, true, false
+	current := &aastypes.SuspendedState{
+		DynamicScalingInSuspended:  &scaleIn,
+		DynamicScalingOutSuspended: &scaleOut,
+		ScheduledScalingSuspended:  &scheduled,
+	}
+	updated := scaleInSuspendedState(current, true)
+	if !*updated.DynamicScalingInSuspended || !*updated.DynamicScalingOutSuspended || !*updated.ScheduledScalingSuspended {
+		t.Fatalf("scaleInSuspendedState() = %#v", updated)
+	}
+	if *current.DynamicScalingInSuspended {
+		t.Fatal("scaleInSuspendedState mutated the source state")
 	}
 }

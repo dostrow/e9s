@@ -5,6 +5,7 @@ package gui
 
 import (
 	"context"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
@@ -23,6 +24,10 @@ type ECSService interface {
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error
 	RunTask(context.Context, model.RunTaskRequest) ([]model.Task, error)
+	GetServiceMetrics(context.Context, string, string, time.Duration) (*model.ServiceMetrics, error)
+	ListServiceAlarms(context.Context, string, string) ([]model.AlarmState, error)
+	ScaleInSuspended(context.Context, string, string) (bool, error)
+	SetScaleInSuspended(context.Context, string, string, bool) error
 	ContainerLogSource(context.Context, model.Task, string) (model.LogSource, error)
 	ServiceLogSource(context.Context, string, string) (model.LogSource, error)
 }

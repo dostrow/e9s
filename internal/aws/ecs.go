@@ -153,6 +153,14 @@ func (c *Client) ScaleService(ctx context.Context, cluster, service string, desi
 
 // ScaleInSuspended checks if scale-in is currently suspended for a service.
 func (c *Client) ScaleInSuspended(ctx context.Context, cluster, service string) (bool, error) {
+	target, err := c.scalableTarget(ctx, cluster, service)
+	if err != nil {
+		return false, err
+	}
+	return target.SuspendedState != nil && target.SuspendedState.DynamicScalingInSuspended != nil && *target.SuspendedState.DynamicScalingInSuspended, nil
+}
+
+func (c *Client) scalableTarget(ctx context.Context, cluster, service string) (*aastypes.ScalableTarget, error) {
 	resourceID := fmt.Sprintf("service/%s/%s", cluster, service)
 	out, err := c.AppAutoScaling.DescribeScalableTargets(ctx, &applicationautoscaling.DescribeScalableTargetsInput{
 		ServiceNamespace:  aastypes.ServiceNamespaceEcs,
@@ -160,32 +168,37 @@ func (c *Client) ScaleInSuspended(ctx context.Context, cluster, service string) 
 		ScalableDimension: aastypes.ScalableDimensionECSServiceDesiredCount,
 	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if len(out.ScalableTargets) == 0 {
-		return false, nil // no auto-scaling configured
+		return nil, fmt.Errorf("no scalable target configured for %s", resourceID)
 	}
-	target := out.ScalableTargets[0]
-	if target.SuspendedState != nil && target.SuspendedState.DynamicScalingInSuspended != nil {
-		return *target.SuspendedState.DynamicScalingInSuspended, nil
-	}
-	return false, nil
+	return &out.ScalableTargets[0], nil
 }
 
 // SetScaleInSuspended enables or disables scale-in suspension for a service.
 func (c *Client) SetScaleInSuspended(ctx context.Context, cluster, service string, suspended bool) error {
 	resourceID := fmt.Sprintf("service/%s/%s", cluster, service)
-	_, err := c.AppAutoScaling.RegisterScalableTarget(ctx, &applicationautoscaling.RegisterScalableTargetInput{
+	target, err := c.scalableTarget(ctx, cluster, service)
+	if err != nil {
+		return err
+	}
+	_, err = c.AppAutoScaling.RegisterScalableTarget(ctx, &applicationautoscaling.RegisterScalableTargetInput{
 		ServiceNamespace:  aastypes.ServiceNamespaceEcs,
 		ResourceId:        &resourceID,
 		ScalableDimension: aastypes.ScalableDimensionECSServiceDesiredCount,
-		SuspendedState: &aastypes.SuspendedState{
-			DynamicScalingInSuspended:  &suspended,
-			DynamicScalingOutSuspended: boolPtr(false),
-			ScheduledScalingSuspended:  boolPtr(false),
-		},
+		SuspendedState:    scaleInSuspendedState(target.SuspendedState, suspended),
 	})
 	return err
+}
+
+func scaleInSuspendedState(current *aastypes.SuspendedState, suspended bool) *aastypes.SuspendedState {
+	state := &aastypes.SuspendedState{}
+	if current != nil {
+		*state = *current
+	}
+	state.DynamicScalingInSuspended = &suspended
+	return state
 }
 
 func (c *Client) StopTask(ctx context.Context, cluster, taskARN, reason string) error {
