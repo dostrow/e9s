@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
@@ -34,6 +36,12 @@ type LogsPrependedMsg struct {
 	Entries []model.LogEntry
 }
 
+// LogHighlightSaveMsg asks the owning frontend to persist the current rules
+// with the active saved CloudWatch search, when one exists.
+type LogHighlightSaveMsg struct {
+	Rules []model.LogHighlightRule
+}
+
 type LogViewerModel struct {
 	title     string
 	logs      *service.Logs
@@ -55,6 +63,15 @@ type LogViewerModel struct {
 	matchIndices []int  // indices into lines[] that match the search
 	searching    bool
 	searchInput  textinput.Model
+
+	highlightRules   []model.LogHighlightRule
+	highlighter      *highlight.Matcher
+	highlightManager bool
+	highlightCursor  int
+	highlightEditing bool
+	highlightInput   textinput.Model
+	highlightEditIdx int
+	highlightError   string
 
 	jumpTargetTS  int64 // if > 0, scroll to nearest line after first load
 	initialLoaded bool  // whether first batch has loaded
@@ -163,6 +180,11 @@ func (m LogViewerModel) WithContext(ctx context.Context) LogViewerModel {
 }
 
 func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
+	if m.highlightManager {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.handleHighlightManager(keyMsg)
+		}
+	}
 	switch msg := msg.(type) {
 	case LogsLoadedMsg:
 		m.initialFetch = true
@@ -480,6 +502,9 @@ func (m *LogViewerModel) scrollToMatch(matchIdx int) {
 }
 
 func (m LogViewerModel) View() string {
+	if m.highlightManager {
+		return m.highlightManagerView()
+	}
 	var b strings.Builder
 
 	// Title line
@@ -561,9 +586,7 @@ func (m LogViewerModel) View() string {
 		for li, msgLine := range msgLines {
 			wrapped := wrapPlainText(msgLine, msgWidth)
 			for wi, wLine := range wrapped {
-				if m.search != "" {
-					wLine = highlightSearch(wLine, m.search)
-				}
+				wLine = m.highlightText(wLine)
 				if li == 0 && wi == 0 {
 					fmt.Fprintf(&b, "%s%s  %s%s\n", marker, tsStr, sourceLabel, wLine)
 				} else {
@@ -576,27 +599,48 @@ func (m LogViewerModel) View() string {
 	return b.String()
 }
 
-func highlightSearch(msg, pattern string) string {
-	if pattern == "" {
-		return msg
+func (m LogViewerModel) highlightText(text string) string {
+	rules := m.highlightRules
+	matcher := m.highlighter
+	if m.search != "" {
+		rules = append([]model.LogHighlightRule{{
+			Pattern: m.search, Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+		}}, rules...)
+		var err error
+		matcher, err = highlight.Compile(rules)
+		if err != nil {
+			return text
+		}
 	}
-	lower := strings.ToLower(msg)
-	lowerPat := strings.ToLower(pattern)
-
+	spans := matcher.Spans(text)
+	if len(spans) == 0 {
+		return text
+	}
+	runes := []rune(text)
 	var result strings.Builder
 	pos := 0
-	for {
-		idx := strings.Index(lower[pos:], lowerPat)
-		if idx == -1 {
-			result.WriteString(msg[pos:])
-			break
-		}
-		result.WriteString(msg[pos : pos+idx])
-		matchEnd := pos + idx + len(pattern)
-		result.WriteString(theme.ErrorStyle.Render(msg[pos+idx : matchEnd]))
-		pos = matchEnd
+	for _, span := range spans {
+		result.WriteString(string(runes[pos:span.Start]))
+		result.WriteString(logHighlightStyle(span.Style).Render(string(runes[span.Start:span.End])))
+		pos = span.End
 	}
+	result.WriteString(string(runes[pos:]))
 	return result.String()
+}
+
+func logHighlightStyle(style model.LogHighlightStyle) lipgloss.Style {
+	switch style {
+	case model.LogHighlightInfo:
+		return lipgloss.NewStyle().Foreground(theme.ColorBlue).Bold(true)
+	case model.LogHighlightSuccess:
+		return lipgloss.NewStyle().Foreground(theme.ColorGreen).Bold(true)
+	case model.LogHighlightWarning:
+		return lipgloss.NewStyle().Foreground(theme.ColorYellow).Bold(true)
+	case model.LogHighlightError:
+		return theme.ErrorStyle
+	default:
+		return lipgloss.NewStyle().Reverse(true).Bold(true)
+	}
 }
 
 func (m LogViewerModel) visibleLines() int {
@@ -796,6 +840,224 @@ func (m LogViewerModel) SetSearch(pattern string) LogViewerModel {
 	return m
 }
 
+// SetHighlightRules replaces the current presentation-only highlight rules.
+func (m LogViewerModel) SetHighlightRules(rules []model.LogHighlightRule) LogViewerModel {
+	matcher, err := highlight.Compile(rules)
+	if err != nil {
+		m.highlightError = err.Error()
+		return m
+	}
+	m.highlightRules = append([]model.LogHighlightRule(nil), rules...)
+	m.highlighter = matcher
+	m.highlightError = ""
+	return m
+}
+
+// HighlightRules returns a copy safe for config persistence.
+func (m LogViewerModel) HighlightRules() []model.LogHighlightRule {
+	return append([]model.LogHighlightRule(nil), m.highlightRules...)
+}
+
+// OpenHighlightManager opens the log viewer's compact rule manager.
+func (m LogViewerModel) OpenHighlightManager() LogViewerModel {
+	m.highlightManager = true
+	m.highlightEditing = false
+	m.highlightError = ""
+	if len(m.highlightRules) == 0 {
+		m.highlightCursor = 0
+	} else if m.highlightCursor >= len(m.highlightRules) {
+		m.highlightCursor = len(m.highlightRules) - 1
+	}
+	return m
+}
+
+func (m LogViewerModel) handleHighlightManager(msg tea.KeyMsg) (LogViewerModel, tea.Cmd) {
+	if m.highlightEditing {
+		switch msg.String() {
+		case "enter":
+			pattern := m.highlightInput.Value()
+			rules := append([]model.LogHighlightRule(nil), m.highlightRules...)
+			if m.highlightEditIdx < 0 {
+				rules = append(rules, model.LogHighlightRule{
+					Pattern: pattern, Match: model.LogHighlightLiteral, Style: model.LogHighlightDefault,
+				})
+			} else {
+				rules[m.highlightEditIdx].Pattern = pattern
+			}
+			if matcher, err := highlight.Compile(rules); err != nil {
+				m.highlightError = err.Error()
+				return m, nil
+			} else {
+				m.highlightRules, m.highlighter = rules, matcher
+				m.highlightEditing = false
+				m.highlightError = ""
+				m.highlightCursor = len(rules) - 1
+				if m.highlightEditIdx >= 0 {
+					m.highlightCursor = m.highlightEditIdx
+				}
+				return m, nil
+			}
+		case "esc":
+			m.highlightEditing = false
+			m.highlightError = ""
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.highlightInput, cmd = m.highlightInput.Update(msg)
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "esc", "q", "h":
+		m.highlightManager = false
+		m.highlightError = ""
+	case "j", "down":
+		if m.highlightCursor < len(m.highlightRules)-1 {
+			m.highlightCursor++
+		}
+	case "k", "up":
+		if m.highlightCursor > 0 {
+			m.highlightCursor--
+		}
+	case "a":
+		m.beginHighlightEdit(-1)
+		return m, m.highlightInput.Focus()
+	case "e", "enter":
+		if len(m.highlightRules) > 0 {
+			m.beginHighlightEdit(m.highlightCursor)
+			return m, m.highlightInput.Focus()
+		}
+	case "d", "delete", "backspace":
+		if len(m.highlightRules) > 0 {
+			rules := append([]model.LogHighlightRule(nil), m.highlightRules...)
+			rules = append(rules[:m.highlightCursor], rules[m.highlightCursor+1:]...)
+			m.highlightRules = rules
+			m.highlighter, _ = highlight.Compile(rules)
+			if m.highlightCursor >= len(rules) && m.highlightCursor > 0 {
+				m.highlightCursor--
+			}
+		}
+	case "m":
+		m.cycleHighlightMatch()
+	case "s":
+		m.cycleHighlightStyle()
+	case "J":
+		m.moveHighlightRule(1)
+	case "K":
+		m.moveHighlightRule(-1)
+	case "w":
+		rules := m.HighlightRules()
+		return m, func() tea.Msg { return LogHighlightSaveMsg{Rules: rules} }
+	}
+	return m, nil
+}
+
+func (m *LogViewerModel) beginHighlightEdit(index int) {
+	m.highlightEditing = true
+	m.highlightEditIdx = index
+	m.highlightError = ""
+	m.highlightInput = textinput.New()
+	m.highlightInput.Placeholder = "pattern"
+	m.highlightInput.CharLimit = 500
+	m.highlightInput.Width = 60
+	if index >= 0 {
+		m.highlightInput.SetValue(m.highlightRules[index].Pattern)
+		m.highlightInput.CursorEnd()
+	}
+	m.highlightInput.Focus()
+}
+
+func (m *LogViewerModel) cycleHighlightMatch() {
+	if len(m.highlightRules) == 0 {
+		return
+	}
+	rules := append([]model.LogHighlightRule(nil), m.highlightRules...)
+	rule := &rules[m.highlightCursor]
+	switch rule.Match {
+	case model.LogHighlightLiteral:
+		rule.Match = model.LogHighlightLiteralCI
+	case model.LogHighlightLiteralCI:
+		rule.Match = model.LogHighlightRegex
+	default:
+		rule.Match = model.LogHighlightLiteral
+	}
+	matcher, err := highlight.Compile(rules)
+	if err != nil {
+		m.highlightError = err.Error()
+		return
+	}
+	m.highlightRules, m.highlighter = rules, matcher
+	m.highlightError = ""
+}
+
+func (m *LogViewerModel) cycleHighlightStyle() {
+	if len(m.highlightRules) == 0 {
+		return
+	}
+	styles := []model.LogHighlightStyle{
+		model.LogHighlightDefault, model.LogHighlightInfo, model.LogHighlightSuccess,
+		model.LogHighlightWarning, model.LogHighlightError,
+	}
+	rule := &m.highlightRules[m.highlightCursor]
+	for i, style := range styles {
+		if rule.Style == style {
+			rule.Style = styles[(i+1)%len(styles)]
+			break
+		}
+	}
+	m.highlighter, _ = highlight.Compile(m.highlightRules)
+	m.highlightError = ""
+}
+
+func (m *LogViewerModel) moveHighlightRule(direction int) {
+	to := m.highlightCursor + direction
+	if m.highlightCursor < 0 || to < 0 || to >= len(m.highlightRules) {
+		return
+	}
+	m.highlightRules[m.highlightCursor], m.highlightRules[to] = m.highlightRules[to], m.highlightRules[m.highlightCursor]
+	m.highlightCursor = to
+	m.highlighter, _ = highlight.Compile(m.highlightRules)
+}
+
+func (m LogViewerModel) highlightManagerView() string {
+	var b strings.Builder
+	b.WriteString("Log highlight rules\n\n")
+	if len(m.highlightRules) == 0 {
+		b.WriteString(theme.HelpStyle.Render("No rules. Press a to add one."))
+		b.WriteString("\n")
+	}
+	for i, rule := range m.highlightRules {
+		marker := "  "
+		style := lipgloss.NewStyle()
+		if i == m.highlightCursor {
+			marker = "► "
+			style = theme.SelectedRowStyle
+		}
+		line := fmt.Sprintf("%s%-10s %-9s %s", marker, rule.Match, rule.Style, rule.Pattern)
+		b.WriteString(style.Render(line))
+		b.WriteString("\n")
+	}
+	if m.highlightEditing {
+		label := "Add pattern"
+		if m.highlightEditIdx >= 0 {
+			label = "Edit pattern"
+		}
+		b.WriteString("\n" + label + ": " + m.highlightInput.View() + "\n")
+		b.WriteString(theme.HelpStyle.Render("[enter] apply  [esc] cancel"))
+	} else {
+		b.WriteString("\n[a] add  [e] edit  [d] delete  [m] match type  [s] style\n")
+		b.WriteString("[J/K] reorder  [w] save with active search  [esc] close")
+	}
+	if m.highlightError != "" {
+		b.WriteString("\n\n" + theme.ErrorStyle.Render(m.highlightError))
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ColorCyan).
+		Padding(1, 3).
+		Render(b.String())
+}
+
 // ExportLines returns all buffered log lines formatted for file output.
 func (m LogViewerModel) ExportLines() []string {
 	out := make([]string, 0, len(m.lines))
@@ -850,7 +1112,7 @@ func wrapPlainText(s string, maxWidth int) []string {
 }
 
 func (m LogViewerModel) IsFiltering() bool {
-	return m.searching
+	return m.searching || m.highlightManager
 }
 
 func (m LogViewerModel) SetSize(w, h int) LogViewerModel {

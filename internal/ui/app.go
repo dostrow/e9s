@@ -188,6 +188,11 @@ type App struct {
 	logSearchStartMs         int64
 	logSearchEndMs           int64
 	logSearchFilter          string // quoted/processed filter pattern for CW API
+	logSearchHighlightRules  []model.LogHighlightRule
+	logSearchSavedPath       string
+	logBrowseHighlightRules  []model.LogHighlightRule
+	logBrowseSavedPath       string
+	activeLogPathName        string
 	logCorrelationActive     bool
 	logCorrelationTS         int64
 	logCorrelationPattern    string
@@ -656,6 +661,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.prevState = msg.returnState
 		}
 		a.state = viewLogs
+		a.activeLogPathName = msg.savedLogPath
 		follow := true
 		lookback := 15 * time.Minute
 		if msg.follow != nil {
@@ -676,6 +682,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
 		a.logView = a.logView.WithContext(a.ctx)
+		a.logView = a.logView.SetHighlightRules(msg.highlightRules)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -691,7 +698,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.prevState = viewLogSearch
 		a.state = viewLogs
 		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.activeLogPathName = a.logSearchSavedPath
 		a.logView = a.logView.WithContext(a.ctx)
+		a.logView = a.logView.SetHighlightRules(a.logSearchHighlightRules)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -702,6 +711,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 		return a, nil
+
+	case views.LogHighlightSaveMsg:
+		return a.saveActiveLogHighlights(msg.Rules)
 
 	case views.LogSearchResultsMsg, views.LogSearchErrorMsg:
 		if a.state == viewLogSearch {
@@ -1739,6 +1751,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.copyLogBufferToClipboard()
 			case a.kb.LogOpenEditor:
 				return a.openLogBufferInEditor()
+			case a.kb.LogHighlights:
+				a.logView = a.logView.OpenHighlightManager()
+				return a, nil
 			}
 		case viewLogSearch:
 			switch k {
@@ -2603,6 +2618,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.LogSave, "Save buffer to file"},
 			{kb.LogCopy, "Copy buffer to clipboard"},
 			{kb.LogOpenEditor, "Open buffer in $EDITOR"},
+			{kb.LogHighlights, "Manage highlight rules"},
 			{"g/G", "Jump to top/bottom"},
 			{"PgUp/PgDn", "Scroll by page"},
 		}

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -162,4 +164,63 @@ func TestFormatLogSource_MultiGroup(t *testing.T) {
 	if got != "/aws/ecs/api / ecs/app/task" {
 		t.Fatalf("formatLogSource() = %q", got)
 	}
+}
+
+func TestLogViewerHighlightsDoNotAlterExport(t *testing.T) {
+	m := LogViewerModel{
+		lines: []logLine{{timestamp: 1000, message: "🔥 ERROR complete"}},
+	}
+	m = m.SetHighlightRules([]model.LogHighlightRule{{
+		Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError,
+	}})
+	spans := m.highlighter.Spans(m.lines[0].message)
+	if len(spans) != 1 || spans[0].Start != 2 || spans[0].End != 7 {
+		t.Fatalf("highlight spans = %#v", spans)
+	}
+	exported := m.ExportLines()
+	if len(exported) != 1 || strings.Contains(exported[0], "\x1b[") || !strings.HasSuffix(exported[0], "🔥 ERROR complete") {
+		t.Fatalf("ExportLines() = %#v", exported)
+	}
+}
+
+func TestLogHighlightManagerAddsAndValidatesRules(t *testing.T) {
+	m := LogViewerModel{}.OpenHighlightManager()
+	m, _ = m.Update(keyRune('a'))
+	for _, r := range "timeout" {
+		m, _ = m.Update(keyRune(r))
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.highlightRules) != 1 || m.highlightRules[0].Pattern != "timeout" {
+		t.Fatalf("rules = %#v", m.highlightRules)
+	}
+
+	m.highlightRules[0].Pattern = "["
+	m.highlighter, _ = highlight.Compile(m.highlightRules)
+	m, _ = m.Update(keyRune('m'))
+	m, _ = m.Update(keyRune('m'))
+	if m.highlightRules[0].Match != model.LogHighlightLiteralCI {
+		t.Fatalf("invalid regex changed match mode to %q", m.highlightRules[0].Match)
+	}
+	if m.highlightError == "" {
+		t.Fatal("invalid regex did not produce an error")
+	}
+}
+
+func TestLogHighlightManagerRequestsPersistence(t *testing.T) {
+	m := LogViewerModel{}.SetHighlightRules([]model.LogHighlightRule{{
+		Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+	}}).OpenHighlightManager()
+	var cmd tea.Cmd
+	m, cmd = m.Update(keyRune('w'))
+	if cmd == nil {
+		t.Fatal("save did not return a command")
+	}
+	msg, ok := cmd().(LogHighlightSaveMsg)
+	if !ok || len(msg.Rules) != 1 || msg.Rules[0].Pattern != "error" {
+		t.Fatalf("save message = %#v", msg)
+	}
+}
+
+func keyRune(r rune) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 }

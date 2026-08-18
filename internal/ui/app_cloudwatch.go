@@ -43,6 +43,10 @@ func (a App) promptCloudWatchBrowser() (App, tea.Cmd) {
 }
 
 func (a App) openLogGroups(prefix string) (App, tea.Cmd) {
+	a.logBrowseHighlightRules = nil
+	a.logBrowseSavedPath = ""
+	a.logSearchHighlightRules = nil
+	a.logSearchSavedPath = ""
 	a.mode = modeCWLogs
 	a.state = viewLogGroups
 	a.logGroupsView = views.NewLogGroups()
@@ -97,11 +101,13 @@ func (a App) peekLogStream() (App, tea.Cmd) {
 	streamName := s.Name
 	return a, func() tea.Msg {
 		return logReadyMsg{
-			title:    fmt.Sprintf("%s / %s", logGroup, streamName),
-			logGroup: logGroup,
-			streams:  []string{streamName},
-			follow:   &f,
-			lookback: 15 * time.Minute,
+			title:          fmt.Sprintf("%s / %s", logGroup, streamName),
+			logGroup:       logGroup,
+			streams:        []string{streamName},
+			follow:         &f,
+			lookback:       15 * time.Minute,
+			highlightRules: append([]model.LogHighlightRule(nil), a.logBrowseHighlightRules...),
+			savedLogPath:   a.logBrowseSavedPath,
 		}
 	}
 }
@@ -123,13 +129,17 @@ func (a App) tailEntireLogGroup() (App, tea.Cmd) {
 }
 
 func (a App) startLogTail(logGroup string, streams []string, title string) tea.Cmd {
+	rules := append([]model.LogHighlightRule(nil), a.logBrowseHighlightRules...)
+	savedPath := a.logBrowseSavedPath
 	return func() tea.Msg {
 		return logReadyMsg{
-			title:     title,
-			logGroup:  logGroup,
-			logGroups: []string{logGroup},
-			streams:   streams,
-			lookback:  15 * time.Minute,
+			title:          title,
+			logGroup:       logGroup,
+			logGroups:      []string{logGroup},
+			streams:        streams,
+			lookback:       15 * time.Minute,
+			highlightRules: rules,
+			savedLogPath:   savedPath,
 		}
 	}
 }
@@ -145,6 +155,8 @@ func (a App) promptLogSearchFromGroups() (App, tea.Cmd) {
 	a.logSearchGroups = groups
 	a.logSearchGroup = groups[0] // primary group for display
 	a.logSearchStreams = nil
+	a.logSearchHighlightRules = nil
+	a.logSearchSavedPath = ""
 	return a.promptLogSearchTimeRange()
 }
 
@@ -157,6 +169,8 @@ func (a App) promptLogSearchFromStreams() (App, tea.Cmd) {
 	a.logSearchGroup = a.logStreamsView.LogGroup()
 	a.logSearchGroups = []string{a.logSearchGroup}
 	a.logSearchStreams = streams
+	a.logSearchHighlightRules = nil
+	a.logSearchSavedPath = ""
 	return a.promptLogSearchTimeRange()
 }
 
@@ -285,6 +299,8 @@ func (a App) openSavedLogDestination(path config.LogPathEntry) (App, tea.Cmd) {
 		a.logSearchGroups = groups
 		a.logSearchGroup = groups[0]
 		a.logSearchStreams = streams
+		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logSearchSavedPath = path.Name
 		a.logSearchStartMs = start
 		a.logSearchEndMs = end
 		return a.startLogSearch(path.Filter)
@@ -294,12 +310,44 @@ func (a App) openSavedLogDestination(path config.LogPathEntry) (App, tea.Cmd) {
 		a.logSearchGroups = groups
 		a.logSearchGroup = groups[0]
 		a.logSearchStreams = nil
+		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logSearchSavedPath = path.Name
 		return a.promptLogSearchTimeRange()
 	}
 	if len(streams) > 0 {
+		a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logBrowseSavedPath = path.Name
 		return a, a.startLogTail(groups[0], streams, path.Name)
 	}
+	a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+	a.logBrowseSavedPath = path.Name
 	return a.openLogStreams(groups[0])
+}
+
+func (a App) saveActiveLogHighlights(rules []model.LogHighlightRule) (App, tea.Cmd) {
+	if a.activeLogPathName == "" {
+		a.flashMessage = "Highlight rules apply to this buffer; open a saved CloudWatch search to persist them"
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+	}
+	for _, path := range a.cfg.LogPaths {
+		if path.Name != a.activeLogPathName {
+			continue
+		}
+		path.HighlightRules = append([]model.LogHighlightRule(nil), rules...)
+		a.cfg.UpsertLogPath(path)
+		if err := a.cfg.Save(); err != nil {
+			a.err = err
+			return a, nil
+		}
+		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), rules...)
+		a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), rules...)
+		a.flashMessage = fmt.Sprintf("Saved %d highlight rules with %q", len(rules), path.Name)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+	}
+	a.err = fmt.Errorf("saved CloudWatch search %q no longer exists", a.activeLogPathName)
+	return a, nil
 }
 
 func savedLogPathGroups(path config.LogPathEntry) []string {
