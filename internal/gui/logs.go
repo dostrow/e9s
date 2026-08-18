@@ -22,6 +22,12 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	back.ConnectClicked(w.closeLogs)
 	w.logPauseButton = gtk.NewButtonWithLabel("Pause")
 	w.logPauseButton.ConnectClicked(w.toggleLogFollow)
+	w.logOlderButton = gtk.NewButtonWithLabel("Older")
+	w.logOlderButton.ConnectClicked(func() { w.loadAdjacentCloudWatchRange(-1) })
+	w.logNewerButton = gtk.NewButtonWithLabel("Newer")
+	w.logNewerButton.ConnectClicked(func() { w.loadAdjacentCloudWatchRange(1) })
+	w.logCorrelateButton = gtk.NewButtonWithLabel("Correlate at cursor")
+	w.logCorrelateButton.ConnectClicked(w.promptLogCorrelation)
 	copyButton := gtk.NewButtonWithLabel("Copy")
 	copyButton.ConnectClicked(w.copyLogs)
 	clearButton := gtk.NewButtonWithLabel("Clear")
@@ -35,6 +41,9 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	toolbar.AddCSSClass("log-toolbar")
 	toolbar.Append(back)
 	toolbar.Append(w.logPauseButton)
+	toolbar.Append(w.logOlderButton)
+	toolbar.Append(w.logNewerButton)
+	toolbar.Append(w.logCorrelateButton)
 	toolbar.Append(copyButton)
 	toolbar.Append(clearButton)
 	toolbar.Append(w.logSearch)
@@ -140,12 +149,19 @@ func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
 	w.showingLogs = true
 	w.detailStack.SetVisibleChildName("logs")
 	w.logTitle = title
+	w.logSearchSpec = nil
 	w.logPauseButton.SetVisible(true)
+	w.updateLogSearchControls()
 	w.startLogFollow(source, false)
 	w.setStatus("Following logs for "+title, false)
 }
 
 func (w *mainWindow) showLogSnapshot(source model.LogSource, title string, page model.LogPage) {
+	w.logSearchSpec = nil
+	w.showLogSnapshotData(source, title, page)
+}
+
+func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, page model.LogPage) {
 	if w.logCancel != nil {
 		w.logCancel()
 	}
@@ -158,10 +174,23 @@ func (w *mainWindow) showLogSnapshot(source model.LogSource, title string, page 
 	w.logLastTS = page.LastTimestamp
 	w.logSearch.SetText("")
 	w.logPauseButton.SetVisible(false)
+	w.updateLogSearchControls()
 	w.showingMetrics = false
 	w.showingLogs = true
 	w.detailStack.SetVisibleChildName("logs")
 	w.renderLogs()
+}
+
+func (w *mainWindow) updateLogSearchControls() {
+	searchResult := w.logSearchSpec != nil
+	if w.logOlderButton != nil {
+		w.logOlderButton.SetVisible(searchResult)
+		w.logNewerButton.SetVisible(searchResult)
+		w.logCorrelateButton.SetVisible(searchResult)
+	}
+	if w.logView != nil {
+		w.logView.SetCursorVisible(searchResult)
+	}
 }
 
 func taskContainerNames(task model.Task) []string {
@@ -325,6 +354,20 @@ func (w *mainWindow) clearLogs() {
 	w.logStore.clear()
 	w.renderLogs()
 	w.setStatus("Log buffer cleared", false)
+}
+
+func (w *mainWindow) logEntryAtCursor() (model.LogEntry, bool) {
+	if w.logStore == nil || w.logTextBuffer == nil {
+		return model.LogEntry{}, false
+	}
+	offset := w.logTextBuffer.IterAtMark(w.logTextBuffer.GetInsert()).Offset()
+	formatted := w.logStore.format(w.logSearch.Text())
+	for _, line := range formatted.lines {
+		if offset >= line.start && offset <= line.end {
+			return line.entry, true
+		}
+	}
+	return model.LogEntry{}, false
 }
 
 func (w *mainWindow) closeLogs() {

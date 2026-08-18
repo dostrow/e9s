@@ -22,6 +22,7 @@ type formattedLogLine struct {
 	start  int
 	end    int
 	prefix string
+	entry  model.LogEntry
 }
 
 func newBoundedLogs(maxEntries int) *boundedLogs {
@@ -78,6 +79,7 @@ func (b *boundedLogs) format(filter string) formattedLogBuffer {
 			start:  offset,
 			end:    offset + lineLength,
 			prefix: prefix,
+			entry:  entry,
 		})
 		out.WriteString(line)
 		out.WriteByte('\n')

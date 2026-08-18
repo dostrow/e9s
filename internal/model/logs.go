@@ -37,6 +37,7 @@ type LogQuery struct {
 	EndTime   int64
 	Limit     int
 	Tail      bool
+	Filter    string
 }
 
 // LogPage is the result of a LogQuery. LastTimestamp is StartTime when no

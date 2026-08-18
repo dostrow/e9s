@@ -12,6 +12,8 @@ import (
 type LogsAPI interface {
 	ListLogGroups(context.Context, string) ([]model.LogGroup, error)
 	ListLogStreams(context.Context, string, string) ([]model.LogStream, error)
+	SearchLogs(context.Context, string, []string, string, int64, int64, int) ([]model.LogEntry, error)
+	SearchMultiGroupLogs(context.Context, []string, string, int64, int64, int) ([]model.LogEntry, error)
 	FetchLogs(context.Context, string, string, int64, int) ([]model.LogEntry, int64, error)
 	FetchMultiStreamLogs(context.Context, string, []string, int64, int) ([]model.LogEntry, int64, error)
 	FetchLogGroup(context.Context, string, int64, int) ([]model.LogEntry, int64, error)
@@ -59,6 +61,9 @@ func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (m
 	if query.Limit <= 0 {
 		query.Limit = 100
 	}
+	if query.Filter != "" {
+		return s.search(ctx, group, query)
+	}
 
 	if query.EndTime > 0 || len(query.Groups) > 1 {
 		entries, err := s.fetchRange(ctx, group, query)
@@ -96,6 +101,27 @@ func (s *Logs) Fetch(ctx context.Context, group string, query model.LogQuery) (m
 		return model.LogPage{}, fmt.Errorf("fetch logs from %q: %w", group, err)
 	}
 	return model.LogPage{Entries: entries, LastTimestamp: lastTS}, nil
+}
+
+func (s *Logs) search(ctx context.Context, group string, query model.LogQuery) (model.LogPage, error) {
+	var (
+		entries []model.LogEntry
+		err     error
+	)
+	if len(query.Groups) > 1 {
+		entries, err = s.api.SearchMultiGroupLogs(ctx, query.Groups, query.Filter,
+			query.StartTime, query.EndTime, query.Limit)
+	} else {
+		if len(query.Groups) == 1 {
+			group = query.Groups[0]
+		}
+		entries, err = s.api.SearchLogs(ctx, group, query.Streams, query.Filter,
+			query.StartTime, query.EndTime, query.Limit)
+	}
+	if err != nil {
+		return model.LogPage{}, fmt.Errorf("search CloudWatch logs: %w", err)
+	}
+	return page(entries, query.StartTime), nil
 }
 
 func (s *Logs) fetchRange(ctx context.Context, group string, query model.LogQuery) ([]model.LogEntry, error) {

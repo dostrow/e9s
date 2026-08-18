@@ -30,6 +30,20 @@ func (f *fakeLogsAPI) ListLogStreams(ctx context.Context, group, prefix string) 
 	return []model.LogStream{{Name: "ecs/api/one", LastEventTime: 42}}, f.err
 }
 
+func (f *fakeLogsAPI) SearchLogs(ctx context.Context, _ string, streams []string, _ string, _, _ int64, limit int) ([]model.LogEntry, error) {
+	called := "search-group"
+	if len(streams) == 1 {
+		called = "search-stream"
+	} else if len(streams) > 1 {
+		called = "search-streams"
+	}
+	return f.rangeResult(ctx, called, limit)
+}
+
+func (f *fakeLogsAPI) SearchMultiGroupLogs(ctx context.Context, _ []string, _ string, _, _ int64, limit int) ([]model.LogEntry, error) {
+	return f.rangeResult(ctx, "search-groups", limit)
+}
+
 func (f *fakeLogsAPI) result(ctx context.Context, called string, limit int) ([]model.LogEntry, int64, error) {
 	f.called, f.limit = called, limit
 	if err := ctx.Err(); err != nil {
@@ -90,6 +104,10 @@ func TestLogsDispatchesQueries(t *testing.T) {
 		{name: "range stream", query: model.LogQuery{EndTime: 100, Streams: []string{"one"}}, want: "range-stream"},
 		{name: "range streams", query: model.LogQuery{EndTime: 100, Streams: []string{"one", "two"}}, want: "range-streams"},
 		{name: "range groups", query: model.LogQuery{Groups: []string{"one", "two"}}, want: "range-groups"},
+		{name: "search group", query: model.LogQuery{Filter: `"error"`}, want: "search-group"},
+		{name: "search stream", query: model.LogQuery{Filter: `"error"`, Streams: []string{"one"}}, want: "search-stream"},
+		{name: "search streams", query: model.LogQuery{Filter: `"error"`, Streams: []string{"one", "two"}}, want: "search-streams"},
+		{name: "search groups", query: model.LogQuery{Filter: `"error"`, Groups: []string{"one", "two"}}, want: "search-groups"},
 	}
 
 	for _, tt := range tests {

@@ -96,6 +96,7 @@ type mainWindow struct {
 	peekLogStreamButton         *gtk.Button
 	followLogStreamButton       *gtk.Button
 	followLogGroupButton        *gtk.Button
+	searchLogsButton            *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -156,12 +157,16 @@ type mainWindow struct {
 	logTextBuffer               *gtk.TextBuffer
 	logSearch                   *gtk.SearchEntry
 	logPauseButton              *gtk.Button
+	logOlderButton              *gtk.Button
+	logNewerButton              *gtk.Button
+	logCorrelateButton          *gtk.Button
 	logStore                    *boundedLogs
 	logIndentTags               map[int]*gtk.TextTag
 	logSource                   model.LogSource
 	logTitle                    string
 	logLastTS                   int64
 	logFollowing                bool
+	logSearchSpec               *cloudWatchSearch
 	showingLogs                 bool
 	status                      *gtk.Label
 	spinner                     *gtk.Spinner
@@ -271,6 +276,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.followLogStreamButton.ConnectClicked(w.followSelectedLogStream)
 	w.followLogGroupButton = gtk.NewButtonWithLabel("Follow group")
 	w.followLogGroupButton.ConnectClicked(w.followSelectedLogGroup)
+	w.searchLogsButton = gtk.NewButtonWithLabel("Search logs")
+	w.searchLogsButton.ConnectClicked(w.promptCloudWatchSearch)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -313,6 +320,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.peekLogStreamButton)
 	header.Append(w.followLogStreamButton)
 	header.Append(w.followLogGroupButton)
+	header.Append(w.searchLogsButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1601,6 +1609,9 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.followLogStreamButton.SetSensitive(logStreamSelected && w.options.Logs != nil)
 	w.followLogGroupButton.SetVisible(logGroupSelected)
 	w.followLogGroupButton.SetSensitive(logGroupSelected && w.options.Logs != nil)
+	cloudWatchBrowser := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams
+	w.searchLogsButton.SetVisible(cloudWatchBrowser)
+	w.searchLogsButton.SetSensitive(cloudWatchBrowser && logGroupSelected && w.options.Logs != nil)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)
