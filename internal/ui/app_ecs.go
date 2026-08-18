@@ -266,26 +266,7 @@ func sortStoppedTasks(tasks []model.Task) {
 }
 
 func (a App) openStandaloneTaskLogs() (App, tea.Cmd) {
-	t := a.standaloneView.SelectedTask()
-	if t == nil {
-		return a, nil
-	}
-	a.selectedTask = t
-	a.prevState = viewStandaloneTasks
-
-	if len(t.Containers) == 0 {
-		a.err = fmt.Errorf("task has no containers")
-		return a, nil
-	}
-	if len(t.Containers) == 1 {
-		return a, a.doLogForContainer(t.Containers[0].Name)
-	}
-	names := make([]string, len(t.Containers))
-	for i, c := range t.Containers {
-		names[i] = c.Name
-	}
-	a.picker = NewPicker(PickerLogContainer, "Select container for logs", names)
-	return a, nil
+	return a.openTaskLogs()
 }
 
 func (a App) promptStopStandaloneTask() (App, tea.Cmd) {
@@ -305,6 +286,28 @@ func (a App) promptStopStandaloneTask() (App, tea.Cmd) {
 	a.confirm = NewConfirm(ConfirmStopTask,
 		fmt.Sprintf("Stop task '%s'?", id))
 	return a, nil
+}
+
+func (a App) promptRunTask() (App, tea.Cmd) {
+	if a.state != viewStandaloneTasks || a.selectedCluster == nil {
+		return a, nil
+	}
+	seedTaskDefinition := ""
+	if task := a.standaloneView.SelectedTask(); task != nil {
+		seedTaskDefinition = task.TaskDefinition
+	}
+	a.runTaskForm = NewRunTaskForm(a.selectedCluster.Name, seedTaskDefinition)
+	return a, nil
+}
+
+func (a App) runStandaloneTask(request model.RunTaskRequest) tea.Cmd {
+	return func() tea.Msg {
+		tasks, err := a.ecs.RunTask(a.ctx, request)
+		if err != nil {
+			return errMsg{err}
+		}
+		return runTaskStartedMsg{count: len(tasks), taskDefinition: request.TaskDefinition}
+	}
 }
 
 // --- Task Definition Diff ---
@@ -334,15 +337,21 @@ func (a App) showTaskDefDiff() (App, tea.Cmd) {
 // --- Metrics & Alarms ---
 
 func (a App) toggleScaleIn() (App, tea.Cmd) {
-	s := a.serviceView.SelectedService()
-	if s == nil {
-		return a, nil
-	}
 	clusterName := ""
 	if a.selectedCluster != nil {
 		clusterName = a.selectedCluster.Name
 	}
-	serviceName := s.Name
+	serviceName := a.metricsServiceName
+	if a.state != viewMetrics {
+		s := a.serviceView.SelectedService()
+		if s == nil {
+			return a, nil
+		}
+		serviceName = s.Name
+	}
+	if serviceName == "" || (a.state == viewMetrics && a.metricsTaskScope) {
+		return a, nil
+	}
 
 	// Check current state, then confirm toggle
 	return a, func() tea.Msg {
@@ -372,13 +381,40 @@ func (a App) doToggleScaleIn() tea.Cmd {
 }
 
 func (a App) showMetrics() (App, tea.Cmd) {
-	s := a.serviceView.SelectedService()
-	if s == nil {
+	origin := a.state
+	var task *model.Task
+	serviceName := ""
+	switch a.state {
+	case viewServices:
+		s := a.serviceView.SelectedService()
+		if s == nil {
+			return a, nil
+		}
+		a.selectedService = s
+		a.selectedTask = nil
+		serviceName = s.Name
+	case viewTasks, viewStandaloneTasks, viewTaskDetail:
+		task = a.taskForCurrentView()
+		if task == nil {
+			return a, nil
+		}
+		a.selectedTask = task
+		if strings.HasPrefix(task.Group, "service:") && a.selectedService != nil {
+			serviceName = a.selectedService.Name
+		}
+	default:
 		return a, nil
 	}
-	a.selectedService = s
+
+	scopeName := serviceName
+	if task != nil {
+		scopeName = task.TaskID
+	}
+	a.metricsReturnState = origin
+	a.metricsTaskScope = task != nil
+	a.metricsServiceName = serviceName
 	a.state = viewMetrics
-	a.metricsView = views.NewMetrics(s.Name)
+	a.metricsView = views.NewMetrics(scopeName, task != nil)
 	a.metricsView = a.metricsView.SetSize(a.width, a.height-3)
 	a.loading = true
 	return a, a.loadMetrics()
@@ -386,30 +422,65 @@ func (a App) showMetrics() (App, tea.Cmd) {
 
 func (a App) loadMetrics() tea.Cmd {
 	cluster := ""
-	service := ""
+	service := a.metricsServiceName
 	if a.selectedCluster != nil {
 		cluster = a.selectedCluster.Name
 	}
-	if a.selectedService != nil {
-		service = a.selectedService.Name
-	}
+	taskScope := a.metricsTaskScope
+	selectedTask := a.selectedTask
 	return func() tea.Msg {
-		metrics, err := a.ecs.GetServiceMetrics(a.ctx, cluster, service, 15*time.Minute)
+		var (
+			metrics *model.ServiceMetrics
+			err     error
+		)
+		if taskScope {
+			if selectedTask == nil {
+				return errMsg{fmt.Errorf("no task selected for metrics")}
+			}
+			metrics, err = a.ecs.GetTaskMetrics(a.ctx, cluster, service, *selectedTask, 15*time.Minute)
+		} else {
+			metrics, err = a.ecs.GetServiceMetrics(a.ctx, cluster, service, 15*time.Minute)
+		}
 		if err != nil {
 			return errMsg{err}
 		}
-		alarms, err := a.ecs.ListServiceAlarms(a.ctx, cluster, service)
-		if err != nil {
+		if taskScope {
 			return metricsLoadedMsg{metrics: metrics}
 		}
-		return metricsLoadedMsg{metrics: metrics, alarms: alarms}
+		var warnings []string
+		alarms, err := a.ecs.ListServiceAlarms(a.ctx, cluster, service)
+		if err != nil {
+			warnings = append(warnings, "Alarms unavailable: "+err.Error())
+		}
+		suspended, scaleErr := a.ecs.ScaleInSuspended(a.ctx, cluster, service)
+		if scaleErr != nil {
+			warnings = append(warnings, "Scale-in status unavailable: "+scaleErr.Error())
+		}
+		return metricsLoadedMsg{
+			metrics: metrics, alarms: alarms,
+			scaleKnown: scaleErr == nil, scaleSuspended: suspended,
+			warnings: warnings,
+		}
+	}
+}
+
+func (a App) taskForCurrentView() *model.Task {
+	switch a.state {
+	case viewTasks:
+		return a.taskView.SelectedTask()
+	case viewStandaloneTasks:
+		return a.standaloneView.SelectedTask()
+	case viewTaskDetail:
+		return a.selectedTask
+	default:
+		return nil
 	}
 }
 
 // --- ECS Exec ---
 
 func (a App) execIntoTask() (App, tea.Cmd) {
-	t := a.taskView.SelectedTask()
+	t := a.taskForCurrentView()
 	if t == nil {
 		return a, nil
 	}
@@ -418,7 +489,7 @@ func (a App) execIntoTask() (App, tea.Cmd) {
 		return a, nil
 	}
 
-	if a.selectedService != nil && !a.selectedService.EnableExecuteCommand {
+	if strings.HasPrefix(t.Group, "service:") && a.selectedService != nil && !a.selectedService.EnableExecuteCommand {
 		a.err = fmt.Errorf("ECS Exec is not enabled on service %q — set enableExecuteCommand: true on the service", a.selectedService.Name)
 		return a, nil
 	}
@@ -546,12 +617,12 @@ func (a App) doShowTaskDefEnvVars(containerName string) tea.Cmd {
 // --- Log Viewing ---
 
 func (a App) openTaskLogs() (App, tea.Cmd) {
-	t := a.taskView.SelectedTask()
+	t := a.taskForCurrentView()
 	if t == nil {
 		return a, nil
 	}
 	a.selectedTask = t
-	a.prevState = viewTasks
+	a.prevState = a.state
 
 	if len(t.Containers) == 0 {
 		a.err = fmt.Errorf("task has no containers")

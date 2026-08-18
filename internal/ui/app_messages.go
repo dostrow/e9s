@@ -30,6 +30,10 @@ type taskDefLoadedMsg struct{ def *e9saws.TaskDefSummary }
 type errMsg struct{ err error }
 type tickMsg time.Time
 type actionSuccessMsg struct{ message string }
+type runTaskStartedMsg struct {
+	count          int
+	taskDefinition string
+}
 type logReadyMsg struct {
 	title     string
 	logGroup  string
@@ -60,8 +64,11 @@ type envVarsReadyMsg struct {
 	envVars []e9saws.EnvVar
 }
 type metricsLoadedMsg struct {
-	metrics *e9saws.ServiceMetrics
-	alarms  []e9saws.AlarmState
+	metrics        *e9saws.ServiceMetrics
+	alarms         []e9saws.AlarmState
+	scaleKnown     bool
+	scaleSuspended bool
+	warnings       []string
 }
 
 // --- SSM Messages ---

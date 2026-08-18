@@ -26,6 +26,7 @@ type KeyBindings struct {
 	ToggleScaleIn   string
 	TaskScope       string
 	LoadMore        string
+	RunTask         string
 
 	// Log viewer
 	LogFollow     string
@@ -133,6 +134,7 @@ func NewKeyBindings() KeyBindings {
 		ToggleScaleIn:   "I",
 		TaskScope:       "tab",
 		LoadMore:        "]",
+		RunTask:         "a",
 
 		// Log viewer
 		LogFollow:     "f",
@@ -264,6 +266,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.TaskScope = key
 		case "load_more":
 			kb.LoadMore = key
+		case "run_task":
+			kb.RunTask = key
 
 		// Log viewer
 		case "log_follow":

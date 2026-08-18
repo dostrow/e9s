@@ -163,6 +163,9 @@ type App struct {
 	selectedTaskDef       string
 	taskScopeStopped      bool
 	taskNextToken         string
+	metricsReturnState    viewState
+	metricsTaskScope      bool
+	metricsServiceName    string
 	execContainerName     string
 	scaleInCluster        string
 	scaleInService        string
@@ -199,6 +202,7 @@ type App struct {
 	sqsSendTemplate       *e9saws.SQSSendTemplate
 	cbTriggerProject      string
 	pathInput             *PathInput
+	runTaskForm           RunTaskFormModel
 	tofuDir               string
 	tofuPlanFile          string
 	r53EditZoneID         string
@@ -476,6 +480,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.input, cmd = a.input.Update(msg)
 		return a, cmd
 	}
+	if a.runTaskForm.Active {
+		switch msg.(type) {
+		case RunTaskSubmitMsg, RunTaskCancelMsg:
+			// Let form results pass through to the main handler.
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			a.runTaskForm, cmd = a.runTaskForm.Update(msg)
+			return a, cmd
+		default:
+			return a, nil
+		}
+	}
 	if a.pathInput != nil {
 		// Let result/cancel messages pass through to the main handler
 		switch msg.(type) {
@@ -708,6 +724,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case metricsLoadedMsg:
 		a.metricsView = a.metricsView.SetMetrics(msg.metrics)
 		a.metricsView = a.metricsView.SetAlarms(msg.alarms)
+		a.metricsView = a.metricsView.SetScaleIn(msg.scaleKnown, msg.scaleSuspended)
+		a.metricsView = a.metricsView.SetWarnings(msg.warnings)
+		a.scaleInCurrentState = msg.scaleSuspended
 		a.loading = false
 		return a, nil
 
@@ -1174,6 +1193,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, a.refreshCurrentView()
 
+	case runTaskStartedMsg:
+		a.flashMessage = fmt.Sprintf("Started %d task(s) from %s", msg.count, msg.taskDefinition)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.taskScopeStopped = false
+		a.taskNextToken = ""
+		a.standaloneView = a.standaloneView.SetScope(false)
+		a.loading = true
+		return a, a.loadStandaloneTasks()
+
+	case RunTaskSubmitMsg:
+		a.runTaskForm.Active = false
+		a.loading = true
+		return a, a.runStandaloneTask(msg.Request)
+
+	case RunTaskCancelMsg:
+		a.runTaskForm.Active = false
+		return a, nil
+
 	// --- Dialog results ---
 	case ConfirmResultMsg:
 		if !msg.Confirmed {
@@ -1592,11 +1629,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.openTaskLogs()
 			case a.kb.ECSExec:
 				return a.execIntoTask()
+			case a.kb.Metrics:
+				return a.showMetrics()
 			}
 		case viewTaskDetail:
 			switch k {
 			case a.kb.EnvVars:
 				return a.showEnvVars()
+			case a.kb.TaskLogs:
+				return a.openTaskLogs()
+			case a.kb.ECSExec:
+				return a.execIntoTask()
+			case a.kb.Metrics:
+				return a.showMetrics()
 			}
 		case viewTaskDefDetail:
 			switch k {
@@ -1632,11 +1677,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.openStandaloneTaskLogs()
 			case a.kb.StopTask:
 				return a.promptStopStandaloneTask()
+			case a.kb.ECSExec:
+				return a.execIntoTask()
+			case a.kb.Metrics:
+				return a.showMetrics()
+			case a.kb.RunTask:
+				return a.promptRunTask()
 			}
 		case viewServiceDetail:
 			switch k {
 			case a.kb.Download:
 				return a.showTaskDefDiff()
+			}
+		case viewMetrics:
+			if k == a.kb.ToggleScaleIn {
+				return a.toggleScaleIn()
 			}
 		case viewSSM:
 			switch k {
@@ -2204,6 +2259,9 @@ func (a App) View() string {
 	if a.pathInput != nil {
 		return renderOverlay(fullView, a.pathInput.View(), a.width, a.height)
 	}
+	if a.runTaskForm.Active {
+		return renderOverlay(fullView, a.runTaskForm.View(), a.width, a.height)
+	}
 
 	return fullView
 }
@@ -2402,11 +2460,14 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			context = append(context,
 				kv{kb.StopTask, "Stop task"},
 				kv{kb.ECSExec, "ECS Exec (shell into container)"},
+				kv{kb.Metrics, "Task CPU/memory metrics"},
 			)
 		}
 	case viewTaskDetail:
 		context = []kv{
 			{kb.EnvVars, "View environment variables"},
+			{kb.TaskLogs, "Tail logs"},
+			{kb.Metrics, "Task CPU/memory metrics"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -2446,13 +2507,18 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "Task detail"},
 			{kb.TaskLogs, "Tail logs"},
 			{kb.TaskScope, "Switch Active/Recently stopped"},
+			{kb.RunTask, "Run standalone task"},
 		}
 		if a.taskScopeStopped {
 			if a.taskNextToken != "" {
 				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
 			}
 		} else {
-			context = append(context, kv{kb.StopTask, "Stop task"})
+			context = append(context,
+				kv{kb.StopTask, "Stop task"},
+				kv{kb.ECSExec, "ECS Exec (shell into container)"},
+				kv{kb.Metrics, "Task CPU/memory metrics"},
+			)
 		}
 	case viewTaskDefDiff:
 		context = []kv{
@@ -2462,6 +2528,9 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewMetrics:
 		context = []kv{
 			{"R", "Refresh metrics"},
+		}
+		if !a.metricsTaskScope {
+			context = append(context, kv{kb.ToggleScaleIn, "Toggle scale-in suspension"})
 		}
 	case viewSSM:
 		context = []kv{
@@ -3043,7 +3112,7 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewServiceDetail
 		return a, nil
 	case viewMetrics:
-		a.state = viewServices
+		a.state = a.metricsReturnState
 		return a, nil
 	case viewSSM:
 		return a.showModePicker()

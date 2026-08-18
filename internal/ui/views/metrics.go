@@ -11,21 +11,30 @@ import (
 )
 
 type MetricsModel struct {
-	serviceName string
-	metrics     *aws.ServiceMetrics
-	alarms      []aws.AlarmState
-	width       int
-	height      int
+	scopeName      string
+	taskScope      bool
+	metrics        *aws.ServiceMetrics
+	alarms         []aws.AlarmState
+	scaleKnown     bool
+	scaleSuspended bool
+	warnings       []string
+	width          int
+	height         int
 }
 
-func NewMetrics(serviceName string) MetricsModel {
-	return MetricsModel{serviceName: serviceName}
+func NewMetrics(scopeName string, taskScope ...bool) MetricsModel {
+	isTask := len(taskScope) > 0 && taskScope[0]
+	return MetricsModel{scopeName: scopeName, taskScope: isTask}
 }
 
 func (m MetricsModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(theme.TitleStyle.Render(fmt.Sprintf("  Metrics: %s", m.serviceName)))
+	scope := "Service"
+	if m.taskScope {
+		scope = "Task"
+	}
+	b.WriteString(theme.TitleStyle.Render(fmt.Sprintf("  %s Metrics: %s", scope, m.scopeName)))
 	b.WriteString("\n\n")
 
 	if m.metrics == nil {
@@ -35,15 +44,44 @@ func (m MetricsModel) View() string {
 
 	b.WriteString(theme.TitleStyle.Render("  CPU Utilization"))
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderBar(m.metrics.CPUAvg, 50, m.width-20))
-	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderBar(m.metrics.CPUMax, 50, m.width-20))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderMetric(m.metrics.CPUAvg, m.metrics.CPUAvgAvailable, m.width-20))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderMetric(m.metrics.CPUMax, m.metrics.CPUMaxAvailable, m.width-20))
 	b.WriteString("\n")
 
 	b.WriteString(theme.TitleStyle.Render("  Memory Utilization"))
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderBar(m.metrics.MemAvg, 50, m.width-20))
-	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderBar(m.metrics.MemMax, 50, m.width-20))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderMetric(m.metrics.MemAvg, m.metrics.MemAvgAvailable, m.width-20))
+	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderMetric(m.metrics.MemMax, m.metrics.MemMaxAvailable, m.width-20))
 	b.WriteString("\n")
+
+	if !metricsAvailable(m.metrics) {
+		message := "  No service-level datapoints were returned for this period."
+		if m.taskScope {
+			message = "  No task-level datapoints were returned. Enable ECS Container Insights with enhanced observability and allow time for metrics to arrive."
+		}
+		b.WriteString(theme.HelpStyle.Render(message))
+		b.WriteString("\n\n")
+	}
+
+	for _, warning := range m.warnings {
+		b.WriteString(theme.HelpStyle.Render("  "+warning) + "\n")
+	}
+	if len(m.warnings) > 0 {
+		b.WriteString("\n")
+	}
+
+	if m.taskScope {
+		return b.String()
+	}
+
+	if m.scaleKnown {
+		status := "enabled"
+		if m.scaleSuspended {
+			status = "suspended"
+		}
+		b.WriteString(theme.HelpStyle.Render("  Service scale-in: " + status + "  [I] toggle"))
+		b.WriteString("\n\n")
+	}
 
 	if len(m.alarms) > 0 {
 		b.WriteString(theme.TitleStyle.Render("  CloudWatch Alarms"))
@@ -77,6 +115,17 @@ func (m MetricsModel) View() string {
 	return b.String()
 }
 
+func renderMetric(value float64, available bool, width int) string {
+	if !available {
+		return theme.HelpStyle.Render("No data")
+	}
+	return renderBar(value, 100, width)
+}
+
+func metricsAvailable(metrics *aws.ServiceMetrics) bool {
+	return metrics != nil && (metrics.CPUAvgAvailable || metrics.CPUMaxAvailable || metrics.MemAvgAvailable || metrics.MemMaxAvailable)
+}
+
 func (m MetricsModel) SetMetrics(metrics *aws.ServiceMetrics) MetricsModel {
 	m.metrics = metrics
 	return m
@@ -84,6 +133,17 @@ func (m MetricsModel) SetMetrics(metrics *aws.ServiceMetrics) MetricsModel {
 
 func (m MetricsModel) SetAlarms(alarms []aws.AlarmState) MetricsModel {
 	m.alarms = alarms
+	return m
+}
+
+func (m MetricsModel) SetScaleIn(known, suspended bool) MetricsModel {
+	m.scaleKnown = known
+	m.scaleSuspended = suspended
+	return m
+}
+
+func (m MetricsModel) SetWarnings(warnings []string) MetricsModel {
+	m.warnings = append([]string(nil), warnings...)
 	return m
 }
 
@@ -126,4 +186,3 @@ func alarmStateStyle(state string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(theme.ColorYellow)
 	}
 }
-
