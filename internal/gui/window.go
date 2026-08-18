@@ -224,6 +224,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.breadcrumb = gtk.NewLabel("ECS / Clusters")
 	w.breadcrumb.SetXAlign(0)
 	w.breadcrumb.SetHExpand(true)
+	// Some hinted fonts paint a one-pixel glyph overshoot outside Pango's
+	// logical text bounds. Keep that ink inside the padded widget allocation so
+	// GTK's damage tracking clears it when the breadcrumb becomes shorter.
+	w.breadcrumb.SetOverflow(gtk.OverflowHidden)
 	w.breadcrumb.AddCSSClass("breadcrumb")
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
@@ -579,6 +583,7 @@ func (w *mainWindow) setBreadcrumb(text string) {
 	w.breadcrumb.QueueResize()
 	w.breadcrumb.QueueDraw()
 	if w.headerBar != nil {
+		w.headerBar.QueueAllocate()
 		w.headerBar.QueueDraw()
 	}
 }
