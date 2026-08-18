@@ -68,7 +68,7 @@ func (a App) doScale(count int) tea.Cmd {
 		service = a.selectedService.Name
 	}
 	return func() tea.Msg {
-		err := a.client.ScaleService(context.Background(), cluster, service, count)
+		err := a.ecs.ScaleService(a.ctx, cluster, service, count)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -101,7 +101,7 @@ func (a App) doStopTask() tea.Cmd {
 		taskARN = a.selectedTask.TaskARN
 	}
 	return func() tea.Msg {
-		err := a.client.StopTask(context.Background(), cluster, taskARN, "Stopped by e9s")
+		err := a.ecs.StopTask(a.ctx, cluster, taskARN, "Stopped by e9s")
 		if err != nil {
 			return errMsg{err}
 		}

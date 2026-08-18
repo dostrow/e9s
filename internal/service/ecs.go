@@ -16,6 +16,8 @@ type ECSAPI interface {
 	ListServices(context.Context, string) ([]model.Service, error)
 	ListTasks(context.Context, string, string) ([]model.Task, error)
 	ForceNewDeployment(context.Context, string, string) error
+	ScaleService(context.Context, string, string, int) error
+	StopTask(context.Context, string, string, string) error
 	GetLogConfig(context.Context, string, string) (string, string, error)
 	ResolveTaskLogStreams(context.Context, []model.Task) (string, []string, error)
 }
@@ -56,6 +58,23 @@ func (s *ECS) ListTasks(ctx context.Context, cluster, service string) ([]model.T
 func (s *ECS) ForceDeployment(ctx context.Context, cluster, service string) error {
 	if err := s.api.ForceNewDeployment(ctx, cluster, service); err != nil {
 		return fmt.Errorf("force deployment for %q in %q: %w", service, cluster, err)
+	}
+	return nil
+}
+
+func (s *ECS) ScaleService(ctx context.Context, cluster, service string, desiredCount int) error {
+	if desiredCount < 0 {
+		return fmt.Errorf("scale ECS service %q: desired count cannot be negative", service)
+	}
+	if err := s.api.ScaleService(ctx, cluster, service, desiredCount); err != nil {
+		return fmt.Errorf("scale ECS service %q in %q: %w", service, cluster, err)
+	}
+	return nil
+}
+
+func (s *ECS) StopTask(ctx context.Context, cluster, taskARN, reason string) error {
+	if err := s.api.StopTask(ctx, cluster, taskARN, reason); err != nil {
+		return fmt.Errorf("stop ECS task %q in %q: %w", taskARN, cluster, err)
 	}
 	return nil
 }

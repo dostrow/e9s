@@ -15,6 +15,8 @@ type fakeECSAPI struct {
 	tasks    []model.Task
 	err      error
 	forced   []string
+	scaled   []any
+	stopped  []string
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -31,6 +33,16 @@ func (f *fakeECSAPI) ListTasks(context.Context, string, string) ([]model.Task, e
 
 func (f *fakeECSAPI) ForceNewDeployment(_ context.Context, cluster, service string) error {
 	f.forced = []string{cluster, service}
+	return f.err
+}
+
+func (f *fakeECSAPI) ScaleService(_ context.Context, cluster, service string, count int) error {
+	f.scaled = []any{cluster, service, count}
+	return f.err
+}
+
+func (f *fakeECSAPI) StopTask(_ context.Context, cluster, taskARN, reason string) error {
+	f.stopped = []string{cluster, taskARN, reason}
 	return f.err
 }
 
@@ -105,5 +117,33 @@ func TestECSForceDeployment(t *testing.T) {
 	}
 	if len(api.forced) != 2 || api.forced[0] != "prod" || api.forced[1] != "api" {
 		t.Fatalf("forced arguments = %#v", api.forced)
+	}
+}
+
+func TestECSScaleAndStop(t *testing.T) {
+	api := &fakeECSAPI{}
+	svc := NewECS(api)
+	if err := svc.ScaleService(context.Background(), "prod", "api", 4); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.scaled) != 3 || api.scaled[0] != "prod" || api.scaled[1] != "api" || api.scaled[2] != 4 {
+		t.Fatalf("scaled arguments = %#v", api.scaled)
+	}
+	if err := svc.StopTask(context.Background(), "prod", "arn:task/one", "Stopped by e9s"); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.stopped) != 3 || api.stopped[0] != "prod" || api.stopped[1] != "arn:task/one" || api.stopped[2] != "Stopped by e9s" {
+		t.Fatalf("stopped arguments = %#v", api.stopped)
+	}
+}
+
+func TestECSRejectsNegativeScale(t *testing.T) {
+	api := &fakeECSAPI{}
+	err := NewECS(api).ScaleService(context.Background(), "prod", "api", -1)
+	if err == nil || !strings.Contains(err.Error(), "cannot be negative") {
+		t.Fatalf("ScaleService() error = %v", err)
+	}
+	if api.scaled != nil {
+		t.Fatalf("low-level ScaleService called with %#v", api.scaled)
 	}
 }

@@ -55,6 +55,9 @@ type mainWindow struct {
 	search             *gtk.SearchEntry
 	backButton         *gtk.Button
 	logsButton         *gtk.Button
+	taskLogsButton     *gtk.Button
+	scaleButton        *gtk.Button
+	stopTaskButton     *gtk.Button
 	deployButton       *gtk.Button
 	breadcrumb         *gtk.Label
 	detailBuffer       *gtk.TextBuffer
@@ -67,6 +70,7 @@ type mainWindow struct {
 	logStore           *boundedLogs
 	logIndentTags      map[int]*gtk.TextTag
 	logSource          model.LogSource
+	logTitle           string
 	logLastTS          int64
 	logFollowing       bool
 	showingLogs        bool
@@ -134,9 +138,19 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
 	refresh.ConnectClicked(w.refresh)
-	w.logsButton = gtk.NewButtonWithLabel("Logs")
+	w.logsButton = gtk.NewButtonWithLabel("Service logs")
 	w.logsButton.SetSensitive(false)
 	w.logsButton.ConnectClicked(w.openServiceLogs)
+	w.taskLogsButton = gtk.NewButtonWithLabel("Task logs")
+	w.taskLogsButton.SetSensitive(false)
+	w.taskLogsButton.ConnectClicked(w.openTaskLogs)
+	w.scaleButton = gtk.NewButtonWithLabel("Scale")
+	w.scaleButton.SetSensitive(false)
+	w.scaleButton.ConnectClicked(w.promptScaleService)
+	w.stopTaskButton = gtk.NewButtonWithLabel("Stop task")
+	w.stopTaskButton.SetSensitive(false)
+	w.stopTaskButton.AddCSSClass("destructive-action")
+	w.stopTaskButton.ConnectClicked(w.confirmStopTask)
 	w.deployButton = gtk.NewButtonWithLabel("Force deploy")
 	w.deployButton.SetSensitive(false)
 	w.deployButton.AddCSSClass("destructive-action")
@@ -148,6 +162,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(title)
 	header.Append(w.breadcrumb)
 	header.Append(w.logsButton)
+	header.Append(w.taskLogsButton)
+	header.Append(w.scaleButton)
+	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
 	header.Append(refresh)
 
@@ -267,14 +284,17 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+S         Scale service\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
+	w.addAction(app, "task-logs", []string{"<Control><Shift>l"}, w.openTaskLogs)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
 	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
 	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
 	w.addAction(app, "force-deploy", []string{"<Control><Shift>r"}, w.confirmForceDeployment)
+	w.addAction(app, "scale-service", []string{"<Control>s"}, w.promptScaleService)
+	w.addAction(app, "stop-task", []string{"<Control><Shift>x"}, w.confirmStopTask)
 }
 
 func (w *mainWindow) addAction(app *gtk.Application, name string, accels []string, run func()) {
@@ -355,8 +375,7 @@ func (w *mainWindow) loadClusters() {
 			w.selectedCluster = ""
 			w.selectedService = ""
 			w.selectedTask = ""
-			w.logsButton.SetSensitive(false)
-			w.deployButton.SetSensitive(false)
+			w.updateActionSensitivity()
 			w.breadcrumb.SetLabel("ECS / Clusters")
 			w.backButton.SetSensitive(false)
 			w.search.SetPlaceholderText("Filter clusters…")
@@ -379,8 +398,7 @@ func (w *mainWindow) loadServices(cluster string) {
 	w.selectedCluster = cluster
 	w.selectedService = ""
 	w.selectedTask = ""
-	w.logsButton.SetSensitive(false)
-	w.deployButton.SetSensitive(false)
+	w.updateActionSensitivity()
 	w.breadcrumb.SetLabel("ECS / " + cluster)
 	w.backButton.SetSensitive(true)
 	w.search.SetPlaceholderText("Filter services…")
@@ -407,8 +425,7 @@ func (w *mainWindow) loadTasks(service model.Service) {
 	w.currentPage = pageTasks
 	w.selectedService = service.Name
 	w.selectedTask = ""
-	w.logsButton.SetSensitive(true)
-	w.deployButton.SetSensitive(true)
+	w.updateActionSensitivity()
 	if !w.showingLogs {
 		w.detailStack.SetVisibleChildName("detail")
 	}
@@ -451,6 +468,7 @@ func (w *mainWindow) openTaskAt(position uint) {
 	}
 	task := w.filteredTasks[position]
 	w.selectedTask = task.TaskARN
+	w.updateActionSensitivity()
 	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + w.selectedService + " / " + shortID(task.TaskID))
 	w.setDetail(formatTaskDetail(task), detailTask)
 }
@@ -526,8 +544,7 @@ func (w *mainWindow) goBack() {
 		w.selectedService = ""
 		w.selectedTask = ""
 		w.allTasks = nil
-		w.logsButton.SetSensitive(false)
-		w.deployButton.SetSensitive(false)
+		w.updateActionSensitivity()
 		w.search.SetText("")
 		w.search.SetPlaceholderText("Filter services…")
 		w.resourceStack.SetVisibleChildName(pageServices)
@@ -549,8 +566,7 @@ func (w *mainWindow) goBack() {
 	w.selectedCluster = ""
 	w.selectedService = ""
 	w.selectedTask = ""
-	w.logsButton.SetSensitive(false)
-	w.deployButton.SetSensitive(false)
+	w.updateActionSensitivity()
 	w.allServices = nil
 	w.search.SetText("")
 	w.search.SetPlaceholderText("Filter clusters…")
@@ -608,6 +624,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 			task, found := findTask(tasks, taskARN)
 			if !found {
 				w.selectedTask = ""
+				w.updateActionSensitivity()
 				w.breadcrumb.SetLabel("ECS / " + cluster + " / " + serviceName)
 				if w.detailContent == detailTask {
 					w.setDetail("The selected task is no longer available.\n\n"+formatServiceDetail(cluster, service, tasks), detailService)
@@ -664,8 +681,7 @@ func (w *mainWindow) refreshServices(foreground bool) {
 			}
 			if !found {
 				w.selectedService = ""
-				w.logsButton.SetSensitive(false)
-				w.deployButton.SetSensitive(false)
+				w.updateActionSensitivity()
 				w.breadcrumb.SetLabel("ECS / " + cluster)
 				if w.detailContent == detailService {
 					w.setDetail("The selected service is no longer available.\n\n"+clusterSummary(cluster, len(services)), detailClusterSummary)
@@ -710,4 +726,14 @@ func (w *mainWindow) setStatus(message string, isError bool) {
 	if isError {
 		w.status.AddCSSClass("error")
 	}
+}
+
+func (w *mainWindow) updateActionSensitivity() {
+	serviceSelected := w.currentPage == pageTasks && w.selectedCluster != "" && w.selectedService != ""
+	taskSelected := serviceSelected && w.selectedTask != ""
+	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
+	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
+	w.scaleButton.SetSensitive(serviceSelected)
+	w.stopTaskButton.SetSensitive(taskSelected)
+	w.deployButton.SetSensitive(serviceSelected)
 }

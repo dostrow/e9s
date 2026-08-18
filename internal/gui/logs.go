@@ -70,9 +70,82 @@ func (w *mainWindow) openServiceLogs() {
 		w.finishRequestWithStatus(ctx, generation, err, "Following logs for "+service, func() {
 			w.showingLogs = true
 			w.detailStack.SetVisibleChildName("logs")
+			w.logTitle = service
 			w.startLogFollow(source, false)
 		})
 	}()
+}
+
+func (w *mainWindow) openTaskLogs() {
+	if w.selectedTask == "" || w.options.Logs == nil {
+		return
+	}
+	task, found := findTask(w.allTasks, w.selectedTask)
+	if !found {
+		w.setStatus("The selected task is no longer available", true)
+		return
+	}
+	names := taskContainerNames(task)
+	if len(names) == 0 {
+		w.setStatus("The selected task has no containers", true)
+		return
+	}
+	if len(names) == 1 {
+		w.openTaskContainerLogs(task, names[0])
+		return
+	}
+
+	dialog := gtk.NewDialogWithFlags("Choose a container", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	content := dialog.ContentArea()
+	content.SetSpacing(12)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel("Follow logs from container:")
+	label.SetXAlign(0)
+	selector := gtk.NewDropDownFromStrings(names)
+	selector.SetHExpand(true)
+	content.Append(label)
+	content.Append(selector)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Follow logs", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		selected := -1
+		if response == int(gtk.ResponseOK) {
+			selected = int(selector.Selected())
+		}
+		dialog.Destroy()
+		if selected >= 0 && selected < len(names) {
+			w.openTaskContainerLogs(task, names[selected])
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) openTaskContainerLogs(task model.Task, container string) {
+	ctx, generation := w.startRequest("Resolving logs for " + container + "…")
+	go func() {
+		source, err := w.options.ECS.ContainerLogSource(ctx, task, container)
+		title := shortID(task.TaskID) + " / " + container
+		w.finishRequestWithStatus(ctx, generation, err, "Following logs for "+title, func() {
+			w.showingLogs = true
+			w.detailStack.SetVisibleChildName("logs")
+			w.logTitle = title
+			w.startLogFollow(source, false)
+		})
+	}()
+}
+
+func taskContainerNames(task model.Task) []string {
+	names := make([]string, 0, len(task.Containers))
+	for _, container := range task.Containers {
+		if container.Name != "" {
+			names = append(names, container.Name)
+		}
+	}
+	return names
 }
 
 func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
@@ -140,7 +213,7 @@ func (w *mainWindow) applyLogPage(ctx context.Context, generation uint64, page m
 			w.logStore.append(page.Entries)
 			w.renderLogs()
 		}
-		w.setStatus(fmt.Sprintf("Following %s • %d buffered lines", w.selectedService, w.logStore.len()), false)
+		w.setStatus(fmt.Sprintf("Following %s • %d buffered lines", w.logTitle, w.logStore.len()), false)
 	})
 }
 
