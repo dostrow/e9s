@@ -185,6 +185,7 @@ func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, p
 		w.logCancel()
 	}
 	w.logGeneration++
+	w.setWorkspaceBusy("", false)
 	w.logFollowing = false
 	w.logSource = source
 	w.logTitle = title
@@ -210,6 +211,7 @@ func (w *mainWindow) updateLogSearchControls() {
 	searchResult := w.logSearchSpec != nil
 	if w.logOlderButton != nil {
 		w.logOlderButton.SetVisible(w.showingLogs)
+		w.logOlderButton.SetSensitive(w.showingLogs)
 		w.logNewerButton.SetVisible(searchResult)
 		w.logCorrelateButton.SetVisible(searchResult)
 	}
@@ -231,6 +233,10 @@ func taskContainerNames(task model.Task) []string {
 func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	if w.logCancel != nil {
 		w.logCancel()
+	}
+	w.setWorkspaceBusy("Loading log events…", true)
+	if w.logOlderButton != nil {
+		w.logOlderButton.SetSensitive(false)
 	}
 	ctx, cancel := context.WithCancel(w.ctx)
 	w.logCancel = cancel
@@ -300,6 +306,8 @@ func (w *mainWindow) applyLogPage(ctx context.Context, generation uint64, page m
 		if ctx.Err() != nil || generation != w.logGeneration || !w.showingLogs {
 			return
 		}
+		w.setWorkspaceBusy("", false)
+		w.logOlderButton.SetSensitive(true)
 		w.logLastTS = next
 		if len(page.Entries) > 0 {
 			w.logStore.append(page.Entries)
@@ -312,6 +320,8 @@ func (w *mainWindow) applyLogPage(ctx context.Context, generation uint64, page m
 func (w *mainWindow) applyLogError(ctx context.Context, generation uint64, err error) {
 	glib.IdleAdd(func() {
 		if ctx.Err() == nil && generation == w.logGeneration && w.showingLogs {
+			w.setWorkspaceBusy("", false)
+			w.logOlderButton.SetSensitive(true)
 			w.setStatus("Log follow: "+err.Error(), true)
 		}
 	})
@@ -335,18 +345,45 @@ func (w *mainWindow) loadOlderLogEntries() {
 		}
 		w.logGeneration++
 		w.logFollowing = false
+		w.setWorkspaceBusy("", false)
+		w.logOlderButton.SetSensitive(true)
 		w.logPauseButton.SetLabel("Resume")
 	}
-	ctx, generation := w.startRequest("Loading older log events…")
+	if w.logCancel != nil {
+		w.logCancel()
+	}
+	ctx, cancel := context.WithCancel(w.ctx)
+	w.logCancel = cancel
+	w.logGeneration++
+	generation := w.logGeneration
+	w.logOlderButton.SetSensitive(false)
+	w.spinner.Start()
+	w.setStatus("Loading older log events…", false)
+	w.setWorkspaceBusy("Loading older log events…", true)
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, w.logSource.Group, model.LogQuery{
 			Streams:    append([]string(nil), w.logSource.Streams...),
 			BeforeTime: cutoff,
 			Limit:      500,
 		})
-		w.finishRequestWithStatus(ctx, generation, err, fmt.Sprintf("Loaded %d older log events", len(page.Entries)), func() {
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.logGeneration || !w.showingLogs {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.logOlderButton.SetSensitive(true)
+			if err != nil {
+				w.setStatus("Loading older logs failed: "+err.Error(), true)
+				return
+			}
+			if len(page.Entries) == 0 {
+				w.setStatus("No log events exist before "+time.UnixMilli(cutoff).Local().Format("2006-01-02 15:04:05.000"), false)
+				return
+			}
 			w.logStore.prepend(page.Entries)
 			w.renderLogs()
+			w.setStatus(fmt.Sprintf("Loaded %d older log events • %d buffered lines", len(page.Entries), w.logStore.len()), false)
 		})
 	}()
 }
@@ -361,6 +398,8 @@ func (w *mainWindow) toggleLogFollow() {
 		}
 		w.logGeneration++
 		w.logFollowing = false
+		w.setWorkspaceBusy("", false)
+		w.logOlderButton.SetSensitive(true)
 		w.logPauseButton.SetLabel("Resume")
 		w.setStatus(fmt.Sprintf("Logs paused • %d buffered lines", w.logStore.len()), false)
 		return
@@ -581,6 +620,7 @@ func (w *mainWindow) closeLogs() {
 		w.logCancel()
 	}
 	w.logGeneration++
+	w.setWorkspaceBusy("", false)
 	w.logFollowing = false
 	w.showingLogs = false
 	w.logHighlightRules = nil

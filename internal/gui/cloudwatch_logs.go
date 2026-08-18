@@ -262,8 +262,10 @@ func (w *mainWindow) peekSelectedLogStream() {
 	w.logCancel = cancel
 	w.logGeneration++
 	generation := w.logGeneration
+	w.peekLogStreamButton.SetSensitive(false)
 	w.spinner.Start()
 	w.setStatus("Loading recent events from "+stream.Name+"…", false)
+	w.setWorkspaceBusy("Loading recent events from "+stream.Name+"…", true)
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, group, model.LogQuery{
 			Streams: []string{stream.Name}, StartTime: start.UnixMilli(), EndTime: end.UnixMilli(),
@@ -274,6 +276,8 @@ func (w *mainWindow) peekSelectedLogStream() {
 				return
 			}
 			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.updateActionSensitivity()
 			if err != nil {
 				w.setStatus(err.Error(), true)
 				w.setDetail("ERROR\n\n"+err.Error(), detailError)

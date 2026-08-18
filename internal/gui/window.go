@@ -126,6 +126,9 @@ type mainWindow struct {
 	detailBuffer                *gtk.TextBuffer
 	detailText                  string
 	detailStack                 *gtk.Stack
+	workspaceBusyBar            *gtk.Box
+	workspaceBusySpinner        *gtk.Spinner
+	workspaceBusyLabel          *gtk.Label
 	metricsCPUAvg               *gtk.ProgressBar
 	metricsCPUMax               *gtk.ProgressBar
 	metricsMemAvg               *gtk.ProgressBar
@@ -503,14 +506,26 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildTaskDefinitionEditor(), "editor")
 	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
 	w.detailStack.SetVisibleChildName("detail")
+	w.workspaceBusySpinner = gtk.NewSpinner()
+	w.workspaceBusyLabel = gtk.NewLabel("")
+	w.workspaceBusyLabel.SetXAlign(0)
+	w.workspaceBusyLabel.SetHExpand(true)
+	w.workspaceBusyBar = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	w.workspaceBusyBar.AddCSSClass("workspace-busy")
+	w.workspaceBusyBar.Append(w.workspaceBusySpinner)
+	w.workspaceBusyBar.Append(w.workspaceBusyLabel)
+	w.workspaceBusyBar.SetVisible(false)
+	workspace := gtk.NewBox(gtk.OrientationVertical, 0)
+	workspace.Append(w.workspaceBusyBar)
+	workspace.Append(w.detailStack)
 
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	contentSplit.SetStartChild(resourcePane)
-	contentSplit.SetEndChild(w.detailStack)
+	contentSplit.SetEndChild(workspace)
 	contentSplit.SetPosition(700)
 	contentSplit.SetResizeStartChild(true)
 	contentSplit.SetResizeEndChild(true)
-	w.installPaneZoom(&resourcePane.Widget, &w.detailStack.Widget)
+	w.installPaneZoom(&resourcePane.Widget, &workspace.Widget)
 
 	mainSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	sidebarScroll := gtk.NewScrolledWindow()
@@ -755,6 +770,20 @@ func (w *mainWindow) setDetail(text, content string) {
 	w.detailContent = content
 }
 
+func (w *mainWindow) setWorkspaceBusy(label string, busy bool) {
+	if w.workspaceBusyBar == nil {
+		return
+	}
+	if !busy {
+		w.workspaceBusySpinner.Stop()
+		w.workspaceBusyBar.SetVisible(false)
+		return
+	}
+	w.workspaceBusyLabel.SetLabel(label)
+	w.workspaceBusySpinner.Start()
+	w.workspaceBusyBar.SetVisible(true)
+}
+
 func (w *mainWindow) setBreadcrumb(text string) {
 	if w.breadcrumbText == text {
 		return
@@ -853,6 +882,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 		w.generation++
 	}
 	w.spinner.Stop()
+	w.setWorkspaceBusy("", false)
 	if w.logCancel != nil {
 		w.logCancel()
 		w.logCancel = nil
@@ -1420,6 +1450,12 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	if w.showingEditor {
 		if foreground {
 			w.setStatus("Editor has unsaved content; close it before refreshing", false)
+		}
+		return
+	}
+	if w.showingLogs {
+		if foreground {
+			w.setStatus("The log view updates independently; use its toolbar controls", false)
 		}
 		return
 	}

@@ -68,6 +68,11 @@
   padding: 8px;
 }
 
+.workspace-busy {
+  border-bottom: 1px solid alpha(currentColor, 0.14);
+  padding: 8px 12px;
+}
+
 /* GTK dialog action areas are linked button boxes in several themes. Keep
  * ordinary actions visually distinct with the same eight-pixel gap used by
  * application-owned button groups. */
