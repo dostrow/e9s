@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -147,5 +149,50 @@ func TestServiceDetailReturnsToTaskDetail(t *testing.T) {
 	}
 	if restored.selectedService != service || restored.selectedTask != task {
 		t.Fatal("service detail did not preserve the selected task context")
+	}
+}
+
+func TestEnvVarsRevealKeyRequestsConfirmation(t *testing.T) {
+	secret := e9saws.EnvVar{
+		Name:   "API_TOKEN",
+		Value:  "arn:aws:secretsmanager:us-east-1:123456789012:secret:api-token",
+		Source: "secrets-manager",
+	}
+	app := App{
+		state:             viewEnvVars,
+		kb:                NewKeyBindings(),
+		envTaskDefinition: "api:1",
+		envContainer:      "api",
+		envVarsView:       views.NewEnvVars("api", []e9saws.EnvVar{secret}),
+	}
+
+	updatedModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated := updatedModel.(App)
+	if !updated.confirm.Active || updated.confirm.Action != ConfirmRevealSecrets {
+		t.Fatalf("a did not open the reveal confirmation: %#v", updated.confirm)
+	}
+}
+
+func TestEnvVarsRevealKeyTogglesAfterSecretsAreResolved(t *testing.T) {
+	secret := e9saws.EnvVar{
+		Name:          "API_TOKEN",
+		Value:         "arn:aws:secretsmanager:us-east-1:123456789012:secret:api-token",
+		ResolvedValue: "super-secret-value",
+		Source:        "secrets-manager",
+	}
+	app := App{
+		state:       viewEnvVars,
+		kb:          NewKeyBindings(),
+		envVarsView: views.NewEnvVars("api", []e9saws.EnvVar{secret}, true),
+	}
+
+	updatedModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated := updatedModel.(App)
+	if updated.confirm.Active {
+		t.Fatal("resolved secrets unexpectedly opened another confirmation")
+	}
+	view := updated.envVarsView.View()
+	if !strings.Contains(view, secret.Value) || strings.Contains(view, secret.ResolvedValue) {
+		t.Fatal("a did not toggle the resolved view back to secret references")
 	}
 }

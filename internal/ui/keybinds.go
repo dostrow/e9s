@@ -140,7 +140,7 @@ func NewKeyBindings() KeyBindings {
 		RunTask:         "a",
 		TaskDefDiff:     "d",
 		TaskDefEdit:     "e",
-		RevealSecrets:   "v",
+		RevealSecrets:   "a",
 
 		// Log viewer
 		LogFollow:     "f",

@@ -1825,7 +1825,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.toggleScaleIn()
 			}
 		case viewEnvVars:
-			if k == a.kb.RevealSecrets {
+			if k == a.kb.RevealSecrets && !a.envVarsView.SecretsResolved() {
 				return a.confirmRevealEnvSecrets()
 			}
 		case viewSSM:
@@ -2488,7 +2488,11 @@ func (a App) helpText() string {
 	case viewSQSMessageDetail:
 		primary = "[c] clone & send"
 	case viewEnvVars:
-		primary = "[a] toggle ARNs"
+		if a.envVarsView.HasSecrets() && !a.envVarsView.SecretsResolved() {
+			primary = fmt.Sprintf("[%s] reveal secrets", a.kb.RevealSecrets)
+		} else if a.envVarsView.HasSecrets() {
+			primary = "[a] toggle references/values"
+		}
 	case viewLogStreams:
 		primary = "[enter] peek"
 	case viewLogSearch:
