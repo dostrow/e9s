@@ -34,25 +34,26 @@ func TestSavedLogPathCarriesHighlightsToSearchAndTail(t *testing.T) {
 	rules := []model.LogHighlightRule{{
 		Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError,
 	}}
+	hiddenStreams := []string{"health-check"}
 	a := App{cfg: &config.Config{}}
 	search := config.LogPathEntry{
 		Name: "errors", LogGroup: "/aws/ecs/api", Filter: `"ERROR"`, Lookback: time.Hour.String(),
-		HighlightRules: rules,
+		HighlightRules: rules, HiddenStreams: hiddenStreams,
 	}
 	got, _ := a.openSavedLogDestination(search)
-	if got.logSearchSavedPath != "errors" || !reflect.DeepEqual(got.logSearchHighlightRules, rules) {
-		t.Fatalf("saved search state = %q %#v", got.logSearchSavedPath, got.logSearchHighlightRules)
+	if got.logSearchSavedPath != "errors" || !reflect.DeepEqual(got.logSearchHighlightRules, rules) || !reflect.DeepEqual(got.logSearchHiddenStreams, hiddenStreams) {
+		t.Fatalf("saved search state = %q %#v %#v", got.logSearchSavedPath, got.logSearchHighlightRules, got.logSearchHiddenStreams)
 	}
 
 	tail := config.LogPathEntry{
-		Name: "api", LogGroup: "/aws/ecs/api", Stream: "ecs/api/one", HighlightRules: rules,
+		Name: "api", LogGroup: "/aws/ecs/api", Stream: "ecs/api/one", HighlightRules: rules, HiddenStreams: hiddenStreams,
 	}
 	got, cmd := a.openSavedLogDestination(tail)
 	if cmd == nil {
 		t.Fatal("saved tail did not return a command")
 	}
 	msg, ok := cmd().(logReadyMsg)
-	if !ok || msg.savedLogPath != "api" || !reflect.DeepEqual(msg.highlightRules, rules) {
+	if !ok || msg.savedLogPath != "api" || !reflect.DeepEqual(msg.highlightRules, rules) || !reflect.DeepEqual(msg.hiddenStreams, hiddenStreams) {
 		t.Fatalf("saved tail message = %#v", msg)
 	}
 	if got.logBrowseSavedPath != "api" {

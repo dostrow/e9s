@@ -142,17 +142,22 @@ func TestCompleteLogPathCRUD(t *testing.T) {
 		Name: "errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
 		Streams: []string{"api/one", "api/two"}, Filter: `"error"`, Lookback: "1h",
 		HighlightRules: []model.LogHighlightRule{{Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError}},
+		HiddenStreams:  []string{"api/noisy"},
 	}
 	if !cfg.UpsertLogPath(entry) {
 		t.Fatal("UpsertLogPath() new = false")
 	}
 	entry.Streams[0] = "mutated"
 	entry.HighlightRules[0].Pattern = "mutated"
+	entry.HiddenStreams[0] = "mutated"
 	if cfg.LogPaths[0].Streams[0] != "api/one" {
 		t.Fatal("UpsertLogPath() retained caller slice")
 	}
 	if cfg.LogPaths[0].HighlightRules[0].Pattern != "ERROR" {
 		t.Fatal("UpsertLogPath() retained caller highlight rules")
+	}
+	if cfg.LogPaths[0].HiddenStreams[0] != "api/noisy" {
+		t.Fatal("UpsertLogPath() retained caller hidden streams")
 	}
 	if !cfg.RenameLogPath("errors", "API errors") {
 		t.Fatal("RenameLogPath() = false")

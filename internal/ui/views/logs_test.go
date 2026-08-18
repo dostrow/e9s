@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -277,6 +278,25 @@ func TestLogHighlightManagerRequestsPersistence(t *testing.T) {
 	msg, ok := cmd().(LogHighlightSaveMsg)
 	if !ok || len(msg.Rules) != 1 || msg.Rules[0].Pattern != "error" {
 		t.Fatalf("save message = %#v", msg)
+	}
+}
+
+func TestLogViewerHiddenStreamsArePresentationOnly(t *testing.T) {
+	m := LogViewerModel{
+		lines: []logLine{
+			{stream: "api", message: "visible"},
+			{stream: "health", message: "hidden"},
+		},
+	}
+	m = m.SetHiddenStreams([]string{"health"})
+	if got := m.HiddenStreams(); !reflect.DeepEqual(got, []string{"health"}) {
+		t.Fatalf("HiddenStreams() = %#v", got)
+	}
+	if got := m.displayIndices(); !reflect.DeepEqual(got, []int{0}) {
+		t.Fatalf("displayIndices() = %#v", got)
+	}
+	if len(m.lines) != 2 {
+		t.Fatalf("underlying buffer contains %d lines, want 2", len(m.lines))
 	}
 }
 

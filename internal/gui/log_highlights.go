@@ -35,8 +35,33 @@ func (w *mainWindow) promptLogHighlights() {
 	if !w.showingLogs {
 		return
 	}
-	working := append([]model.LogHighlightRule(nil), w.logHighlightRules...)
-	dialog := gtk.NewDialogWithFlags("Log highlight rules", &w.window.Window, gtk.DialogModal)
+	saveLabel := ""
+	if w.options.Config != nil && (w.activeSavedLog != "" || w.logSearchSpec != nil) {
+		saveLabel = "Apply & save search…"
+		if w.activeSavedLog != "" {
+			saveLabel = "Apply & update saved"
+		}
+	}
+	w.promptHighlightRuleEditor(&w.window.Window, "Log highlight rules", w.logHighlightRules, saveLabel, func(rules []model.LogHighlightRule, save bool) {
+		if err := w.setLogHighlightRules(rules); err != nil {
+			return
+		}
+		w.renderLogs()
+		w.setStatus(fmt.Sprintf("Applied %d log highlight rules", len(rules)), false)
+		if !save {
+			return
+		}
+		if w.activeSavedLog != "" {
+			w.saveHighlightsToActiveLog()
+			return
+		}
+		w.promptSaveLogSearch()
+	})
+}
+
+func (w *mainWindow) promptHighlightRuleEditor(parent *gtk.Window, title string, initial []model.LogHighlightRule, saveLabel string, apply func([]model.LogHighlightRule, bool)) {
+	working := append([]model.LogHighlightRule(nil), initial...)
+	dialog := gtk.NewDialogWithFlags(title, parent, gtk.DialogModal)
 	dialog.SetDestroyWithParent(true)
 	dialog.SetDefaultSize(840, 420)
 	content := dialog.ContentArea()
@@ -187,13 +212,8 @@ func (w *mainWindow) promptLogHighlights() {
 
 	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
 	dialog.AddButton("Apply", int(gtk.ResponseOK))
-	canSave := w.options.Config != nil && (w.activeSavedLog != "" || w.logSearchSpec != nil)
-	if canSave {
-		label := "Apply & save search…"
-		if w.activeSavedLog != "" {
-			label = "Apply & update saved"
-		}
-		dialog.AddButton(label, 101)
+	if saveLabel != "" {
+		dialog.AddButton(saveLabel, 101)
 	}
 	dialog.ConnectResponse(func(response int) {
 		if response != int(gtk.ResponseOK) && response != 101 {
@@ -204,21 +224,11 @@ func (w *mainWindow) promptLogHighlights() {
 			errorLabel.SetLabel(err.Error())
 			return
 		}
-		if err := w.setLogHighlightRules(working); err != nil {
-			errorLabel.SetLabel(err.Error())
-			return
-		}
-		w.renderLogs()
-		w.setStatus(fmt.Sprintf("Applied %d log highlight rules", len(working)), false)
+		rules := append([]model.LogHighlightRule(nil), working...)
 		dialog.Destroy()
-		if response != 101 {
-			return
+		if apply != nil {
+			apply(rules, response == 101)
 		}
-		if w.activeSavedLog != "" {
-			w.saveHighlightsToActiveLog()
-			return
-		}
-		w.promptSaveLogSearch()
 	})
 	dialog.Present()
 }

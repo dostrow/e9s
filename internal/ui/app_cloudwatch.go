@@ -45,8 +45,10 @@ func (a App) promptCloudWatchBrowser() (App, tea.Cmd) {
 
 func (a App) openLogGroups(prefix string) (App, tea.Cmd) {
 	a.logBrowseHighlightRules = nil
+	a.logBrowseHiddenStreams = nil
 	a.logBrowseSavedPath = ""
 	a.logSearchHighlightRules = nil
+	a.logSearchHiddenStreams = nil
 	a.logSearchSavedPath = ""
 	a.mode = modeCWLogs
 	a.state = viewLogGroups
@@ -108,6 +110,7 @@ func (a App) peekLogStream() (App, tea.Cmd) {
 			follow:         &f,
 			lookback:       15 * time.Minute,
 			highlightRules: append([]model.LogHighlightRule(nil), a.logBrowseHighlightRules...),
+			hiddenStreams:  append([]string(nil), a.logBrowseHiddenStreams...),
 			savedLogPath:   a.logBrowseSavedPath,
 		}
 	}
@@ -131,6 +134,7 @@ func (a App) tailEntireLogGroup() (App, tea.Cmd) {
 
 func (a App) startLogTail(logGroup string, streams []string, title string) tea.Cmd {
 	rules := append([]model.LogHighlightRule(nil), a.logBrowseHighlightRules...)
+	hiddenStreams := append([]string(nil), a.logBrowseHiddenStreams...)
 	savedPath := a.logBrowseSavedPath
 	return func() tea.Msg {
 		return logReadyMsg{
@@ -140,6 +144,7 @@ func (a App) startLogTail(logGroup string, streams []string, title string) tea.C
 			streams:        streams,
 			lookback:       15 * time.Minute,
 			highlightRules: rules,
+			hiddenStreams:  hiddenStreams,
 			savedLogPath:   savedPath,
 		}
 	}
@@ -157,6 +162,7 @@ func (a App) promptLogSearchFromGroups() (App, tea.Cmd) {
 	a.logSearchGroup = groups[0] // primary group for display
 	a.logSearchStreams = nil
 	a.logSearchHighlightRules = nil
+	a.logSearchHiddenStreams = nil
 	a.logSearchSavedPath = ""
 	return a.promptLogSearchTimeRange()
 }
@@ -171,6 +177,7 @@ func (a App) promptLogSearchFromStreams() (App, tea.Cmd) {
 	a.logSearchGroups = []string{a.logSearchGroup}
 	a.logSearchStreams = streams
 	a.logSearchHighlightRules = nil
+	a.logSearchHiddenStreams = nil
 	a.logSearchSavedPath = ""
 	return a.promptLogSearchTimeRange()
 }
@@ -301,6 +308,7 @@ func (a App) openSavedLogDestination(path config.LogPathEntry) (App, tea.Cmd) {
 		a.logSearchGroup = groups[0]
 		a.logSearchStreams = streams
 		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logSearchHiddenStreams = append([]string(nil), path.HiddenStreams...)
 		a.logSearchSavedPath = path.Name
 		a.logSearchStartMs = start
 		a.logSearchEndMs = end
@@ -312,15 +320,18 @@ func (a App) openSavedLogDestination(path config.LogPathEntry) (App, tea.Cmd) {
 		a.logSearchGroup = groups[0]
 		a.logSearchStreams = nil
 		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logSearchHiddenStreams = append([]string(nil), path.HiddenStreams...)
 		a.logSearchSavedPath = path.Name
 		return a.promptLogSearchTimeRange()
 	}
 	if len(streams) > 0 {
 		a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logBrowseHiddenStreams = append([]string(nil), path.HiddenStreams...)
 		a.logBrowseSavedPath = path.Name
 		return a, a.startLogTail(groups[0], streams, path.Name)
 	}
 	a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+	a.logBrowseHiddenStreams = append([]string(nil), path.HiddenStreams...)
 	a.logBrowseSavedPath = path.Name
 	return a.openLogStreams(groups[0])
 }
@@ -471,6 +482,7 @@ func (a App) handleLogCorrelationWindowPick(value string) (App, tea.Cmd) {
 			startMs:        startMs,
 			endMs:          endMs,
 			highlightRules: rules,
+			hiddenStreams:  append([]string(nil), a.logSearchHiddenStreams...),
 			anchor:         anchor,
 		}
 	}

@@ -5,12 +5,20 @@ package gui
 import (
 	"fmt"
 	"html"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
+	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
+)
+
+const (
+	savedLogModeDestination = iota
+	savedLogModeRelative
+	savedLogModeFixed
 )
 
 func (o Options) ConfigLogPaths() []config.LogPathEntry {
@@ -108,6 +116,8 @@ func (w *mainWindow) openSavedLog(path config.LogPathEntry) {
 	w.prepareSavedLogPage(path, groups, streams)
 	if len(groups) == 1 && len(streams) == 1 {
 		w.showLogFollow(model.LogSource{Group: groups[0], Streams: streams}, path.Name)
+		w.logHiddenStreams = stringSet(path.HiddenStreams)
+		w.renderLogs()
 		return
 	}
 	w.setDetail("SAVED CLOUDWATCH DESTINATION\n\n"+savedLogTooltip(path)+
@@ -156,6 +166,7 @@ func (w *mainWindow) promptSaveLogSearch() {
 			Streams: append([]string(nil), spec.Streams...), Filter: spec.Filter,
 			StartTime: spec.StartTime, EndTime: spec.EndTime,
 			HighlightRules: append([]model.LogHighlightRule(nil), w.logHighlightRules...),
+			HiddenStreams:  sortedStringSet(w.logHiddenStreams),
 		}
 		if len(spec.Streams) == 1 {
 			path.Stream = spec.Streams[0]
@@ -210,91 +221,305 @@ func (w *mainWindow) promptSaveLogDestination() {
 }
 
 func (w *mainWindow) promptManageSavedLog() {
-	if w.activeSavedLog == "" || w.options.Config == nil {
+	if w.options.Config == nil || len(w.options.Config.LogPaths) == 0 {
 		return
 	}
-	dialog := gtk.NewDialogWithFlags("Manage "+w.activeSavedLog, &w.window.Window, gtk.DialogModal)
+	paths := cloneLogPaths(w.options.Config.LogPaths)
+	names := make([]string, len(paths))
+	selected := 0
+	for i, path := range paths {
+		names[i] = path.Name
+		if path.Name == w.activeSavedLog {
+			selected = i
+		}
+	}
+	dialog := gtk.NewDialogWithFlags("Saved searches", &w.window.Window, gtk.DialogModal)
 	dialog.SetDestroyWithParent(true)
 	content := dialog.ContentArea()
+	content.SetSpacing(8)
 	content.SetMarginTop(16)
 	content.SetMarginBottom(16)
 	content.SetMarginStart(16)
 	content.SetMarginEnd(16)
-	content.Append(gtk.NewLabel("Choose an action for this saved CloudWatch destination."))
+	selector := gtk.NewDropDownFromStrings(names)
+	selector.SetSelected(uint(selected))
+	selector.SetHExpand(true)
+	detail := gtk.NewLabel("")
+	detail.SetXAlign(0)
+	detail.SetWrap(true)
+	detail.AddCSSClass("muted")
+	updateDetail := func() {
+		index := int(selector.Selected())
+		if index >= 0 && index < len(paths) {
+			detail.SetLabel(savedLogTooltip(paths[index]))
+		}
+	}
+	selector.NotifyProperty("selected", updateDetail)
+	updateDetail()
+	content.Append(selector)
+	content.Append(detail)
 	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
-	dialog.AddButton("Rename…", 101)
-	dialog.AddButton("Move up", 102)
-	dialog.AddButton("Move down", 103)
-	dialog.AddButton("Delete…", 104)
+	dialog.AddButton("Open", 101)
+	dialog.AddButton("Edit…", 102)
+	dialog.AddButton("Duplicate…", 103)
+	dialog.AddButton("Move up", 104)
+	dialog.AddButton("Move down", 105)
+	dialog.AddButton("Delete…", 106)
 	dialog.ConnectResponse(func(response int) {
+		index := int(selector.Selected())
 		dialog.Destroy()
+		if index < 0 || index >= len(paths) {
+			return
+		}
+		path := paths[index]
 		switch response {
 		case 101:
-			w.promptRenameSavedLog()
+			w.openSavedLog(path)
 		case 102:
-			w.moveActiveSavedLog(-1)
+			w.promptEditSavedLog(path, path.Name)
 		case 103:
-			w.moveActiveSavedLog(1)
+			path.Name = w.availableSavedLogName(path.Name + " copy")
+			w.promptEditSavedLog(path, "")
 		case 104:
-			w.confirmDeleteSavedLog()
+			w.moveSavedLog(path.Name, -1)
+		case 105:
+			w.moveSavedLog(path.Name, 1)
+		case 106:
+			w.confirmDeleteSavedLogNamed(path.Name)
 		}
 	})
 	dialog.Present()
 }
 
-func (w *mainWindow) promptRenameSavedLog() {
-	oldName := w.activeSavedLog
-	dialog, entry := w.newSavedLogNameDialog("Rename saved search", "New name", oldName)
+func (w *mainWindow) promptEditSavedLog(path config.LogPathEntry, originalName string) {
+	dialog := gtk.NewDialogWithFlags("Edit saved search", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(760, 640)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+
+	name := gtk.NewEntry()
+	name.SetText(path.Name)
+	groups := gtk.NewEntry()
+	groups.SetText(strings.Join(savedLogGroups(path), ", "))
+	streams := gtk.NewEntry()
+	streams.SetText(strings.Join(savedLogStreams(path), ", "))
+	filter := gtk.NewEntry()
+	filter.SetText(path.Filter)
+	mode := gtk.NewDropDownFromStrings([]string{"Destination / live logs", "Relative search", "Fixed UTC range"})
+	modeIndex := savedLogModeDestination
+	if path.Lookback != "" {
+		modeIndex = savedLogModeRelative
+	} else if path.StartTime > 0 || path.EndTime > 0 || path.Filter != "" {
+		modeIndex = savedLogModeFixed
+	}
+	mode.SetSelected(uint(modeIndex))
+	lookback := gtk.NewEntry()
+	lookback.SetText(path.Lookback)
+	if path.Lookback == "" {
+		lookback.SetText("1h")
+	}
+	now := time.Now().UTC()
+	from := gtk.NewEntry()
+	to := gtk.NewEntry()
+	if path.StartTime > 0 {
+		from.SetText(time.UnixMilli(path.StartTime).UTC().Format("2006-01-02 15:04:05"))
+	} else {
+		from.SetText(now.Add(-time.Hour).Format("2006-01-02 15:04:05"))
+	}
+	if path.EndTime > 0 {
+		to.SetText(time.UnixMilli(path.EndTime).UTC().Format("2006-01-02 15:04:05"))
+	} else {
+		to.SetText(now.Format("2006-01-02 15:04:05"))
+	}
+	hiddenStreams := gtk.NewEntry()
+	hiddenStreams.SetText(strings.Join(path.HiddenStreams, ", "))
+	hiddenStreams.SetPlaceholderText("Comma-separated streams hidden by default")
+
+	appendDialogField(content, "Name", name)
+	appendDialogField(content, "Log groups", groups)
+	appendDialogField(content, "Log streams (optional)", streams)
+	appendDialogField(content, "Mode", mode)
+	appendDialogField(content, "Search expression", filter)
+	appendDialogField(content, "Relative lookback (for example 15m, 1h, 7d)", lookback)
+	appendDialogField(content, "From (UTC)", from)
+	appendDialogField(content, "To (UTC)", to)
+	appendDialogField(content, "Hidden streams", hiddenStreams)
+
+	rules := append([]model.LogHighlightRule(nil), path.HighlightRules...)
+	highlightRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	highlightSummary := gtk.NewLabel("")
+	highlightSummary.SetXAlign(0)
+	highlightSummary.SetHExpand(true)
+	updateHighlightSummary := func() {
+		highlightSummary.SetLabel(fmt.Sprintf("%d highlight rules", len(rules)))
+	}
+	updateHighlightSummary()
+	editHighlights := gtk.NewButtonWithLabel("Edit rules…")
+	editHighlights.ConnectClicked(func() {
+		w.promptHighlightRuleEditor(&dialog.Window, "Saved highlight rules", rules, "", func(updated []model.LogHighlightRule, _ bool) {
+			rules = updated
+			updateHighlightSummary()
+		})
+	})
+	highlightRow.Append(highlightSummary)
+	highlightRow.Append(editHighlights)
+	appendDialogField(content, "Highlights", highlightRow)
+
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.SetWrap(true)
+	errorLabel.AddCSSClass("error")
+	content.Append(errorLabel)
+	updateMode := func() {
+		selected := int(mode.Selected())
+		filter.SetSensitive(selected != savedLogModeDestination)
+		lookback.SetSensitive(selected == savedLogModeRelative)
+		from.SetSensitive(selected == savedLogModeFixed)
+		to.SetSensitive(selected == savedLogModeFixed)
+	}
+	mode.NotifyProperty("selected", updateMode)
+	updateMode()
+
 	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
-	dialog.AddButton("Rename", int(gtk.ResponseOK))
+	dialog.AddButton("Save", int(gtk.ResponseOK))
 	dialog.ConnectResponse(func(response int) {
 		if response != int(gtk.ResponseOK) {
 			dialog.Destroy()
 			return
 		}
-		name := strings.TrimSpace(entry.Text())
-		if name == "" {
+		updated, err := buildSavedLogDefinition(
+			name.Text(), groups.Text(), streams.Text(), int(mode.Selected()), filter.Text(), lookback.Text(),
+			from.Text(), to.Text(), hiddenStreams.Text(), rules,
+		)
+		if err != nil {
+			errorLabel.SetLabel(err.Error())
 			return
 		}
-		for _, path := range w.options.Config.LogPaths {
-			if path.Name == name && name != oldName {
-				w.setStatus("A saved CloudWatch destination already uses that name", true)
+		for _, existing := range w.options.Config.LogPaths {
+			if existing.Name == updated.Name && existing.Name != originalName {
+				errorLabel.SetLabel("A saved CloudWatch destination already uses that name")
 				return
 			}
 		}
-		dialog.Destroy()
-		if !w.mutateSavedLogs(func(cfg *config.Config) { cfg.RenameLogPath(oldName, name) }) {
+		wasActive := originalName != "" && w.activeSavedLog == originalName
+		if !w.mutateSavedLogs(func(cfg *config.Config) {
+			if originalName != "" && originalName != updated.Name {
+				cfg.RemoveLogPath(originalName)
+			}
+			cfg.UpsertLogPath(updated)
+		}) {
 			return
 		}
-		w.activeSavedLog = name
-		w.setBreadcrumb("CloudWatch Logs / " + name)
+		dialog.Destroy()
+		if wasActive {
+			w.activeSavedLog = updated.Name
+		}
 		w.rebuildSavedLogRail()
-		w.updateActionSensitivity()
+		if wasActive {
+			w.openSavedLog(updated)
+		} else {
+			w.updateActionSensitivity()
+		}
+		w.setStatus("Saved CloudWatch definition "+updated.Name, false)
 	})
 	dialog.Present()
 }
 
-func (w *mainWindow) moveActiveSavedLog(direction int) {
+func buildSavedLogDefinition(name, groupsText, streamsText string, mode int, filterText, lookbackText, fromText, toText, hiddenStreamsText string, rules []model.LogHighlightRule) (config.LogPathEntry, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return config.LogPathEntry{}, fmt.Errorf("name is required")
+	}
+	groups := splitLogScope(groupsText)
+	if len(groups) == 0 {
+		return config.LogPathEntry{}, fmt.Errorf("at least one log group is required")
+	}
+	streams := splitLogScope(streamsText)
+	if len(groups) > 1 && len(streams) > 0 {
+		return config.LogPathEntry{}, fmt.Errorf("stream selection is available only for a single log group")
+	}
+	if _, err := highlight.Compile(rules); err != nil {
+		return config.LogPathEntry{}, err
+	}
+	path := config.LogPathEntry{
+		Name: name, LogGroup: groups[0], LogGroups: groups,
+		Streams:        append([]string(nil), streams...),
+		HighlightRules: append([]model.LogHighlightRule(nil), rules...),
+		HiddenStreams:  splitLogScope(hiddenStreamsText),
+	}
+	if len(streams) == 1 {
+		path.Stream = streams[0]
+	}
+	switch mode {
+	case savedLogModeDestination:
+	case savedLogModeRelative:
+		lookback, err := time.ParseDuration(strings.TrimSpace(lookbackText))
+		if err != nil || lookback <= 0 {
+			return config.LogPathEntry{}, fmt.Errorf("lookback must be a positive duration such as 15m, 1h, or 7d")
+		}
+		path.Filter = quoteCloudWatchFilter(filterText)
+		path.Lookback = lookback.String()
+	case savedLogModeFixed:
+		from, err := parseCloudWatchUTCTime(fromText)
+		if err != nil {
+			return config.LogPathEntry{}, fmt.Errorf("from time: %w", err)
+		}
+		to, err := parseCloudWatchUTCTime(toText)
+		if err != nil {
+			return config.LogPathEntry{}, fmt.Errorf("to time: %w", err)
+		}
+		if !from.Before(to) {
+			return config.LogPathEntry{}, fmt.Errorf("the start time must be before the end time")
+		}
+		path.Filter = quoteCloudWatchFilter(filterText)
+		path.StartTime, path.EndTime = from.UnixMilli(), to.UnixMilli()
+	default:
+		return config.LogPathEntry{}, fmt.Errorf("select a valid saved-search mode")
+	}
+	return path, nil
+}
+
+func (w *mainWindow) availableSavedLogName(base string) string {
+	used := make(map[string]struct{}, len(w.options.ConfigLogPaths()))
+	for _, path := range w.options.ConfigLogPaths() {
+		used[path.Name] = struct{}{}
+	}
+	if _, exists := used[base]; !exists {
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s %d", base, suffix)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+func (w *mainWindow) moveSavedLog(name string, direction int) {
 	if w.options.Config == nil {
 		return
 	}
 	canMove := false
 	for i, path := range w.options.Config.LogPaths {
-		if path.Name == w.activeSavedLog {
+		if path.Name == name {
 			to := i + direction
 			canMove = to >= 0 && to < len(w.options.Config.LogPaths)
 			break
 		}
 	}
-	if !canMove || !w.mutateSavedLogs(func(cfg *config.Config) { cfg.MoveLogPath(w.activeSavedLog, direction) }) {
+	if !canMove || !w.mutateSavedLogs(func(cfg *config.Config) { cfg.MoveLogPath(name, direction) }) {
 		return
 	}
 	w.rebuildSavedLogRail()
 	w.updateActionSensitivity()
 }
 
-func (w *mainWindow) confirmDeleteSavedLog() {
-	name := w.activeSavedLog
+func (w *mainWindow) confirmDeleteSavedLogNamed(name string) {
 	if name == "" || w.options.Config == nil {
 		return
 	}
@@ -310,9 +535,16 @@ func (w *mainWindow) confirmDeleteSavedLog() {
 		if !w.mutateSavedLogs(func(cfg *config.Config) { cfg.RemoveLogPath(name) }) {
 			return
 		}
-		w.activeSavedLog = ""
+		wasActive := w.activeSavedLog == name
+		if wasActive {
+			w.activeSavedLog = ""
+		}
 		w.rebuildSavedLogRail()
-		w.loadLogGroups()
+		if wasActive {
+			w.loadLogGroups()
+		} else {
+			w.updateActionSensitivity()
+		}
 	})
 	dialog.Present()
 }
@@ -355,6 +587,7 @@ func cloneLogPaths(paths []config.LogPathEntry) []config.LogPathEntry {
 		cloned[i].LogGroups = append([]string(nil), cloned[i].LogGroups...)
 		cloned[i].Streams = append([]string(nil), cloned[i].Streams...)
 		cloned[i].HighlightRules = append([]model.LogHighlightRule(nil), cloned[i].HighlightRules...)
+		cloned[i].HiddenStreams = append([]string(nil), cloned[i].HiddenStreams...)
 	}
 	return cloned
 }
@@ -400,6 +633,7 @@ func searchFromSavedLog(path config.LogPathEntry, now time.Time) (cloudWatchSear
 		Groups: groups, Streams: streams, Filter: path.Filter, Lookback: lookback,
 		StartTime: start, EndTime: end, Title: path.Name,
 		HighlightRules: append([]model.LogHighlightRule(nil), path.HighlightRules...),
+		HiddenStreams:  append([]string(nil), path.HiddenStreams...),
 	}, nil
 }
 
@@ -412,5 +646,31 @@ func savedLogTooltip(path config.LogPathEntry) string {
 	if path.Lookback != "" {
 		text += " • " + path.Lookback
 	}
+	if len(path.HiddenStreams) > 0 {
+		text += fmt.Sprintf(" • %d hidden streams", len(path.HiddenStreams))
+	}
 	return text
+}
+
+func stringSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	return set
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }

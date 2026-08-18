@@ -117,7 +117,7 @@ func TestSearchFromSavedLogUsesRelativeLookback(t *testing.T) {
 	path := config.LogPathEntry{
 		Name: "API errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
 		Streams: []string{"api/one"}, Filter: `"error"`, Lookback: "6h",
-		HighlightRules: rules,
+		HighlightRules: rules, HiddenStreams: []string{"api/noisy"},
 	}
 	spec, err := searchFromSavedLog(path, now)
 	if err != nil {
@@ -132,9 +132,48 @@ func TestSearchFromSavedLogUsesRelativeLookback(t *testing.T) {
 	if !reflect.DeepEqual(spec.HighlightRules, rules) {
 		t.Fatalf("highlight rules = %#v", spec.HighlightRules)
 	}
+	if !reflect.DeepEqual(spec.HiddenStreams, path.HiddenStreams) {
+		t.Fatalf("hidden streams = %#v", spec.HiddenStreams)
+	}
 	path.HighlightRules[0].Pattern = "mutated"
+	path.HiddenStreams[0] = "mutated"
 	if spec.HighlightRules[0].Pattern != "error" {
 		t.Fatal("search spec retained saved-search highlight slice")
+	}
+	if spec.HiddenStreams[0] != "api/noisy" {
+		t.Fatal("search spec retained saved-search hidden-stream slice")
+	}
+}
+
+func TestBuildSavedLogDefinitionRelative(t *testing.T) {
+	rules := []model.LogHighlightRule{{
+		Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+	}}
+	path, err := buildSavedLogDefinition(
+		"API errors", "/aws/ecs/api", "api/one", savedLogModeRelative,
+		"request failed", "90m", "", "", "health, debug", rules,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path.Filter != `"request failed"` || path.Lookback != "1h30m0s" {
+		t.Fatalf("relative query = %#v", path)
+	}
+	if !reflect.DeepEqual(path.HiddenStreams, []string{"health", "debug"}) || !reflect.DeepEqual(path.HighlightRules, rules) {
+		t.Fatalf("presentation defaults = %#v", path)
+	}
+}
+
+func TestBuildSavedLogDefinitionRejectsInvalidScopesAndRanges(t *testing.T) {
+	if _, err := buildSavedLogDefinition(
+		"bad scope", "one,two", "stream", savedLogModeDestination, "", "", "", "", "", nil,
+	); err == nil {
+		t.Fatal("multi-group stream scope was accepted")
+	}
+	if _, err := buildSavedLogDefinition(
+		"bad range", "one", "", savedLogModeFixed, "", "", "2026-08-18 11:00", "2026-08-18 10:00", "", nil,
+	); err == nil {
+		t.Fatal("reversed fixed range was accepted")
 	}
 }
 

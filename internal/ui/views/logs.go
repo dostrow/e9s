@@ -954,6 +954,33 @@ func (m LogViewerModel) HighlightRules() []model.LogHighlightRule {
 	return append([]model.LogHighlightRule(nil), m.highlightRules...)
 }
 
+// SetHiddenStreams replaces the presentation-only set of streams omitted from
+// the rendered buffer. The underlying events remain available for later use.
+func (m LogViewerModel) SetHiddenStreams(streams []string) LogViewerModel {
+	if len(streams) == 0 {
+		m.hiddenStreams = nil
+	} else {
+		m.hiddenStreams = make(map[string]struct{}, len(streams))
+		for _, stream := range streams {
+			if stream != "" {
+				m.hiddenStreams[stream] = struct{}{}
+			}
+		}
+	}
+	m.visibilityChanged()
+	return m
+}
+
+// HiddenStreams returns a stable copy safe for config persistence.
+func (m LogViewerModel) HiddenStreams() []string {
+	streams := make([]string, 0, len(m.hiddenStreams))
+	for stream := range m.hiddenStreams {
+		streams = append(streams, stream)
+	}
+	sort.Strings(streams)
+	return streams
+}
+
 // OpenStreamManager opens the presentation-only stream visibility selector.
 func (m LogViewerModel) OpenStreamManager() LogViewerModel {
 	if m.streamManager {

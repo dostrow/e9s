@@ -30,6 +30,7 @@ type LogPathEntry struct {
 	StartTime      int64                    `yaml:"start_time,omitempty"`
 	EndTime        int64                    `yaml:"end_time,omitempty"`
 	HighlightRules []model.LogHighlightRule `yaml:"highlight_rules,omitempty"`
+	HiddenStreams  []string                 `yaml:"hidden_streams,omitempty"`
 }
 
 type SQSQueueEntry struct {
@@ -524,6 +525,7 @@ func (c *Config) UpsertLogPath(entry LogPathEntry) bool {
 	entry.LogGroups = append([]string(nil), entry.LogGroups...)
 	entry.Streams = append([]string(nil), entry.Streams...)
 	entry.HighlightRules = append([]model.LogHighlightRule(nil), entry.HighlightRules...)
+	entry.HiddenStreams = append([]string(nil), entry.HiddenStreams...)
 	for i, path := range c.LogPaths {
 		if path.Name == entry.Name {
 			c.LogPaths[i] = entry

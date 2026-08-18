@@ -189,8 +189,10 @@ type App struct {
 	logSearchEndMs           int64
 	logSearchFilter          string // quoted/processed filter pattern for CW API
 	logSearchHighlightRules  []model.LogHighlightRule
+	logSearchHiddenStreams   []string
 	logSearchSavedPath       string
 	logBrowseHighlightRules  []model.LogHighlightRule
+	logBrowseHiddenStreams   []string
 	logBrowseSavedPath       string
 	activeLogPathName        string
 	logCorrelationActive     bool
@@ -688,6 +690,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.logView = a.logView.WithContext(a.ctx)
 		a.logView = a.logView.SetHighlightRules(msg.highlightRules)
+		a.logView = a.logView.SetHiddenStreams(msg.hiddenStreams)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -707,6 +710,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeLogPathName = a.logSearchSavedPath
 		a.logView = a.logView.WithContext(a.ctx)
 		a.logView = a.logView.SetHighlightRules(a.logSearchHighlightRules)
+		a.logView = a.logView.SetHiddenStreams(a.logSearchHiddenStreams)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 

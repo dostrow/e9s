@@ -305,7 +305,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.saveLogDestinationButton.ConnectClicked(w.promptSaveLogDestination)
 	w.saveLogSearchButton = gtk.NewButtonWithLabel("Save search")
 	w.saveLogSearchButton.ConnectClicked(w.promptSaveLogSearch)
-	w.manageSavedLogButton = gtk.NewButtonWithLabel("Manage saved…")
+	w.manageSavedLogButton = gtk.NewButtonWithLabel("Saved searches…")
 	w.manageSavedLogButton.ConnectClicked(w.promptManageSavedLog)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
@@ -1806,7 +1806,7 @@ func (w *mainWindow) updateActionSensitivity() {
 	hasSearch := w.showingLogs && w.logSearchSpec != nil
 	w.saveLogSearchButton.SetVisible(hasSearch && w.activeSavedLog == "")
 	w.saveLogSearchButton.SetSensitive(hasSearch && w.options.Config != nil)
-	managingSaved := cloudWatchBrowser && w.activeSavedLog != "" && w.options.Config != nil
+	managingSaved := cloudWatchBrowser && w.options.Config != nil && len(w.options.Config.LogPaths) > 0
 	w.manageSavedLogButton.SetVisible(managingSaved)
 	w.manageSavedLogButton.SetSensitive(managingSaved)
 	w.scaleButton.SetVisible(serviceSelected)

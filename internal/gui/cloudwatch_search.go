@@ -37,6 +37,7 @@ type cloudWatchSearch struct {
 	EndTime        int64
 	Title          string
 	HighlightRules []model.LogHighlightRule
+	HiddenStreams  []string
 	Anchor         *model.LogEntry
 }
 
@@ -57,6 +58,7 @@ func (w *mainWindow) promptCloudWatchSearch() {
 	defaultGroups := []string{w.selectedLogGroup}
 	defaultStreams := []string(nil)
 	defaultHighlightRules := []model.LogHighlightRule(nil)
+	defaultHiddenStreams := []string(nil)
 	if w.currentPage == pageLogStreams && w.selectedLogStream != "" {
 		defaultStreams = []string{w.selectedLogStream}
 	}
@@ -64,6 +66,7 @@ func (w *mainWindow) promptCloudWatchSearch() {
 		defaultGroups = savedLogGroups(path)
 		defaultStreams = savedLogStreams(path)
 		defaultHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		defaultHiddenStreams = append([]string(nil), path.HiddenStreams...)
 	}
 	groups := gtk.NewEntry()
 	groups.SetText(strings.Join(defaultGroups, ", "))
@@ -129,6 +132,7 @@ func (w *mainWindow) promptCloudWatchSearch() {
 			return
 		}
 		spec.HighlightRules = defaultHighlightRules
+		spec.HiddenStreams = defaultHiddenStreams
 		dialog.Destroy()
 		w.runCloudWatchSearch(spec)
 	})
@@ -191,6 +195,7 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 	spec.Groups = append([]string(nil), spec.Groups...)
 	spec.Streams = append([]string(nil), spec.Streams...)
 	spec.HighlightRules = append([]model.LogHighlightRule(nil), spec.HighlightRules...)
+	spec.HiddenStreams = append([]string(nil), spec.HiddenStreams...)
 	if spec.Anchor != nil {
 		anchor := *spec.Anchor
 		spec.Anchor = &anchor
@@ -222,6 +227,8 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 func (w *mainWindow) showCloudWatchSearchResults(spec cloudWatchSearch, page model.LogPage) {
 	w.logSearchSpec = &spec
 	w.showLogSnapshotData(model.LogSource{Group: spec.Groups[0], Streams: spec.Streams}, spec.Title, page)
+	w.logHiddenStreams = stringSet(spec.HiddenStreams)
+	w.renderLogs()
 	if spec.Anchor != nil {
 		w.scrollLogEntryToCenter(*spec.Anchor)
 	}
