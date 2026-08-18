@@ -5,6 +5,7 @@ package gui
 import (
 	"fmt"
 	"html"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -116,8 +117,6 @@ func (w *mainWindow) openSavedLog(path config.LogPathEntry) {
 	w.prepareSavedLogPage(path, groups, streams)
 	if len(groups) == 1 && len(streams) == 1 {
 		w.showLogFollow(model.LogSource{Group: groups[0], Streams: streams}, path.Name)
-		w.logHiddenStreams = stringSet(path.HiddenStreams)
-		w.renderLogs()
 		return
 	}
 	w.setDetail("SAVED CLOUDWATCH DESTINATION\n\n"+savedLogTooltip(path)+
@@ -145,10 +144,21 @@ func (w *mainWindow) prepareSavedLogPage(path config.LogPathEntry, groups, strea
 }
 
 func (w *mainWindow) promptSaveLogSearch() {
-	if w.logSearchSpec == nil || w.options.Config == nil {
+	if w.options.Config == nil {
 		return
 	}
-	dialog, entry := w.newSavedLogNameDialog("Save CloudWatch search", "Search name", "")
+	if _, ok := w.workspaceSavedLogDefinition(""); !ok {
+		return
+	}
+	suggestedName := "Saved search"
+	if w.activeSavedLog != "" {
+		suggestedName = w.activeSavedLog + " copy"
+	}
+	dialog, entry := w.newSavedLogNameDialog("Save CloudWatch search as", "Search name", w.availableSavedLogName(suggestedName))
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.AddCSSClass("error")
+	dialog.ContentArea().Append(errorLabel)
 	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
 	dialog.AddButton("Save", int(gtk.ResponseOK))
 	dialog.ConnectResponse(func(response int) {
@@ -158,22 +168,19 @@ func (w *mainWindow) promptSaveLogSearch() {
 		}
 		name := strings.TrimSpace(entry.Text())
 		if name == "" {
+			errorLabel.SetLabel("Enter a name")
 			return
 		}
-		spec := *w.logSearchSpec
-		path := config.LogPathEntry{
-			Name: name, LogGroup: spec.Groups[0], LogGroups: append([]string(nil), spec.Groups...),
-			Streams: append([]string(nil), spec.Streams...), Filter: spec.Filter,
-			StartTime: spec.StartTime, EndTime: spec.EndTime,
-			HighlightRules: append([]model.LogHighlightRule(nil), w.logHighlightRules...),
-			HiddenStreams:  sortedStringSet(w.logHiddenStreams),
+		for _, existing := range w.options.Config.LogPaths {
+			if existing.Name == name {
+				errorLabel.SetLabel("A saved CloudWatch destination already uses that name")
+				return
+			}
 		}
-		if len(spec.Streams) == 1 {
-			path.Stream = spec.Streams[0]
-		}
-		if spec.Lookback > 0 {
-			path.Lookback = spec.Lookback.String()
-			path.StartTime, path.EndTime = 0, 0
+		path, ok := w.workspaceSavedLogDefinition(name)
+		if !ok {
+			errorLabel.SetLabel("The current log workspace cannot be saved")
+			return
 		}
 		dialog.Destroy()
 		if !w.mutateSavedLogs(func(cfg *config.Config) { cfg.UpsertLogPath(path) }) {
@@ -185,6 +192,100 @@ func (w *mainWindow) promptSaveLogSearch() {
 		w.setStatus("Saved CloudWatch search as "+name, false)
 	})
 	dialog.Present()
+}
+
+func (w *mainWindow) updateActiveSavedLogFromWorkspace() {
+	if w.options.Config == nil || w.activeSavedLog == "" {
+		return
+	}
+	path, ok := w.workspaceSavedLogDefinition(w.activeSavedLog)
+	if !ok {
+		w.setStatus("The current log workspace cannot update this saved search", true)
+		return
+	}
+	if !w.mutateSavedLogs(func(cfg *config.Config) { cfg.UpsertLogPath(path) }) {
+		return
+	}
+	w.rebuildSavedLogRail()
+	w.updateActionSensitivity()
+	w.setStatus("Updated saved CloudWatch search "+path.Name, false)
+}
+
+func (w *mainWindow) workspaceSavedLogDefinition(name string) (config.LogPathEntry, bool) {
+	if !w.showingLogs {
+		return config.LogPathEntry{}, false
+	}
+	path := config.LogPathEntry{Name: strings.TrimSpace(name)}
+	if w.logSearchSpec != nil {
+		spec := w.logSearchSpec
+		path.LogGroups = append([]string(nil), spec.Groups...)
+		path.Streams = append([]string(nil), spec.Streams...)
+		path.Filter = spec.Filter
+		path.StartTime, path.EndTime = spec.StartTime, spec.EndTime
+		if spec.Lookback > 0 {
+			path.Lookback = spec.Lookback.String()
+			path.StartTime, path.EndTime = 0, 0
+		}
+	} else if w.logSource.Group != "" {
+		path.LogGroups = []string{w.logSource.Group}
+		path.Streams = append([]string(nil), w.logSource.Streams...)
+	} else {
+		return config.LogPathEntry{}, false
+	}
+	if len(path.LogGroups) == 0 {
+		return config.LogPathEntry{}, false
+	}
+	path.LogGroup = path.LogGroups[0]
+	if len(path.Streams) == 1 {
+		path.Stream = path.Streams[0]
+	}
+	path.HighlightRules = append([]model.LogHighlightRule(nil), w.logHighlightRules...)
+	path.HiddenStreams = sortedStringSet(w.logHiddenStreams)
+	return path, true
+}
+
+func (w *mainWindow) savedLogWorkspaceDirty() bool {
+	saved, ok := w.activeSavedLogPath()
+	if !ok {
+		return false
+	}
+	workspace, ok := w.workspaceSavedLogDefinition(saved.Name)
+	if !ok {
+		return false
+	}
+	return !savedLogDefinitionsEqual(saved, workspace)
+}
+
+func savedLogDefinitionsEqual(left, right config.LogPathEntry) bool {
+	return reflect.DeepEqual(normalizeSavedLogDefinition(left), normalizeSavedLogDefinition(right))
+}
+
+func normalizeSavedLogDefinition(path config.LogPathEntry) config.LogPathEntry {
+	path.LogGroups = savedLogGroups(path)
+	path.Streams = savedLogStreams(path)
+	path.LogGroup, path.Stream = "", ""
+	if len(path.LogGroups) > 0 {
+		path.LogGroup = path.LogGroups[0]
+	}
+	if len(path.Streams) == 1 {
+		path.Stream = path.Streams[0]
+	}
+	path.HighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+	path.HiddenStreams = splitLogScope(strings.Join(path.HiddenStreams, ","))
+	sort.Strings(path.HiddenStreams)
+	if len(path.LogGroups) == 0 {
+		path.LogGroups = nil
+	}
+	if len(path.Streams) == 0 {
+		path.Streams = nil
+	}
+	if len(path.HighlightRules) == 0 {
+		path.HighlightRules = nil
+	}
+	if len(path.HiddenStreams) == 0 {
+		path.HiddenStreams = nil
+	}
+	return path
 }
 
 func (w *mainWindow) promptSaveLogDestination() {
@@ -345,7 +446,7 @@ func (w *mainWindow) promptEditSavedLog(path config.LogPathEntry, originalName s
 	appendDialogField(content, "Log streams (optional)", streams)
 	appendDialogField(content, "Mode", mode)
 	appendDialogField(content, "Search expression", filter)
-	appendDialogField(content, "Relative lookback (for example 15m, 1h, 7d)", lookback)
+	appendDialogField(content, "Relative lookback (for example 15m, 1h, 168h)", lookback)
 	appendDialogField(content, "From (UTC)", from)
 	appendDialogField(content, "To (UTC)", to)
 	appendDialogField(content, "Hidden streams", hiddenStreams)

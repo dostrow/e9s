@@ -174,6 +174,10 @@ func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
 	w.logPauseButton.SetVisible(true)
 	w.updateLogSearchControls()
 	w.startLogFollow(source, false)
+	if path, ok := w.activeSavedLogPath(); ok {
+		w.logHiddenStreams = stringSet(path.HiddenStreams)
+		w.renderLogs()
+	}
 	w.setStatus("Following logs for "+title, false)
 	w.updateActionSensitivity()
 }
@@ -655,6 +659,7 @@ func (w *mainWindow) promptLogStreams() {
 		}
 		w.logHiddenStreams = hidden
 		w.renderLogs()
+		w.updateActionSensitivity()
 		w.setStatus(fmt.Sprintf("Showing %d of %d streams • %d buffered lines", len(streams)-len(hidden), len(streams), w.logStore.len()), false)
 	})
 	dialog.Present()

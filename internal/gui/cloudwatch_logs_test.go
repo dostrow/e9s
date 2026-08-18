@@ -177,6 +177,52 @@ func TestBuildSavedLogDefinitionRejectsInvalidScopesAndRanges(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSavedLogDefinitionUsesCurrentSearchAndPresentation(t *testing.T) {
+	rules := []model.LogHighlightRule{{
+		Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+	}}
+	w := mainWindow{
+		showingLogs: true,
+		logSearchSpec: &cloudWatchSearch{
+			Groups: []string{"/aws/ecs/api"}, Streams: []string{"api/one"},
+			Filter: `"error"`, Lookback: 90 * time.Minute,
+			StartTime: 1, EndTime: 2,
+		},
+		logHighlightRules: rules,
+		logHiddenStreams:  map[string]struct{}{"api/noisy": {}},
+	}
+	path, ok := w.workspaceSavedLogDefinition("API errors")
+	if !ok {
+		t.Fatal("workspace definition was unavailable")
+	}
+	if path.Name != "API errors" || path.LogGroup != "/aws/ecs/api" || path.Stream != "api/one" {
+		t.Fatalf("scope = %#v", path)
+	}
+	if path.Lookback != "1h30m0s" || path.StartTime != 0 || path.EndTime != 0 {
+		t.Fatalf("relative range = %#v", path)
+	}
+	if !reflect.DeepEqual(path.HighlightRules, rules) || !reflect.DeepEqual(path.HiddenStreams, []string{"api/noisy"}) {
+		t.Fatalf("presentation = %#v", path)
+	}
+}
+
+func TestSavedLogWorkspaceDirtyNormalizesLegacyScope(t *testing.T) {
+	saved := config.LogPathEntry{Name: "api", LogGroup: "/aws/ecs/api", Stream: "api/one"}
+	w := mainWindow{
+		options:        Options{Config: &config.Config{LogPaths: []config.LogPathEntry{saved}}},
+		activeSavedLog: "api",
+		showingLogs:    true,
+		logSource:      model.LogSource{Group: "/aws/ecs/api", Streams: []string{"api/one"}},
+	}
+	if w.savedLogWorkspaceDirty() {
+		t.Fatal("equivalent canonical and legacy scopes were considered different")
+	}
+	w.logHiddenStreams = map[string]struct{}{"api/noisy": {}}
+	if !w.savedLogWorkspaceDirty() {
+		t.Fatal("presentation change did not mark the workspace modified")
+	}
+}
+
 func TestLogHighlightOptionIndices(t *testing.T) {
 	if got := highlightMatchOptionIndex(model.LogHighlightRegex); got != 2 {
 		t.Fatalf("regex option index = %d", got)

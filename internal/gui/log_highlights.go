@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -47,12 +46,13 @@ func (w *mainWindow) promptLogHighlights() {
 			return
 		}
 		w.renderLogs()
+		w.updateActionSensitivity()
 		w.setStatus(fmt.Sprintf("Applied %d log highlight rules", len(rules)), false)
 		if !save {
 			return
 		}
 		if w.activeSavedLog != "" {
-			w.saveHighlightsToActiveLog()
+			w.updateActiveSavedLogFromWorkspace()
 			return
 		}
 		w.promptSaveLogSearch()
@@ -231,21 +231,6 @@ func (w *mainWindow) promptHighlightRuleEditor(parent *gtk.Window, title string,
 		}
 	})
 	dialog.Present()
-}
-
-func (w *mainWindow) saveHighlightsToActiveLog() {
-	path, ok := w.activeSavedLogPath()
-	if !ok || w.options.Config == nil {
-		w.setStatus("The active saved CloudWatch search no longer exists", true)
-		return
-	}
-	path.HighlightRules = append([]model.LogHighlightRule(nil), w.logHighlightRules...)
-	if !w.mutateSavedLogs(func(cfg *config.Config) { cfg.UpsertLogPath(path) }) {
-		return
-	}
-	w.rebuildSavedLogRail()
-	w.updateActionSensitivity()
-	w.setStatus(fmt.Sprintf("Saved %d highlight rules with %s", len(path.HighlightRules), path.Name), false)
 }
 
 func highlightMatchOptionIndex(value model.LogHighlightMatch) int {

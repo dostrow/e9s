@@ -68,6 +68,18 @@ func (w *mainWindow) promptCloudWatchSearch() {
 		defaultHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
 		defaultHiddenStreams = append([]string(nil), path.HiddenStreams...)
 	}
+	if w.showingLogs {
+		defaultHighlightRules = append([]model.LogHighlightRule(nil), w.logHighlightRules...)
+		defaultHiddenStreams = sortedStringSet(w.logHiddenStreams)
+		if w.logSearchSpec == nil && w.logSource.Group != "" {
+			defaultGroups = []string{w.logSource.Group}
+			defaultStreams = append([]string(nil), w.logSource.Streams...)
+		}
+	}
+	if w.logSearchSpec != nil {
+		defaultGroups = append([]string(nil), w.logSearchSpec.Groups...)
+		defaultStreams = append([]string(nil), w.logSearchSpec.Streams...)
+	}
 	groups := gtk.NewEntry()
 	groups.SetText(strings.Join(defaultGroups, ", "))
 	groups.SetPlaceholderText("Comma-separated log groups")

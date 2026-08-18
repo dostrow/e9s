@@ -105,6 +105,8 @@ type mainWindow struct {
 	searchLogsButton            *gtk.Button
 	saveLogDestinationButton    *gtk.Button
 	saveLogSearchButton         *gtk.Button
+	updateSavedLogButton        *gtk.Button
+	savedLogModifiedLabel       *gtk.Label
 	manageSavedLogButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
@@ -303,8 +305,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.searchLogsButton.ConnectClicked(w.promptCloudWatchSearch)
 	w.saveLogDestinationButton = gtk.NewButtonWithLabel("Save destination")
 	w.saveLogDestinationButton.ConnectClicked(w.promptSaveLogDestination)
-	w.saveLogSearchButton = gtk.NewButtonWithLabel("Save search")
+	w.savedLogModifiedLabel = gtk.NewLabel("Modified")
+	w.savedLogModifiedLabel.AddCSSClass("saved-log-modified")
+	w.saveLogSearchButton = gtk.NewButtonWithLabel("Save as…")
 	w.saveLogSearchButton.ConnectClicked(w.promptSaveLogSearch)
+	w.updateSavedLogButton = gtk.NewButtonWithLabel("Update saved")
+	w.updateSavedLogButton.ConnectClicked(w.updateActiveSavedLogFromWorkspace)
 	w.manageSavedLogButton = gtk.NewButtonWithLabel("Saved searches…")
 	w.manageSavedLogButton.ConnectClicked(w.promptManageSavedLog)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
@@ -351,6 +357,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.followLogGroupButton)
 	header.Append(w.searchLogsButton)
 	header.Append(w.saveLogDestinationButton)
+	header.Append(w.savedLogModifiedLabel)
+	header.Append(w.updateSavedLogButton)
 	header.Append(w.saveLogSearchButton)
 	header.Append(w.manageSavedLogButton)
 	header.Append(w.scaleButton)
@@ -1803,9 +1811,15 @@ func (w *mainWindow) updateActionSensitivity() {
 	canSaveDestination := w.activeSavedLog == "" && (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams) && logGroupSelected
 	w.saveLogDestinationButton.SetVisible(canSaveDestination)
 	w.saveLogDestinationButton.SetSensitive(canSaveDestination && w.options.Config != nil)
-	hasSearch := w.showingLogs && w.logSearchSpec != nil
-	w.saveLogSearchButton.SetVisible(hasSearch && w.activeSavedLog == "")
-	w.saveLogSearchButton.SetSensitive(hasSearch && w.options.Config != nil)
+	_, activeSavedExists := w.activeSavedLogPath()
+	hasSavedWorkspace := w.showingLogs && w.activeSavedLog != "" && activeSavedExists
+	canSaveWorkspace := w.showingLogs && (w.logSearchSpec != nil || hasSavedWorkspace)
+	w.saveLogSearchButton.SetVisible(canSaveWorkspace)
+	w.saveLogSearchButton.SetSensitive(canSaveWorkspace && w.options.Config != nil)
+	dirtySavedWorkspace := hasSavedWorkspace && w.savedLogWorkspaceDirty()
+	w.savedLogModifiedLabel.SetVisible(dirtySavedWorkspace)
+	w.updateSavedLogButton.SetVisible(hasSavedWorkspace)
+	w.updateSavedLogButton.SetSensitive(dirtySavedWorkspace && w.options.Config != nil)
 	managingSaved := cloudWatchBrowser && w.options.Config != nil && len(w.options.Config.LogPaths) > 0
 	w.manageSavedLogButton.SetVisible(managingSaved)
 	w.manageSavedLogButton.SetSensitive(managingSaved)
