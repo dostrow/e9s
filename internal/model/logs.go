@@ -1,5 +1,41 @@
 package model
 
+// LogHighlightMatch describes how a log highlight pattern is interpreted.
+type LogHighlightMatch string
+
+const (
+	LogHighlightLiteral   LogHighlightMatch = "literal"
+	LogHighlightLiteralCI LogHighlightMatch = "literal_ci"
+	LogHighlightRegex     LogHighlightMatch = "regex"
+)
+
+// LogHighlightStyle is a semantic presentation hint shared by every frontend.
+// Frontends map these values onto their own theme-aware visual styles.
+type LogHighlightStyle string
+
+const (
+	LogHighlightDefault LogHighlightStyle = "highlight"
+	LogHighlightInfo    LogHighlightStyle = "info"
+	LogHighlightSuccess LogHighlightStyle = "success"
+	LogHighlightWarning LogHighlightStyle = "warning"
+	LogHighlightError   LogHighlightStyle = "error"
+)
+
+// LogHighlightRule is a portable, presentation-only rule for emphasizing
+// matching spans in log messages.
+type LogHighlightRule struct {
+	Pattern string            `yaml:"pattern"`
+	Match   LogHighlightMatch `yaml:"match"`
+	Style   LogHighlightStyle `yaml:"style"`
+}
+
+// LogHighlightSpan identifies a matched rune range in a log message.
+type LogHighlightSpan struct {
+	Start int
+	End   int
+	Style LogHighlightStyle
+}
+
 // LogGroup is the UI-neutral summary used by log browsers.
 type LogGroup struct {
 	Name        string

@@ -3,9 +3,13 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dostrow/e9s/internal/model"
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -137,13 +141,18 @@ func TestCompleteLogPathCRUD(t *testing.T) {
 	entry := LogPathEntry{
 		Name: "errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
 		Streams: []string{"api/one", "api/two"}, Filter: `"error"`, Lookback: "1h",
+		HighlightRules: []model.LogHighlightRule{{Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError}},
 	}
 	if !cfg.UpsertLogPath(entry) {
 		t.Fatal("UpsertLogPath() new = false")
 	}
 	entry.Streams[0] = "mutated"
+	entry.HighlightRules[0].Pattern = "mutated"
 	if cfg.LogPaths[0].Streams[0] != "api/one" {
 		t.Fatal("UpsertLogPath() retained caller slice")
+	}
+	if cfg.LogPaths[0].HighlightRules[0].Pattern != "ERROR" {
+		t.Fatal("UpsertLogPath() retained caller highlight rules")
 	}
 	if !cfg.RenameLogPath("errors", "API errors") {
 		t.Fatal("RenameLogPath() = false")
@@ -154,6 +163,30 @@ func TestCompleteLogPathCRUD(t *testing.T) {
 	}
 	if cfg.RenameLogPath("deployments", "API errors") {
 		t.Fatal("RenameLogPath() allowed a duplicate name")
+	}
+}
+
+func TestLogHighlightRulesYAMLCompatibility(t *testing.T) {
+	var legacy Config
+	if err := yaml.Unmarshal([]byte("log_paths:\n  - name: api\n    log_group: /aws/ecs/api\n"), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if got := legacy.LogPaths[0].HighlightRules; len(got) != 0 {
+		t.Fatalf("legacy highlight rules = %#v, want none", got)
+	}
+
+	want := []model.LogHighlightRule{{Pattern: "timeout", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightWarning}}
+	cfg := Config{LogPaths: []LogPathEntry{{Name: "api", LogGroup: "/aws/ecs/api", HighlightRules: want}}}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTrip Config
+	if err := yaml.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(roundTrip.LogPaths[0].HighlightRules, want) {
+		t.Fatalf("round-trip highlight rules = %#v, want %#v", roundTrip.LogPaths[0].HighlightRules, want)
 	}
 }
 
