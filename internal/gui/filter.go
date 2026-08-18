@@ -44,6 +44,22 @@ func filterServices(services []model.Service, query string) []model.Service {
 	return filtered
 }
 
+func findService(services []model.Service, name string) (model.Service, bool) {
+	for _, service := range services {
+		if service.Name == name {
+			return service, true
+		}
+	}
+	return model.Service{}, false
+}
+
+func clusterSummary(cluster string, serviceCount int) string {
+	if serviceCount == 0 {
+		return "No ECS services found in " + cluster + "."
+	}
+	return fmt.Sprintf("%s\n\n%d services\n\nSelect a service and press Enter for deployments, tasks, and recent events.", cluster, serviceCount)
+}
+
 func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s / %s\n\n", cluster, svc.Name)

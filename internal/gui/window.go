@@ -17,6 +17,12 @@ import (
 const (
 	pageClusters = "clusters"
 	pageServices = "services"
+
+	detailIntro          = "intro"
+	detailClusterSummary = "cluster-summary"
+	detailService        = "service"
+	detailHelp           = "help"
+	detailError          = "error"
 )
 
 type mainWindow struct {
@@ -30,9 +36,9 @@ type mainWindow struct {
 	logGeneration uint64
 
 	currentPage        string
+	detailContent      string
 	selectedCluster    string
 	selectedService    string
-	pendingService     string
 	allClusters        []model.Cluster
 	filteredClusters   []model.Cluster
 	allServices        []model.Service
@@ -46,6 +52,7 @@ type mainWindow struct {
 	deployButton       *gtk.Button
 	breadcrumb         *gtk.Label
 	detailBuffer       *gtk.TextBuffer
+	detailText         string
 	detailStack        *gtk.Stack
 	logView            *gtk.TextView
 	logTextBuffer      *gtk.TextBuffer
@@ -63,9 +70,10 @@ type mainWindow struct {
 
 func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *mainWindow {
 	w := &mainWindow{
-		ctx:         ctx,
-		options:     options,
-		currentPage: pageClusters,
+		ctx:           ctx,
+		options:       options,
+		currentPage:   pageClusters,
+		detailContent: detailIntro,
 	}
 
 	w.clusterTable = newStringTable([]columnSpec{
@@ -171,7 +179,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	resourcePane.Append(w.resourceStack)
 
 	w.detailBuffer = gtk.NewTextBuffer(nil)
-	w.detailBuffer.SetText("Select a cluster and press Enter to browse its services.")
+	w.detailText = "Select a cluster and press Enter to browse its services."
+	w.detailBuffer.SetText(w.detailText)
 	detail := gtk.NewTextViewWithBuffer(w.detailBuffer)
 	detail.SetEditable(false)
 	detail.SetCursorVisible(false)
@@ -237,7 +246,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.detailBuffer.SetText("KEYBOARD SHORTCUTS\n\nEnter          Open selected row\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help")
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
@@ -255,14 +264,20 @@ func (w *mainWindow) addAction(app *gtk.Application, name string, accels []strin
 }
 
 func (w *mainWindow) startRequest(label string) (context.Context, uint64) {
+	return w.startRefreshRequest(label, true)
+}
+
+func (w *mainWindow) startRefreshRequest(label string, foreground bool) (context.Context, uint64) {
 	if w.requestCancel != nil {
 		w.requestCancel()
 	}
 	ctx, cancel := context.WithCancel(w.ctx)
 	w.requestCancel = cancel
 	w.generation++
-	w.spinner.Start()
-	w.setStatus(label, false)
+	if foreground {
+		w.spinner.Start()
+		w.setStatus(label, false)
+	}
 	return ctx, w.generation
 }
 
@@ -271,6 +286,14 @@ func (w *mainWindow) finishRequest(ctx context.Context, generation uint64, err e
 }
 
 func (w *mainWindow) finishRequestWithStatus(ctx context.Context, generation uint64, err error, success string, apply func()) {
+	w.finishRequestResult(ctx, generation, err, success, true, apply)
+}
+
+func (w *mainWindow) finishRefreshRequest(ctx context.Context, generation uint64, err error, apply func()) {
+	w.finishRequestResult(ctx, generation, err, "", false, apply)
+}
+
+func (w *mainWindow) finishRequestResult(ctx context.Context, generation uint64, err error, success string, showDetailError bool, apply func()) {
 	glib.IdleAdd(func() {
 		if ctx.Err() != nil || generation != w.generation {
 			return
@@ -278,7 +301,9 @@ func (w *mainWindow) finishRequestWithStatus(ctx context.Context, generation uin
 		w.spinner.Stop()
 		if err != nil {
 			w.setStatus(err.Error(), true)
-			w.detailBuffer.SetText("ERROR\n\n" + err.Error())
+			if showDetailError {
+				w.setDetail("ERROR\n\n"+err.Error(), detailError)
+			}
 			return
 		}
 		w.lastSuccessfulLoad = time.Now()
@@ -288,6 +313,15 @@ func (w *mainWindow) finishRequestWithStatus(ctx context.Context, generation uin
 		}
 		w.setStatus(success, false)
 	})
+}
+
+func (w *mainWindow) setDetail(text, content string) {
+	if w.detailText == text && w.detailContent == content {
+		return
+	}
+	w.detailBuffer.SetText(text)
+	w.detailText = text
+	w.detailContent = content
 }
 
 func (w *mainWindow) loadClusters() {
@@ -307,7 +341,7 @@ func (w *mainWindow) loadClusters() {
 			w.resourceStack.SetVisibleChildName(pageClusters)
 			w.applyClusterFilter()
 			if len(clusters) == 0 {
-				w.detailBuffer.SetText("No ECS clusters found in this region.")
+				w.setDetail("No ECS clusters found in this region.", detailIntro)
 			}
 			if w.options.DefaultCluster != "" {
 				name := w.options.DefaultCluster
@@ -329,7 +363,7 @@ func (w *mainWindow) loadServices(cluster string) {
 	w.search.SetPlaceholderText("Filter services…")
 	w.search.SetText("")
 	w.resourceStack.SetVisibleChildName(pageServices)
-	w.detailBuffer.SetText("Loading services for " + cluster + "…")
+	w.setDetail("Loading services for "+cluster+"…", detailClusterSummary)
 
 	ctx, generation := w.startRequest("Loading services in " + cluster + "…")
 	go func() {
@@ -338,14 +372,9 @@ func (w *mainWindow) loadServices(cluster string) {
 			w.allServices = services
 			w.applyServiceFilter()
 			if len(services) == 0 {
-				w.detailBuffer.SetText("No ECS services found in " + cluster + ".")
+				w.setDetail("No ECS services found in "+cluster+".", detailClusterSummary)
 			} else {
-				w.detailBuffer.SetText(fmt.Sprintf("%s\n\n%d services\n\nSelect a service and press Enter for deployments, tasks, and recent events.", cluster, len(services)))
-			}
-			if w.pendingService != "" {
-				name := w.pendingService
-				w.pendingService = ""
-				w.openServiceByName(name)
+				w.setDetail(clusterSummary(cluster, len(services)), detailClusterSummary)
 			}
 		})
 	}()
@@ -359,14 +388,14 @@ func (w *mainWindow) loadServiceDetail(service model.Service) {
 		w.detailStack.SetVisibleChildName("detail")
 	}
 	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + service.Name)
-	w.detailBuffer.SetText("Loading tasks and service details…")
+	w.setDetail("Loading tasks and service details…", detailService)
 
 	ctx, generation := w.startRequest("Loading " + service.Name + "…")
 	cluster := w.selectedCluster
 	go func() {
 		tasks, err := w.options.ECS.ListTasks(ctx, cluster, service.Name)
 		w.finishRequest(ctx, generation, err, func() {
-			w.detailBuffer.SetText(formatServiceDetail(cluster, service, tasks))
+			w.setDetail(formatServiceDetail(cluster, service, tasks), detailService)
 		})
 	}()
 }
@@ -393,15 +422,6 @@ func (w *mainWindow) openClusterByName(name string) {
 		}
 	}
 	w.setStatus(fmt.Sprintf("Configured cluster %q was not found", name), true)
-}
-
-func (w *mainWindow) openServiceByName(name string) {
-	for _, service := range w.allServices {
-		if service.Name == name {
-			w.loadServiceDetail(service)
-			return
-		}
-	}
 }
 
 func (w *mainWindow) applyFilter() {
@@ -458,24 +478,85 @@ func (w *mainWindow) goBack() {
 	w.resourceStack.SetVisibleChildName(pageClusters)
 	w.breadcrumb.SetLabel("ECS / Clusters")
 	w.backButton.SetSensitive(false)
-	w.detailBuffer.SetText("Select a cluster and press Enter to browse its services.")
+	w.setDetail("Select a cluster and press Enter to browse its services.", detailIntro)
 	w.applyClusterFilter()
 	w.setStatus("Ready", false)
 }
 
 func (w *mainWindow) refresh() {
+	w.refreshCurrent(true)
+}
+
+func (w *mainWindow) refreshCurrent(foreground bool) {
 	if w.currentPage == pageServices && w.selectedCluster != "" {
-		w.pendingService = w.selectedService
-		w.loadServices(w.selectedCluster)
+		w.refreshServices(foreground)
 		return
 	}
-	w.loadClusters()
+	w.refreshClusters(foreground)
+}
+
+func (w *mainWindow) refreshClusters(foreground bool) {
+	ctx, generation := w.startRefreshRequest("Refreshing ECS clusters…", foreground)
+	go func() {
+		clusters, err := w.options.ECS.ListClusters(ctx)
+		w.finishRefreshRequest(ctx, generation, err, func() {
+			w.allClusters = clusters
+			w.applyClusterFilter()
+			if w.detailContent == detailIntro && len(clusters) == 0 {
+				w.setDetail("No ECS clusters found in this region.", detailIntro)
+			}
+		})
+	}()
+}
+
+func (w *mainWindow) refreshServices(foreground bool) {
+	cluster, selectedName := w.selectedCluster, w.selectedService
+	ctx, generation := w.startRefreshRequest("Refreshing services in "+cluster+"…", foreground)
+	go func() {
+		services, err := w.options.ECS.ListServices(ctx, cluster)
+		var (
+			selected model.Service
+			tasks    []model.Task
+			found    bool
+		)
+		if err == nil && selectedName != "" {
+			selected, found = findService(services, selectedName)
+			if found {
+				tasks, err = w.options.ECS.ListTasks(ctx, cluster, selectedName)
+			}
+		}
+
+		w.finishRefreshRequest(ctx, generation, err, func() {
+			w.allServices = services
+			w.applyServiceFilter()
+
+			if selectedName == "" {
+				if w.detailContent == detailClusterSummary {
+					w.setDetail(clusterSummary(cluster, len(services)), detailClusterSummary)
+				}
+				return
+			}
+			if !found {
+				w.selectedService = ""
+				w.logsButton.SetSensitive(false)
+				w.deployButton.SetSensitive(false)
+				w.breadcrumb.SetLabel("ECS / " + cluster)
+				if w.detailContent == detailService {
+					w.setDetail("The selected service is no longer available.\n\n"+clusterSummary(cluster, len(services)), detailClusterSummary)
+				}
+				return
+			}
+			if w.detailContent == detailService {
+				w.setDetail(formatServiceDetail(cluster, selected, tasks), detailService)
+			}
+		})
+	}()
 }
 
 func (w *mainWindow) scheduleRefresh() {
 	glib.IdleAdd(func() {
 		if w.ctx.Err() == nil {
-			w.refresh()
+			w.refreshCurrent(false)
 		}
 	})
 }

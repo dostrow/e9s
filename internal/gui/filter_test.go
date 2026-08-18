@@ -38,6 +38,31 @@ func TestFilterServicesAcrossVisibleFields(t *testing.T) {
 	}
 }
 
+func TestFindServicePreservesSelectedServiceAcrossRefresh(t *testing.T) {
+	services := []model.Service{
+		{Name: "api", RunningCount: 2},
+		{Name: "worker", RunningCount: 4},
+	}
+
+	got, found := findService(services, "worker")
+	if !found || got.Name != "worker" || got.RunningCount != 4 {
+		t.Fatalf("findService() = %#v, %v", got, found)
+	}
+	if _, found := findService(services, "removed"); found {
+		t.Fatal("findService() found a removed service")
+	}
+}
+
+func TestClusterSummary(t *testing.T) {
+	if got := clusterSummary("production", 0); got != "No ECS services found in production." {
+		t.Fatalf("clusterSummary(empty) = %q", got)
+	}
+	got := clusterSummary("production", 3)
+	if !strings.Contains(got, "production") || !strings.Contains(got, "3 services") {
+		t.Fatalf("clusterSummary() = %q", got)
+	}
+}
+
 func TestFormatServiceDetail(t *testing.T) {
 	created := time.Date(2026, 8, 17, 20, 0, 0, 0, time.Local)
 	svc := model.Service{

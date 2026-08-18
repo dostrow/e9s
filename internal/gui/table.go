@@ -20,6 +20,7 @@ type stringTable struct {
 	selection *gtk.SingleSelection
 	view      *gtk.ColumnView
 	count     uint
+	rows      []string
 }
 
 func newStringTable(columns []columnSpec) *stringTable {
@@ -37,8 +38,16 @@ func newStringTable(columns []columnSpec) *stringTable {
 }
 
 func (t *stringTable) replace(rows []string) {
+	if stringRowsEqual(t.rows, rows) {
+		return
+	}
+	selected, preserveSelection := preservedRowPosition(t.rows, rows, t.selection.Selected())
 	t.model.Splice(0, t.count, rows)
 	t.count = uint(len(rows))
+	t.rows = append(t.rows[:0], rows...)
+	if preserveSelection {
+		t.selection.SetSelected(selected)
+	}
 }
 
 func textColumn(spec columnSpec) *gtk.ColumnViewColumn {
