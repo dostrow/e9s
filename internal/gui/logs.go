@@ -206,7 +206,6 @@ func (w *mainWindow) renderLogs() {
 
 func newHangingIndentTag(prefixWidth int) *gtk.TextTag {
 	tag := gtk.NewTextTag("")
-	tag.SetObjectProperty("left-margin", prefixWidth)
 	tag.SetObjectProperty("indent", -prefixWidth)
 	return tag
 }
