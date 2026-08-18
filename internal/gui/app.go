@@ -25,6 +25,7 @@ type ECSService interface {
 	StopTask(context.Context, string, string, string) error
 	RunTask(context.Context, model.RunTaskRequest) ([]model.Task, error)
 	GetServiceMetrics(context.Context, string, string, time.Duration) (*model.ServiceMetrics, error)
+	GetTaskMetrics(context.Context, string, string, model.Task, time.Duration) (*model.ServiceMetrics, error)
 	ListServiceAlarms(context.Context, string, string) ([]model.AlarmState, error)
 	ScaleInSuspended(context.Context, string, string) (bool, error)
 	SetScaleInSuspended(context.Context, string, string, bool) error

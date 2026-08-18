@@ -86,10 +86,16 @@ go build -tags "gui vte" ./cmd/e9s-gui
 
 The GUI provides cluster, service, service-task, and standalone-task browsing;
 task-definition inspection, diffing, environment lookup, and revision editing;
-service and per-container logs; metrics and alarms; scaling and guarded ECS
-mutations; and ECS Exec in an embedded VTE terminal. The GTK frontend and
-Bubble Tea frontend both call the same UI-neutral services in
-`internal/service`; GTK code does not call AWS SDK adapters directly.
+service and per-container logs; service-wide and selected-task metrics, service
+alarms; scaling and guarded ECS mutations; and ECS Exec in an embedded VTE
+terminal. The GTK frontend and Bubble Tea frontend both call the same UI-neutral
+services in `internal/service`; GTK code does not call AWS SDK adapters directly.
+
+Service metrics use the standard `AWS/ECS` service dimensions. Selected-task
+metrics use `TaskCpuUtilization` and `TaskMemoryUtilization` from
+`ECS/ContainerInsights`, so ECS Container Insights with enhanced observability
+must be enabled for task-level datapoints to appear. The metrics workspace
+reports unavailable datapoints as `No data` rather than treating them as zero.
 
 gotk4 is pinned to `v0.3.1`. Releases `v0.4.0` and `v0.4.1` generated references
 to GLib APIs newer than the GLib 2.86 headers available on the verified system.
@@ -113,20 +119,23 @@ memory than a cached rebuild.
 9. Place the pointer over each pane and use Ctrl+mouse-wheel to confirm the
    browser and workspace zoom independently. Confirm Ctrl++/Ctrl+- affect the
    focused or most recently pointed-to pane and Ctrl+0 resets it.
-10. Switch between Clusters and Task Defs in the module rail and confirm the
+10. Open Metrics with no task selected and confirm the service scope is shown.
+    Select a task, reopen Metrics, and confirm the task scope is shown without
+    service alarm or scale-in controls.
+11. Switch between Clusters and Task Defs in the module rail and confirm the
     browser and workspace both change immediately.
-11. Enter Standalone from both a service list and a service task list; confirm
+12. Enter Standalone from both a service list and a service task list; confirm
     the header toggle returns to the corresponding service view.
-12. Open logs, then use the header Back button or select another browser item;
+13. Open logs, then use the header Back button or select another browser item;
     confirm log polling stops and the workspace shows the new context.
-13. Repeatedly switch between long and short breadcrumbs and confirm the header
+14. Repeatedly switch between long and short breadcrumbs and confirm the header
     fully repaints without remnants of the previous text.
-14. Collapse and expand ECS in the module rail and confirm its sub-items hide
+15. Collapse and expand ECS in the module rail and confirm its sub-items hide
     and return without changing the current browser context. Confirm the active
     sub-item remains highlighted using the current GTK theme.
-15. Select a service task, then use Back to service details in the workspace;
+16. Select a service task, then use Back to service details in the workspace;
     confirm the task browser remains visible and its row is unselected.
-16. Move through cluster, service, task, and standalone contexts and confirm the
+17. Move through cluster, service, task, and standalone contexts and confirm the
     header shows only applicable action groups; unavailable capabilities remain
     visible but disabled within an applicable context.
 

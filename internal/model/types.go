@@ -89,11 +89,15 @@ type RunTaskRequest struct {
 }
 
 type ServiceMetrics struct {
-	CPUAvg    float64
-	CPUMax    float64
-	MemAvg    float64
-	MemMax    float64
-	Timestamp time.Time
+	CPUAvg          float64
+	CPUMax          float64
+	MemAvg          float64
+	MemMax          float64
+	CPUAvgAvailable bool
+	CPUMaxAvailable bool
+	MemAvgAvailable bool
+	MemMaxAvailable bool
+	Timestamp       time.Time
 }
 
 type AlarmState struct {

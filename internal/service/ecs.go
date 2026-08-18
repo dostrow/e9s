@@ -22,6 +22,7 @@ type ECSAPI interface {
 	StopTask(context.Context, string, string, string) error
 	RunTask(context.Context, model.RunTaskRequest) ([]model.Task, error)
 	GetServiceMetrics(context.Context, string, string, time.Duration) (*model.ServiceMetrics, error)
+	GetTaskMetrics(context.Context, string, string, string, string, time.Duration) (*model.ServiceMetrics, error)
 	ListAlarms(context.Context, string, string) ([]model.AlarmState, error)
 	ScaleInSuspended(context.Context, string, string) (bool, error)
 	SetScaleInSuspended(context.Context, string, string, bool) error
@@ -135,6 +136,14 @@ func (s *ECS) GetServiceMetrics(ctx context.Context, cluster, service string, pe
 	metrics, err := s.api.GetServiceMetrics(ctx, cluster, service, period)
 	if err != nil {
 		return nil, fmt.Errorf("get metrics for ECS service %q in %q: %w", service, cluster, err)
+	}
+	return metrics, nil
+}
+
+func (s *ECS) GetTaskMetrics(ctx context.Context, cluster, service string, task model.Task, period time.Duration) (*model.ServiceMetrics, error) {
+	metrics, err := s.api.GetTaskMetrics(ctx, cluster, service, task.TaskID, task.TaskDefinition, period)
+	if err != nil {
+		return nil, fmt.Errorf("get metrics for ECS task %q in %q: %w", task.TaskID, cluster, err)
 	}
 	return metrics, nil
 }

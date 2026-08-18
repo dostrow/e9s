@@ -92,9 +92,14 @@ type mainWindow struct {
 	metricsAlarmTable           *stringTable
 	metricsScaleButton          *gtk.Button
 	metricsScaleLabel           *gtk.Label
+	metricsTitle                *gtk.Label
+	metricsScope                *gtk.Label
+	metricsNotice               *gtk.Label
 	metricsTimestamp            *gtk.Label
+	metricsAlarmSection         *gtk.Box
 	metricsSnapshot             *model.ServiceMetrics
 	metricsAlarms               []model.AlarmState
+	metricsTaskID               string
 	scaleInSuspended            bool
 	scaleInKnown                bool
 	showingMetrics              bool
@@ -217,7 +222,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.runTaskButton.ConnectClicked(w.promptRunTask)
 	w.metricsButton = gtk.NewButtonWithLabel("Metrics")
 	w.metricsButton.SetSensitive(false)
-	w.metricsButton.ConnectClicked(w.openServiceMetrics)
+	w.metricsButton.ConnectClicked(w.openMetrics)
 	w.execButton = gtk.NewButtonWithLabel("Exec")
 	w.execButton.SetSensitive(false)
 	w.execButton.ConnectClicked(w.openExec)
@@ -417,14 +422,14 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the task-definition editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
 	w.addAction(app, "task-logs", []string{"<Control><Shift>l"}, w.openTaskLogs)
 	w.addAction(app, "standalone-tasks", []string{"<Shift>s"}, w.toggleStandaloneTasks)
 	w.addAction(app, "run-task", []string{"<Control>Return"}, w.promptRunTask)
-	w.addAction(app, "metrics", []string{"m"}, w.openServiceMetrics)
+	w.addAction(app, "metrics", []string{"m"}, w.openMetrics)
 	w.addAction(app, "toggle-scale-in", []string{"<Control><Shift>a"}, w.confirmToggleScaleIn)
 	w.addAction(app, "task-definitions", []string{"<Shift>t"}, w.openTaskDefinitions)
 	w.addAction(app, "task-definition-env", []string{"e"}, w.openTaskDefinitionEnvironment)
@@ -913,7 +918,7 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		return
 	}
 	if w.showingMetrics {
-		w.loadServiceMetrics(foreground)
+		w.loadMetrics(foreground)
 		return
 	}
 	if w.currentPage == pageStandaloneTasks && w.selectedCluster != "" {
@@ -1118,8 +1123,8 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
-	w.metricsButton.SetVisible(serviceSelected)
-	w.metricsButton.SetSensitive(serviceSelected)
+	w.metricsButton.SetVisible(serviceSelected || taskSelected)
+	w.metricsButton.SetSensitive(serviceSelected || taskSelected)
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

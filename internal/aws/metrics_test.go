@@ -32,3 +32,45 @@ func TestMatchesServiceDimensions(t *testing.T) {
 		t.Fatal("matchesDimensions() matched wrong service")
 	}
 }
+
+func TestTaskUtilizationMetricQueries(t *testing.T) {
+	dimensions := []cwtypes.Dimension{
+		{Name: aws.String("ClusterName"), Value: aws.String("prod")},
+		{Name: aws.String("ServiceName"), Value: aws.String("api")},
+		{Name: aws.String("TaskId"), Value: aws.String("task-1")},
+	}
+	queries := utilizationMetricQueries("ECS/ContainerInsights", "TaskCpuUtilization", "TaskMemoryUtilization", dimensions)
+	if len(queries) != 4 {
+		t.Fatalf("len(utilizationMetricQueries()) = %d, want 4", len(queries))
+	}
+	for i, query := range queries {
+		if query.MetricStat == nil || query.MetricStat.Metric == nil {
+			t.Fatalf("query %d has no metric stat", i)
+		}
+		metric := query.MetricStat.Metric
+		if aws.ToString(metric.Namespace) != "ECS/ContainerInsights" {
+			t.Fatalf("query %d namespace = %q", i, aws.ToString(metric.Namespace))
+		}
+		if len(metric.Dimensions) != 3 || aws.ToString(metric.Dimensions[2].Name) != "TaskId" {
+			t.Fatalf("query %d dimensions = %#v", i, metric.Dimensions)
+		}
+	}
+	if got := aws.ToString(queries[0].MetricStat.Metric.MetricName); got != "TaskCpuUtilization" {
+		t.Fatalf("CPU metric name = %q", got)
+	}
+	if got := aws.ToString(queries[2].MetricStat.Metric.MetricName); got != "TaskMemoryUtilization" {
+		t.Fatalf("memory metric name = %q", got)
+	}
+}
+
+func TestTaskDefinitionFamily(t *testing.T) {
+	for input, want := range map[string]string{
+		"api:7": "api",
+		"arn:aws:ecs:us-east-1:123456789012:task-definition/api:7": "api",
+		"nightly": "nightly",
+	} {
+		if got := taskDefinitionFamily(input); got != want {
+			t.Errorf("taskDefinitionFamily(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

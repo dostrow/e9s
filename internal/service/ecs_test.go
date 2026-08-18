@@ -11,23 +11,24 @@ import (
 )
 
 type fakeECSAPI struct {
-	clusters      []model.Cluster
-	services      []model.Service
-	tasks         []model.Task
-	err           error
-	forced        []string
-	scaled        []any
-	stopped       []string
-	run           model.RunTaskRequest
-	metrics       *model.ServiceMetrics
-	alarms        []model.AlarmState
-	suspended     bool
-	suspensionSet []any
-	definitions   []model.TaskDefRef
-	definition    *model.TaskDefSummary
-	registered    string
-	execSession   *model.ExecSession
-	execArgs      []string
+	clusters       []model.Cluster
+	services       []model.Service
+	tasks          []model.Task
+	err            error
+	forced         []string
+	scaled         []any
+	stopped        []string
+	run            model.RunTaskRequest
+	metrics        *model.ServiceMetrics
+	taskMetricArgs []string
+	alarms         []model.AlarmState
+	suspended      bool
+	suspensionSet  []any
+	definitions    []model.TaskDefRef
+	definition     *model.TaskDefSummary
+	registered     string
+	execSession    *model.ExecSession
+	execArgs       []string
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -63,6 +64,11 @@ func (f *fakeECSAPI) RunTask(_ context.Context, request model.RunTaskRequest) ([
 }
 
 func (f *fakeECSAPI) GetServiceMetrics(context.Context, string, string, time.Duration) (*model.ServiceMetrics, error) {
+	return f.metrics, f.err
+}
+
+func (f *fakeECSAPI) GetTaskMetrics(_ context.Context, cluster, service, taskID, taskDefinition string, _ time.Duration) (*model.ServiceMetrics, error) {
+	f.taskMetricArgs = []string{cluster, service, taskID, taskDefinition}
 	return f.metrics, f.err
 }
 
@@ -259,6 +265,14 @@ func TestECSMetricsAlarmsAndScaleIn(t *testing.T) {
 	metrics, err := svc.GetServiceMetrics(context.Background(), "prod", "api", 15*time.Minute)
 	if err != nil || metrics.CPUAvg != 23.5 {
 		t.Fatalf("GetServiceMetrics() = %#v, %v", metrics, err)
+	}
+	task := model.Task{TaskID: "task-1", TaskDefinition: "api:7"}
+	metrics, err = svc.GetTaskMetrics(context.Background(), "prod", "api", task, 15*time.Minute)
+	if err != nil || metrics.CPUAvg != 23.5 {
+		t.Fatalf("GetTaskMetrics() = %#v, %v", metrics, err)
+	}
+	if got := strings.Join(api.taskMetricArgs, ","); got != "prod,api,task-1,api:7" {
+		t.Fatalf("GetTaskMetrics() arguments = %q", got)
 	}
 	alarms, err := svc.ListServiceAlarms(context.Background(), "prod", "api")
 	if err != nil || len(alarms) != 1 || alarms[0].Name != "high-cpu" {

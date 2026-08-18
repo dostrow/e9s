@@ -16,7 +16,7 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	back := gtk.NewButtonWithLabel("Back to details")
 	back.ConnectClicked(w.closeMetrics)
 	refresh := gtk.NewButtonWithLabel("Refresh metrics")
-	refresh.ConnectClicked(func() { w.loadServiceMetrics(true) })
+	refresh.ConnectClicked(func() { w.loadMetrics(true) })
 	w.metricsScaleButton = gtk.NewButtonWithLabel("Toggle scale-in")
 	w.metricsScaleButton.ConnectClicked(w.confirmToggleScaleIn)
 	w.metricsScaleLabel = gtk.NewLabel("Scale-in status unknown")
@@ -44,11 +44,22 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	metrics.SetMarginBottom(16)
 	metrics.SetMarginStart(16)
 	metrics.SetMarginEnd(16)
-	title := gtk.NewLabel("SERVICE UTILIZATION — LAST 15 MINUTES")
-	title.SetXAlign(0)
-	title.AddCSSClass("section-title")
-	metrics.Append(title)
+	w.metricsTitle = gtk.NewLabel("SERVICE UTILIZATION — LAST 15 MINUTES")
+	w.metricsTitle.SetXAlign(0)
+	w.metricsTitle.AddCSSClass("section-title")
+	w.metricsScope = gtk.NewLabel("")
+	w.metricsScope.SetXAlign(0)
+	w.metricsScope.SetWrap(true)
+	w.metricsScope.AddCSSClass("muted")
+	w.metricsNotice = gtk.NewLabel("")
+	w.metricsNotice.SetXAlign(0)
+	w.metricsNotice.SetWrap(true)
+	w.metricsNotice.AddCSSClass("muted")
+	w.metricsNotice.SetVisible(false)
+	metrics.Append(w.metricsTitle)
+	metrics.Append(w.metricsScope)
 	metrics.Append(w.metricsTimestamp)
+	metrics.Append(w.metricsNotice)
 	appendMetricBar(metrics, "CPU average", w.metricsCPUAvg)
 	appendMetricBar(metrics, "CPU maximum", w.metricsCPUMax)
 	appendMetricBar(metrics, "Memory average", w.metricsMemAvg)
@@ -68,11 +79,15 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	alarmScroll.SetVExpand(true)
 	alarmScroll.SetChild(w.metricsAlarmTable.view)
 
+	w.metricsAlarmSection = gtk.NewBox(gtk.OrientationVertical, 8)
+	w.metricsAlarmSection.SetVExpand(true)
+	w.metricsAlarmSection.Append(alarmTitle)
+	w.metricsAlarmSection.Append(alarmScroll)
+
 	content := gtk.NewBox(gtk.OrientationVertical, 8)
 	content.SetVExpand(true)
 	content.Append(metrics)
-	content.Append(alarmTitle)
-	content.Append(alarmScroll)
+	content.Append(w.metricsAlarmSection)
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
 	pane.Append(toolbar)
@@ -94,29 +109,48 @@ func appendMetricBar(box *gtk.Box, labelText string, bar *gtk.ProgressBar) {
 	box.Append(bar)
 }
 
-func (w *mainWindow) openServiceMetrics() {
-	if w.selectedCluster == "" || w.selectedService == "" {
+func (w *mainWindow) openMetrics() {
+	if w.selectedCluster == "" || (w.selectedService == "" && w.selectedTask == "") {
 		return
 	}
-	w.loadServiceMetrics(true)
+	w.loadMetrics(true)
 }
 
-func (w *mainWindow) loadServiceMetrics(foreground bool) {
-	if w.selectedCluster == "" || w.selectedService == "" {
+func (w *mainWindow) loadMetrics(foreground bool) {
+	if w.selectedCluster == "" || (w.selectedService == "" && w.selectedTask == "") {
 		return
 	}
 	opening := !w.showingMetrics
-	cluster, service := w.selectedCluster, w.selectedService
-	ctx, generation := w.startRefreshRequest("Loading metrics for "+service+"…", foreground)
+	cluster, service, selectedTask := w.selectedCluster, w.selectedService, w.selectedTask
+	var task model.Task
+	if selectedTask != "" {
+		var found bool
+		task, found = findTask(w.allTasks, selectedTask)
+		if !found {
+			w.setStatus("The selected task is no longer available", true)
+			return
+		}
+	}
+	scopeName := service
+	if selectedTask != "" {
+		scopeName = task.TaskID
+	}
+	ctx, generation := w.startRefreshRequest("Loading metrics for "+scopeName+"…", foreground)
 	go func() {
-		metrics, err := w.options.ECS.GetServiceMetrics(ctx, cluster, service, 15*time.Minute)
+		var metrics *model.ServiceMetrics
+		var err error
+		if selectedTask != "" {
+			metrics, err = w.options.ECS.GetTaskMetrics(ctx, cluster, service, task, 15*time.Minute)
+		} else {
+			metrics, err = w.options.ECS.GetServiceMetrics(ctx, cluster, service, 15*time.Minute)
+		}
 		var (
 			alarms     []model.AlarmState
 			suspended  bool
 			scaleKnown bool
 			warnings   []string
 		)
-		if err == nil {
+		if err == nil && selectedTask == "" {
 			var alarmErr error
 			alarms, alarmErr = w.options.ECS.ListServiceAlarms(ctx, cluster, service)
 			if alarmErr != nil {
@@ -129,7 +163,7 @@ func (w *mainWindow) loadServiceMetrics(foreground bool) {
 				scaleKnown = true
 			}
 		}
-		success := "Metrics updated for " + service
+		success := "Metrics updated for " + scopeName
 		if len(warnings) > 0 {
 			success += " • " + strings.Join(warnings, " • ")
 		}
@@ -145,24 +179,51 @@ func (w *mainWindow) loadServiceMetrics(foreground bool) {
 			w.showingMetrics = true
 			w.metricsSnapshot = metrics
 			w.metricsAlarms = alarms
+			w.metricsTaskID = task.TaskID
 			w.scaleInKnown = scaleKnown
 			w.scaleInSuspended = suspended
-			w.renderServiceMetrics()
+			w.renderMetrics()
 			w.detailStack.SetVisibleChildName("metrics")
 		})
 	}()
 }
 
-func (w *mainWindow) renderServiceMetrics() {
+func (w *mainWindow) renderMetrics() {
 	if w.metricsSnapshot == nil {
 		return
 	}
 	m := w.metricsSnapshot
-	setMetricBar(w.metricsCPUAvg, m.CPUAvg)
-	setMetricBar(w.metricsCPUMax, m.CPUMax)
-	setMetricBar(w.metricsMemAvg, m.MemAvg)
-	setMetricBar(w.metricsMemMax, m.MemMax)
+	setMetricBar(w.metricsCPUAvg, m.CPUAvg, m.CPUAvgAvailable)
+	setMetricBar(w.metricsCPUMax, m.CPUMax, m.CPUMaxAvailable)
+	setMetricBar(w.metricsMemAvg, m.MemAvg, m.MemAvgAvailable)
+	setMetricBar(w.metricsMemMax, m.MemMax, m.MemMaxAvailable)
 	w.metricsTimestamp.SetLabel("Sampled " + formatTime(m.Timestamp))
+
+	taskScope := w.metricsTaskID != ""
+	if taskScope {
+		w.metricsTitle.SetLabel("TASK UTILIZATION — LAST 15 MINUTES")
+		scope := "Task " + w.metricsTaskID
+		if w.selectedService != "" {
+			scope += " • service " + w.selectedService
+		}
+		w.metricsScope.SetLabel(scope)
+	} else {
+		w.metricsTitle.SetLabel("SERVICE UTILIZATION — LAST 15 MINUTES")
+		w.metricsScope.SetLabel("Service " + w.selectedService + " • all running tasks")
+	}
+	hasData := m.CPUAvgAvailable || m.CPUMaxAvailable || m.MemAvgAvailable || m.MemMaxAvailable
+	if !hasData && taskScope {
+		w.metricsNotice.SetLabel("No task-level datapoints were returned. Enable ECS Container Insights with enhanced observability and allow time for metrics to arrive.")
+		w.metricsNotice.SetVisible(true)
+	} else if !hasData {
+		w.metricsNotice.SetLabel("No service-level datapoints were returned for the selected period.")
+		w.metricsNotice.SetVisible(true)
+	} else {
+		w.metricsNotice.SetVisible(false)
+	}
+	w.metricsScaleButton.SetVisible(!taskScope)
+	w.metricsScaleLabel.SetVisible(!taskScope)
+	w.metricsAlarmSection.SetVisible(!taskScope)
 
 	rows := make([]string, len(w.metricsAlarms))
 	for i, alarm := range w.metricsAlarms {
@@ -185,7 +246,12 @@ func (w *mainWindow) renderServiceMetrics() {
 	w.metricsScaleButton.SetSensitive(w.scaleInKnown)
 }
 
-func setMetricBar(bar *gtk.ProgressBar, value float64) {
+func setMetricBar(bar *gtk.ProgressBar, value float64, available bool) {
+	if !available {
+		bar.SetFraction(0)
+		bar.SetText("No data")
+		return
+	}
 	bar.SetFraction(metricFraction(value))
 	bar.SetText(fmt.Sprintf("%.1f%%", value))
 }
@@ -201,7 +267,7 @@ func metricFraction(value float64) float64 {
 }
 
 func (w *mainWindow) confirmToggleScaleIn() {
-	if !w.showingMetrics || !w.scaleInKnown || w.selectedService == "" {
+	if !w.showingMetrics || w.metricsTaskID != "" || !w.scaleInKnown || w.selectedService == "" {
 		return
 	}
 	action := "Suspend"
@@ -237,7 +303,7 @@ func (w *mainWindow) setScaleInSuspended(suspended bool) {
 		w.finishRequestWithStatus(ctx, generation, err, success, func() {
 			w.scaleInSuspended = suspended
 			w.scaleInKnown = true
-			w.renderServiceMetrics()
+			w.renderMetrics()
 			w.refreshAfterAction()
 		})
 	}()
