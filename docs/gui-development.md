@@ -152,3 +152,6 @@ memory than a cached rebuild.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.
+
+The agreed module order, CloudWatch Logs phases, and Module Rail behavior for
+saved searches are recorded in the [`GUI expansion roadmap`](gui-roadmap.md).
