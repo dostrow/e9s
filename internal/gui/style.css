@@ -7,12 +7,6 @@
   font-weight: 600;
 }
 
-.breadcrumb-frame {
-  /* Give changing text an opaque, theme-owned surface so old glyph damage is cleared. */
-  background-color: @theme_bg_color;
-  padding: 1px 0;
-}
-
 .app-title {
   font-size: 1.35em;
   font-weight: 700;

@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pangocairo"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -90,8 +92,8 @@ type mainWindow struct {
 	scaleButton                 *gtk.Button
 	stopTaskButton              *gtk.Button
 	deployButton                *gtk.Button
-	breadcrumb                  *gtk.Label
-	breadcrumbFrame             *gtk.Box
+	breadcrumb                  *gtk.DrawingArea
+	breadcrumbText              string
 	detailToolbar               *gtk.Box
 	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
@@ -222,12 +224,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	title := gtk.NewLabel("e9s")
 	title.AddCSSClass("app-title")
-	w.breadcrumb = newBreadcrumbLabel("ECS / Task definitions")
-	w.breadcrumbFrame = gtk.NewBox(gtk.OrientationHorizontal, 0)
-	w.breadcrumbFrame.SetHExpand(true)
-	w.breadcrumbFrame.SetOverflow(gtk.OverflowHidden)
-	w.breadcrumbFrame.AddCSSClass("breadcrumb-frame")
-	w.breadcrumbFrame.Append(w.breadcrumb)
+	w.breadcrumbText = "ECS / Task definitions"
+	w.breadcrumb = w.newBreadcrumbArea()
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
 	refresh.ConnectClicked(w.refresh)
@@ -269,7 +267,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.AddCSSClass("toolbar")
 	header.Append(w.backButton)
 	header.Append(title)
-	header.Append(w.breadcrumbFrame)
+	header.Append(w.breadcrumb)
 	header.Append(w.standaloneButton)
 	header.Append(w.runTaskButton)
 	header.Append(w.metricsButton)
@@ -578,34 +576,47 @@ func (w *mainWindow) setDetail(text, content string) {
 }
 
 func (w *mainWindow) setBreadcrumb(text string) {
-	// The initial route is constructed with its final breadcrumb. Replacing an
-	// identical label immediately after mapping can leave that first render
-	// node in the Wayland surface's damage history.
-	if w.breadcrumb.Label() == text {
+	if w.breadcrumbText == text {
 		return
 	}
-
-	// Replacing the label forces GTK to discard the complete previous text
-	// render node. Updating a GtkLabel in place can leave ascender pixels from a
-	// longer breadcrumb behind with some hinted fonts and fractional scaling.
-	previous := w.breadcrumb
-	w.breadcrumb = newBreadcrumbLabel(text)
-	w.breadcrumbFrame.Remove(previous)
-	w.breadcrumbFrame.Append(w.breadcrumb)
-	w.breadcrumbFrame.QueueAllocate()
-	w.breadcrumbFrame.QueueDraw()
-	if w.headerBar != nil {
-		w.headerBar.QueueAllocate()
-		w.headerBar.QueueDraw()
-	}
+	w.breadcrumbText = text
+	w.breadcrumb.QueueDraw()
 }
 
-func newBreadcrumbLabel(text string) *gtk.Label {
-	label := gtk.NewLabel(text)
-	label.SetXAlign(0)
-	label.SetHExpand(true)
-	label.AddCSSClass("breadcrumb")
-	return label
+func (w *mainWindow) newBreadcrumbArea() *gtk.DrawingArea {
+	area := gtk.NewDrawingArea()
+	area.SetHExpand(true)
+	area.AddCSSClass("breadcrumb")
+	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
+		style := area.StyleContext()
+		background, ok := style.LookupColor("theme_bg_color")
+		if !ok {
+			background, ok = style.LookupColor("window_bg_color")
+		}
+		if ok {
+			cr.SetSourceRGBA(
+				float64(background.Red()),
+				float64(background.Green()),
+				float64(background.Blue()),
+				float64(background.Alpha()),
+			)
+			cr.Rectangle(0, 0, float64(width), float64(height))
+			cr.Fill()
+		}
+
+		foreground := style.Color()
+		cr.SetSourceRGBA(
+			float64(foreground.Red()),
+			float64(foreground.Green()),
+			float64(foreground.Blue()),
+			float64(foreground.Alpha()),
+		)
+		layout := area.CreatePangoLayout(w.breadcrumbText)
+		_, textHeight := layout.PixelSize()
+		cr.MoveTo(0, float64(max(0, height-textHeight)/2))
+		pangocairo.ShowLayout(cr, layout)
+	})
+	return area
 }
 
 func (w *mainWindow) updateDetailParentAction(content string) {

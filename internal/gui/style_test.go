@@ -14,9 +14,6 @@ func TestApplicationCSSDoesNotOverrideGTKPalette(t *testing.T) {
 
 	for lineNumber, line := range strings.Split(styleCSS, "\n") {
 		declaration := strings.TrimSpace(line)
-		if declaration == "background-color: @theme_bg_color;" {
-			continue
-		}
 		if strings.HasPrefix(declaration, "color:") ||
 			strings.HasPrefix(declaration, "background:") ||
 			strings.HasPrefix(declaration, "background-color:") {
