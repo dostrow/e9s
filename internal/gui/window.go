@@ -91,6 +91,7 @@ type mainWindow struct {
 	stopTaskButton              *gtk.Button
 	deployButton                *gtk.Button
 	breadcrumb                  *gtk.Label
+	breadcrumbFrame             *gtk.Box
 	detailToolbar               *gtk.Box
 	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
@@ -221,14 +222,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	title := gtk.NewLabel("e9s")
 	title.AddCSSClass("app-title")
-	w.breadcrumb = gtk.NewLabel("ECS / Clusters")
-	w.breadcrumb.SetXAlign(0)
-	w.breadcrumb.SetHExpand(true)
-	// Some hinted fonts paint a one-pixel glyph overshoot outside Pango's
-	// logical text bounds. Keep that ink inside the padded widget allocation so
-	// GTK's damage tracking clears it when the breadcrumb becomes shorter.
-	w.breadcrumb.SetOverflow(gtk.OverflowHidden)
-	w.breadcrumb.AddCSSClass("breadcrumb")
+	w.breadcrumb = newBreadcrumbLabel("ECS / Clusters")
+	w.breadcrumbFrame = gtk.NewBox(gtk.OrientationHorizontal, 0)
+	w.breadcrumbFrame.SetHExpand(true)
+	w.breadcrumbFrame.SetOverflow(gtk.OverflowHidden)
+	w.breadcrumbFrame.AddCSSClass("breadcrumb-frame")
+	w.breadcrumbFrame.Append(w.breadcrumb)
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
 	refresh.ConnectClicked(w.refresh)
@@ -270,7 +269,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.AddCSSClass("toolbar")
 	header.Append(w.backButton)
 	header.Append(title)
-	header.Append(w.breadcrumb)
+	header.Append(w.breadcrumbFrame)
 	header.Append(w.standaloneButton)
 	header.Append(w.runTaskButton)
 	header.Append(w.metricsButton)
@@ -579,13 +578,27 @@ func (w *mainWindow) setDetail(text, content string) {
 }
 
 func (w *mainWindow) setBreadcrumb(text string) {
-	w.breadcrumb.SetLabel(text)
-	w.breadcrumb.QueueResize()
-	w.breadcrumb.QueueDraw()
+	// Replacing the label forces GTK to discard the complete previous text
+	// render node. Updating a GtkLabel in place can leave ascender pixels from a
+	// longer breadcrumb behind with some hinted fonts and fractional scaling.
+	previous := w.breadcrumb
+	w.breadcrumb = newBreadcrumbLabel(text)
+	w.breadcrumbFrame.Remove(previous)
+	w.breadcrumbFrame.Append(w.breadcrumb)
+	w.breadcrumbFrame.QueueAllocate()
+	w.breadcrumbFrame.QueueDraw()
 	if w.headerBar != nil {
 		w.headerBar.QueueAllocate()
 		w.headerBar.QueueDraw()
 	}
+}
+
+func newBreadcrumbLabel(text string) *gtk.Label {
+	label := gtk.NewLabel(text)
+	label.SetXAlign(0)
+	label.SetHExpand(true)
+	label.AddCSSClass("breadcrumb")
+	return label
 }
 
 func (w *mainWindow) updateDetailParentAction(content string) {

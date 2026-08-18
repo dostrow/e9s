@@ -5,6 +5,9 @@
 
 .breadcrumb {
   font-weight: 600;
+}
+
+.breadcrumb-frame {
   padding: 1px 0;
 }
 
