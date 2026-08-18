@@ -53,6 +53,39 @@ func findService(services []model.Service, name string) (model.Service, bool) {
 	return model.Service{}, false
 }
 
+func filterTasks(tasks []model.Task, query string) []model.Task {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return append([]model.Task(nil), tasks...)
+	}
+	filtered := make([]model.Task, 0, len(tasks))
+	for _, task := range tasks {
+		haystack := strings.ToLower(strings.Join([]string{
+			task.TaskID,
+			task.TaskARN,
+			task.Status,
+			task.HealthStatus,
+			task.TaskDefinition,
+			task.AvailabilityZone,
+			task.PrivateIP,
+			task.StoppedReason,
+		}, " "))
+		if strings.Contains(haystack, query) {
+			filtered = append(filtered, task)
+		}
+	}
+	return filtered
+}
+
+func findTask(tasks []model.Task, arn string) (model.Task, bool) {
+	for _, task := range tasks {
+		if task.TaskARN == arn {
+			return task, true
+		}
+	}
+	return model.Task{}, false
+}
+
 func clusterSummary(cluster string, serviceCount int) string {
 	if serviceCount == 0 {
 		return "No ECS services found in " + cluster + "."
@@ -102,6 +135,52 @@ func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) 
 		fmt.Fprintf(&out, "  %s  %s\n", formatTime(event.CreatedAt), event.Message)
 	}
 	return out.String()
+}
+
+func formatTaskDetail(task model.Task) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "TASK\n\n%s\n\n", task.TaskID)
+	fmt.Fprintf(&out, "Status            %s\n", valueOrDash(task.Status))
+	fmt.Fprintf(&out, "Desired status    %s\n", valueOrDash(task.DesiredStatus))
+	fmt.Fprintf(&out, "Health            %s\n", valueOrDash(task.HealthStatus))
+	fmt.Fprintf(&out, "Task definition   %s\n", valueOrDash(task.TaskDefinition))
+	fmt.Fprintf(&out, "Launch type       %s\n", valueOrDash(task.LaunchType))
+	fmt.Fprintf(&out, "Availability zone %s\n", valueOrDash(task.AvailabilityZone))
+	fmt.Fprintf(&out, "Private IP        %s\n", valueOrDash(task.PrivateIP))
+	fmt.Fprintf(&out, "Group             %s\n", valueOrDash(task.Group))
+	fmt.Fprintf(&out, "ECS Exec agent    %s\n", yesNo(task.ExecAgentRunning))
+	fmt.Fprintf(&out, "Started           %s\n", formatTime(task.StartedAt))
+	if !task.StoppedAt.IsZero() {
+		fmt.Fprintf(&out, "Stopped           %s\n", formatTime(task.StoppedAt))
+	}
+	if task.StoppedReason != "" {
+		fmt.Fprintf(&out, "Stop reason       %s\n", task.StoppedReason)
+	}
+	fmt.Fprintf(&out, "Task ARN          %s\n", valueOrDash(task.TaskARN))
+
+	out.WriteString("\nCONTAINERS\n")
+	if len(task.Containers) == 0 {
+		out.WriteString("  No containers\n")
+	}
+	for _, container := range task.Containers {
+		fmt.Fprintf(&out, "\n  %s\n", valueOrDash(container.Name))
+		fmt.Fprintf(&out, "    Status       %s\n", valueOrDash(container.Status))
+		fmt.Fprintf(&out, "    Health       %s\n", valueOrDash(container.HealthStatus))
+		fmt.Fprintf(&out, "    Image        %s\n", valueOrDash(container.Image))
+		if container.ExitCode != nil {
+			fmt.Fprintf(&out, "    Exit code    %d\n", *container.ExitCode)
+		}
+		if container.Reason != "" {
+			fmt.Fprintf(&out, "    Reason       %s\n", container.Reason)
+		}
+		if container.LogGroup != "" {
+			fmt.Fprintf(&out, "    Log group    %s\n", container.LogGroup)
+		}
+		if container.LogStream != "" {
+			fmt.Fprintf(&out, "    Log stream   %s\n", container.LogStream)
+		}
+	}
+	return strings.TrimRight(out.String(), "\n")
 }
 
 func valueOrDash(value string) string {

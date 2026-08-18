@@ -17,10 +17,12 @@ import (
 const (
 	pageClusters = "clusters"
 	pageServices = "services"
+	pageTasks    = "tasks"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
 	detailService        = "service"
+	detailTask           = "task"
 	detailHelp           = "help"
 	detailError          = "error"
 )
@@ -39,12 +41,16 @@ type mainWindow struct {
 	detailContent      string
 	selectedCluster    string
 	selectedService    string
+	selectedTask       string
 	allClusters        []model.Cluster
 	filteredClusters   []model.Cluster
 	allServices        []model.Service
 	filteredServices   []model.Service
+	allTasks           []model.Task
+	filteredTasks      []model.Task
 	clusterTable       *stringTable
 	serviceTable       *stringTable
+	taskTable          *stringTable
 	resourceStack      *gtk.Stack
 	search             *gtk.SearchEntry
 	backButton         *gtk.Button
@@ -92,8 +98,17 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "PENDING", field: 4},
 		{title: "TASK DEFINITION", field: 5},
 	})
+	w.taskTable = newStringTable([]columnSpec{
+		{title: "TASK", field: 0, expand: true},
+		{title: "HEALTH", field: 1},
+		{title: "STATUS", field: 2},
+		{title: "AZ", field: 3},
+		{title: "IP", field: 4},
+		{title: "TASK DEFINITION", field: 5},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
+	w.taskTable.view.ConnectActivate(w.openTaskAt)
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -166,12 +181,17 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	serviceScroll.SetVExpand(true)
 	serviceScroll.SetHExpand(true)
 	serviceScroll.SetChild(w.serviceTable.view)
+	taskScroll := gtk.NewScrolledWindow()
+	taskScroll.SetVExpand(true)
+	taskScroll.SetHExpand(true)
+	taskScroll.SetChild(w.taskTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
 	w.resourceStack.SetHExpand(true)
 	w.resourceStack.AddNamed(clusterScroll, pageClusters)
 	w.resourceStack.AddNamed(serviceScroll, pageServices)
+	w.resourceStack.AddNamed(taskScroll, pageTasks)
 	w.resourceStack.SetVisibleChildName(pageClusters)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -247,7 +267,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close logs\n/              Focus active filter\nCtrl+R         Refresh\nShift+L        Follow service logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
@@ -334,6 +354,7 @@ func (w *mainWindow) loadClusters() {
 			w.currentPage = pageClusters
 			w.selectedCluster = ""
 			w.selectedService = ""
+			w.selectedTask = ""
 			w.logsButton.SetSensitive(false)
 			w.deployButton.SetSensitive(false)
 			w.breadcrumb.SetLabel("ECS / Clusters")
@@ -357,6 +378,7 @@ func (w *mainWindow) loadServices(cluster string) {
 	w.currentPage = pageServices
 	w.selectedCluster = cluster
 	w.selectedService = ""
+	w.selectedTask = ""
 	w.logsButton.SetSensitive(false)
 	w.deployButton.SetSensitive(false)
 	w.breadcrumb.SetLabel("ECS / " + cluster)
@@ -381,14 +403,20 @@ func (w *mainWindow) loadServices(cluster string) {
 	}()
 }
 
-func (w *mainWindow) loadServiceDetail(service model.Service) {
+func (w *mainWindow) loadTasks(service model.Service) {
+	w.currentPage = pageTasks
 	w.selectedService = service.Name
+	w.selectedTask = ""
 	w.logsButton.SetSensitive(true)
 	w.deployButton.SetSensitive(true)
 	if !w.showingLogs {
 		w.detailStack.SetVisibleChildName("detail")
 	}
 	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + service.Name)
+	w.backButton.SetSensitive(true)
+	w.search.SetPlaceholderText("Filter tasks…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageTasks)
 	w.setDetail("Loading tasks and service details…", detailService)
 
 	ctx, generation := w.startRequest("Loading " + service.Name + "…")
@@ -396,6 +424,8 @@ func (w *mainWindow) loadServiceDetail(service model.Service) {
 	go func() {
 		tasks, err := w.options.ECS.ListTasks(ctx, cluster, service.Name)
 		w.finishRequest(ctx, generation, err, func() {
+			w.allTasks = tasks
+			w.applyTaskFilter()
 			w.setDetail(formatServiceDetail(cluster, service, tasks), detailService)
 		})
 	}()
@@ -412,7 +442,17 @@ func (w *mainWindow) openServiceAt(position uint) {
 	if int(position) >= len(w.filteredServices) {
 		return
 	}
-	w.loadServiceDetail(w.filteredServices[position])
+	w.loadTasks(w.filteredServices[position])
+}
+
+func (w *mainWindow) openTaskAt(position uint) {
+	if int(position) >= len(w.filteredTasks) {
+		return
+	}
+	task := w.filteredTasks[position]
+	w.selectedTask = task.TaskARN
+	w.breadcrumb.SetLabel("ECS / " + w.selectedCluster + " / " + w.selectedService + " / " + shortID(task.TaskID))
+	w.setDetail(formatTaskDetail(task), detailTask)
 }
 
 func (w *mainWindow) openClusterByName(name string) {
@@ -426,11 +466,27 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageTasks {
+		w.applyTaskFilter()
+		return
+	}
 	if w.currentPage == pageServices {
 		w.applyServiceFilter()
 		return
 	}
 	w.applyClusterFilter()
+}
+
+func (w *mainWindow) applyTaskFilter() {
+	w.filteredTasks = filterTasks(w.allTasks, w.search.Text())
+	rows := make([]string, len(w.filteredTasks))
+	for i, task := range w.filteredTasks {
+		rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", task.TaskID,
+			strings.ToUpper(valueOrDash(task.HealthStatus)), valueOrDash(task.Status),
+			valueOrDash(task.AvailabilityZone), valueOrDash(task.PrivateIP),
+			valueOrDash(task.TaskDefinition))
+	}
+	w.taskTable.replace(rows)
 }
 
 func (w *mainWindow) applyClusterFilter() {
@@ -460,6 +516,27 @@ func (w *mainWindow) goBack() {
 		w.closeLogs()
 		return
 	}
+	if w.currentPage == pageTasks {
+		if w.requestCancel != nil {
+			w.requestCancel()
+			w.generation++
+		}
+		w.spinner.Stop()
+		w.currentPage = pageServices
+		w.selectedService = ""
+		w.selectedTask = ""
+		w.allTasks = nil
+		w.logsButton.SetSensitive(false)
+		w.deployButton.SetSensitive(false)
+		w.search.SetText("")
+		w.search.SetPlaceholderText("Filter services…")
+		w.resourceStack.SetVisibleChildName(pageServices)
+		w.breadcrumb.SetLabel("ECS / " + w.selectedCluster)
+		w.setDetail(clusterSummary(w.selectedCluster, len(w.allServices)), detailClusterSummary)
+		w.applyServiceFilter()
+		w.setStatus("Ready", false)
+		return
+	}
 	if w.currentPage != pageServices {
 		return
 	}
@@ -471,6 +548,7 @@ func (w *mainWindow) goBack() {
 	w.currentPage = pageClusters
 	w.selectedCluster = ""
 	w.selectedService = ""
+	w.selectedTask = ""
 	w.logsButton.SetSensitive(false)
 	w.deployButton.SetSensitive(false)
 	w.allServices = nil
@@ -489,11 +567,58 @@ func (w *mainWindow) refresh() {
 }
 
 func (w *mainWindow) refreshCurrent(foreground bool) {
+	if w.currentPage == pageTasks && w.selectedCluster != "" && w.selectedService != "" {
+		w.refreshTasks(foreground)
+		return
+	}
 	if w.currentPage == pageServices && w.selectedCluster != "" {
 		w.refreshServices(foreground)
 		return
 	}
 	w.refreshClusters(foreground)
+}
+
+func (w *mainWindow) refreshTasks(foreground bool) {
+	cluster, serviceName, taskARN := w.selectedCluster, w.selectedService, w.selectedTask
+	ctx, generation := w.startRefreshRequest("Refreshing tasks for "+serviceName+"…", foreground)
+	go func() {
+		services, err := w.options.ECS.ListServices(ctx, cluster)
+		service, serviceFound := findService(services, serviceName)
+		var tasks []model.Task
+		if err == nil && serviceFound {
+			tasks, err = w.options.ECS.ListTasks(ctx, cluster, serviceName)
+		}
+
+		w.finishRefreshRequest(ctx, generation, err, func() {
+			w.allServices = services
+			w.allTasks = tasks
+			w.applyTaskFilter()
+			if !serviceFound {
+				w.goBack()
+				w.setStatus("The selected service is no longer available", true)
+				return
+			}
+
+			if taskARN == "" {
+				if w.detailContent == detailService {
+					w.setDetail(formatServiceDetail(cluster, service, tasks), detailService)
+				}
+				return
+			}
+			task, found := findTask(tasks, taskARN)
+			if !found {
+				w.selectedTask = ""
+				w.breadcrumb.SetLabel("ECS / " + cluster + " / " + serviceName)
+				if w.detailContent == detailTask {
+					w.setDetail("The selected task is no longer available.\n\n"+formatServiceDetail(cluster, service, tasks), detailService)
+				}
+				return
+			}
+			if w.detailContent == detailTask {
+				w.setDetail(formatTaskDetail(task), detailTask)
+			}
+		})
+	}()
 }
 
 func (w *mainWindow) refreshClusters(foreground bool) {

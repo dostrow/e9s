@@ -53,6 +53,23 @@ func TestFindServicePreservesSelectedServiceAcrossRefresh(t *testing.T) {
 	}
 }
 
+func TestFilterAndFindTasks(t *testing.T) {
+	tasks := []model.Task{
+		{TaskID: "task-api", TaskARN: "arn:api", Status: "RUNNING", PrivateIP: "10.0.0.1"},
+		{TaskID: "task-worker", TaskARN: "arn:worker", Status: "STOPPED", StoppedReason: "essential container exited"},
+	}
+	for _, query := range []string{"worker", "stopped", "essential"} {
+		got := filterTasks(tasks, query)
+		if len(got) != 1 || got[0].TaskARN != "arn:worker" {
+			t.Fatalf("filterTasks(%q) = %#v", query, got)
+		}
+	}
+	got, found := findTask(tasks, "arn:api")
+	if !found || got.TaskID != "task-api" {
+		t.Fatalf("findTask() = %#v, %v", got, found)
+	}
+}
+
 func TestClusterSummary(t *testing.T) {
 	if got := clusterSummary("production", 0); got != "No ECS services found in production." {
 		t.Fatalf("clusterSummary(empty) = %q", got)
@@ -85,6 +102,33 @@ func TestFormatServiceDetail(t *testing.T) {
 	for _, want := range []string{"prod / api", "api:42", "DEPLOYMENTS", "PRIMARY", "TASKS", "1234567890ab", "RECENT EVENTS", "deployment completed"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatServiceDetail() missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatTaskDetail(t *testing.T) {
+	exitCode := 17
+	task := model.Task{
+		TaskID:           "1234567890abcdef",
+		TaskARN:          "arn:aws:ecs:task/1234567890abcdef",
+		TaskDefinition:   "api:42",
+		Status:           "STOPPED",
+		DesiredStatus:    "STOPPED",
+		HealthStatus:     "UNHEALTHY",
+		LaunchType:       "FARGATE",
+		AvailabilityZone: "us-east-1a",
+		PrivateIP:        "10.0.0.5",
+		StoppedReason:    "container failed",
+		Containers: []model.Container{{
+			Name: "api", Image: "example/api:42", Status: "STOPPED",
+			ExitCode: &exitCode, Reason: "process exited", LogGroup: "/ecs/api",
+		}},
+	}
+
+	got := formatTaskDetail(task)
+	for _, want := range []string{"1234567890abcdef", "api:42", "10.0.0.5", "container failed", "example/api:42", "Exit code    17", "/ecs/api"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTaskDetail() missing %q:\n%s", want, got)
 		}
 	}
 }
