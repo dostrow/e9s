@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/model"
@@ -18,6 +19,7 @@ type ECSAPI interface {
 	ForceNewDeployment(context.Context, string, string) error
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error
+	RunTask(context.Context, model.RunTaskRequest) ([]model.Task, error)
 	GetLogConfig(context.Context, string, string) (string, string, error)
 	ResolveTaskLogStreams(context.Context, []model.Task) (string, []string, error)
 }
@@ -55,6 +57,20 @@ func (s *ECS) ListTasks(ctx context.Context, cluster, service string) ([]model.T
 	return tasks, nil
 }
 
+func (s *ECS) ListStandaloneTasks(ctx context.Context, cluster string) ([]model.Task, error) {
+	tasks, err := s.ListTasks(ctx, cluster, "")
+	if err != nil {
+		return nil, err
+	}
+	standalone := make([]model.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if !strings.HasPrefix(task.Group, "service:") {
+			standalone = append(standalone, task)
+		}
+	}
+	return standalone, nil
+}
+
 func (s *ECS) ForceDeployment(ctx context.Context, cluster, service string) error {
 	if err := s.api.ForceNewDeployment(ctx, cluster, service); err != nil {
 		return fmt.Errorf("force deployment for %q in %q: %w", service, cluster, err)
@@ -77,6 +93,31 @@ func (s *ECS) StopTask(ctx context.Context, cluster, taskARN, reason string) err
 		return fmt.Errorf("stop ECS task %q in %q: %w", taskARN, cluster, err)
 	}
 	return nil
+}
+
+func (s *ECS) RunTask(ctx context.Context, request model.RunTaskRequest) ([]model.Task, error) {
+	request.Cluster = strings.TrimSpace(request.Cluster)
+	request.TaskDefinition = strings.TrimSpace(request.TaskDefinition)
+	request.LaunchType = strings.ToUpper(strings.TrimSpace(request.LaunchType))
+	if request.Cluster == "" {
+		return nil, fmt.Errorf("run ECS task: cluster is required")
+	}
+	if request.TaskDefinition == "" {
+		return nil, fmt.Errorf("run ECS task: task definition is required")
+	}
+	if request.Count < 1 {
+		return nil, fmt.Errorf("run ECS task: count must be at least 1")
+	}
+	switch request.LaunchType {
+	case "", "FARGATE", "EC2", "EXTERNAL", "MANAGED_INSTANCES":
+	default:
+		return nil, fmt.Errorf("run ECS task: unsupported launch type %q", request.LaunchType)
+	}
+	tasks, err := s.api.RunTask(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("run ECS task %q in %q: %w", request.TaskDefinition, request.Cluster, err)
+	}
+	return tasks, nil
 }
 
 func (s *ECS) ContainerLogSource(ctx context.Context, task model.Task, container string) (model.LogSource, error) {

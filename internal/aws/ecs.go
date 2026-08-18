@@ -3,11 +3,13 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/applicationautoscaling"
 	aastypes "github.com/aws/aws-sdk-go-v2/service/applicationautoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -153,8 +155,8 @@ func (c *Client) ScaleService(ctx context.Context, cluster, service string, desi
 func (c *Client) ScaleInSuspended(ctx context.Context, cluster, service string) (bool, error) {
 	resourceID := fmt.Sprintf("service/%s/%s", cluster, service)
 	out, err := c.AppAutoScaling.DescribeScalableTargets(ctx, &applicationautoscaling.DescribeScalableTargetsInput{
-		ServiceNamespace: aastypes.ServiceNamespaceEcs,
-		ResourceIds:      []string{resourceID},
+		ServiceNamespace:  aastypes.ServiceNamespaceEcs,
+		ResourceIds:       []string{resourceID},
 		ScalableDimension: aastypes.ScalableDimensionECSServiceDesiredCount,
 	})
 	if err != nil {
@@ -193,4 +195,58 @@ func (c *Client) StopTask(ctx context.Context, cluster, taskARN, reason string) 
 		Reason:  aws.String(reason),
 	})
 	return err
+}
+
+func (c *Client) RunTask(ctx context.Context, request model.RunTaskRequest) ([]model.Task, error) {
+	out, err := c.ECS.RunTask(ctx, buildRunTaskInput(request))
+	if err != nil {
+		return nil, err
+	}
+	if len(out.Failures) > 0 {
+		parts := make([]string, 0, len(out.Failures))
+		for _, failure := range out.Failures {
+			reason := derefStrAws(failure.Reason)
+			if failure.Detail != nil && *failure.Detail != "" {
+				reason += ": " + *failure.Detail
+			}
+			parts = append(parts, reason)
+		}
+		return nil, fmt.Errorf("ECS rejected task: %s", strings.Join(parts, "; "))
+	}
+	tasks := make([]model.Task, 0, len(out.Tasks))
+	for _, task := range out.Tasks {
+		tasks = append(tasks, model.TransformTask(task))
+	}
+	return tasks, nil
+}
+
+func buildRunTaskInput(request model.RunTaskRequest) *ecs.RunTaskInput {
+	count := int32(request.Count)
+	input := &ecs.RunTaskInput{
+		Cluster:              aws.String(request.Cluster),
+		TaskDefinition:       aws.String(request.TaskDefinition),
+		Count:                &count,
+		EnableExecuteCommand: request.EnableExecuteCommand,
+		StartedBy:            aws.String("e9s"),
+	}
+	if request.LaunchType != "" {
+		input.LaunchType = ecstypes.LaunchType(request.LaunchType)
+	}
+	if request.Group != "" {
+		input.Group = aws.String(request.Group)
+	}
+	if len(request.Subnets) > 0 {
+		assignPublicIP := ecstypes.AssignPublicIpDisabled
+		if request.AssignPublicIP {
+			assignPublicIP = ecstypes.AssignPublicIpEnabled
+		}
+		input.NetworkConfiguration = &ecstypes.NetworkConfiguration{
+			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
+				Subnets:        append([]string(nil), request.Subnets...),
+				SecurityGroups: append([]string(nil), request.SecurityGroups...),
+				AssignPublicIp: assignPublicIP,
+			},
+		}
+	}
+	return input
 }

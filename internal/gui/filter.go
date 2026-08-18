@@ -93,6 +93,13 @@ func clusterSummary(cluster string, serviceCount int) string {
 	return fmt.Sprintf("%s\n\n%d services\n\nSelect a service and press Enter for deployments, tasks, and recent events.", cluster, serviceCount)
 }
 
+func standaloneTaskSummary(cluster string, tasks []model.Task) string {
+	if len(tasks) == 0 {
+		return "No standalone ECS tasks found in " + cluster + "."
+	}
+	return fmt.Sprintf("%s\n\n%d standalone tasks\n\nSelect a task and press Enter for details, logs, and task actions.", cluster, len(tasks))
+}
+
 func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s / %s\n\n", cluster, svc.Name)
@@ -209,4 +216,14 @@ func shortID(value string) string {
 		return valueOrDash(value)
 	}
 	return value[:12]
+}
+
+func splitCommaSeparated(value string) []string {
+	var values []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			values = append(values, item)
+		}
+	}
+	return values
 }

@@ -17,6 +17,7 @@ type fakeECSAPI struct {
 	forced   []string
 	scaled   []any
 	stopped  []string
+	run      model.RunTaskRequest
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -44,6 +45,11 @@ func (f *fakeECSAPI) ScaleService(_ context.Context, cluster, service string, co
 func (f *fakeECSAPI) StopTask(_ context.Context, cluster, taskARN, reason string) error {
 	f.stopped = []string{cluster, taskARN, reason}
 	return f.err
+}
+
+func (f *fakeECSAPI) RunTask(_ context.Context, request model.RunTaskRequest) ([]model.Task, error) {
+	f.run = request
+	return f.tasks, f.err
 }
 
 func (f *fakeECSAPI) GetLogConfig(context.Context, string, string) (string, string, error) {
@@ -145,5 +151,47 @@ func TestECSRejectsNegativeScale(t *testing.T) {
 	}
 	if api.scaled != nil {
 		t.Fatalf("low-level ScaleService called with %#v", api.scaled)
+	}
+}
+
+func TestECSStandaloneTasks(t *testing.T) {
+	api := &fakeECSAPI{tasks: []model.Task{
+		{TaskID: "service-task", Group: "service:api"},
+		{TaskID: "scheduled-task", Group: "family:nightly"},
+		{TaskID: "plain-task"},
+	}}
+	tasks, err := NewECS(api).ListStandaloneTasks(context.Background(), "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 || tasks[0].TaskID != "scheduled-task" || tasks[1].TaskID != "plain-task" {
+		t.Fatalf("ListStandaloneTasks() = %#v", tasks)
+	}
+}
+
+func TestECSRunTaskNormalizesAndValidates(t *testing.T) {
+	api := &fakeECSAPI{tasks: []model.Task{{TaskID: "started"}}}
+	svc := NewECS(api)
+	tasks, err := svc.RunTask(context.Background(), model.RunTaskRequest{
+		Cluster: " prod ", TaskDefinition: " nightly:7 ", LaunchType: " fargate ", Count: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || api.run.Cluster != "prod" || api.run.TaskDefinition != "nightly:7" || api.run.LaunchType != "FARGATE" || api.run.Count != 2 {
+		t.Fatalf("RunTask() = %#v; request = %#v", tasks, api.run)
+	}
+
+	for name, request := range map[string]model.RunTaskRequest{
+		"cluster":         {TaskDefinition: "nightly:7", Count: 1},
+		"task definition": {Cluster: "prod", Count: 1},
+		"count":           {Cluster: "prod", TaskDefinition: "nightly:7"},
+		"launch type":     {Cluster: "prod", TaskDefinition: "nightly:7", Count: 1, LaunchType: "spaceship"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := svc.RunTask(context.Background(), request); err == nil {
+				t.Fatal("RunTask() succeeded, want validation error")
+			}
+		})
 	}
 }

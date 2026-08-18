@@ -185,7 +185,7 @@ func (a App) loadStandaloneTasks() tea.Cmd {
 		clusterName = a.selectedCluster.Name
 	}
 	return func() tea.Msg {
-		tasks, err := a.ecs.ListTasks(a.ctx, clusterName, "")
+		tasks, err := a.ecs.ListStandaloneTasks(a.ctx, clusterName)
 		if err != nil {
 			return errMsg{err}
 		}

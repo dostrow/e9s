@@ -18,9 +18,11 @@ type ECSService interface {
 	ListClusters(context.Context) ([]model.Cluster, error)
 	ListServices(context.Context, string) ([]model.Service, error)
 	ListTasks(context.Context, string, string) ([]model.Task, error)
+	ListStandaloneTasks(context.Context, string) ([]model.Task, error)
 	ForceDeployment(context.Context, string, string) error
 	ScaleService(context.Context, string, string, int) error
 	StopTask(context.Context, string, string, string) error
+	RunTask(context.Context, model.RunTaskRequest) ([]model.Task, error)
 	ContainerLogSource(context.Context, model.Task, string) (model.LogSource, error)
 	ServiceLogSource(context.Context, string, string) (model.LogSource, error)
 }

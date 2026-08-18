@@ -73,3 +73,17 @@ type Container struct {
 	LogGroup     string
 	LogStream    string
 }
+
+// RunTaskRequest contains the UI-neutral options for starting standalone ECS
+// tasks. Empty LaunchType uses the cluster's default capacity-provider strategy.
+type RunTaskRequest struct {
+	Cluster              string
+	TaskDefinition       string
+	LaunchType           string
+	Count                int
+	Subnets              []string
+	SecurityGroups       []string
+	AssignPublicIP       bool
+	EnableExecuteCommand bool
+	Group                string
+}

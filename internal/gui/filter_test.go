@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +78,24 @@ func TestClusterSummary(t *testing.T) {
 	got := clusterSummary("production", 3)
 	if !strings.Contains(got, "production") || !strings.Contains(got, "3 services") {
 		t.Fatalf("clusterSummary() = %q", got)
+	}
+}
+
+func TestStandaloneTaskSummary(t *testing.T) {
+	if got := standaloneTaskSummary("prod", nil); got != "No standalone ECS tasks found in prod." {
+		t.Fatalf("standaloneTaskSummary(empty) = %q", got)
+	}
+	got := standaloneTaskSummary("prod", []model.Task{{TaskID: "one"}, {TaskID: "two"}})
+	if !strings.Contains(got, "2 standalone tasks") {
+		t.Fatalf("standaloneTaskSummary() = %q", got)
+	}
+}
+
+func TestSplitCommaSeparated(t *testing.T) {
+	got := splitCommaSeparated(" subnet-a,subnet-b, , subnet-c ")
+	want := []string{"subnet-a", "subnet-b", "subnet-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("splitCommaSeparated() = %#v, want %#v", got, want)
 	}
 }
 
