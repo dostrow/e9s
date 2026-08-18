@@ -3,10 +3,12 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -253,14 +255,33 @@ func (w *mainWindow) peekSelectedLogStream() {
 	group := w.selectedLogGroup
 	end := time.Now()
 	start := end.Add(-15 * time.Minute)
-	ctx, generation := w.startRequest("Loading recent events from " + stream.Name + "…")
+	if w.logCancel != nil {
+		w.logCancel()
+	}
+	ctx, cancel := context.WithCancel(w.ctx)
+	w.logCancel = cancel
+	w.logGeneration++
+	generation := w.logGeneration
+	w.spinner.Start()
+	w.setStatus("Loading recent events from "+stream.Name+"…", false)
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, group, model.LogQuery{
 			Streams: []string{stream.Name}, StartTime: start.UnixMilli(), EndTime: end.UnixMilli(),
 			Limit: 500, FallbackLimit: 10,
 		})
-		w.finishRequestWithStatus(ctx, generation, err, fmt.Sprintf("Loaded %d events from %s", len(page.Entries), stream.Name), func() {
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.logGeneration {
+				return
+			}
+			w.spinner.Stop()
+			if err != nil {
+				w.setStatus(err.Error(), true)
+				w.setDetail("ERROR\n\n"+err.Error(), detailError)
+				return
+			}
 			w.showLogSnapshot(model.LogSource{Group: group, Streams: []string{stream.Name}}, stream.Name, page)
+			w.lastSuccessfulLoad = time.Now()
+			w.setStatus(fmt.Sprintf("Loaded %d events from %s", len(page.Entries), stream.Name), false)
 		})
 	}()
 }

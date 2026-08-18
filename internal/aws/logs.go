@@ -20,6 +20,10 @@ type filterLogEventsAPI interface {
 	FilterLogEvents(context.Context, *cloudwatchlogs.FilterLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error)
 }
 
+type getLogEventsAPI interface {
+	GetLogEvents(context.Context, *cloudwatchlogs.GetLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error)
+}
+
 // GetLogConfig retrieves the awslogs configuration from a task definition
 // for a given container. Returns logGroup, logStreamPrefix.
 func (c *Client) GetLogConfig(ctx context.Context, taskDefARN, containerName string) (string, string, error) {
@@ -281,10 +285,13 @@ func (c *Client) FetchMultiGroupRange(ctx context.Context, logGroups []string, s
 	return allEntries, nil
 }
 
-// TailLogs retrieves the newest log entries from a single stream since startTime.
-// Unlike FetchLogs, this paginates through the full result set so live tailing
-// does not get stuck on the oldest page of a busy window.
+// TailLogs retrieves the newest log entries from a single stream. A zero
+// startTime reads backward from the end directly; a positive startTime
+// paginates the live window so tailing cannot get stuck on its oldest page.
 func (c *Client) TailLogs(ctx context.Context, logGroup, logStream string, startTime int64, limit int) ([]LogEntry, int64, error) {
+	if startTime <= 0 {
+		return newestStreamLogs(ctx, c.Logs, logGroup, logStream, limit)
+	}
 	input := &cloudwatchlogs.FilterLogEventsInput{
 		LogGroupName:   &logGroup,
 		LogStreamNames: []string{logStream},
@@ -293,6 +300,43 @@ func (c *Client) TailLogs(ctx context.Context, logGroup, logStream string, start
 		input.StartTime = &startTime
 	}
 	return tailLogs(ctx, c.Logs, input, startTime, limit)
+}
+
+func newestStreamLogs(ctx context.Context, api getLogEventsAPI, logGroup, logStream string, limit int) ([]LogEntry, int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	limit = min(limit, 10000)
+	startFromHead := false
+	out, err := api.GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
+		LogGroupName:  &logGroup,
+		LogStreamName: &logStream,
+		Limit:         intPtr(int32(limit)),
+		StartFromHead: &startFromHead,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	entries := make([]LogEntry, 0, len(out.Events))
+	var lastTS int64
+	for _, event := range out.Events {
+		entry := LogEntry{Stream: logStream}
+		if event.Timestamp != nil {
+			entry.Timestamp = *event.Timestamp
+		}
+		if event.Message != nil {
+			entry.Message = *event.Message
+		}
+		entries = append(entries, entry)
+		if entry.Timestamp > lastTS {
+			lastTS = entry.Timestamp
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	return entries, lastTS, nil
 }
 
 // TailMultiStreamLogs retrieves the newest log entries from multiple streams since startTime.

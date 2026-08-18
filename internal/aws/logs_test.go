@@ -14,6 +14,16 @@ type fakeFilterLogEventsAPI struct {
 	inputs []*cloudwatchlogs.FilterLogEventsInput
 }
 
+type fakeGetLogEventsAPI struct {
+	out   *cloudwatchlogs.GetLogEventsOutput
+	input *cloudwatchlogs.GetLogEventsInput
+}
+
+func (f *fakeGetLogEventsAPI) GetLogEvents(_ context.Context, input *cloudwatchlogs.GetLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error) {
+	f.input = input
+	return f.out, nil
+}
+
 func (f *fakeFilterLogEventsAPI) FilterLogEvents(_ context.Context, input *cloudwatchlogs.FilterLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error) {
 	f.inputs = append(f.inputs, cloneFilterInput(input))
 	if len(f.pages) == 0 {
@@ -118,6 +128,32 @@ func TestTailLogsKeepsNewestEntriesWhenWindowExceedsLimit(t *testing.T) {
 	}
 	if lastTS != 5 {
 		t.Fatalf("lastTS = %d, want 5", lastTS)
+	}
+}
+
+func TestNewestStreamLogsStartsAtEnd(t *testing.T) {
+	api := &fakeGetLogEventsAPI{
+		out: &cloudwatchlogs.GetLogEventsOutput{Events: []cwltypes.OutputLogEvent{
+			{Timestamp: int64PtrLogs(1002), Message: strPtrLogs("newest")},
+			{Timestamp: int64PtrLogs(1001), Message: strPtrLogs("older")},
+		}},
+	}
+
+	entries, lastTS, err := newestStreamLogs(context.Background(), api, "group", "stream", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.input == nil || api.input.StartFromHead == nil || *api.input.StartFromHead {
+		t.Fatalf("StartFromHead = %v, want false", api.input.StartFromHead)
+	}
+	if api.input.Limit == nil || *api.input.Limit != 10 {
+		t.Fatalf("Limit = %v, want 10", api.input.Limit)
+	}
+	if len(entries) != 2 || entries[0].Message != "older" || entries[1].Message != "newest" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if entries[0].Stream != "stream" || lastTS != 1002 {
+		t.Fatalf("stream = %q, lastTS = %d", entries[0].Stream, lastTS)
 	}
 }
 
