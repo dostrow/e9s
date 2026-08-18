@@ -5,16 +5,12 @@ package gui
 
 import (
 	"context"
-	_ "embed"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
 )
-
-//go:embed style.css
-var styleCSS string
 
 const applicationID = "com.github.dostrow.e9s.gui"
 

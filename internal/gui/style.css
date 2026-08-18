@@ -1,31 +1,15 @@
-window {
-  background: #111318;
-  color: #e6e9ef;
-}
-
 .toolbar {
-  background: #191c24;
-  border-bottom: 1px solid #343a46;
+  border-bottom: 1px solid alpha(currentColor, 0.14);
   padding: 10px 14px;
 }
 
 .breadcrumb {
-  color: #bac2de;
   font-weight: 600;
 }
 
 .app-title {
-  color: #89b4fa;
-  font-size: 20px;
+  font-size: 1.35em;
   font-weight: 700;
-}
-
-columnview {
-  background: #111318;
-}
-
-columnview row:selected {
-  background: #33415c;
 }
 
 .table-cell {
@@ -33,28 +17,24 @@ columnview row:selected {
 }
 
 .mode-sidebar {
-  background: #151820;
-  border-right: 1px solid #343a46;
+  border-right: 1px solid alpha(currentColor, 0.14);
   padding: 14px 10px;
 }
 
 .section-title {
-  color: #6c7086;
-  font-size: 11px;
+  font-size: 0.8em;
   font-weight: 700;
   margin-bottom: 8px;
+  opacity: 0.65;
 }
 
 .active-mode {
-  background: #33415c;
-  border-radius: 6px;
-  color: #89b4fa;
   font-weight: 700;
   padding: 8px 10px;
 }
 
 .muted {
-  color: #7f849c;
+  opacity: 0.7;
 }
 
 .resource-pane {
@@ -66,38 +46,26 @@ columnview row:selected {
 }
 
 .inspector {
-  background: #0d0f14;
-  color: #cdd6f4;
   font-family: monospace;
-  font-size: 12px;
+  font-size: 0.95em;
   padding: 14px;
 }
 
 .log-view {
-  background: #0d0f14;
-  color: #cdd6f4;
   font-family: monospace;
-  font-size: 12px;
+  font-size: 0.95em;
 }
 
 .log-toolbar {
-  background: #151820;
-  border-bottom: 1px solid #343a46;
+  border-bottom: 1px solid alpha(currentColor, 0.14);
   padding: 8px;
 }
 
-.destructive-action {
-  color: #f38ba8;
-}
-
 .status-bar {
-  background: #191c24;
-  border-top: 1px solid #343a46;
-  color: #a6adc8;
+  border-top: 1px solid alpha(currentColor, 0.14);
   padding: 7px 12px;
 }
 
 .error {
-  color: #f38ba8;
   font-weight: 600;
 }
