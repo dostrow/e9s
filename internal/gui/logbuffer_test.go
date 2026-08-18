@@ -89,6 +89,22 @@ func TestBoundedLogsFiltersCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestBoundedLogsHideStreamsOnlyFromFormattedDisplay(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{
+		{Timestamp: 1, Stream: "api", Message: "api event"},
+		{Timestamp: 2, Stream: "worker", Message: "worker event"},
+	})
+
+	formatted := logs.formatVisibleWithTimestamps("", logTimestampUTC, time.Now(), map[string]struct{}{"worker": {}})
+	if strings.Contains(formatted.text, "worker event") || !strings.Contains(formatted.text, "api event") {
+		t.Fatalf("visible text = %q", formatted.text)
+	}
+	if logs.len() != 2 || len(logs.streams()) != 2 {
+		t.Fatalf("stream filtering altered buffered results: %d entries, %v", logs.len(), logs.streams())
+	}
+}
+
 func TestBoundedLogsDeduplicatesOverlappingPollsButKeepsLateEvents(t *testing.T) {
 	logs := newBoundedLogs(10)
 	first := model.LogEntry{ID: "event-1", Timestamp: 100, Message: "running"}

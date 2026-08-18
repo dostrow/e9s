@@ -1760,6 +1760,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case a.kb.LogHighlights:
 				a.logView = a.logView.OpenHighlightManager()
 				return a, nil
+			case a.kb.LogStreams:
+				a.logView = a.logView.OpenStreamManager()
+				return a, nil
 			}
 		case viewLogSearch:
 			switch k {
@@ -2625,6 +2628,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.LogCopy, "Copy buffer to clipboard"},
 			{kb.LogOpenEditor, "Open buffer in $EDITOR"},
 			{kb.LogHighlights, "Manage highlight rules"},
+			{kb.LogStreams, "Show/hide buffered streams"},
 			{"g/G", "Jump to top/bottom"},
 			{"PgUp/PgDn", "Scroll by page"},
 		}

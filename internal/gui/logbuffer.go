@@ -195,6 +195,21 @@ func (b *boundedLogs) len() int {
 	return len(b.entries)
 }
 
+func (b *boundedLogs) streams() []string {
+	seen := make(map[string]struct{})
+	for _, entry := range b.entries {
+		if entry.Stream != "" {
+			seen[entry.Stream] = struct{}{}
+		}
+	}
+	streams := make([]string, 0, len(seen))
+	for stream := range seen {
+		streams = append(streams, stream)
+	}
+	sort.Strings(streams)
+	return streams
+}
+
 func (b *boundedLogs) text(filter string) string {
 	return b.format(filter).text
 }
@@ -204,6 +219,10 @@ func (b *boundedLogs) format(filter string) formattedLogBuffer {
 }
 
 func (b *boundedLogs) formatWithTimestamps(filter string, mode logTimestampMode, now time.Time) formattedLogBuffer {
+	return b.formatVisibleWithTimestamps(filter, mode, now, nil)
+}
+
+func (b *boundedLogs) formatVisibleWithTimestamps(filter string, mode logTimestampMode, now time.Time, hiddenStreams map[string]struct{}) formattedLogBuffer {
 	filter = strings.ToLower(strings.TrimSpace(filter))
 	var out strings.Builder
 	formatted := formattedLogBuffer{
@@ -211,6 +230,9 @@ func (b *boundedLogs) formatWithTimestamps(filter string, mode logTimestampMode,
 	}
 	offset := 0
 	for _, entry := range b.entries {
+		if _, hidden := hiddenStreams[entry.Stream]; hidden {
+			continue
+		}
 		if filter != "" && !strings.Contains(strings.ToLower(entry.Message+" "+entry.Stream), filter) {
 			continue
 		}

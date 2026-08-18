@@ -171,6 +171,7 @@ type mainWindow struct {
 	logSearch                   *gtk.SearchEntry
 	logPauseButton              *gtk.Button
 	logTimestampButton          *gtk.Button
+	logStreamsButton            *gtk.Button
 	logOlderButton              *gtk.Button
 	logNewerButton              *gtk.Button
 	logNewerKnown               int
@@ -181,6 +182,7 @@ type mainWindow struct {
 	logIndentTags               map[int]*gtk.TextTag
 	logHighlightTags            map[model.LogHighlightStyle]*gtk.TextTag
 	logHighlightRules           []model.LogHighlightRule
+	logHiddenStreams            map[string]struct{}
 	logSource                   model.LogSource
 	logTitle                    string
 	logLastTS                   int64
@@ -910,6 +912,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.logNewestKnownTS = 0
 	w.logSearchSpec = nil
 	w.logHighlightRules = nil
+	w.logHiddenStreams = nil
 	w.updateLogHighlightButton()
 	w.activeSavedLog = ""
 	w.showingLogs = false

@@ -132,6 +132,38 @@ func TestLogViewerKeepsInclusiveCursorAndDeduplicatesOverlappingPolls(t *testing
 	}
 }
 
+func TestLogViewerStreamVisibilityOnlyFiltersDisplay(t *testing.T) {
+	m := LogViewerModel{width: 120, height: 30, search: "event"}
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{
+		{ID: "api", Timestamp: 1, Stream: "api", Message: "api event"},
+		{ID: "worker", Timestamp: 2, Stream: "worker", Message: "worker event"},
+	}, LastTS: 2})
+	m = m.OpenStreamManager()
+	if !m.streamManager {
+		t.Fatal("stream manager did not open for a multi-stream buffer")
+	}
+	m, _ = m.handleStreamManager(tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = m.handleStreamManager(tea.KeyMsg{Type: tea.KeyEsc})
+
+	view := m.View()
+	if strings.Contains(view, "api event") || !strings.Contains(view, "worker event") {
+		t.Fatalf("filtered view = %q", view)
+	}
+	if len(m.lines) != 2 || len(m.ExportLines()) != 2 {
+		t.Fatalf("visibility altered buffered results: %d lines, %d exported", len(m.lines), len(m.ExportLines()))
+	}
+	if len(m.matchIndices) != 1 || m.lines[m.matchIndices[0]].stream != "worker" {
+		t.Fatalf("visible matches = %#v", m.matchIndices)
+	}
+
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{{
+		ID: "scheduler", Timestamp: 3, Stream: "scheduler", Message: "scheduler event",
+	}}, LastTS: 3})
+	if m.streamHidden("scheduler") {
+		t.Fatal("newly encountered stream should default to visible")
+	}
+}
+
 func TestNewLogViewerWithOptions_HistoricalUsesLookback(t *testing.T) {
 	before := time.Now().Add(-11 * time.Second).UnixMilli()
 	m := NewLogViewerWithOptions("history", nil, "/aws/ecs/example", nil, false, 10*time.Second)

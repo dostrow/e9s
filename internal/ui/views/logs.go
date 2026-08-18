@@ -72,6 +72,9 @@ type LogViewerModel struct {
 	highlightInput   textinput.Model
 	highlightEditIdx int
 	highlightError   string
+	hiddenStreams    map[string]struct{}
+	streamManager    bool
+	streamCursor     int
 
 	jumpTargetTS  int64 // if > 0, scroll to nearest line after first load
 	jumpTarget    *model.LogEntry
@@ -192,6 +195,11 @@ func (m LogViewerModel) WithJumpTarget(entry model.LogEntry) LogViewerModel {
 }
 
 func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
+	if m.streamManager {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.handleStreamManager(keyMsg)
+		}
+	}
 	if m.highlightManager {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			return m.handleHighlightManager(keyMsg)
@@ -228,13 +236,14 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		}
 		if len(m.lines) > maxLogLines {
 			trimmed := len(m.lines) - maxLogLines
+			visibleTrimmed := m.visibleCount(m.lines[:trimmed])
 			for _, line := range m.lines[:trimmed] {
 				delete(m.seen, line.key())
 			}
 			m.lines = m.lines[trimmed:]
 			// Adjust scroll position so viewport doesn't drift
 			if !m.follow {
-				m.scroll -= trimmed
+				m.scroll -= visibleTrimmed
 				m.scroll = max(0, m.scroll)
 			}
 			m.rebuildMatchIndices()
@@ -299,7 +308,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		}
 		// Prepend and adjust scroll so viewport stays on the same content
 		m.lines = append(older, m.lines...)
-		m.scroll += len(older)
+		m.scroll += m.visibleCount(older)
 		// Update firstTS
 		if len(m.lines) > 0 {
 			m.firstTS = m.lines[0].timestamp
@@ -339,7 +348,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			}
 		case key.Matches(msg, theme.Keys.Down):
 			visible := m.visibleLines()
-			maxScroll := len(m.lines) - visible
+			maxScroll := len(m.displayIndices()) - visible
 			maxScroll = max(0, maxScroll)
 			m.scroll++
 			if m.scroll >= maxScroll {
@@ -355,7 +364,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			m.scroll = max(0, m.scroll)
 		case msg.String() == "pgdown":
 			visible := m.visibleLines()
-			maxScroll := len(m.lines) - visible
+			maxScroll := len(m.displayIndices()) - visible
 			maxScroll = max(0, maxScroll)
 			m.scroll += visible
 			if m.scroll >= maxScroll {
@@ -435,7 +444,7 @@ func (m LogViewerModel) handleSearchInput(msg tea.KeyMsg) (LogViewerModel, tea.C
 			m.searchIdx = 0
 			// Find the first match visible from current scroll
 			for i, idx := range m.matchIndices {
-				if idx >= m.scroll {
+				if m.displayPosition(idx) >= m.scroll {
 					m.searchIdx = i
 					break
 				}
@@ -459,7 +468,7 @@ func (m *LogViewerModel) rebuildMatchIndices() {
 	}
 	lowerSearch := strings.ToLower(m.search)
 	for i, l := range m.lines {
-		if strings.Contains(strings.ToLower(l.message), lowerSearch) {
+		if !m.streamHidden(l.stream) && strings.Contains(strings.ToLower(l.message), lowerSearch) {
 			m.matchIndices = append(m.matchIndices, i)
 		}
 	}
@@ -491,10 +500,12 @@ func (m *LogViewerModel) jumpToPrevMatch() {
 
 func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 	// Find the first line at or after the target timestamp
-	targetLine := len(m.lines) - 1
-	for i, l := range m.lines {
+	display := m.displayIndices()
+	targetLine := len(display) - 1
+	for position, index := range display {
+		l := m.lines[index]
 		if l.timestamp >= ts {
-			targetLine = i
+			targetLine = position
 			break
 		}
 	}
@@ -502,7 +513,7 @@ func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 	// Center the target in the viewport
 	m.scroll = targetLine - visible/2
 	m.scroll = max(0, m.scroll)
-	maxScroll := len(m.lines) - visible
+	maxScroll := len(display) - visible
 	maxScroll = max(0, maxScroll)
 	m.scroll = min(m.scroll, maxScroll)
 }
@@ -510,9 +521,10 @@ func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 func (m *LogViewerModel) scrollToEntry(entry model.LogEntry) {
 	targetLine := -1
 	key := entry.Key()
-	for i, line := range m.lines {
+	for position, index := range m.displayIndices() {
+		line := m.lines[index]
 		if line.key() == key {
-			targetLine = i
+			targetLine = position
 			break
 		}
 	}
@@ -522,24 +534,27 @@ func (m *LogViewerModel) scrollToEntry(entry model.LogEntry) {
 	}
 	visible := m.visibleLines()
 	m.scroll = max(0, targetLine-visible/2)
-	m.scroll = min(m.scroll, max(0, len(m.lines)-visible))
+	m.scroll = min(m.scroll, max(0, len(m.displayIndices())-visible))
 }
 
 func (m *LogViewerModel) scrollToMatch(matchIdx int) {
 	if matchIdx < 0 || matchIdx >= len(m.matchIndices) {
 		return
 	}
-	lineIdx := m.matchIndices[matchIdx]
+	lineIdx := m.displayPosition(m.matchIndices[matchIdx])
 	visible := m.visibleLines()
 	// Center the match in the viewport
 	m.scroll = lineIdx - visible/2
 	m.scroll = max(0, m.scroll)
-	maxScroll := len(m.lines) - visible
+	maxScroll := len(m.displayIndices()) - visible
 	maxScroll = max(0, maxScroll)
 	m.scroll = min(m.scroll, maxScroll)
 }
 
 func (m LogViewerModel) View() string {
+	if m.streamManager {
+		return m.streamManagerView()
+	}
 	if m.highlightManager {
 		return m.highlightManagerView()
 	}
@@ -566,7 +581,12 @@ func (m LogViewerModel) View() string {
 		}
 		b.WriteString(theme.HelpStyle.Render(matchInfo))
 	}
-	fmt.Fprintf(&b, "  [%d lines]", len(m.lines))
+	display := m.displayIndices()
+	if len(display) == len(m.lines) {
+		fmt.Fprintf(&b, "  [%d lines]", len(m.lines))
+	} else {
+		fmt.Fprintf(&b, "  [%d/%d lines shown]", len(display), len(m.lines))
+	}
 	b.WriteString("\n\n")
 
 	if m.searching {
@@ -575,11 +595,13 @@ func (m LogViewerModel) View() string {
 
 	visible := m.visibleLines()
 
-	start := max(0, min(m.scroll, len(m.lines)-visible))
-	end := min(start+visible, len(m.lines))
+	start := max(0, min(m.scroll, len(display)-visible))
+	end := min(start+visible, len(display))
 
 	if len(m.lines) == 0 {
 		b.WriteString(theme.HelpStyle.Render("  Waiting for logs..."))
+	} else if len(display) == 0 {
+		b.WriteString(theme.HelpStyle.Render("  All buffered streams are hidden. Open stream visibility to show logs."))
 	}
 
 	// Build a set of match line indices for quick lookup
@@ -604,7 +626,8 @@ func (m LogViewerModel) View() string {
 		msgWidth = 20
 	}
 
-	for i := start; i < end; i++ {
+	for position := start; position < end; position++ {
+		i := display[position]
 		line := m.lines[i]
 		ts := m.formatTimestamp(line.timestamp)
 		tsStr := theme.HelpStyle.Render(ts)
@@ -694,8 +717,47 @@ func (m LogViewerModel) visibleLines() int {
 
 func (m *LogViewerModel) scrollToBottom() {
 	visible := m.visibleLines()
-	m.scroll = len(m.lines) - visible
+	m.scroll = len(m.displayIndices()) - visible
 	m.scroll = max(0, m.scroll)
+}
+
+func (m LogViewerModel) streamHidden(stream string) bool {
+	_, hidden := m.hiddenStreams[stream]
+	return hidden
+}
+
+func (m LogViewerModel) visibleCount(lines []logLine) int {
+	count := 0
+	for _, line := range lines {
+		if !m.streamHidden(line.stream) {
+			count++
+		}
+	}
+	return count
+}
+
+func (m LogViewerModel) displayIndices() []int {
+	indices := make([]int, 0, len(m.lines))
+	for i, line := range m.lines {
+		if !m.streamHidden(line.stream) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+func (m LogViewerModel) displayPosition(lineIndex int) int {
+	position := 0
+	for i, line := range m.lines {
+		if m.streamHidden(line.stream) {
+			continue
+		}
+		if i >= lineIndex {
+			return position
+		}
+		position++
+	}
+	return position
 }
 
 const tsWidth = 24
@@ -892,8 +954,123 @@ func (m LogViewerModel) HighlightRules() []model.LogHighlightRule {
 	return append([]model.LogHighlightRule(nil), m.highlightRules...)
 }
 
+// OpenStreamManager opens the presentation-only stream visibility selector.
+func (m LogViewerModel) OpenStreamManager() LogViewerModel {
+	if m.streamManager {
+		m.streamManager = false
+		return m
+	}
+	streams := m.availableStreams()
+	if len(streams) <= 1 {
+		return m
+	}
+	m.highlightManager = false
+	m.streamManager = true
+	if m.streamCursor >= len(streams) {
+		m.streamCursor = len(streams) - 1
+	}
+	return m
+}
+
+func (m LogViewerModel) availableStreams() []string {
+	seen := make(map[string]struct{})
+	for _, line := range m.lines {
+		if line.stream != "" {
+			seen[line.stream] = struct{}{}
+		}
+	}
+	streams := make([]string, 0, len(seen))
+	for stream := range seen {
+		streams = append(streams, stream)
+	}
+	sort.Strings(streams)
+	return streams
+}
+
+func (m LogViewerModel) handleStreamManager(msg tea.KeyMsg) (LogViewerModel, tea.Cmd) {
+	streams := m.availableStreams()
+	if len(streams) <= 1 {
+		m.streamManager = false
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc", "q", "v":
+		m.streamManager = false
+	case "j", "down":
+		if m.streamCursor < len(streams)-1 {
+			m.streamCursor++
+		}
+	case "k", "up":
+		if m.streamCursor > 0 {
+			m.streamCursor--
+		}
+	case " ", "enter":
+		if m.hiddenStreams == nil {
+			m.hiddenStreams = make(map[string]struct{})
+		}
+		stream := streams[m.streamCursor]
+		if _, hidden := m.hiddenStreams[stream]; hidden {
+			delete(m.hiddenStreams, stream)
+		} else {
+			m.hiddenStreams[stream] = struct{}{}
+		}
+		m.visibilityChanged()
+	case "a":
+		m.hiddenStreams = nil
+		m.visibilityChanged()
+	case "x":
+		m.hiddenStreams = make(map[string]struct{}, len(streams))
+		for _, stream := range streams {
+			m.hiddenStreams[stream] = struct{}{}
+		}
+		m.visibilityChanged()
+	}
+	return m, nil
+}
+
+func (m *LogViewerModel) visibilityChanged() {
+	m.rebuildMatchIndices()
+	if m.searchIdx >= len(m.matchIndices) {
+		m.searchIdx = max(0, len(m.matchIndices)-1)
+	}
+	m.scroll = min(m.scroll, max(0, len(m.displayIndices())-m.visibleLines()))
+}
+
+func (m LogViewerModel) streamManagerView() string {
+	streams := m.availableStreams()
+	var b strings.Builder
+	b.WriteString("Visible log streams\n\n")
+	visibleRows := max(5, m.height-10)
+	start := max(0, m.streamCursor-visibleRows+1)
+	end := min(len(streams), start+visibleRows)
+	for i := start; i < end; i++ {
+		marker := "  "
+		style := lipgloss.NewStyle()
+		if i == m.streamCursor {
+			marker = "► "
+			style = theme.SelectedRowStyle
+		}
+		checked := "x"
+		if m.streamHidden(streams[i]) {
+			checked = " "
+		}
+		b.WriteString(style.Render(fmt.Sprintf("%s[%s] %s", marker, checked, formatLogSource(streams[i]))))
+		b.WriteString("\n")
+	}
+	if len(streams) > visibleRows {
+		fmt.Fprintf(&b, "\n%d–%d of %d streams\n", start+1, end, len(streams))
+	}
+	b.WriteString("\n[j/k] move  [space/enter] toggle  [a] show all  [x] hide all  [esc] close")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ColorCyan).
+		Padding(1, 3).
+		Render(b.String())
+}
+
 // OpenHighlightManager opens the log viewer's compact rule manager.
 func (m LogViewerModel) OpenHighlightManager() LogViewerModel {
+	m.streamManager = false
 	m.highlightManager = true
 	m.highlightEditing = false
 	m.highlightError = ""

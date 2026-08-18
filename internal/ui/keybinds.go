@@ -41,6 +41,7 @@ type KeyBindings struct {
 	LogSave       string
 	LogCorrelate  string
 	LogHighlights string
+	LogStreams    string
 
 	// CloudWatch Logs
 	TailStream    string
@@ -153,6 +154,7 @@ func NewKeyBindings() KeyBindings {
 		LogSave:       "w",
 		LogCorrelate:  "c",
 		LogHighlights: "h",
+		LogStreams:    "v",
 
 		// CW Logs
 		TailStream:    "l",
@@ -302,6 +304,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.LogCorrelate = key
 		case "log_highlights":
 			kb.LogHighlights = key
+		case "log_streams":
+			kb.LogStreams = key
 
 		// CW
 		case "tail_stream":

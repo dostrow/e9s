@@ -37,6 +37,9 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	w.logCorrelateButton.ConnectClicked(w.promptLogCorrelation)
 	w.logTimestampButton = gtk.NewButtonWithLabel("Time: Local")
 	w.logTimestampButton.ConnectClicked(w.cycleLogTimestamps)
+	w.logStreamsButton = gtk.NewButtonWithLabel("Streams…")
+	w.logStreamsButton.SetVisible(false)
+	w.logStreamsButton.ConnectClicked(w.promptLogStreams)
 	w.logHighlightsButton = gtk.NewButtonWithLabel("Highlights…")
 	w.logHighlightsButton.ConnectClicked(w.promptLogHighlights)
 	copyButton := gtk.NewButtonWithLabel("Copy")
@@ -58,6 +61,7 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	toolbar.Append(w.logNewerButton)
 	toolbar.Append(w.logCorrelateButton)
 	toolbar.Append(w.logTimestampButton)
+	toolbar.Append(w.logStreamsButton)
 	toolbar.Append(w.logHighlightsButton)
 	toolbar.Append(copyButton)
 	toolbar.Append(clearButton)
@@ -188,6 +192,7 @@ func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, p
 	w.setWorkspaceBusy("", false)
 	w.logNewerKnown = 0
 	w.logNewestKnownTS = 0
+	w.logHiddenStreams = nil
 	w.logFollowing = false
 	w.logSource = source
 	w.logTitle = title
@@ -253,6 +258,7 @@ func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	w.logPauseButton.SetLabel("Pause")
 	if !preserve || w.logStore == nil {
 		w.logStore = newBoundedLogs(maxGUILogEntries)
+		w.logHiddenStreams = nil
 		w.logLastTS = time.Now().Add(-15 * time.Minute).UnixMilli()
 		w.logSearch.SetText("")
 		w.renderLogs()
@@ -510,7 +516,7 @@ func (w *mainWindow) renderLogs() {
 	if w.logStore == nil || w.logTextBuffer == nil {
 		return
 	}
-	formatted := w.logStore.formatWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now())
+	formatted := w.logStore.formatVisibleWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now(), w.logHiddenStreams)
 	w.logTextBuffer.SetText(formatted.text)
 	if w.logIndentTags == nil {
 		w.logIndentTags = make(map[int]*gtk.TextTag)
@@ -536,6 +542,7 @@ func (w *mainWindow) renderLogs() {
 		)
 	}
 	w.applyLogHighlightTags(formatted)
+	w.updateLogStreamsButton()
 	if w.logFollowing {
 		w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
 	}
@@ -545,7 +552,7 @@ func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
 	if w.logStore == nil || w.logView == nil || w.logTextBuffer == nil {
 		return
 	}
-	formatted := w.logStore.formatWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now())
+	formatted := w.logStore.formatVisibleWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now(), w.logHiddenStreams)
 	key := entry.Key()
 	for _, line := range formatted.lines {
 		if line.entry.Key() == key {
@@ -553,6 +560,104 @@ func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
 			return
 		}
 	}
+}
+
+func (w *mainWindow) updateLogStreamsButton() {
+	if w.logStreamsButton == nil {
+		return
+	}
+	if w.logStore == nil {
+		w.logStreamsButton.SetVisible(false)
+		return
+	}
+	streams := w.logStore.streams()
+	if len(streams) <= 1 {
+		w.logStreamsButton.SetVisible(false)
+		return
+	}
+	hidden := 0
+	for _, stream := range streams {
+		if _, excluded := w.logHiddenStreams[stream]; excluded {
+			hidden++
+		}
+	}
+	w.logStreamsButton.SetLabel(fmt.Sprintf("Streams: %d/%d…", len(streams)-hidden, len(streams)))
+	w.logStreamsButton.SetVisible(true)
+}
+
+func (w *mainWindow) promptLogStreams() {
+	if w.logStore == nil {
+		return
+	}
+	streams := w.logStore.streams()
+	if len(streams) <= 1 {
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Visible log streams", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+
+	help := gtk.NewLabel("Choose which streams are shown. Hidden streams remain buffered and are included when copying or saving.")
+	help.SetXAlign(0)
+	help.SetWrap(true)
+	content.Append(help)
+
+	checks := make([]*gtk.CheckButton, len(streams))
+	list := gtk.NewBox(gtk.OrientationVertical, 4)
+	for i, stream := range streams {
+		check := gtk.NewCheckButtonWithLabel(stream)
+		_, hidden := w.logHiddenStreams[stream]
+		check.SetActive(!hidden)
+		checks[i] = check
+		list.Append(check)
+	}
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetMinContentWidth(560)
+	scroll.SetMinContentHeight(360)
+	scroll.SetChild(list)
+	content.Append(scroll)
+
+	selectionButtons := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	showAll := gtk.NewButtonWithLabel("Show all")
+	showAll.ConnectClicked(func() {
+		for _, check := range checks {
+			check.SetActive(true)
+		}
+	})
+	hideAll := gtk.NewButtonWithLabel("Hide all")
+	hideAll.ConnectClicked(func() {
+		for _, check := range checks {
+			check.SetActive(false)
+		}
+	})
+	selectionButtons.Append(showAll)
+	selectionButtons.Append(hideAll)
+	content.Append(selectionButtons)
+
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Apply", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		defer dialog.Destroy()
+		if response != int(gtk.ResponseOK) {
+			return
+		}
+		hidden := make(map[string]struct{})
+		for i, check := range checks {
+			if !check.Active() {
+				hidden[streams[i]] = struct{}{}
+			}
+		}
+		w.logHiddenStreams = hidden
+		w.renderLogs()
+		w.setStatus(fmt.Sprintf("Showing %d of %d streams • %d buffered lines", len(streams)-len(hidden), len(streams), w.logStore.len()), false)
+	})
+	dialog.Present()
 }
 
 func (w *mainWindow) applyContextLogHighlights(rules []model.LogHighlightRule, preferSaved bool) {
@@ -672,6 +777,7 @@ func (w *mainWindow) clearLogs() {
 	w.logStore.clear()
 	w.logNewerKnown = 0
 	w.logNewestKnownTS = 0
+	w.logHiddenStreams = nil
 	w.updateLogSearchControls()
 	w.renderLogs()
 	w.setStatus("Log buffer cleared", false)
