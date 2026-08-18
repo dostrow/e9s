@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -260,6 +261,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		}
 	})
 	w.installActions(app)
+	w.installPrintableShortcuts(app)
 
 	go w.autoRefresh()
 	return w
@@ -560,7 +562,7 @@ func newModuleRailButton(label string, activate func()) *gtk.ToggleButton {
 
 func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "refresh", []string{"<Control>r"}, w.refresh)
-	w.addAction(app, "search", []string{"slash"}, func() {
+	w.addAction(app, "search", nil, func() {
 		if w.showingLogs {
 			w.logSearch.GrabFocus()
 		} else {
@@ -571,7 +573,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "modes", []string{"<Control>p"}, func() {
 		w.setStatus("Choose ECS or CloudWatch Logs from the Module Rail", false)
 	})
-	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
+	w.addAction(app, "help", nil, func() {
 		if w.showingTerminal {
 			w.setStatus("Disconnect ECS Exec before opening help", false)
 			return
@@ -583,20 +585,20 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
-	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
+	w.addAction(app, "logs", nil, w.openServiceLogs)
 	w.addAction(app, "task-logs", []string{"<Control><Shift>l"}, w.openTaskLogs)
-	w.addAction(app, "standalone-tasks", []string{"<Shift>s"}, w.toggleStandaloneTasks)
+	w.addAction(app, "standalone-tasks", nil, w.toggleStandaloneTasks)
 	w.addAction(app, "run-task", []string{"<Control>Return"}, w.promptRunTask)
-	w.addAction(app, "metrics", []string{"m"}, w.openMetrics)
+	w.addAction(app, "metrics", nil, w.openMetrics)
 	w.addAction(app, "toggle-scale-in", []string{"<Control><Shift>a"}, w.confirmToggleScaleIn)
-	w.addAction(app, "task-definitions", []string{"<Shift>t"}, w.openTaskDefinitions)
-	w.addAction(app, "task-definition-env", []string{"e"}, w.openTaskDefinitionEnvironment)
-	w.addAction(app, "task-definition-diff", []string{"d"}, w.openTaskDefinitionDiff)
+	w.addAction(app, "task-definitions", nil, w.openTaskDefinitions)
+	w.addAction(app, "task-definition-env", nil, w.openTaskDefinitionEnvironment)
+	w.addAction(app, "task-definition-diff", nil, w.openTaskDefinitionDiff)
 	w.addAction(app, "task-definition-edit", []string{"<Control>e"}, w.openTaskDefinitionEditor)
 	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.confirmRegisterTaskDefinition)
 	w.addAction(app, "ecs-exec", []string{"<Control><Shift>e"}, w.openExec)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
-	w.addAction(app, "log-timestamps", []string{"t"}, func() {
+	w.addAction(app, "log-timestamps", nil, func() {
 		if w.showingLogs {
 			w.cycleLogTimestamps()
 		}
@@ -613,6 +615,75 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.adjustActivePaneZoom(-1)
 	})
 	w.addAction(app, "zoom-reset", zoomResetAccelerators, w.resetActivePaneZoom)
+}
+
+func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
+	keys := gtk.NewEventControllerKey()
+	keys.SetPropagationPhase(gtk.PhaseCapture)
+	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		action := printableShortcutAction(keyval, state)
+		if action == "" || w.focusAcceptsTextInput() {
+			return false
+		}
+		app.ActivateAction(action, nil)
+		return true
+	})
+	w.window.AddController(keys)
+}
+
+func printableShortcutAction(keyval uint, state gdk.ModifierType) string {
+	modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
+	if modifiers == 0 {
+		switch keyval {
+		case gdk.KEY_slash:
+			return "search"
+		case gdk.KEY_m:
+			return "metrics"
+		case gdk.KEY_e:
+			return "task-definition-env"
+		case gdk.KEY_d:
+			return "task-definition-diff"
+		case gdk.KEY_t:
+			return "log-timestamps"
+		}
+	}
+	if modifiers == gdk.ShiftMask {
+		switch keyval {
+		case gdk.KEY_question:
+			return "help"
+		case gdk.KEY_L:
+			return "logs"
+		case gdk.KEY_S:
+			return "standalone-tasks"
+		case gdk.KEY_T:
+			return "task-definitions"
+		}
+	}
+	return ""
+}
+
+func (w *mainWindow) focusAcceptsTextInput() bool {
+	if w.showingTerminal {
+		return true
+	}
+	focus := w.window.Focus()
+	if focus == nil {
+		return false
+	}
+	object := glib.BaseObject(focus)
+	if object.IsA(gtk.GTypeEditableTextWidget) {
+		if editable, ok := focus.(interface{ Editable() bool }); ok {
+			return editable.Editable()
+		}
+		return true
+	}
+	if object.IsA(gtk.GTypeTextView) {
+		if editable, ok := focus.(interface{ Editable() bool }); ok {
+			return editable.Editable()
+		}
+		return true
+	}
+	return false
 }
 
 func (w *mainWindow) addAction(app *gtk.Application, name string, accels []string, run func()) {
