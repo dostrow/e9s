@@ -2,7 +2,6 @@ package aws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -260,22 +259,6 @@ func (c *Client) StartSSMSession(ctx context.Context, instanceID string) (*ExecS
 		TokenValue: derefStrAws(out.TokenValue),
 		Region:     c.Region(),
 		Target:     instanceID,
-	}, nil
-}
-
-// BuildSSMPluginArgs returns plugin args for an SSM session (different endpoint than ECS).
-func (s *ExecSession) BuildSSMPluginArgs() ([]string, error) {
-	sessionJSON, err := json.Marshal(s)
-	if err != nil {
-		return nil, err
-	}
-	return []string{
-		string(sessionJSON),
-		s.Region,
-		"StartSession",
-		"",
-		fmt.Sprintf(`{"Target":"%s"}`, s.Target),
-		fmt.Sprintf("https://ssm.%s.amazonaws.com", s.Region),
 	}, nil
 }
 

@@ -2,12 +2,14 @@ package aws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/dostrow/e9s/internal/model"
 )
+
+type ExecSession = model.ExecSession
 
 // ExecuteCommand initiates an ECS Exec session and returns the session info
 // needed for session-manager-plugin.
@@ -36,14 +38,6 @@ func (c *Client) ExecuteCommand(ctx context.Context, cluster, taskARN, container
 	}, nil
 }
 
-type ExecSession struct {
-	SessionID  string `json:"SessionId"`
-	StreamURL  string `json:"StreamUrl"`
-	TokenValue string `json:"TokenValue"`
-	Region     string
-	Target     string
-}
-
 // SessionManagerPluginPath returns the path to session-manager-plugin if installed.
 func SessionManagerPluginPath() (string, error) {
 	path, err := exec.LookPath("session-manager-plugin")
@@ -51,22 +45,6 @@ func SessionManagerPluginPath() (string, error) {
 		return "", fmt.Errorf("session-manager-plugin not found in PATH — install it from https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html")
 	}
 	return path, nil
-}
-
-// BuildPluginArgs returns the arguments for session-manager-plugin.
-func (s *ExecSession) BuildPluginArgs() ([]string, error) {
-	sessionJSON, err := json.Marshal(s)
-	if err != nil {
-		return nil, err
-	}
-	return []string{
-		string(sessionJSON),
-		s.Region,
-		"StartSession",
-		"",
-		fmt.Sprintf(`{"Target":"%s"}`, s.Target),
-		fmt.Sprintf("https://ecs.%s.amazonaws.com", s.Region),
-	}, nil
 }
 
 func derefStrAws(s *string) string {

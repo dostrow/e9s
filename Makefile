@@ -2,12 +2,15 @@ BINARY := e9s
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build build-gui install clean test
+.PHONY: build build-gui build-gui-basic install clean test
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) .
 
 build-gui:
+	go build -tags "gui vte" $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui
+
+build-gui-basic:
 	go build -tags gui $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui
 
 install:

@@ -106,6 +106,9 @@ func (w *mainWindow) openTaskDefinitions() {
 		return
 	}
 	w.taskDefinitionReturnPage = w.currentPage
+	if w.showingTerminal {
+		w.closeTerminalNow(false)
+	}
 	if w.logCancel != nil && w.showingLogs {
 		w.logCancel()
 		w.logGeneration++

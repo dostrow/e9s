@@ -34,6 +34,7 @@ type ECSService interface {
 	TaskDefinitionEditorDocument(string) (string, error)
 	RegisterTaskDefinitionJSON(context.Context, string) (*model.TaskDefSummary, error)
 	TaskDefinitionEnvironment(context.Context, string, string, bool) ([]model.EnvVar, error)
+	PrepareExecSession(context.Context, string, model.Task, string, string) (model.ExecLaunch, error)
 	ContainerLogSource(context.Context, model.Task, string) (model.LogSource, error)
 	ServiceLogSource(context.Context, string, string) (model.LogSource, error)
 }

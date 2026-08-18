@@ -68,6 +68,9 @@ func (w *mainWindow) openServiceLogs() {
 	go func() {
 		source, err := w.options.ECS.ServiceLogSource(ctx, cluster, service)
 		w.finishRequestWithStatus(ctx, generation, err, "Following logs for "+service, func() {
+			if w.showingTerminal {
+				w.closeTerminalNow(false)
+			}
 			w.showingMetrics = false
 			w.showingLogs = true
 			w.detailStack.SetVisibleChildName("logs")
@@ -131,6 +134,9 @@ func (w *mainWindow) openTaskContainerLogs(task model.Task, container string) {
 		source, err := w.options.ECS.ContainerLogSource(ctx, task, container)
 		title := shortID(task.TaskID) + " / " + container
 		w.finishRequestWithStatus(ctx, generation, err, "Following logs for "+title, func() {
+			if w.showingTerminal {
+				w.closeTerminalNow(false)
+			}
 			w.showingMetrics = false
 			w.showingLogs = true
 			w.detailStack.SetVisibleChildName("logs")

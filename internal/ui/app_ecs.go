@@ -11,7 +11,6 @@ import (
 	"github.com/atotto/clipboard"
 
 	tea "github.com/charmbracelet/bubbletea"
-	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -375,31 +374,18 @@ func (a App) doExec(containerName string) (App, tea.Cmd) {
 
 func (a App) doExecWithCommand(command string) tea.Cmd {
 	t := a.selectedTask
-	client := a.client
 	cluster := ""
 	if a.selectedCluster != nil {
 		cluster = a.selectedCluster.Name
 	}
-	taskARN := t.TaskARN
 	containerName := a.execContainerName
 
 	return func() tea.Msg {
-		pluginPath, err := e9saws.SessionManagerPluginPath()
+		launch, err := a.ecs.PrepareExecSession(a.ctx, cluster, *t, containerName, command)
 		if err != nil {
 			return errMsg{err}
 		}
-
-		session, err := client.ExecuteCommand(context.Background(), cluster, taskARN, containerName, command)
-		if err != nil {
-			return errMsg{err}
-		}
-
-		args, err := session.BuildPluginArgs()
-		if err != nil {
-			return errMsg{err}
-		}
-
-		return execSessionReadyMsg{pluginPath: pluginPath, args: args}
+		return execSessionReadyMsg{pluginPath: launch.Executable, args: launch.Args}
 	}
 }
 

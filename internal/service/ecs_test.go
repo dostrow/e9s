@@ -26,6 +26,8 @@ type fakeECSAPI struct {
 	definitions   []model.TaskDefRef
 	definition    *model.TaskDefSummary
 	registered    string
+	execSession   *model.ExecSession
+	execArgs      []string
 }
 
 func (f *fakeECSAPI) ListClusters(context.Context) ([]model.Cluster, error) {
@@ -96,6 +98,11 @@ func (f *fakeECSAPI) ResolveEnvVars(_ context.Context, environment []model.EnvVa
 		resolved[i].ResolvedValue = "resolved:" + resolved[i].Value
 	}
 	return resolved
+}
+
+func (f *fakeECSAPI) ExecuteCommand(_ context.Context, cluster, taskARN, container, command string) (*model.ExecSession, error) {
+	f.execArgs = []string{cluster, taskARN, container, command}
+	return f.execSession, f.err
 }
 
 func (f *fakeECSAPI) GetLogConfig(context.Context, string, string) (string, string, error) {
@@ -289,5 +296,51 @@ func TestECSTaskDefinitionWorkflows(t *testing.T) {
 	registered, err := svc.RegisterTaskDefinitionJSON(context.Background(), `{"Family":"api"}`)
 	if err != nil || registered.Family != "api" || api.registered == "" {
 		t.Fatalf("RegisterTaskDefinitionJSON() = %#v, %v", registered, err)
+	}
+}
+
+func TestECSPrepareExecSession(t *testing.T) {
+	api := &fakeECSAPI{execSession: &model.ExecSession{
+		SessionID: "session", Region: "us-east-1", Target: "ecs:prod_task_api",
+	}}
+	svc := NewECS(api)
+	svc.pluginPath = func() (string, error) { return "/usr/bin/session-manager-plugin", nil }
+	task := model.Task{
+		TaskID: "task", TaskARN: "arn:task", Status: "RUNNING", ExecAgentRunning: true,
+		Containers: []model.Container{{Name: "api"}},
+	}
+	launch, err := svc.PrepareExecSession(context.Background(), "prod", task, "api", "/bin/sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.Executable != "/usr/bin/session-manager-plugin" || len(launch.Args) != 6 {
+		t.Fatalf("PrepareExecSession() = %#v", launch)
+	}
+	if len(api.execArgs) != 4 || api.execArgs[0] != "prod" || api.execArgs[1] != "arn:task" || api.execArgs[2] != "api" || api.execArgs[3] != "/bin/sh" {
+		t.Fatalf("execute arguments = %#v", api.execArgs)
+	}
+}
+
+func TestECSPrepareExecSessionValidatesTask(t *testing.T) {
+	svc := NewECS(&fakeECSAPI{})
+	svc.pluginPath = func() (string, error) { return "plugin", nil }
+	base := model.Task{TaskID: "task", TaskARN: "arn:task", Status: "RUNNING", ExecAgentRunning: true, Containers: []model.Container{{Name: "api"}}}
+	tests := []struct {
+		name      string
+		task      model.Task
+		container string
+		command   string
+	}{
+		{name: "status", task: func() model.Task { task := base; task.Status = "STOPPED"; return task }(), container: "api", command: "/bin/sh"},
+		{name: "agent", task: func() model.Task { task := base; task.ExecAgentRunning = false; return task }(), container: "api", command: "/bin/sh"},
+		{name: "container", task: base, container: "missing", command: "/bin/sh"},
+		{name: "command", task: base, container: "api"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := svc.PrepareExecSession(context.Background(), "prod", test.task, test.container, test.command); err == nil {
+				t.Fatal("PrepareExecSession() succeeded, want validation error")
+			}
+		})
 	}
 }

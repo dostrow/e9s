@@ -6,13 +6,14 @@ link, or require GTK.
 
 ## Prerequisites
 
-Install Go 1.24 or newer, a C compiler, `pkg-config`, and the GTK 4 development
-files. The following package sets are intentionally small:
+Install Go 1.24 or newer, a C compiler, `pkg-config`, the GTK 4 development
+files, the GTK 4 VTE development files, and AWS's `session-manager-plugin`.
+The following distro package sets cover the compile-time dependencies:
 
 ### Ubuntu and Debian
 
 ```bash
-sudo apt install build-essential pkg-config libgtk-4-dev
+sudo apt install build-essential pkg-config libgtk-4-dev libvte-2.91-gtk4-dev
 ```
 
 The PoC was verified on Ubuntu 25.10 with GTK 4.20.1, GLib 2.86.0, gcc 15.2,
@@ -21,7 +22,7 @@ and `pkg-config` 1.8.1.
 ### Arch Linux
 
 ```bash
-sudo pacman -S --needed base-devel pkgconf gtk4
+sudo pacman -S --needed base-devel pkgconf gtk4 vte4
 ```
 
 Arch publishes the development headers, shared library, and pkg-config metadata
@@ -32,7 +33,7 @@ the pkg-config implementation.
 ### Fedora
 
 ```bash
-sudo dnf install gcc pkgconf-pkg-config gtk4-devel
+sudo dnf install gcc pkgconf-pkg-config gtk4-devel vte291-gtk4-devel
 ```
 
 Fedora publishes the headers and build metadata in
@@ -44,6 +45,11 @@ Fedora publishes the headers and build metadata in
 make build-gui
 ./e9s-gui
 ```
+
+`make build-gui` enables the `gui` and `vte` tags and includes the embedded ECS
+Exec terminal. A GTK-only diagnostic build remains available as
+`make build-gui-basic`; it disables Exec and explains the missing build feature
+in the GUI.
 
 The GUI accepts the ECS-relevant TUI settings and YAML defaults:
 
@@ -73,13 +79,16 @@ go test ./...
 go test -race ./internal/gui ./internal/service
 go vet ./...
 go build -tags gui ./cmd/e9s-gui
+go build -tags "gui vte" ./cmd/e9s-gui
 ```
 
 ## Current scope
 
-The PoC provides cluster and service browsing, service inspection, filtering,
-refresh, bounded live service logs, and a confirmed force-deployment action. The
-GTK frontend and Bubble Tea frontend both call the same UI-neutral services in
+The GUI provides cluster, service, service-task, and standalone-task browsing;
+task-definition inspection, diffing, environment lookup, and revision editing;
+service and per-container logs; metrics and alarms; scaling and guarded ECS
+mutations; and ECS Exec in an embedded VTE terminal. The GTK frontend and
+Bubble Tea frontend both call the same UI-neutral services in
 `internal/service`; GTK code does not call AWS SDK adapters directly.
 
 gotk4 is pinned to `v0.3.1`. Releases `v0.4.0` and `v0.4.1` generated references
@@ -99,6 +108,8 @@ memory than a cached rebuild.
    replaces the current view.
 6. Copy logs and paste into another native Wayland application.
 7. Close the window during an active request and confirm the process exits.
+8. Open ECS Exec, resize the tiled window, type in the remote shell, and confirm
+   Disconnect terminates the local Session Manager plugin process.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

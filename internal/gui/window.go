@@ -67,6 +67,7 @@ type mainWindow struct {
 	runTaskButton               *gtk.Button
 	metricsButton               *gtk.Button
 	taskDefinitionsButton       *gtk.Button
+	execButton                  *gtk.Button
 	scaleButton                 *gtk.Button
 	stopTaskButton              *gtk.Button
 	deployButton                *gtk.Button
@@ -99,6 +100,12 @@ type mainWindow struct {
 	showingEditor               bool
 	editorDirty                 bool
 	editorLoading               bool
+	terminal                    *vteTerminal
+	terminalTitle               *gtk.Label
+	terminalTask                model.Task
+	terminalContainer           string
+	terminalCommand             string
+	showingTerminal             bool
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
 	logSearch                   *gtk.SearchEntry
@@ -161,6 +168,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.window.SetTitle("e9s")
 	w.window.SetDefaultSize(1380, 820)
 	w.window.SetChild(w.buildLayout())
+	w.window.ConnectDestroy(func() {
+		if w.terminal != nil {
+			w.terminal.Stop()
+		}
+	})
 	w.installActions(app)
 
 	go w.autoRefresh()
@@ -198,6 +210,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.metricsButton.ConnectClicked(w.openServiceMetrics)
 	w.taskDefinitionsButton = gtk.NewButtonWithLabel("Task defs")
 	w.taskDefinitionsButton.ConnectClicked(w.openTaskDefinitions)
+	w.execButton = gtk.NewButtonWithLabel("Exec")
+	w.execButton.SetSensitive(false)
+	w.execButton.ConnectClicked(w.openExec)
+	if !vteAvailable() {
+		w.execButton.SetTooltipText("Rebuild with the gui and vte tags to enable the embedded terminal")
+	}
 	w.scaleButton = gtk.NewButtonWithLabel("Scale")
 	w.scaleButton.SetSensitive(false)
 	w.scaleButton.ConnectClicked(w.promptScaleService)
@@ -219,6 +237,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.runTaskButton)
 	header.Append(w.metricsButton)
 	header.Append(w.taskDefinitionsButton)
+	header.Append(w.execButton)
 	header.Append(w.logsButton)
 	header.Append(w.taskLogsButton)
 	header.Append(w.scaleButton)
@@ -301,6 +320,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildMetricsPane(), "metrics")
 	w.detailStack.AddNamed(w.buildTaskDefinitionPane(), "task-definition")
 	w.detailStack.AddNamed(w.buildTaskDefinitionEditor(), "editor")
+	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
 	w.detailStack.SetVisibleChildName("detail")
 
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
@@ -350,7 +370,15 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		w.setStatus("ECS is the only module in this proof of concept", false)
 	})
 	w.addAction(app, "help", []string{"<Shift>slash"}, func() {
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		if w.showingTerminal {
+			w.setStatus("Disconnect ECS Exec before opening help", false)
+			return
+		}
+		if w.showingEditor {
+			w.setStatus("Close the task-definition editor before opening help", false)
+			return
+		}
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl+R         Refresh\nShift+S        Browse standalone tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service metrics and alarms\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", []string{"<Shift>l"}, w.openServiceLogs)
@@ -364,6 +392,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "task-definition-diff", []string{"d"}, w.openTaskDefinitionDiff)
 	w.addAction(app, "task-definition-edit", []string{"<Control>e"}, w.openTaskDefinitionEditor)
 	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.confirmRegisterTaskDefinition)
+	w.addAction(app, "ecs-exec", []string{"<Control><Shift>e"}, w.openExec)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
 	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
 	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
@@ -529,6 +558,9 @@ func (w *mainWindow) loadStandaloneTasks() {
 	if w.selectedCluster == "" {
 		return
 	}
+	if w.showingTerminal {
+		w.closeTerminalNow(false)
+	}
 	w.showingMetrics = false
 	w.currentPage = pageStandaloneTasks
 	w.selectedService = ""
@@ -646,6 +678,10 @@ func (w *mainWindow) applyServiceFilter() {
 }
 
 func (w *mainWindow) goBack() {
+	if w.showingTerminal {
+		w.closeTerminal()
+		return
+	}
 	if w.showingEditor {
 		w.closeTaskDefinitionEditor()
 		return
@@ -711,6 +747,12 @@ func (w *mainWindow) refresh() {
 }
 
 func (w *mainWindow) refreshCurrent(foreground bool) {
+	if w.showingTerminal {
+		if foreground {
+			w.setStatus("Disconnect ECS Exec before refreshing", false)
+		}
+		return
+	}
 	if w.showingEditor {
 		if foreground {
 			w.setStatus("Editor has unsaved content; close it before refreshing", false)
@@ -913,6 +955,18 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.standaloneButton.SetSensitive(clusterSelected && !standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
 	w.metricsButton.SetSensitive(serviceSelected)
+	execEnabled := false
+	if taskSelected && vteAvailable() {
+		if task, found := findTask(w.allTasks, w.selectedTask); found {
+			execEnabled = task.Status == "RUNNING" && task.ExecAgentRunning
+			if serviceSelected {
+				if service, serviceFound := findService(w.allServices, w.selectedService); serviceFound {
+					execEnabled = execEnabled && service.EnableExecuteCommand
+				}
+			}
+		}
+	}
+	w.execButton.SetSensitive(execEnabled)
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
 	w.scaleButton.SetSensitive(serviceSelected)

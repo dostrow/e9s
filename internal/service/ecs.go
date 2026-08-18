@@ -29,17 +29,19 @@ type ECSAPI interface {
 	GetTaskDefinition(context.Context, string) (*model.TaskDefSummary, error)
 	RegisterTaskDefinitionJSON(context.Context, string) (*model.TaskDefSummary, error)
 	ResolveEnvVars(context.Context, []model.EnvVar) []model.EnvVar
+	ExecuteCommand(context.Context, string, string, string, string) (*model.ExecSession, error)
 	GetLogConfig(context.Context, string, string) (string, string, error)
 	ResolveTaskLogStreams(context.Context, []model.Task) (string, []string, error)
 }
 
 // ECS exposes ECS workflows without depending on either frontend toolkit.
 type ECS struct {
-	api ECSAPI
+	api        ECSAPI
+	pluginPath func() (string, error)
 }
 
 func NewECS(api ECSAPI) *ECS {
-	return &ECS{api: api}
+	return &ECS{api: api, pluginPath: aws.SessionManagerPluginPath}
 }
 
 func (s *ECS) ListClusters(ctx context.Context) ([]model.Cluster, error) {
@@ -221,6 +223,55 @@ func (s *ECS) TaskDefinitionEnvironment(ctx context.Context, taskDefinition, con
 		}
 	}
 	return nil, fmt.Errorf("container %q not found in task definition %q", container, taskDefinition)
+}
+
+func (s *ECS) PrepareExecSession(ctx context.Context, cluster string, task model.Task, container, command string) (model.ExecLaunch, error) {
+	if task.Status != "RUNNING" {
+		return model.ExecLaunch{}, fmt.Errorf("start ECS Exec: task is %s, not RUNNING", valueOrUnknown(task.Status))
+	}
+	if !task.ExecAgentRunning {
+		return model.ExecLaunch{}, fmt.Errorf("start ECS Exec: ExecuteCommandAgent is not running on task %q", task.TaskID)
+	}
+	container = strings.TrimSpace(container)
+	if container == "" || !taskHasContainer(task, container) {
+		return model.ExecLaunch{}, fmt.Errorf("start ECS Exec: container %q is not present on task %q", container, task.TaskID)
+	}
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return model.ExecLaunch{}, fmt.Errorf("start ECS Exec: command is required")
+	}
+	plugin, err := s.pluginPath()
+	if err != nil {
+		return model.ExecLaunch{}, err
+	}
+	session, err := s.api.ExecuteCommand(ctx, cluster, task.TaskARN, container, command)
+	if err != nil {
+		return model.ExecLaunch{}, fmt.Errorf("start ECS Exec for task %q: %w", task.TaskID, err)
+	}
+	if session == nil {
+		return model.ExecLaunch{}, fmt.Errorf("start ECS Exec for task %q: empty session", task.TaskID)
+	}
+	args, err := session.BuildPluginArgs()
+	if err != nil {
+		return model.ExecLaunch{}, fmt.Errorf("build Session Manager plugin arguments: %w", err)
+	}
+	return model.ExecLaunch{Executable: plugin, Args: args}, nil
+}
+
+func taskHasContainer(task model.Task, name string) bool {
+	for _, container := range task.Containers {
+		if container.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func valueOrUnknown(value string) string {
+	if value == "" {
+		return "UNKNOWN"
+	}
+	return value
 }
 
 func (s *ECS) ContainerLogSource(ctx context.Context, task model.Task, container string) (model.LogSource, error) {

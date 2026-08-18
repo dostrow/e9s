@@ -134,6 +134,9 @@ func (w *mainWindow) loadServiceMetrics(foreground bool) {
 			success += " • " + strings.Join(warnings, " • ")
 		}
 		w.finishRequestResult(ctx, generation, err, success, opening, func() {
+			if w.showingTerminal {
+				w.closeTerminalNow(false)
+			}
 			if w.logCancel != nil && w.showingLogs {
 				w.logCancel()
 				w.logGeneration++

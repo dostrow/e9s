@@ -189,6 +189,10 @@ make build-gui
 GDK_BACKEND=wayland ./e9s-gui
 ```
 
+The full GUI build uses GTK 4 VTE for its embedded ECS Exec terminal. On Ubuntu
+or Debian, install `libvte-2.91-gtk4-dev` in addition to the GTK prerequisites;
+AWS's `session-manager-plugin` is required at runtime.
+
 See the [GUI development guide](docs/gui-development.md) for distro packages and
 the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
 decision.
