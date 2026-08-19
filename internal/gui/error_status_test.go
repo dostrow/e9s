@@ -26,6 +26,7 @@ func TestModuleForPage(t *testing.T) {
 		pageLambda:            moduleLambda,
 		pageCodeBuildProjects: moduleCodeBuild,
 		pageCodeBuildBuilds:   moduleCodeBuild,
+		pageEC2Instances:      moduleEC2,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}
@@ -45,6 +46,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		{key: moduleSecrets, name: "Secrets Manager", aliases: []string{"sm", "secrets"}},
 		{key: moduleLambda, name: "Lambda", aliases: []string{"lambda", "λ"}},
 		{key: moduleCodeBuild, name: "CodeBuild", aliases: []string{"cb", "codebuild"}},
+		{key: moduleEC2, name: "EC2", aliases: []string{"ec2", "ec2i"}},
 	}
 	tests := map[string]string{
 		"ECS":               moduleECS,
@@ -57,6 +59,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		"Lambda":            moduleLambda,
 		"λ":                 moduleLambda,
 		"CB":                moduleCodeBuild,
+		"EC2i":              moduleEC2,
 	}
 	for value, want := range tests {
 		index, found := moduleSectionIndex(sections, value)
@@ -92,10 +95,11 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 		{name: "CloudWatch Logs"},
 		{name: "CloudWatch Alarms"},
 		{name: "CodeBuild"},
+		{name: "EC2"},
 		{name: "SSM Parameter Store"},
 	}
 	sortModuleRailSections(sections)
-	want := []string{"CloudWatch Alarms", "CloudWatch Logs", "CodeBuild", "ECS", "SSM Parameter Store"}
+	want := []string{"CloudWatch Alarms", "CloudWatch Logs", "CodeBuild", "EC2", "ECS", "SSM Parameter Store"}
 	for i, name := range want {
 		if sections[i].name != name {
 			t.Fatalf("section %d = %q, want %q", i, sections[i].name, name)

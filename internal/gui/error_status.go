@@ -18,6 +18,7 @@ const (
 	moduleSecrets          = "secrets-manager"
 	moduleLambda           = "lambda"
 	moduleCodeBuild        = "codebuild"
+	moduleEC2              = "ec2"
 )
 
 func compactStatusMessage(message string) string {
@@ -45,6 +46,8 @@ func moduleForPage(page string) string {
 		return moduleLambda
 	case pageCodeBuildProjects, pageCodeBuildBuilds:
 		return moduleCodeBuild
+	case pageEC2Instances:
+		return moduleEC2
 	default:
 		return ""
 	}

@@ -36,6 +36,7 @@ const (
 	pageLambda            = "lambda-functions"
 	pageCodeBuildProjects = "codebuild-projects"
 	pageCodeBuildBuilds   = "codebuild-builds"
+	pageEC2Instances      = "ec2-instances"
 	pageModulePicker      = "module-picker"
 
 	detailIntro          = "intro"
@@ -51,6 +52,7 @@ const (
 	detailSecret         = "secret"
 	detailLambda         = "lambda-function"
 	detailCodeBuild      = "codebuild-build"
+	detailEC2            = "ec2-instance"
 )
 
 type mainWindow struct {
@@ -126,6 +128,10 @@ type mainWindow struct {
 	selectedCodeBuild           string
 	codeBuildDetail             *model.CodeBuildDetail
 	codeBuildActionPending      bool
+	allEC2Instances             []model.EC2Instance
+	filteredEC2Instances        []model.EC2Instance
+	selectedEC2Instance         string
+	ec2Detail                   *model.EC2InstanceDetail
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -145,6 +151,7 @@ type mainWindow struct {
 	lambdaTable                 *stringTable
 	codeBuildProjectTable       *stringTable
 	codeBuildBuildTable         *stringTable
+	ec2Table                    *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -157,6 +164,7 @@ type mainWindow struct {
 	secretsModuleItems          *gtk.Box
 	lambdaModuleItems           *gtk.Box
 	codeBuildModuleItems        *gtk.Box
+	ec2ModuleItems              *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -171,6 +179,7 @@ type mainWindow struct {
 	savedSecretFilterButtons    []*gtk.ToggleButton
 	lambdaFunctionsNavButton    *gtk.ToggleButton
 	codeBuildProjectsNavButton  *gtk.ToggleButton
+	ec2InstancesNavButton       *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -423,6 +432,16 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "INITIATOR", field: 4, expand: true},
 		{title: "SOURCE VERSION", field: 5, expand: true},
 	})
+	w.ec2Table = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true},
+		{title: "INSTANCE ID", field: 1},
+		{title: "STATE", field: 2},
+		{title: "TYPE", field: 3},
+		{title: "AZ", field: 4},
+		{title: "PRIVATE IP", field: 5},
+		{title: "PUBLIC IP", field: 6},
+		{title: "AGE", field: 7},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -436,6 +455,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.lambdaTable.view.ConnectActivate(w.openLambdaFunctionAt)
 	w.codeBuildProjectTable.view.ConnectActivate(w.openCodeBuildProjectAt)
 	w.codeBuildBuildTable.view.ConnectActivate(w.openCodeBuildBuildAt)
+	w.ec2Table.view.ConnectActivate(w.openEC2InstanceAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
@@ -444,6 +464,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.lambdaTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLambdaFunctionRow() })
 	w.codeBuildProjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildProjectRow() })
 	w.codeBuildBuildTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildBuildRow() })
+	w.ec2Table.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2InstanceRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -661,6 +682,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.codeBuildModuleItems.AddCSSClass("module-subitems")
 	w.codeBuildModuleItems.Append(w.codeBuildProjectsNavButton)
 	codeBuild := w.newModuleExpander("CodeBuild", moduleCodeBuild, w.codeBuildModuleItems)
+	w.ec2InstancesNavButton = newModuleRailButton("Instances", w.openEC2Module)
+	w.ec2InstancesNavButton.SetGroup(w.clustersNavButton)
+	w.ec2ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.ec2ModuleItems.AddCSSClass("module-subitems")
+	w.ec2ModuleItems.Append(w.ec2InstancesNavButton)
+	ec2Instances := w.newModuleExpander("EC2", moduleEC2, w.ec2ModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -715,6 +742,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebar.Append(modules)
 	w.moduleSections = []moduleRailSection{
 		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
+		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -812,6 +840,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	codeBuildBuildScroll.SetVExpand(true)
 	codeBuildBuildScroll.SetHExpand(true)
 	codeBuildBuildScroll.SetChild(w.codeBuildBuildTable.view)
+	ec2Scroll := gtk.NewScrolledWindow()
+	ec2Scroll.SetVExpand(true)
+	ec2Scroll.SetHExpand(true)
+	ec2Scroll.SetChild(w.ec2Table.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -835,6 +867,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(lambdaScroll, pageLambda)
 	w.resourceStack.AddNamed(codeBuildProjectScroll, pageCodeBuildProjects)
 	w.resourceStack.AddNamed(codeBuildBuildScroll, pageCodeBuildBuilds)
+	w.resourceStack.AddNamed(ec2Scroll, pageEC2Instances)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1310,6 +1343,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.lambdaViewMode = ""
 	w.codeBuildDetail = nil
 	w.codeBuildActionPending = false
+	w.ec2Detail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1721,6 +1755,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyCodeBuildBuildFilter()
 		return
 	}
+	if w.currentPage == pageEC2Instances {
+		w.applyEC2Filter()
+		return
+	}
 	if w.currentPage == pageSecrets {
 		w.applySecretFilter()
 		return
@@ -1970,6 +2008,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageCodeBuildProjects || w.currentPage == pageCodeBuildBuilds {
 		w.refreshCodeBuild(foreground)
+		return
+	}
+	if w.currentPage == pageEC2Instances {
+		w.refreshEC2(foreground)
 		return
 	}
 	if w.currentPage == pageSecrets {
@@ -2302,6 +2344,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		}
 		if w.codeBuildProjectsNavButton != nil {
 			w.codeBuildProjectsNavButton.SetActive(w.currentPage == pageCodeBuildProjects || w.currentPage == pageCodeBuildBuilds)
+		}
+		if w.ec2InstancesNavButton != nil {
+			w.ec2InstancesNavButton.SetActive(w.currentPage == pageEC2Instances)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

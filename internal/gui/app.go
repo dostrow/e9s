@@ -86,6 +86,17 @@ type CodeBuildService interface {
 	Stop(context.Context, string, string) error
 }
 
+type EC2Service interface {
+	List(context.Context, string) ([]model.EC2Instance, error)
+	Detail(context.Context, string) (*model.EC2InstanceDetail, error)
+	ConsoleOutput(context.Context, string) (string, error)
+	PrepareSession(context.Context, string, string) (model.ExecLaunch, error)
+	Start(context.Context, string, string) error
+	Stop(context.Context, string, string) error
+	Reboot(context.Context, string, string) error
+	Terminate(context.Context, string, string) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -94,6 +105,7 @@ type Options struct {
 	Secrets         SecretsService
 	Lambda          LambdaService
 	CodeBuild       CodeBuildService
+	EC2             EC2Service
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string
