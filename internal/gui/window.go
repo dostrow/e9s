@@ -81,6 +81,8 @@ type mainWindow struct {
 	filteredAlarms              []model.Alarm
 	selectedAlarm               string
 	alarmStateFilter            string
+	alarmDetail                 *model.AlarmDetail
+	alarmActionPending          bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -116,6 +118,8 @@ type mainWindow struct {
 	updateSavedLogButton        *gtk.Button
 	savedLogModifiedLabel       *gtk.Label
 	manageSavedLogButton        *gtk.Button
+	alarmActionsButton          *gtk.Button
+	alarmSetStateButton         *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -331,6 +335,11 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.updateSavedLogButton.ConnectClicked(w.updateActiveSavedLogFromWorkspace)
 	w.manageSavedLogButton = gtk.NewButtonWithLabel("Saved searches…")
 	w.manageSavedLogButton.ConnectClicked(w.promptManageSavedLog)
+	w.alarmActionsButton = gtk.NewButtonWithLabel("Alarm actions")
+	w.alarmActionsButton.ConnectClicked(w.confirmToggleAlarmActions)
+	w.alarmSetStateButton = gtk.NewButtonWithLabel("Set state…")
+	w.alarmSetStateButton.AddCSSClass("destructive-action")
+	w.alarmSetStateButton.ConnectClicked(w.promptSetAlarmState)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -379,6 +388,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.updateSavedLogButton)
 	header.Append(w.saveLogSearchButton)
 	header.Append(w.manageSavedLogButton)
+	header.Append(w.alarmActionsButton)
+	header.Append(w.alarmSetStateButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -969,6 +980,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.logHiddenStreams = nil
 	w.updateLogHighlightButton()
 	w.activeSavedLog = ""
+	w.alarmDetail = nil
+	w.alarmActionPending = false
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1880,6 +1893,23 @@ func (w *mainWindow) updateActionSensitivity() {
 	managingSaved := cloudWatchBrowser && w.options.Config != nil && len(w.options.Config.LogPaths) > 0
 	w.manageSavedLogButton.SetVisible(managingSaved)
 	w.manageSavedLogButton.SetSensitive(managingSaved)
+	alarmSelected := w.currentPage == pageAlarms && w.selectedAlarm != ""
+	alarmDetailReady := alarmSelected && w.alarmDetail != nil && w.alarmDetail.Name == w.selectedAlarm
+	w.alarmActionsButton.SetVisible(alarmSelected)
+	w.alarmActionsButton.SetSensitive(alarmDetailReady && !w.alarmActionPending && w.options.Alarms != nil)
+	w.alarmActionsButton.RemoveCSSClass("destructive-action")
+	w.alarmActionsButton.RemoveCSSClass("suggested-action")
+	if alarmDetailReady && w.alarmDetail.ActionsEnabled {
+		w.alarmActionsButton.SetLabel("Disable actions")
+		w.alarmActionsButton.AddCSSClass("destructive-action")
+	} else if alarmDetailReady {
+		w.alarmActionsButton.SetLabel("Enable actions")
+		w.alarmActionsButton.AddCSSClass("suggested-action")
+	} else {
+		w.alarmActionsButton.SetLabel("Alarm actions")
+	}
+	w.alarmSetStateButton.SetVisible(alarmSelected)
+	w.alarmSetStateButton.SetSensitive(alarmDetailReady && !w.alarmActionPending && w.options.Alarms != nil)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

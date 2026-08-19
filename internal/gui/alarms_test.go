@@ -48,3 +48,28 @@ func TestFormatAlarmSummaryIncludesOperationalState(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatAlarmDetailIncludesConfigurationActionsAndHistory(t *testing.T) {
+	detail := model.AlarmDetail{
+		Alarm:        model.Alarm{Name: "api-errors", State: model.AlarmStateAlarm, ActionsEnabled: false},
+		ComparisonOp: "GreaterThanThreshold", Threshold: 5, EvalPeriods: 2, Period: 60,
+		Dimensions:   map[string]string{"FunctionName": "api"},
+		AlarmActions: []string{"arn:aws:sns:::alarm"},
+		History:      []model.AlarmHistoryItem{{Type: "StateUpdate", Summary: "threshold crossed"}},
+	}
+	got := formatAlarmDetail(detail)
+	for _, want := range []string{"CONFIGURATION", "GreaterThanThreshold", "FunctionName", "ALARM ACTIONS", "RECENT HISTORY", "threshold crossed"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("detail missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestAlarmStateOptionIndex(t *testing.T) {
+	if got := alarmStateOptionIndex(model.AlarmStateAlarm); got != 1 {
+		t.Fatalf("ALARM index = %d", got)
+	}
+	if got := alarmStateOptionIndex(model.AlarmStateInsufficientData); got != 2 {
+		t.Fatalf("INSUFFICIENT_DATA index = %d", got)
+	}
+}
