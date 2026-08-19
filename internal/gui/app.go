@@ -88,8 +88,8 @@ func Run(options Options) error {
 		}
 		installStyles()
 		window = newMainWindow(ctx, app, options)
-		window.loadClusters()
 		window.window.Present()
+		window.start()
 	})
 	app.ConnectShutdown(cancel)
 

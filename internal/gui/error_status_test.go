@@ -22,11 +22,55 @@ func TestModuleForPage(t *testing.T) {
 		pageSavedLogSearch:  moduleCloudWatchLogs,
 		pageAlarms:          moduleCloudWatchAlarms,
 		pageSSM:             moduleSSM,
+		pageModulePicker:    "",
 		"unknown":           "",
 	}
 	for page, want := range tests {
 		if got := moduleForPage(page); got != want {
 			t.Errorf("moduleForPage(%q) = %q, want %q", page, got, want)
+		}
+	}
+}
+
+func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
+	sections := []moduleRailSection{
+		{key: moduleECS, name: "ECS", aliases: []string{"ecs"}},
+		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch"}},
+		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", aliases: []string{"cwa", "cloudwatch-alarms"}},
+		{key: moduleSSM, name: "SSM Parameter Store", aliases: []string{"ssm"}},
+	}
+	tests := map[string]string{
+		"ECS":               moduleECS,
+		" CW ":              moduleCloudWatchLogs,
+		"CloudWatch Logs":   moduleCloudWatchLogs,
+		"CWA":               moduleCloudWatchAlarms,
+		"cloudwatch-alarms": moduleCloudWatchAlarms,
+		"SSM":               moduleSSM,
+	}
+	for value, want := range tests {
+		index, found := moduleSectionIndex(sections, value)
+		if !found {
+			t.Fatalf("moduleSectionIndex(%q) did not resolve", value)
+		}
+		if got := sections[index].key; got != want {
+			t.Fatalf("moduleSectionIndex(%q) = %q, want %q", value, got, want)
+		}
+	}
+	if _, found := moduleSectionIndex(sections, "S3"); found {
+		t.Fatal("unimplemented GUI module unexpectedly resolved")
+	}
+}
+
+func TestModulePickerLabelsDescribeDefaultSubItems(t *testing.T) {
+	sections := []moduleRailSection{
+		{name: "ECS", defaultItem: "Clusters"},
+		{name: "CloudWatch Logs", defaultItem: "Log groups"},
+	}
+	got := modulePickerLabels(sections)
+	want := []string{"ECS — Clusters", "CloudWatch Logs — Log groups"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("label %d = %q, want %q", i, got[i], want[i])
 		}
 	}
 }

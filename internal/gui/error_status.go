@@ -61,7 +61,7 @@ func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter
 
 	expander := gtk.NewExpander("")
 	expander.SetLabelWidget(heading)
-	expander.SetExpanded(true)
+	expander.SetExpanded(false)
 	expander.SetChild(child)
 	expander.AddCSSClass("module-heading")
 	updateHeadingMargin := func() {

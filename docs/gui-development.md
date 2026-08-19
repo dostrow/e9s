@@ -58,6 +58,27 @@ The GUI accepts the ECS-relevant TUI settings and YAML defaults:
   --cluster my-cluster --refresh 5
 ```
 
+## Startup and module selection
+
+The Module Rail starts collapsed. With no `defaults.default_mode`, the GUI opens
+a module picker; choosing a module expands only that module and opens its default
+sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
+CloudWatch Logs, **All alarms** for CloudWatch Alarms, and **Parameters** for SSM
+Parameter Store. Use `Ctrl+P` to reopen the picker from anywhere.
+
+The GUI honors the same implemented-module names and aliases as the TUI, including
+`ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, and `SSM`. For example:
+
+```yaml
+defaults:
+  default_mode: CWL
+```
+
+A configured or command-line cluster takes precedence over `default_mode` and
+opens ECS directly, matching the TUI startup contract. An unknown or not-yet
+implemented GUI default leaves the application at the picker and reports the
+configuration problem in the status bar.
+
 To require native Wayland while developing under Hyprland:
 
 ```bash
@@ -148,51 +169,58 @@ memory than a cached rebuild.
     sub-item remains highlighted using the current GTK theme.
 18. Select a service task, then use Back to service details in the workspace;
     confirm the task browser remains visible and its row is unselected.
-19. Move through cluster, service, task, and standalone contexts and confirm the
+19. Launch without `defaults.default_mode`; confirm every Module Rail section is
+    collapsed and the module picker appears. Open each module in turn and confirm
+    only it expands and its documented default sub-item is selected.
+20. Set each implemented `defaults.default_mode` alias, then relaunch and confirm
+    the picker is skipped. Repeat with `--cluster` and confirm ECS wins. Use
+    `Ctrl+P` from a nested view and confirm choosing a module returns to its
+    default sub-item.
+21. Move through cluster, service, task, and standalone contexts and confirm the
     header shows only applicable action groups; unavailable capabilities remain
     visible but disabled within an applicable context.
-20. Open one service's task browser, navigate away, and open another service.
+22. Open one service's task browser, navigate away, and open another service.
     Confirm the previous task rows and selection disappear before the new AWS
     response arrives. Repeat while switching from tasks to Task Defs.
-21. Expand CloudWatch Logs, browse groups and streams, then peek and follow a
+23. Expand CloudWatch Logs, browse groups and streams, then peek and follow a
     stream and a whole group. Confirm Browser context remains stable while the
     Workspace switches between details and logs.
-22. Search one group, comma-separated groups, and comma-separated streams with
+24. Search one group, comma-separated groups, and comma-separated streams with
     relative presets and a custom UTC range. Exercise Older, Newer, and
     Correlate at cursor, including while the buffered filter is active.
-23. Cycle Local, UTC, and Relative timestamps, copy and save the buffer, and
+25. Cycle Local, UTC, and Relative timestamps, copy and save the buffer, and
     confirm wrapped continuations remain aligned with the message text.
     Repeat with a stream that has been quiet for more than 15 minutes: its last
     10 lines should appear, Older should continue before their first timestamp,
     and Resume should follow from their newest timestamp without duplicates.
-24. Save a group/stream destination and a complete search. Rename, reorder, and
+26. Save a group/stream destination and a complete search. Rename, reorder, and
     delete it through Manage saved, verify exact Module Rail highlighting, then
     edit `log_paths` externally and press Refresh to verify the rail reloads.
-25. Rapidly switch between ECS, Log groups, streams, and saved searches while
+27. Rapidly switch between ECS, Log groups, streams, and saved searches while
     requests or follow polling are active. Confirm old rows clear immediately
     and no stale result replaces the new Browser or Workspace context.
-26. Expand CloudWatch Alarms and switch among All alarms, In alarm, OK, and
+28. Expand CloudWatch Alarms and switch among All alarms, In alarm, OK, and
     Insufficient data. Confirm each exact rail sub-item highlights, old rows
     clear before the new request returns, and filtering matches alarm name,
     metric, and namespace.
-27. Select alarms rapidly and confirm only the final selection's configuration,
+29. Select alarms rapidly and confirm only the final selection's configuration,
     dimensions, actions, and recent history appear in the Workspace Pane. Toggle
     Local/UTC time and verify both the Browser and Workspace update together.
-28. Enable or disable an alarm's actions and exercise a manual state override in
+30. Enable or disable an alarm's actions and exercise a manual state override in
     a safe test account. Confirm dialogs clearly describe the operation, buttons
     remain disabled while pending, and an alarm leaves a state-filtered scope
     when its new state no longer belongs there.
-29. Expand SSM Parameter Store, open `/`, then browse a custom nested path.
+31. Expand SSM Parameter Store, open `/`, then browse a custom nested path.
     Confirm old Browser and Workspace content clears before each request and the
     Parameters rail item remains highlighted for unsaved paths.
-30. Save the current path, open its dynamic SAVED PREFIXES rail item, and delete
+32. Save the current path, open its dynamic SAVED PREFIXES rail item, and delete
     it through Saved prefixes. Confirm its tooltip shows the path, exact active
     highlighting follows navigation, and Refresh imports external
     `ssm_prefixes` configuration changes.
-31. Filter String, StringList, and SecureString parameters. Confirm ordinary
+33. Filter String, StringList, and SecureString parameters. Confirm ordinary
     values are searchable while SecureString plaintext is neither displayed nor
     searched in the Browser or metadata Workspace.
-32. View and edit a disposable SecureString. Confirm reveal requires an explicit
+34. View and edit a disposable SecureString. Confirm reveal requires an explicit
     warning, the multiline editor shows decrypted content only after that read,
     update requires a second confirmation, action buttons remain disabled and
     auto-refresh pauses while pending, and the new version appears afterward.

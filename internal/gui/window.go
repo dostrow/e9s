@@ -5,7 +5,6 @@ package gui
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -33,6 +32,7 @@ const (
 	pageSavedLogSearch  = "cloudwatch-saved-search"
 	pageAlarms          = "cloudwatch-alarms"
 	pageSSM             = "ssm-parameters"
+	pageModulePicker    = "module-picker"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -119,6 +119,8 @@ type mainWindow struct {
 	cloudWatchModuleItems       *gtk.Box
 	ssmModuleItems              *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
+	moduleSections              []moduleRailSection
+	modulePickerOpen            bool
 	alarmNavButtons             map[string]*gtk.ToggleButton
 	savedLogsLabel              *gtk.Label
 	savedLogNavButtons          []*gtk.ToggleButton
@@ -236,21 +238,19 @@ type mainWindow struct {
 }
 
 type moduleRailSection struct {
-	name   string
-	widget gtk.Widgetter
-}
-
-func sortModuleRailSections(sections []moduleRailSection) {
-	sort.SliceStable(sections, func(i, j int) bool {
-		return strings.ToLower(sections[i].name) < strings.ToLower(sections[j].name)
-	})
+	key         string
+	name        string
+	defaultItem string
+	aliases     []string
+	expander    *gtk.Expander
+	activate    func()
 }
 
 func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *mainWindow {
 	w := &mainWindow{
 		ctx:           ctx,
 		options:       options,
-		currentPage:   pageClusters,
+		currentPage:   pageModulePicker,
 		detailContent: detailIntro,
 	}
 
@@ -352,7 +352,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	title := gtk.NewLabel("e9s")
 	title.AddCSSClass("app-title")
-	w.breadcrumbText = "ECS / Clusters"
+	w.breadcrumbText = "Modules"
 	w.breadcrumb = w.newBreadcrumbArea()
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
@@ -512,20 +512,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	comingSoon.SetWrap(true)
 	comingSoon.AddCSSClass("muted")
 	sidebar.Append(modules)
-	moduleSections := []moduleRailSection{
-		{name: "ECS", widget: ecs},
-		{name: "CloudWatch Logs", widget: cloudWatch},
-		{name: "CloudWatch Alarms", widget: cloudWatchAlarms},
-		{name: "SSM Parameter Store", widget: ssmParameters},
+	w.moduleSections = []moduleRailSection{
+		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
+		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
+		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
+		{key: moduleSSM, name: "SSM Parameter Store", defaultItem: "Parameters", aliases: []string{"ssm", "parameter store", "ssm parameter store"}, expander: ssmParameters, activate: func() { w.loadSSMPath("/", "") }},
 	}
-	sortModuleRailSections(moduleSections)
-	for _, section := range moduleSections {
-		sidebar.Append(section.widget)
+	sortModuleRailSections(w.moduleSections)
+	for _, section := range w.moduleSections {
+		sidebar.Append(section.expander)
 	}
 	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
-	w.search.SetPlaceholderText("Filter clusters…")
+	w.search.SetPlaceholderText("Choose a module…")
+	w.search.SetSensitive(false)
 	w.search.ConnectSearchChanged(w.applyFilter)
 	w.search.AddCSSClass("resource-search")
 	w.activeTasksButton = gtk.NewToggleButtonWithLabel("Active")
@@ -595,6 +596,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
 	w.resourceStack.SetHExpand(true)
+	modulePrompt := gtk.NewLabel("Choose a module to begin.")
+	modulePrompt.SetXAlign(0)
+	modulePrompt.SetYAlign(0)
+	modulePrompt.SetMarginTop(12)
+	modulePrompt.SetMarginStart(12)
+	w.resourceStack.AddNamed(modulePrompt, pageModulePicker)
 	w.resourceStack.AddNamed(clusterScroll, pageClusters)
 	w.resourceStack.AddNamed(serviceScroll, pageServices)
 	w.resourceStack.AddNamed(taskScroll, pageTasks)
@@ -610,7 +617,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	savedLogScope.SetMarginTop(12)
 	savedLogScope.SetMarginStart(12)
 	w.resourceStack.AddNamed(savedLogScope, pageSavedLogSearch)
-	w.resourceStack.SetVisibleChildName(pageClusters)
+	w.resourceStack.SetVisibleChildName(pageModulePicker)
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
 	resourcePane.AddCSSClass("resource-pane")
@@ -619,7 +626,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	resourcePane.Append(w.resourceStack)
 
 	w.detailBuffer = gtk.NewTextBuffer(nil)
-	w.detailText = "Select a cluster and press Enter to browse its services."
+	w.detailText = "Choose a module from the picker or press Ctrl+P."
 	w.detailBuffer.SetText(w.detailText)
 	w.detailParentButton = gtk.NewButtonWithLabel("Back to service details")
 	w.detailParentButton.ConnectClicked(w.showParentDetails)
@@ -741,9 +748,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 		}
 	})
 	w.addAction(app, "back", []string{"Escape"}, w.goBack)
-	w.addAction(app, "modes", []string{"<Control>p"}, func() {
-		w.setStatus("Choose ECS, CloudWatch Logs, or CloudWatch Alarms from the Module Rail", false)
-	})
+	w.addAction(app, "modes", []string{"<Control>p"}, w.showModulePicker)
 	w.addAction(app, "help", nil, func() {
 		if w.showingTerminal {
 			w.setStatus("Disconnect ECS Exec before opening help", false)
@@ -753,7 +758,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the task-definition editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Module switcher placeholder\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", nil, w.openServiceLogs)
@@ -1466,6 +1471,9 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageModulePicker {
+		return
+	}
 	if w.currentPage == pageSSM {
 		w.applySSMFilter()
 		return
@@ -1627,6 +1635,12 @@ func (w *mainWindow) refresh() {
 }
 
 func (w *mainWindow) refreshCurrent(foreground bool) {
+	if w.currentPage == pageModulePicker {
+		if foreground {
+			w.showModulePicker()
+		}
+		return
+	}
 	if w.showingTerminal {
 		if foreground {
 			w.setStatus("Disconnect ECS Exec before refreshing", false)
