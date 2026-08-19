@@ -24,14 +24,17 @@ Implement and evaluate modules in this order:
    infrastructure details and guarded lifecycle operations.
 8. **ECR** — add repository/image drill-down, vulnerability findings, scanning,
    clipboard integration, and guarded deletion.
+9. **RDS** — add cluster/instance drill-down and build on the shared CloudWatch
+   time-series chart foundation.
+10. **S3** — add bucket searches, hierarchical object browsing, metadata/tags,
+    and native cancellable downloads.
 
 The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
 the next **compute and delivery** batch: together they exercise log-heavy jobs,
 interactive host sessions, nested resource browsers, and destructive actions.
 The next batch begins with RDS. Its standard CloudWatch monitoring is built on
 the shared time-series foundation first established for ECS and EC2. The
-remaining candidates after RDS are S3, DynamoDB, SQS, Route53, and
-OpenTofu/Terraform.
+remaining candidates after S3 are DynamoDB, SQS, Route53, and OpenTofu/Terraform.
 
 ## Shared metrics foundation
 
@@ -501,3 +504,58 @@ All three phases are complete on the GTK proof-of-concept branch. Repository,
 image, and finding context clears before asynchronous loads; Back and refresh
 preserve valid selections; scan findings retain severity ordering; and scan and
 delete operations display Workspace progress while automatic refresh is paused.
+
+## S3 delivery phases
+
+S3 is implemented in the GTK frontend and shares bucket filtering, deterministic
+folder-first ordering, object metadata/tag lookup, key-prefix search, validation,
+and download routing with the TUI through `service.S3`. The Module Rail exposes
+**Buckets** as the default destination and configured `s3_searches` as dynamic
+**SAVED SEARCHES** sub-items.
+
+### Phase 1: shared service and TUI migration
+
+- Move bucket, object, metadata, download request/result, and progress values into
+  the UI-neutral model package.
+- Centralize bucket filtering, folder-first ordering, validation, contextual
+  errors, and object-versus-prefix download routing.
+- Migrate the TUI S3 workflow to the shared service and caller-owned context.
+
+### Phase 2: module shell, buckets, and saved searches
+
+- Add an alphabetically positioned, collapsible **S3** Module Rail entry with
+  **Buckets** as its default item.
+- Render configured searches as dynamic sub-items with active highlighting,
+  direct opening, save, rename/filter editing, deletion, and config reload.
+- Browse and locally filter buckets while clearing stale Browser and Workspace
+  content and rejecting late responses through the request-generation guard.
+
+### Phase 3: object navigation and detail
+
+- Drill into a folder-first object browser and walk Back through parent prefixes
+  before returning to the selected bucket.
+- Support local relative-name filtering and flat server-side key-prefix search.
+- Load object metadata and sorted tags on selection while prefixes remain
+  navigable rather than triggering object metadata calls.
+
+### Phase 4: native downloads
+
+- Use native save and directory choosers for object and recursive-prefix
+  downloads.
+- Report cumulative bytes, completed files, and current key in the Workspace;
+  disable conflicting S3 actions and provide explicit cancellation while pending.
+- Write individual files atomically, remove partial temporary files after failure
+  or cancellation, and reject keys that would escape the selected directory.
+
+### Phase 5: parity and evaluation
+
+- Verify both frontends compile against and exercise the same S3 service while
+  retaining their native navigation and destination-selection metaphors.
+- Cover filtering, ordering, breadcrumb/parent-prefix behavior, metadata/tag
+  presentation, progress routing, cancellation-safe writes, and path safety.
+- Record the Hyprland smoke workflow in the GUI development guide.
+
+The intentional frontend differences are presentational. The TUI uses its picker,
+key bindings, and configured save-directory input; GTK renders saved searches in
+the Module Rail and uses platform-native file/folder choosers plus a cancellable
+Workspace progress bar. Both invoke the same service methods and AWS adapter.

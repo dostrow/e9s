@@ -77,6 +77,20 @@ func TestS3DownloadReportsProgress(t *testing.T) {
 	}
 }
 
+func TestS3ObjectDownloadReportsFinalByteAndFileCounts(t *testing.T) {
+	var updates []model.S3DownloadProgress
+	_, err := NewS3(&fakeS3API{}).DownloadWithProgress(context.Background(), model.S3DownloadRequest{
+		Bucket: "bucket", Key: "path/file", Destination: "/tmp/file",
+	}, func(progress model.S3DownloadProgress) { updates = append(updates, progress) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := updates[len(updates)-1]
+	if last.FilesCompleted != 1 || last.BytesCompleted != 42 || last.CurrentKey != "path/file" {
+		t.Fatalf("final progress = %#v", last)
+	}
+}
+
 func TestS3ObjectsSortPrefixesBeforeObjects(t *testing.T) {
 	api := &fakeS3API{objects: []model.S3Object{
 		{Key: "root/z.txt"}, {Key: "root/b/", IsPrefix: true},

@@ -543,6 +543,30 @@ explicit digest-bearing confirmation and returns to the refreshed Images
 browser; if the post-delete refresh fails, the known-deleted digest is removed
 locally and the refresh error remains visible in status.
 
+### S3 module follow-up
+
+S3 now uses `service.S3` in both frontends for case-insensitive bucket searches,
+folder-first object ordering, metadata/tag reads, flat key-prefix searches, and
+object-versus-prefix download routing. Bucket, object, detail, download, and
+progress values are UI-neutral models; the GTK layer does not call the AWS
+adapter directly.
+
+The GTK frontend adds an alphabetically positioned, collapsible S3 module with
+Buckets as its default item and saved bucket searches as direct Module Rail
+sub-items. Buckets drill into hierarchical prefixes and objects, Back walks the
+prefix ancestry before restoring the selected bucket, and object selection loads
+metadata and deterministically sorted tags. Context changes clear old rows and
+Workspace content synchronously, while generation guards reject abandoned list
+and detail responses.
+
+Object and recursive-prefix downloads use native GTK save/folder choosers and a
+cancellable Workspace progress surface with cumulative byte and file counts.
+Individual files are staged and renamed only after successful completion, partial
+temporary files are removed after cancellation or failure, and recursive keys
+that would escape the selected directory are rejected. The TUI retains its
+keyboard/input flow and configured save directory while calling the same shared
+service and atomic AWS adapter.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

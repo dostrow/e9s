@@ -139,7 +139,10 @@ failure inspection, environment references, log viewing/search, and confirmed
 start/stop operations; EC2 instance browsing, networking/security/storage/tag
 details, console output, Session Manager, and guarded lifecycle operations;
 EC2 security-group, VPC, subnet, EBS-volume, ALB/NLB, and target-group browsing
-with inline cross-resource navigation; ECS-task infrastructure links;
+with inline cross-resource navigation; ECR repository, image, scan, and finding
+browsing; RDS cluster/instance browsing and shared metrics dashboards; S3 bucket,
+folder, object-metadata, key-prefix search, saved-search, and cancellable download
+workflows; ECS-task infrastructure links;
 service-wide and selected-task metrics; scaling and guarded ECS mutations; and
 ECS Exec in an embedded VTE terminal.
 The GTK frontend and Bubble Tea frontend both call the same UI-neutral
@@ -320,6 +323,21 @@ memory than a cached rebuild.
     spammed while pending. Inspect the deletion dialog, confirm it names the
     digest and defaults to Cancel, then delete the disposable image and verify
     the refreshed Images browser is restored.
+54. Expand S3 and confirm Buckets is its default item. Filter the bucket list,
+    save multiple bucket searches, edit and rename one, and verify saved searches
+    appear as directly selectable Module Rail sub-items with the active item
+    highlighted. Delete the active search and confirm the view returns to Buckets.
+55. Double-click a bucket and traverse at least three folder levels. Confirm
+    folders sort before objects, Back visits each parent prefix before returning
+    to the selected bucket, local filtering uses relative names, and Key prefix
+    search returns flat matching keys. Rapidly change folders and selections and
+    confirm stale Browser and Workspace content never reappears.
+56. Select an object and verify size, content type, ETag, storage class, modified
+    time, and sorted tags. Download an object with the native save dialog and a
+    folder with the native directory dialog; confirm cumulative byte/file progress
+    is visible and conflicting S3 actions are disabled. Cancel a large transfer
+    and verify no partial destination file remains. Include an object whose key
+    contains path traversal components and confirm recursive download rejects it.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.
