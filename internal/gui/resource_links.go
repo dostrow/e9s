@@ -87,10 +87,9 @@ func (w *mainWindow) applyInlineResourceLink(link workspaceResourceLink, index i
 	tag := gtk.NewTextTag(fmt.Sprintf("resource-link-%d", index))
 	tag.SetObjectProperty("underline", int(pango.UnderlineSingle))
 	tag.SetObjectProperty("weight", int(pango.WeightSemibold))
-	color := w.detailView.StyleContext().Color()
-	if candidate, ok := w.detailView.StyleContext().LookupColor("link_color"); ok {
-		color = candidate
-	}
+	style := w.detailView.StyleContext()
+	color := themeColorOr(style, *style.Color(),
+		"link_color", "accent_color", "success_color", "theme_selected_bg_color")
 	tag.SetObjectProperty("foreground", color.String())
 	w.detailBuffer.TagTable().Add(tag)
 	w.detailResourceTags = append(w.detailResourceTags, detailResourceTag{tag: tag, ref: link.ref})

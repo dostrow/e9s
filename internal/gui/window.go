@@ -342,6 +342,7 @@ type mainWindow struct {
 	detailLinks                 *gtk.MenuButton
 	detailView                  *gtk.TextView
 	detailResourceTags          []detailResourceTag
+	detailHeadingTag            *gtk.TextTag
 	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
 	detailText                  string
@@ -1199,6 +1200,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailBuffer = gtk.NewTextBuffer(nil)
 	w.detailText = "Choose a module from the picker or press Ctrl+P."
 	w.detailBuffer.SetText(w.detailText)
+	w.detailHeadingTag = gtk.NewTextTag("detail-heading")
+	w.detailHeadingTag.SetObjectProperty("weight", int(pango.WeightBold))
+	w.detailBuffer.TagTable().Add(w.detailHeadingTag)
 	w.detailParentButton = gtk.NewButtonWithLabel("Back to service details")
 	w.detailParentButton.ConnectClicked(w.showParentDetails)
 	w.detailToolbar = gtk.NewBox(gtk.OrientationHorizontal, 8)
@@ -1526,6 +1530,7 @@ func (w *mainWindow) setDetail(text, content string) {
 	w.detailBuffer.SetText(text)
 	w.detailText = text
 	w.detailContent = content
+	w.applyDetailHeadingStyles()
 }
 
 func (w *mainWindow) setWorkspaceBusy(label string, busy bool) {
@@ -1558,20 +1563,16 @@ func (w *mainWindow) newBreadcrumbArea() *gtk.DrawingArea {
 	area.AddCSSClass("breadcrumb")
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 		style := area.StyleContext()
-		background, ok := style.LookupColor("theme_bg_color")
-		if !ok {
-			background, ok = style.LookupColor("window_bg_color")
-		}
-		if ok {
-			cr.SetSourceRGBA(
-				float64(background.Red()),
-				float64(background.Green()),
-				float64(background.Blue()),
-				float64(background.Alpha()),
-			)
-			cr.Rectangle(0, 0, float64(width), float64(height))
-			cr.Fill()
-		}
+		palette := semanticPaletteFromStyle(style)
+		background := blendRGBA(palette.surface, palette.accent, 0.05)
+		cr.SetSourceRGBA(
+			float64(background.Red()),
+			float64(background.Green()),
+			float64(background.Blue()),
+			float64(background.Alpha()),
+		)
+		cr.Rectangle(0, 0, float64(width), float64(height))
+		cr.Fill()
 
 		foreground := style.Color()
 		cr.SetSourceRGBA(

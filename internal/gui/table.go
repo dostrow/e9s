@@ -83,11 +83,44 @@ func textColumn(spec columnSpec) *gtk.ColumnViewColumn {
 		if spec.field < len(fields) {
 			text = fields[spec.field]
 		}
-		cell.Child().(*gtk.Label).SetLabel(text)
+		label := cell.Child().(*gtk.Label)
+		label.SetLabel(text)
+		for _, class := range semanticTableClasses {
+			label.RemoveCSSClass(class)
+		}
+		if class := semanticClassForValue(text); class != "" {
+			label.AddCSSClass(class)
+		}
 	})
 
 	column := gtk.NewColumnViewColumn(spec.title, &factory.ListItemFactory)
 	column.SetExpand(spec.expand)
 	column.SetResizable(true)
 	return column
+}
+
+var semanticTableClasses = []string{
+	"semantic-success", "semantic-warning", "semantic-error", "semantic-info", "semantic-muted",
+}
+
+func semanticClassForValue(value string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	normalized = strings.NewReplacer(" ", "_", "-", "_").Replace(normalized)
+	switch normalized {
+	case "ACTIVE", "AVAILABLE", "HEALTHY", "RUNNING", "OK", "ENABLED",
+		"SUCCEEDED", "SUCCESS", "COMPLETE", "COMPLETED", "PASS", "PASSED":
+		return "semantic-success"
+	case "PENDING", "PROVISIONING", "DRAINING", "IN_PROGRESS", "INSUFFICIENT_DATA",
+		"STARTING", "STOPPING", "MODIFYING", "UPGRADING", "REBOOTING", "BACKING_UP",
+		"MAINTENANCE", "HIGH", "MEDIUM":
+		return "semantic-warning"
+	case "FAILED", "FAILURE", "UNHEALTHY", "ALARM", "ERROR", "CRITICAL", "DELETED":
+		return "semantic-error"
+	case "WRITER", "READER", "PRIMARY", "REPLICA", "INACTIVE", "INFORMATIONAL", "INFO":
+		return "semantic-info"
+	case "UNKNOWN", "UNDEFINED", "DISABLED":
+		return "semantic-muted"
+	default:
+		return ""
+	}
 }

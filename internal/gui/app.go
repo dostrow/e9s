@@ -175,6 +175,7 @@ func Run(options Options) error {
 		initializeSourceEditor()
 		installStyles()
 		window = newMainWindow(ctx, app, options)
+		installSemanticStyles(window)
 		window.window.Present()
 		window.start()
 	})

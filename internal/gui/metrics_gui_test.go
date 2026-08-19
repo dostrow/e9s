@@ -3,11 +3,65 @@
 package gui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/dostrow/e9s/internal/model"
 )
+
+func TestSemanticClassForValue(t *testing.T) {
+	tests := map[string]string{
+		"available":         "semantic-success",
+		"INSUFFICIENT DATA": "semantic-warning",
+		"critical":          "semantic-error",
+		"writer":            "semantic-info",
+		"disabled":          "semantic-muted",
+		"mds-prod":          "",
+	}
+	for value, want := range tests {
+		if got := semanticClassForValue(value); got != want {
+			t.Errorf("semanticClassForValue(%q) = %q, want %q", value, got, want)
+		}
+	}
+}
+
+func TestDetailHeadingDetection(t *testing.T) {
+	for _, heading := range []string{"RDS INSTANCE", "SCAN SEVERITY COUNTS", "DESCRIPTION"} {
+		if !isDetailHeading(heading) {
+			t.Errorf("isDetailHeading(%q) = false", heading)
+		}
+	}
+	for _, body := range []string{"Identifier  mdds-prod", "Description", ""} {
+		if isDetailHeading(body) {
+			t.Errorf("isDetailHeading(%q) = true", body)
+		}
+	}
+}
+
+func TestSemanticStyleUsesDerivedPalette(t *testing.T) {
+	palette := semanticPalette{
+		foreground: gdk.NewRGBA(0.8, 0.7, 0.6, 1),
+		background: gdk.NewRGBA(0.1, 0.1, 0.1, 1),
+		surface:    gdk.NewRGBA(0.12, 0.12, 0.12, 1),
+		accent:     gdk.NewRGBA(0.4, 0.5, 0.6, 1),
+		success:    gdk.NewRGBA(0.2, 0.7, 0.3, 1),
+		warning:    gdk.NewRGBA(0.9, 0.7, 0.2, 1),
+		error:      gdk.NewRGBA(0.9, 0.2, 0.2, 1),
+		info:       gdk.NewRGBA(0.2, 0.6, 0.9, 1),
+		muted:      gdk.NewRGBA(0.5, 0.5, 0.5, 1),
+	}
+	css := semanticStyleCSS(palette)
+	for _, selector := range []string{".semantic-success", ".semantic-warning", ".semantic-error", ".mode-sidebar"} {
+		if !strings.Contains(css, selector) {
+			t.Errorf("semantic CSS is missing %s", selector)
+		}
+	}
+	if !strings.Contains(css, palette.success.String()) || !strings.Contains(css, palette.error.String()) {
+		t.Fatal("semantic CSS did not use the supplied palette")
+	}
+}
 
 func TestMetricFractionClampsToProgressRange(t *testing.T) {
 	for _, test := range []struct {

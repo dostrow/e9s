@@ -128,12 +128,10 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		return
 	}
 	style := area.StyleContext()
-	foreground := *style.Color()
-	background := lookupThemeColor(style, "theme_bg_color", "window_bg_color")
-	accent := lookupThemeColor(style, "accent_color", "theme_selected_bg_color")
-	if accent.Alpha() == 0 {
-		accent = foreground
-	}
+	palette := semanticPaletteFromStyle(style)
+	foreground := palette.foreground
+	background := blendRGBA(palette.surface, palette.accent, 0.025)
+	seriesColors := metricSeriesColors(palette)
 
 	cr.SetSourceRGBA(float64(background.Red()), float64(background.Green()), float64(background.Blue()), float64(background.Alpha()))
 	cr.Rectangle(0, 0, float64(width), float64(height))
@@ -191,7 +189,7 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		if len(series.Points) == 0 {
 			continue
 		}
-		color, alpha := metricSeriesColor(index, accent, foreground)
+		color, alpha := metricSeriesColor(index, seriesColors)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
 		cr.SetLineWidth(2)
 		cr.SetDash(metricSeriesDash(index), 0)
@@ -210,11 +208,11 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 	}
 	cr.SetDash(nil, 0)
 	if c.hovering && hasData && c.hoverX >= left && c.hoverX <= left+plotWidth && c.hoverY >= top && c.hoverY <= top+plotHeight {
-		c.drawHover(area, cr, left, top, plotWidth, plotHeight, minValue, maxValue, foreground, background, accent)
+		c.drawHover(area, cr, left, top, plotWidth, plotHeight, minValue, maxValue, palette, seriesColors)
 	}
 
 	drawChartText(area, cr, c.title, 4, 4, foreground, 1)
-	c.drawLegend(area, cr, left, 27, left+plotWidth, foreground, accent)
+	c.drawLegend(area, cr, left, 27, left+plotWidth, foreground, seriesColors)
 	for index, tick := range timeTicks {
 		label := axisTimeLabel(tick)
 		layout := area.CreatePangoLayout(label)
@@ -289,11 +287,45 @@ func (c *metricChart) axisLeftGutter(area *gtk.DrawingArea, minValue, maxValue f
 	return max(56, float64(maxWidth+12))
 }
 
-func metricSeriesColor(index int, accent, foreground gdk.RGBA) (gdk.RGBA, float64) {
-	if index%2 == 0 {
-		return accent, max(0.55, 0.95-float64(index/2)*0.12)
+func metricSeriesColors(palette semanticPalette) []gdk.RGBA {
+	candidates := []gdk.RGBA{
+		palette.success, palette.warning, palette.accent,
+		palette.error, palette.info, palette.foreground,
 	}
-	return foreground, max(0.5, 0.9-float64(index/2)*0.12)
+	colors := make([]gdk.RGBA, 0, len(candidates))
+	for _, candidate := range candidates {
+		duplicate := false
+		for _, existing := range colors {
+			if rgbaDistance(candidate, existing) < 0.035 {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			colors = append(colors, candidate)
+		}
+	}
+	for _, amount := range []float64{0.22, 0.42, 0.62} {
+		if len(colors) >= 4 {
+			break
+		}
+		colors = append(colors, blendRGBA(palette.accent, palette.foreground, amount))
+	}
+	return colors
+}
+
+func rgbaDistance(a, b gdk.RGBA) float64 {
+	r := float64(a.Red() - b.Red())
+	g := float64(a.Green() - b.Green())
+	bl := float64(a.Blue() - b.Blue())
+	return math.Sqrt(r*r + g*g + bl*bl)
+}
+
+func metricSeriesColor(index int, colors []gdk.RGBA) (gdk.RGBA, float64) {
+	if len(colors) == 0 {
+		return gdk.NewRGBA(1, 1, 1, 1), 0.95
+	}
+	return colors[index%len(colors)], 0.95
 }
 
 func metricSeriesDash(index int) []float64 {
@@ -309,7 +341,7 @@ func metricSeriesDash(index int) []float64 {
 	}
 }
 
-func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y, maxX float64, foreground, accent gdk.RGBA) {
+func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y, maxX float64, foreground gdk.RGBA, seriesColors []gdk.RGBA) {
 	startX := x
 	visible := 0
 	for index, series := range c.series {
@@ -329,7 +361,7 @@ func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y,
 			x = startX
 			y += 20
 		}
-		color, alpha := metricSeriesColor(index, accent, foreground)
+		color, alpha := metricSeriesColor(index, seriesColors)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
 		cr.SetLineWidth(2)
 		cr.SetDash(metricSeriesDash(index), 0)
@@ -375,7 +407,8 @@ func (c *metricChart) legendRowCount(area *gtk.DrawingArea, startX, maxX float64
 	return rows
 }
 
-func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, top, plotWidth, plotHeight, minValue, maxValue float64, foreground, background, accent gdk.RGBA) {
+func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, top, plotWidth, plotHeight, minValue, maxValue float64, palette semanticPalette, seriesColors []gdk.RGBA) {
+	foreground := palette.foreground
 	fraction := min(1, max(0, (c.hoverX-left)/plotWidth))
 	target := c.start.Add(time.Duration(float64(c.end.Sub(c.start)) * fraction))
 	x := left + fraction*plotWidth
@@ -405,7 +438,7 @@ func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, 
 		lines = append(lines, fmt.Sprintf("%s: %s", label, fmtMetricValue(point.Value, c.unit)))
 		pointX := left + timeFraction(point.Timestamp, c.start, c.end)*plotWidth
 		pointY := top + (maxValue-point.Value)/(maxValue-minValue)*plotHeight
-		color, alpha := metricSeriesColor(index, accent, foreground)
+		color, alpha := metricSeriesColor(index, seriesColors)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
 		cr.Arc(pointX, pointY, 3.5, 0, 2*math.Pi)
 		cr.Fill()
@@ -423,10 +456,10 @@ func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, 
 	}
 	boxX = max(left+4, boxX)
 	boxY := top + 8
-	cr.SetSourceRGBA(float64(background.Red()), float64(background.Green()), float64(background.Blue()), 0.96)
+	cr.SetSourceRGBA(float64(palette.surface.Red()), float64(palette.surface.Green()), float64(palette.surface.Blue()), 0.98)
 	cr.Rectangle(boxX, boxY, boxWidth, boxHeight)
 	cr.Fill()
-	cr.SetSourceRGBA(float64(accent.Red()), float64(accent.Green()), float64(accent.Blue()), 0.9)
+	cr.SetSourceRGBA(float64(palette.accent.Red()), float64(palette.accent.Green()), float64(palette.accent.Blue()), 0.9)
 	cr.SetLineWidth(1)
 	cr.Rectangle(boxX+0.5, boxY+0.5, boxWidth-1, boxHeight-1)
 	cr.Stroke()
