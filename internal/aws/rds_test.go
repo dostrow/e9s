@@ -2,7 +2,28 @@ package aws
 
 import (
 	"testing"
+	"time"
+
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 )
+
+func TestRDSClusterFromSDKPreservesMembersAndConfiguration(t *testing.T) {
+	created := time.Now().Add(-time.Hour)
+	cluster := rdsClusterFromSDK(rdstypes.DBCluster{
+		DBClusterIdentifier: awssdk.String("cluster-1"), Engine: awssdk.String("aurora-postgresql"),
+		EngineVersion: awssdk.String("16.3"), Status: awssdk.String("available"), Endpoint: awssdk.String("writer.local"),
+		ReaderEndpoint: awssdk.String("reader.local"), Port: awssdk.Int32(5432), ClusterCreateTime: &created,
+		DBClusterMembers:  []rdstypes.DBClusterMember{{DBInstanceIdentifier: awssdk.String("db-1"), IsClusterWriter: awssdk.Bool(true)}},
+		VpcSecurityGroups: []rdstypes.VpcSecurityGroupMembership{{VpcSecurityGroupId: awssdk.String("sg-1"), Status: awssdk.String("active")}},
+	})
+	if cluster.Identifier != "cluster-1" || cluster.Endpoint != "writer.local" || len(cluster.Members) != 1 || !cluster.Members[0].Writer {
+		t.Fatalf("rdsClusterFromSDK() = %#v", cluster)
+	}
+	if len(cluster.SecurityGroups) != 1 || cluster.SecurityGroups[0] != "sg-1 (active)" {
+		t.Fatalf("security groups = %#v", cluster.SecurityGroups)
+	}
+}
 
 func TestRDSRole_AuroraWriter(t *testing.T) {
 	writerMap := map[string]bool{"db-1": true, "db-2": false}

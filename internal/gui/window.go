@@ -47,6 +47,7 @@ const (
 	pageECRImages         = "ecr-images"
 	pageECRFindings       = "ecr-findings"
 	pageRDSInstances      = "rds-instances"
+	pageRDSClusters       = "rds-clusters"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -74,6 +75,7 @@ const (
 	detailECRImage         = "ecr-image"
 	detailECRFinding       = "ecr-finding"
 	detailRDS              = "rds-instance"
+	detailRDSCluster       = "rds-cluster"
 )
 
 type mainWindow struct {
@@ -195,6 +197,11 @@ type mainWindow struct {
 	filteredRDSInstances        []model.RDSInstance
 	selectedRDSInstance         string
 	rdsDetail                   *model.RDSInstanceDetail
+	allRDSClusters              []model.RDSCluster
+	filteredRDSClusters         []model.RDSCluster
+	selectedRDSCluster          string
+	rdsClusterDetail            *model.RDSCluster
+	rdsClusterContext           string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -225,6 +232,7 @@ type mainWindow struct {
 	ecrImageTable               *stringTable
 	ecrFindingTable             *stringTable
 	rdsTable                    *stringTable
+	rdsClusterTable             *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -263,6 +271,7 @@ type mainWindow struct {
 	ec2VolumesNavButton         *gtk.ToggleButton
 	ecrRepositoriesNavButton    *gtk.ToggleButton
 	rdsInstancesNavButton       *gtk.ToggleButton
+	rdsClustersNavButton        *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -592,6 +601,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "CLASS", field: 2}, {title: "STATUS", field: 3}, {title: "ROLE", field: 4},
 		{title: "AZ", field: 5}, {title: "ENDPOINT", field: 6, expand: true},
 	})
+	w.rdsClusterTable = newStringTable([]columnSpec{
+		{title: "IDENTIFIER", field: 0, expand: true}, {title: "ENGINE", field: 1},
+		{title: "STATUS", field: 2}, {title: "MEMBERS", field: 3}, {title: "WRITER", field: 4},
+		{title: "ENDPOINT", field: 5, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -616,6 +630,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrImageTable.view.ConnectActivate(w.openECRImageAt)
 	w.ecrFindingTable.view.ConnectActivate(w.openECRFindingAt)
 	w.rdsTable.view.ConnectActivate(w.openRDSInstanceAt)
+	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -639,6 +654,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrImageTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRImageRow() })
 	w.ecrFindingTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRFindingRow() })
 	w.rdsTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSInstanceRow() })
+	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -920,9 +936,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ecrRepositories := w.newModuleExpander("ECR", moduleECR, w.ecrModuleItems)
 	w.rdsInstancesNavButton = newModuleRailButton("Instances", w.openRDSModule)
 	w.rdsInstancesNavButton.SetGroup(w.clustersNavButton)
+	w.rdsClustersNavButton = newModuleRailButton("Clusters", w.openRDSClustersModule)
+	w.rdsClustersNavButton.SetGroup(w.clustersNavButton)
 	w.rdsModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.rdsModuleItems.AddCSSClass("module-subitems")
 	w.rdsModuleItems.Append(w.rdsInstancesNavButton)
+	w.rdsModuleItems.Append(w.rdsClustersNavButton)
 	rdsInstances := w.newModuleExpander("RDS", moduleRDS, w.rdsModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
@@ -1122,6 +1141,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	rdsScroll.SetVExpand(true)
 	rdsScroll.SetHExpand(true)
 	rdsScroll.SetChild(w.rdsTable.view)
+	rdsClusterScroll := gtk.NewScrolledWindow()
+	rdsClusterScroll.SetVExpand(true)
+	rdsClusterScroll.SetHExpand(true)
+	rdsClusterScroll.SetChild(w.rdsClusterTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1156,6 +1179,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(ecrImageScroll, pageECRImages)
 	w.resourceStack.AddNamed(ecrFindingScroll, pageECRFindings)
 	w.resourceStack.AddNamed(rdsScroll, pageRDSInstances)
+	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -2173,6 +2197,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyRDSFilter()
 		return
 	}
+	if w.currentPage == pageRDSClusters {
+		w.applyRDSClusterFilter()
+		return
+	}
 	if w.currentPage == pageLambda {
 		w.applyLambdaFilter()
 		return
@@ -2318,6 +2346,11 @@ func (w *mainWindow) navigateBrowserBack() {
 		return
 	}
 	if w.navigateResourceHistoryBack() {
+		return
+	}
+	if w.currentPage == pageRDSInstances && w.rdsClusterContext != "" {
+		clusterID := w.rdsClusterContext
+		w.loadRDSClusters(clusterID)
 		return
 	}
 	if w.currentPage == pageECRFindings {
@@ -2578,6 +2611,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageRDSInstances {
 		w.refreshRDS(foreground)
+		return
+	}
+	if w.currentPage == pageRDSClusters {
+		w.refreshRDSClusters(foreground)
 		return
 	}
 	if w.currentPage == pageEC2LoadBalancers {
@@ -2954,6 +2991,7 @@ func (w *mainWindow) updateActionSensitivity() {
 		}
 		if w.rdsInstancesNavButton != nil {
 			w.rdsInstancesNavButton.SetActive(w.currentPage == pageRDSInstances)
+			w.rdsClustersNavButton.SetActive(w.currentPage == pageRDSClusters)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

@@ -8,28 +8,106 @@ import (
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/dostrow/e9s/internal/model"
 )
 
 type RDSInstance = model.RDSInstance
 type RDSInstanceDetail = model.RDSInstanceDetail
+type RDSCluster = model.RDSCluster
+
+// ListRDSClusters returns RDS and Aurora DB clusters with their member list.
+func (c *Client) ListRDSClusters(ctx context.Context, filter string) ([]RDSCluster, error) {
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	var clusters []RDSCluster
+	paginator := rds.NewDescribeDBClustersPaginator(c.RDS, &rds.DescribeDBClustersInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, db := range page.DBClusters {
+			cluster := rdsClusterFromSDK(db)
+			if filter != "" && !strings.Contains(strings.ToLower(cluster.Identifier), filter) &&
+				!strings.Contains(strings.ToLower(cluster.Engine), filter) &&
+				!strings.Contains(strings.ToLower(cluster.Status), filter) {
+				continue
+			}
+			clusters = append(clusters, cluster)
+		}
+	}
+	return clusters, nil
+}
+
+// DescribeRDSCluster returns the full configuration for one DB cluster.
+func (c *Client) DescribeRDSCluster(ctx context.Context, identifier string) (*RDSCluster, error) {
+	out, err := c.RDS.DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{DBClusterIdentifier: awssdk.String(identifier)})
+	if err != nil {
+		return nil, err
+	}
+	if len(out.DBClusters) == 0 {
+		return nil, nil
+	}
+	cluster := rdsClusterFromSDK(out.DBClusters[0])
+	return &cluster, nil
+}
+
+func rdsClusterFromSDK(db rdstypes.DBCluster) RDSCluster {
+	cluster := RDSCluster{
+		Identifier: awssdk.ToString(db.DBClusterIdentifier), Engine: awssdk.ToString(db.Engine),
+		Version: awssdk.ToString(db.EngineVersion), EngineMode: awssdk.ToString(db.EngineMode),
+		Status: awssdk.ToString(db.Status), DatabaseName: awssdk.ToString(db.DatabaseName),
+		Endpoint: awssdk.ToString(db.Endpoint), ReaderEndpoint: awssdk.ToString(db.ReaderEndpoint),
+		Port: awssdk.ToInt32(db.Port), MultiAZ: awssdk.ToBool(db.MultiAZ),
+		Encrypted: awssdk.ToBool(db.StorageEncrypted), DeletionProtection: awssdk.ToBool(db.DeletionProtection),
+		SubnetGroup: awssdk.ToString(db.DBSubnetGroup), ParameterGroup: awssdk.ToString(db.DBClusterParameterGroup),
+		BackupRetentionDays: awssdk.ToInt32(db.BackupRetentionPeriod),
+		BackupWindow:        awssdk.ToString(db.PreferredBackupWindow), MaintenanceWindow: awssdk.ToString(db.PreferredMaintenanceWindow),
+		Tags: map[string]string{},
+	}
+	if db.ClusterCreateTime != nil {
+		cluster.Created = *db.ClusterCreateTime
+	}
+	if db.LatestRestorableTime != nil {
+		cluster.LatestRestorableTime = *db.LatestRestorableTime
+	}
+	cluster.AvailabilityZones = append(cluster.AvailabilityZones, db.AvailabilityZones...)
+	for _, member := range db.DBClusterMembers {
+		cluster.Members = append(cluster.Members, model.RDSClusterMember{
+			Identifier: awssdk.ToString(member.DBInstanceIdentifier), Writer: awssdk.ToBool(member.IsClusterWriter),
+			PromotionTier: awssdk.ToInt32(member.PromotionTier),
+		})
+	}
+	for _, group := range db.VpcSecurityGroups {
+		value := awssdk.ToString(group.VpcSecurityGroupId)
+		if value == "" {
+			continue
+		}
+		if status := awssdk.ToString(group.Status); status != "" {
+			value += " (" + status + ")"
+		}
+		cluster.SecurityGroups = append(cluster.SecurityGroups, value)
+	}
+	for _, tag := range db.TagList {
+		if tag.Key != nil && tag.Value != nil {
+			cluster.Tags[*tag.Key] = *tag.Value
+		}
+	}
+	return cluster
+}
 
 // ListRDSInstances returns all RDS DB instances annotated with their cluster role.
 // It fetches Aurora cluster data to determine writer vs reader status.
 func (c *Client) ListRDSInstances(ctx context.Context, filter string) ([]RDSInstance, error) {
 	// Build writer map: instanceID → isWriter from Aurora clusters
 	writerMap := map[string]bool{}
-	clusterPaginator := rds.NewDescribeDBClustersPaginator(c.RDS, &rds.DescribeDBClustersInput{})
-	for clusterPaginator.HasMorePages() {
-		page, err := clusterPaginator.NextPage(ctx)
-		if err == nil {
-			for _, cl := range page.DBClusters {
-				for _, m := range cl.DBClusterMembers {
-					if m.DBInstanceIdentifier != nil {
-						writerMap[*m.DBInstanceIdentifier] = awssdk.ToBool(m.IsClusterWriter)
-					}
-				}
-			}
+	clusters, err := c.ListRDSClusters(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	for _, cluster := range clusters {
+		for _, member := range cluster.Members {
+			writerMap[member.Identifier] = member.Writer
 		}
 	}
 

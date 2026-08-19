@@ -102,6 +102,7 @@ const (
 	viewR53Zones
 	viewR53Records
 	viewR53RecordDetail
+	viewRDSClusters
 	viewRDSInstances
 	viewRDSDetail
 )
@@ -191,6 +192,7 @@ type App struct {
 	r53RecordsView             views.R53RecordsModel
 	r53DetailView              views.R53RecordDetailModel
 	rdsInstancesView           views.RDSInstancesModel
+	rdsClustersView            views.RDSClustersModel
 	rdsDetailView              views.RDSDetailModel
 	regionPicker               views.RegionPickerModel
 
@@ -210,6 +212,7 @@ type App struct {
 	metricsReturnState       viewState
 	metricsTaskScope         bool
 	metricsServiceName       string
+	rdsClusterContext        string
 	diffReturnState          viewState
 	envTaskDefinition        string
 	envContainer             string
@@ -500,6 +503,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.r53RecordsView = a.r53RecordsView.SetSize(w, h)
 		a.r53DetailView = a.r53DetailView.SetSize(w, h)
 		a.rdsInstancesView = a.rdsInstancesView.SetSize(w, h)
+		a.rdsClustersView = a.rdsClustersView.SetSize(w, h)
 		a.rdsDetailView = a.rdsDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
@@ -1369,6 +1373,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case rdsClustersLoadedMsg:
+		a.rdsClustersView = a.rdsClustersView.SetClusters(msg.clusters)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
 	case rdsDetailLoadedMsg:
 		if msg.detail != nil {
 			a.rdsDetailView = views.NewRDSDetail(msg.detail)
@@ -1866,6 +1876,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewServiceDetail || a.state == viewTaskDetail || a.state == viewRDSDetail) {
 			return a.openEC2ResourcePicker()
 		}
+		if k == "tab" && !a.isFiltering() {
+			switch a.state {
+			case viewRDSInstances:
+				return a.openRDSClusters()
+			case viewRDSClusters:
+				return a.openRDSInstances()
+			}
+		}
 		switch a.state {
 		case viewClusters:
 			switch k {
@@ -2331,6 +2349,8 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.r53DetailView, cmd = a.r53DetailView.Update(msg)
 	case viewRDSInstances:
 		a.rdsInstancesView, cmd = a.rdsInstancesView.Update(msg)
+	case viewRDSClusters:
+		a.rdsClustersView, cmd = a.rdsClustersView.Update(msg)
 	case viewRDSDetail:
 		a.rdsDetailView, cmd = a.rdsDetailView.Update(msg)
 	case viewEC2Instances:
@@ -2411,6 +2431,8 @@ func (a App) isFiltering() bool {
 		return a.r53RecordsView.IsFiltering()
 	case viewRDSInstances:
 		return a.rdsInstancesView.IsFiltering()
+	case viewRDSClusters:
+		return a.rdsClustersView.IsFiltering()
 	}
 	return false
 }
@@ -2541,6 +2563,8 @@ func (a App) View() string {
 		content = a.r53DetailView.View()
 	case viewRDSInstances:
 		content = a.rdsInstancesView.View()
+	case viewRDSClusters:
+		content = a.rdsClustersView.View()
 	case viewRDSDetail:
 		content = a.rdsDetailView.View()
 	case viewEC2Instances:
@@ -2726,7 +2750,9 @@ func (a App) helpText() string {
 	case viewR53RecordDetail:
 		primary = "[t] test DNS"
 	case viewRDSInstances:
-		primary = "[enter] detail"
+		primary = "[enter] detail  [tab] clusters"
+	case viewRDSClusters:
+		primary = "[enter] member instances  [tab] all instances"
 	case viewRDSDetail:
 		primary = "[o] linked resources"
 	case viewEC2Instances:
@@ -3131,6 +3157,12 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"/", "Filter instances"},
 			{"T", "Toggle relative/absolute timestamps"},
 		}
+	case viewRDSClusters:
+		context = []kv{
+			{"enter", "Browse member instances"},
+			{"tab", "Switch to all instances"},
+			{"/", "Filter clusters"},
+		}
 	case viewRDSDetail:
 		context = []kv{
 			{kb.OpenResource, "Open linked EC2 resource"},
@@ -3306,6 +3338,10 @@ func (a App) drillDown() (App, tea.Cmd) {
 	case viewRDSInstances:
 		if inst := a.rdsInstancesView.SelectedInstance(); inst != nil {
 			return a.openRDSDetail(inst.Identifier)
+		}
+	case viewRDSClusters:
+		if cluster := a.rdsClustersView.SelectedCluster(); cluster != nil {
+			return a.openRDSInstancesForCluster(cluster.Identifier)
 		}
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
@@ -3664,6 +3700,11 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewR53Records
 		return a, nil
 	case viewRDSInstances:
+		if a.rdsClusterContext != "" {
+			return a.openRDSClusters()
+		}
+		return a.showModePicker()
+	case viewRDSClusters:
 		return a.showModePicker()
 	case viewRDSDetail:
 		a.state = viewRDSInstances

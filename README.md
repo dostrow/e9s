@@ -120,7 +120,7 @@ Browse ECR repositories, view images with vulnerability scan summaries, and dril
 
 ### RDS
 
-Browse RDS DB instances and Aurora cluster members with engine, instance class, status, role, availability zone, and endpoint. Filter by identifier, engine, status, role, or cluster ID.
+Browse RDS DB instances and DB clusters with engine, status, role, availability zone, endpoints, and membership. The GUI exposes separate Instances and Clusters sub-items; in the TUI, press `tab` to switch between them. Activating a cluster drills into its member instances.
 
 - **Instance Detail** — full metadata: engine version, class, AZ, Multi-AZ, created date, CA certificate
 - **Network** — endpoint with port, VPC, subnet group, and security groups
@@ -129,6 +129,7 @@ Browse RDS DB instances and Aurora cluster members with engine, instance class, 
 - **CloudWatch Metrics** — selectable 15-minute through 30-day histories for CPU, connections, memory, storage, IOPS, latency, throughput, disk queue, networking, burst balance, replica lag, and aggregate DB Load when published for the instance
 - **Tags** — all instance tags
 - **Aurora cluster awareness** — writer/reader roles derived from cluster membership, with failover priority for readers
+- **Cluster detail** — writer and reader endpoints, members and promotion tiers, network/security configuration, backup settings, and tags
 
 ### Route53
 
@@ -471,7 +472,10 @@ e9s -m SQS -r eu-west-1
 | --- | --- |
 | `Enter` | View instance detail |
 | `/` | Filter instances |
+| `Tab` | Switch between all instances and clusters |
 | `g`/`G` | Jump to top/bottom of detail |
+
+From the Clusters view, `Enter` drills into the selected cluster's member instances.
 
 ### ECR — Images
 

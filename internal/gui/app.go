@@ -130,6 +130,9 @@ type ECRService interface {
 }
 
 type RDSService interface {
+	Clusters(context.Context, string) ([]model.RDSCluster, error)
+	Cluster(context.Context, string) (*model.RDSCluster, error)
+	ClusterInstances(context.Context, string) ([]model.RDSInstance, error)
 	List(context.Context, string) ([]model.RDSInstance, error)
 	Detail(context.Context, string) (*model.RDSInstanceDetail, error)
 	Metrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)

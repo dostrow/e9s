@@ -14,7 +14,7 @@ import (
 )
 
 func (w *mainWindow) openRDSModule() {
-	if w.currentPage == pageRDSInstances {
+	if w.currentPage == pageRDSInstances && w.rdsClusterContext == "" {
 		w.resourceHistory = nil
 		w.backButton.SetSensitive(false)
 		return
@@ -23,6 +23,7 @@ func (w *mainWindow) openRDSModule() {
 		return
 	}
 	w.resourceHistory = nil
+	w.rdsClusterContext = ""
 	w.loadRDSInstances()
 }
 
@@ -31,15 +32,29 @@ func (w *mainWindow) loadRDSInstances() {
 }
 
 func (w *mainWindow) loadRDSInstancesAt(target string) {
+	w.rdsClusterContext = ""
+	w.loadRDSInstanceSet(target, "")
+}
+
+func (w *mainWindow) loadRDSClusterInstances(clusterID string) {
+	w.rdsClusterContext = clusterID
+	w.loadRDSInstanceSet("", clusterID)
+}
+
+func (w *mainWindow) loadRDSInstanceSet(target, clusterID string) {
 	w.resetWorkspaceForBrowserChange()
 	w.clearRDSBrowser()
 	w.currentPage = pageRDSInstances
-	w.setBreadcrumb("RDS / Instances")
-	w.backButton.SetSensitive(len(w.resourceHistory) > 0)
+	w.setBreadcrumb(w.rdsInstancesBreadcrumb())
+	w.backButton.SetSensitive(clusterID != "" || len(w.resourceHistory) > 0)
 	w.search.SetPlaceholderText("Filter database instances…")
 	w.search.SetText("")
 	w.resourceStack.SetVisibleChildName(pageRDSInstances)
-	w.setDetail("Loading RDS instances…", detailIntro)
+	loading := "Loading RDS instances…"
+	if clusterID != "" {
+		loading = "Loading instances in RDS cluster " + clusterID + "…"
+	}
+	w.setDetail(loading, detailIntro)
 	w.updateActionSensitivity()
 	if w.options.RDS == nil {
 		w.setDetail("RDS is unavailable because no RDS service was configured.", detailError)
@@ -48,8 +63,17 @@ func (w *mainWindow) loadRDSInstancesAt(target string) {
 	}
 	ctx, generation := w.startRequest("Loading RDS instances…")
 	go func() {
-		instances, err := w.options.RDS.List(ctx, "")
+		var instances []model.RDSInstance
+		var err error
+		if clusterID != "" {
+			instances, err = w.options.RDS.ClusterInstances(ctx, clusterID)
+		} else {
+			instances, err = w.options.RDS.List(ctx, "")
+		}
 		w.finishRequest(ctx, generation, err, func() {
+			if w.currentPage != pageRDSInstances || w.rdsClusterContext != clusterID {
+				return
+			}
 			w.allRDSInstances = instances
 			w.applyRDSFilter()
 			w.setDetail(rdsListSummary(len(instances)), detailIntro)
@@ -76,14 +100,24 @@ func (w *mainWindow) refreshRDS(foreground bool) {
 		return
 	}
 	selected := w.selectedRDSInstance
+	clusterID := w.rdsClusterContext
 	ctx, generation := w.startRefreshRequest("Refreshing RDS instances…", foreground)
 	go func() {
-		instances, err := w.options.RDS.List(ctx, "")
+		var instances []model.RDSInstance
+		var err error
+		if clusterID != "" {
+			instances, err = w.options.RDS.ClusterInstances(ctx, clusterID)
+		} else {
+			instances, err = w.options.RDS.List(ctx, "")
+		}
 		var detail *model.RDSInstanceDetail
 		if err == nil && selected != "" {
 			detail, err = w.options.RDS.Detail(ctx, selected)
 		}
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+			if w.currentPage != pageRDSInstances || w.rdsClusterContext != clusterID {
+				return
+			}
 			w.allRDSInstances = instances
 			w.applyRDSFilter()
 			if selected == "" {
@@ -93,7 +127,7 @@ func (w *mainWindow) refreshRDS(foreground bool) {
 			if detail == nil {
 				w.selectedRDSInstance = ""
 				w.rdsDetail = nil
-				w.setBreadcrumb("RDS / Instances")
+				w.setBreadcrumb(w.rdsInstancesBreadcrumb())
 				w.setDetail("The selected RDS instance is no longer available.\n\n"+rdsListSummary(len(instances)), detailIntro)
 				return
 			}
@@ -140,7 +174,7 @@ func (w *mainWindow) selectRDSInstanceRow() {
 		}
 		w.selectedRDSInstance = ""
 		w.rdsDetail = nil
-		w.setBreadcrumb("RDS / Instances")
+		w.setBreadcrumb(w.rdsInstancesBreadcrumb())
 		w.setDetail(rdsListSummary(len(w.allRDSInstances)), detailIntro)
 		w.updateActionSensitivity()
 		return
@@ -151,7 +185,7 @@ func (w *mainWindow) selectRDSInstanceRow() {
 	}
 	w.selectedRDSInstance = instance.Identifier
 	w.rdsDetail = nil
-	w.setBreadcrumb("RDS / Instances / " + instance.Identifier)
+	w.setBreadcrumb(w.rdsInstancesBreadcrumb() + " / " + instance.Identifier)
 	w.setDetail("Loading database instance details…\n\n"+formatRDSInstanceSummary(instance), detailRDS)
 	w.updateActionSensitivity()
 	w.loadRDSDetail(instance.Identifier)
@@ -189,7 +223,10 @@ func (w *mainWindow) loadRDSDetail(identifier string) {
 
 func (w *mainWindow) renderRDSDetail(detail model.RDSInstanceDetail) {
 	w.setDetail(formatRDSDetail(detail), detailRDS)
-	links := make([]workspaceResourceLink, 0, len(detail.SecurityGroups)+1)
+	links := make([]workspaceResourceLink, 0, len(detail.SecurityGroups)+2)
+	if detail.ClusterID != "" {
+		links = append(links, workspaceResourceLink{label: "RDS cluster " + detail.ClusterID, ref: model.ResourceRef{Kind: "rds-cluster", ID: detail.ClusterID}})
+	}
 	if detail.VPCID != "" {
 		links = append(links, workspaceResourceLink{label: "VPC " + detail.VPCID, ref: model.ResourceRef{Kind: "ec2-vpc", ID: detail.VPCID}})
 	}
@@ -204,6 +241,13 @@ func (w *mainWindow) renderRDSDetail(detail model.RDSInstanceDetail) {
 
 func rdsListSummary(count int) string {
 	return fmt.Sprintf("RDS INSTANCES\n\n%d database instances loaded. Select one to inspect configuration and open its metrics dashboard.", count)
+}
+
+func (w *mainWindow) rdsInstancesBreadcrumb() string {
+	if w.rdsClusterContext != "" {
+		return "RDS / Clusters / " + w.rdsClusterContext + " / Instances"
+	}
+	return "RDS / Instances"
 }
 
 func formatRDSInstanceSummary(instance model.RDSInstance) string {

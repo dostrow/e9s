@@ -22,6 +22,7 @@ type RDSInstancesModel struct {
 	width       int
 	height      int
 	loaded      bool
+	clusterID   string
 }
 
 func NewRDSInstances() RDSInstancesModel {
@@ -80,6 +81,9 @@ func (m RDSInstancesModel) View() string {
 	var b strings.Builder
 
 	title := fmt.Sprintf("  RDS Instances (%d)", len(filtered))
+	if m.clusterID != "" {
+		title = fmt.Sprintf("  RDS Cluster %s — Instances (%d)", m.clusterID, len(filtered))
+	}
 	b.WriteString(theme.TitleStyle.Render(title))
 	if m.filter != "" {
 		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  filter: %q", m.filter)))
@@ -187,6 +191,11 @@ func (m RDSInstancesModel) SetInstances(instances []aws.RDSInstance) RDSInstance
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1
 	}
+	return m
+}
+
+func (m RDSInstancesModel) SetCluster(clusterID string) RDSInstancesModel {
+	m.clusterID = clusterID
 	return m
 }
 

@@ -48,3 +48,38 @@ type RDSInstanceDetail struct {
 	MetricsLoaded        bool
 	Metrics              *MetricSnapshot
 }
+
+// RDSCluster is the shared browser and detail representation for an RDS or
+// Aurora DB cluster. Members retain enough information for both frontends to
+// drill into the cluster's DB instances without inventing frontend state.
+type RDSCluster struct {
+	Identifier           string
+	Engine               string
+	Version              string
+	EngineMode           string
+	Status               string
+	DatabaseName         string
+	Endpoint             string
+	ReaderEndpoint       string
+	Port                 int32
+	MultiAZ              bool
+	Encrypted            bool
+	DeletionProtection   bool
+	SubnetGroup          string
+	SecurityGroups       []string
+	ParameterGroup       string
+	AvailabilityZones    []string
+	BackupRetentionDays  int32
+	BackupWindow         string
+	MaintenanceWindow    string
+	LatestRestorableTime time.Time
+	Created              time.Time
+	Members              []RDSClusterMember
+	Tags                 map[string]string
+}
+
+type RDSClusterMember struct {
+	Identifier    string
+	Writer        bool
+	PromotionTier int32
+}

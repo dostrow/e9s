@@ -218,6 +218,8 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 		w.restoreECSTask(ref.ID)
 	case "rds-instance":
 		w.loadRDSInstancesAt(ref.ID)
+	case "rds-cluster":
+		w.loadRDSClusters(ref.ID)
 	default:
 		navigated = false
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
@@ -279,6 +281,10 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	case pageRDSInstances:
 		if w.selectedRDSInstance != "" {
 			return model.ResourceRef{Kind: "rds-instance", ID: w.selectedRDSInstance}, true
+		}
+	case pageRDSClusters:
+		if w.selectedRDSCluster != "" {
+			return model.ResourceRef{Kind: "rds-cluster", ID: w.selectedRDSCluster}, true
 		}
 	}
 	return model.ResourceRef{}, false

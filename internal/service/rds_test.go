@@ -11,11 +11,21 @@ import (
 )
 
 type fakeRDSAPI struct {
+	clusters  []model.RDSCluster
+	cluster   *model.RDSCluster
 	instances []model.RDSInstance
 	detail    *model.RDSInstanceDetail
 	metrics   *model.MetricSnapshot
 	err       error
 	id        string
+}
+
+func (f *fakeRDSAPI) ListRDSClusters(context.Context, string) ([]model.RDSCluster, error) {
+	return append([]model.RDSCluster(nil), f.clusters...), f.err
+}
+func (f *fakeRDSAPI) DescribeRDSCluster(_ context.Context, id string) (*model.RDSCluster, error) {
+	f.id = id
+	return f.cluster, f.err
 }
 
 func (f *fakeRDSAPI) ListRDSInstances(context.Context, string) ([]model.RDSInstance, error) {
@@ -55,5 +65,30 @@ func TestRDSDetailAndMetricsValidateIdentifiers(t *testing.T) {
 	}
 	if _, err := NewRDS(api).Metrics(context.Background(), "", time.Hour); err == nil {
 		t.Fatal("Metrics() accepted an empty identifier")
+	}
+}
+
+func TestRDSClustersSortFilterAndDrillIntoInstances(t *testing.T) {
+	api := &fakeRDSAPI{
+		clusters: []model.RDSCluster{{Identifier: "z", Engine: "aurora-postgresql"}, {Identifier: "A", Status: "available"}},
+		cluster:  &model.RDSCluster{Identifier: "A"},
+		instances: []model.RDSInstance{
+			{Identifier: "db-2", ClusterID: "other"}, {Identifier: "db-1", ClusterID: "A"},
+		},
+	}
+	svc := NewRDS(api)
+	clusters, err := svc.Clusters(context.Background(), "")
+	if err != nil || len(clusters) != 2 || clusters[0].Identifier != "A" {
+		t.Fatalf("Clusters() = %#v, %v", clusters, err)
+	}
+	if got := FilterRDSClusters(clusters, "postgres"); len(got) != 1 || got[0].Identifier != "z" {
+		t.Fatalf("FilterRDSClusters() = %#v", got)
+	}
+	if _, err := svc.Cluster(context.Background(), " A "); err != nil || api.id != "A" {
+		t.Fatalf("Cluster() error = %v, id = %q", err, api.id)
+	}
+	instances, err := svc.ClusterInstances(context.Background(), "A")
+	if err != nil || len(instances) != 1 || instances[0].Identifier != "db-1" {
+		t.Fatalf("ClusterInstances() = %#v, %v", instances, err)
 	}
 }

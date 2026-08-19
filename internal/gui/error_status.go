@@ -52,7 +52,7 @@ func moduleForPage(page string) string {
 		return moduleEC2
 	case pageECRRepositories, pageECRImages, pageECRFindings:
 		return moduleECR
-	case pageRDSInstances:
+	case pageRDSInstances, pageRDSClusters:
 		return moduleRDS
 	default:
 		return ""

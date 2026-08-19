@@ -1029,6 +1029,8 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshEC2TargetGroupDetail()
 	case viewRDSInstances:
 		return a.refreshRDSInstances()
+	case viewRDSClusters:
+		return a.refreshRDSClusters()
 	case viewRDSDetail:
 		return a.refreshRDSDetail()
 	default:
