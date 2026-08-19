@@ -99,10 +99,10 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 }
 
 func TestExpandedModuleHeadingAddsChevronSpacing(t *testing.T) {
-	if got := moduleHeadingMargin(false); got != 0 {
-		t.Fatalf("collapsed heading margin = %d, want 0", got)
+	if got := moduleHeadingTextOffset(false); got != 0 {
+		t.Fatalf("collapsed heading text offset = %d, want 0", got)
 	}
-	if got := moduleHeadingMargin(true); got <= 0 {
-		t.Fatalf("expanded heading margin = %d, want positive spacing", got)
+	if got := moduleHeadingTextOffset(true); got <= 0 {
+		t.Fatalf("expanded heading text offset = %d, want positive spacing", got)
 	}
 }
