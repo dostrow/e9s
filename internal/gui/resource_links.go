@@ -23,6 +23,22 @@ type detailResourceTag struct {
 	ref model.ResourceRef
 }
 
+// resourceNavigationState retains the browser context that a ResourceRef alone
+// cannot reconstruct after crossing module boundaries. EC2 loaders deliberately
+// clear ECS selections, so the originating cluster/service/task and breadcrumb
+// must travel with the history entry.
+type resourceNavigationState struct {
+	ref                 model.ResourceRef
+	page                string
+	detailContent       string
+	breadcrumb          string
+	filter              string
+	cluster             string
+	service             string
+	task                string
+	showingStoppedTasks bool
+}
+
 func (w *mainWindow) clearDetailResourceLinks() {
 	if w.detailLinks == nil {
 		return
@@ -151,10 +167,32 @@ func (w *mainWindow) detailResourceAt(x, y float64) (model.ResourceRef, bool) {
 }
 
 func (w *mainWindow) openResourceLink(ref model.ResourceRef) {
-	if origin, ok := w.currentResourceRef(); ok && (origin.Kind != ref.Kind || origin.ID != ref.ID) {
+	if origin, ok := w.currentResourceNavigationState(); ok && (origin.ref.Kind != ref.Kind || origin.ref.ID != ref.ID) {
 		w.resourceHistory = append(w.resourceHistory, origin)
 	}
 	w.navigateResourceRef(ref)
+}
+
+func (w *mainWindow) currentResourceNavigationState() (resourceNavigationState, bool) {
+	ref, ok := w.currentResourceRef()
+	if !ok {
+		return resourceNavigationState{}, false
+	}
+	filter := ""
+	if w.search != nil {
+		filter = w.search.Text()
+	}
+	return resourceNavigationState{
+		ref:                 ref,
+		page:                w.currentPage,
+		detailContent:       w.detailContent,
+		breadcrumb:          w.breadcrumbText,
+		filter:              filter,
+		cluster:             w.selectedCluster,
+		service:             w.selectedService,
+		task:                w.selectedTask,
+		showingStoppedTasks: w.showingStoppedTasks,
+	}, true
 }
 
 func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
@@ -193,7 +231,18 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 
 func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	switch w.currentPage {
-	case pageTasks, pageStandaloneTasks, pageStoppedTasks:
+	case pageServices:
+		if w.detailContent == detailService && w.selectedService != "" {
+			return model.ResourceRef{Kind: "ecs-service", ID: w.selectedService}, true
+		}
+	case pageTasks:
+		if w.detailContent == detailTask && w.selectedTask != "" {
+			return model.ResourceRef{Kind: "ecs-task", ID: w.selectedTask}, true
+		}
+		if w.detailContent == detailService && w.selectedService != "" {
+			return model.ResourceRef{Kind: "ecs-service", ID: w.selectedService}, true
+		}
+	case pageStandaloneTasks, pageStoppedTasks:
 		if w.detailContent == detailTask && w.selectedTask != "" {
 			return model.ResourceRef{Kind: "ecs-task", ID: w.selectedTask}, true
 		}
@@ -312,10 +361,122 @@ func (w *mainWindow) navigateResourceHistoryBack() bool {
 		return false
 	}
 	last := len(w.resourceHistory) - 1
-	ref := w.resourceHistory[last]
+	state := w.resourceHistory[last]
 	w.resourceHistory = w.resourceHistory[:last]
-	w.navigateResourceRef(ref)
+	if isECSPage(state.page) {
+		w.restoreECSResourceNavigationState(state)
+	} else {
+		w.navigateResourceRef(state.ref)
+	}
 	return true
+}
+
+func (w *mainWindow) restoreECSResourceNavigationState(state resourceNavigationState) {
+	w.resetWorkspaceForBrowserChange()
+	w.currentPage = state.page
+	w.selectedCluster = state.cluster
+	w.selectedService = state.service
+	w.selectedTask = state.task
+	w.showingStoppedTasks = state.showingStoppedTasks
+	w.search.SetText(state.filter)
+	w.backButton.SetSensitive(true)
+
+	switch state.page {
+	case pageServices:
+		w.search.SetPlaceholderText("Filter services…")
+		w.resourceStack.SetVisibleChildName(pageServices)
+		w.applyServiceFilter()
+		if svc, found := findService(w.allServices, state.service); found {
+			w.renderServiceOverview(svc)
+			for index, candidate := range w.filteredServices {
+				if candidate.Name == state.service {
+					w.serviceTable.selection.SetSelected(uint(index))
+					break
+				}
+			}
+		} else {
+			w.selectedService = ""
+			w.setDetail(clusterSummary(state.cluster, len(w.allServices)), detailClusterSummary)
+		}
+	case pageTasks:
+		w.restoreServiceTaskBrowser(state)
+	case pageStandaloneTasks, pageStoppedTasks:
+		w.restoreStandaloneTaskBrowser(state)
+	default:
+		// ECS resource links currently originate only from service and task
+		// details. Fall back to the normal ECS landing view if that expands.
+		w.loadClusters()
+		return
+	}
+
+	if state.breadcrumb != "" {
+		w.setBreadcrumb(state.breadcrumb)
+	}
+	w.updateActionSensitivity()
+	w.revealModuleForPage(w.currentPage)
+	w.setStatus("Ready", false)
+}
+
+func (w *mainWindow) restoreServiceTaskBrowser(state resourceNavigationState) {
+	w.activeTasksButton.SetActive(!state.showingStoppedTasks)
+	w.stoppedTasksButton.SetActive(state.showingStoppedTasks)
+	if state.showingStoppedTasks {
+		w.search.SetPlaceholderText("Filter recently stopped service tasks…")
+		w.resourceStack.SetVisibleChildName(pageStoppedTasks)
+	} else {
+		w.search.SetPlaceholderText("Filter active service tasks…")
+		w.resourceStack.SetVisibleChildName(pageTasks)
+	}
+	w.applyTaskFilter()
+	if state.task != "" {
+		if task, found := findTask(w.allTasks, state.task); found {
+			w.renderTaskDetail(task)
+			w.selectRestoredTaskRow(state.task)
+			return
+		}
+	}
+	w.selectedTask = ""
+	if svc, found := findService(w.allServices, state.service); found {
+		w.renderServiceTaskSummary(svc, "")
+	} else {
+		w.setDetail("The selected service is no longer available.", detailError)
+	}
+}
+
+func (w *mainWindow) restoreStandaloneTaskBrowser(state resourceNavigationState) {
+	w.activeTasksButton.SetActive(!state.showingStoppedTasks)
+	w.stoppedTasksButton.SetActive(state.showingStoppedTasks)
+	if state.showingStoppedTasks {
+		w.search.SetPlaceholderText("Filter recently stopped tasks…")
+		w.resourceStack.SetVisibleChildName(pageStoppedTasks)
+	} else {
+		w.search.SetPlaceholderText("Filter active standalone tasks…")
+		w.resourceStack.SetVisibleChildName(pageTasks)
+	}
+	w.applyTaskFilter()
+	if state.task != "" {
+		if task, found := findTask(w.allTasks, state.task); found {
+			w.renderTaskDetail(task)
+			w.selectRestoredTaskRow(state.task)
+			return
+		}
+	}
+	w.selectedTask = ""
+	w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
+}
+
+func (w *mainWindow) selectRestoredTaskRow(taskARN string) {
+	for index, task := range w.filteredTasks {
+		if task.TaskARN != taskARN {
+			continue
+		}
+		if w.showingStoppedTasks {
+			w.stoppedTaskTable.selection.SetSelected(uint(index))
+		} else {
+			w.taskTable.selection.SetSelected(uint(index))
+		}
+		return
+	}
 }
 
 func (w *mainWindow) setEC2InstanceResourceLinks(detail model.EC2InstanceDetail) {

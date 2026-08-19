@@ -357,7 +357,7 @@ type mainWindow struct {
 	terminalCommand             string
 	terminalDescription         string
 	showingTerminal             bool
-	resourceHistory             []model.ResourceRef
+	resourceHistory             []resourceNavigationState
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
 	logSearch                   *gtk.SearchEntry
