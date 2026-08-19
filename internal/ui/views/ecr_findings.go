@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -17,7 +17,7 @@ type ECRFindingsModel struct {
 	repoName    string
 	imageDigest string
 	imageTags   []string
-	findings    []aws.ECRFinding
+	findings    []model.ECRFinding
 	cursor      int
 	filter      string
 	filtering   bool
@@ -158,7 +158,7 @@ func severityCell(severity string) components.Cell {
 	return components.Styled(severity, style)
 }
 
-func (m ECRFindingsModel) severityCounts(findings []aws.ECRFinding) string {
+func (m ECRFindingsModel) severityCounts(findings []model.ECRFinding) string {
 	counts := make(map[string]int)
 	for _, f := range findings {
 		counts[f.Severity]++
@@ -183,12 +183,12 @@ func (m ECRFindingsModel) severityCounts(findings []aws.ECRFinding) string {
 	return strings.Join(parts, " ")
 }
 
-func (m ECRFindingsModel) filteredFindings() []aws.ECRFinding {
+func (m ECRFindingsModel) filteredFindings() []model.ECRFinding {
 	if m.filter == "" {
 		return m.findings
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.ECRFinding
+	var out []model.ECRFinding
 	for _, f := range m.findings {
 		if strings.Contains(strings.ToLower(f.Name), lf) ||
 			strings.Contains(strings.ToLower(f.Severity), lf) ||
@@ -200,7 +200,7 @@ func (m ECRFindingsModel) filteredFindings() []aws.ECRFinding {
 	return out
 }
 
-func (m ECRFindingsModel) SetFindings(findings []aws.ECRFinding) ECRFindingsModel {
+func (m ECRFindingsModel) SetFindings(findings []model.ECRFinding) ECRFindingsModel {
 	m.findings = findings
 	m.loaded = true
 	filtered := m.filteredFindings()
@@ -210,7 +210,7 @@ func (m ECRFindingsModel) SetFindings(findings []aws.ECRFinding) ECRFindingsMode
 	return m
 }
 
-func (m ECRFindingsModel) SelectedFinding() *aws.ECRFinding {
+func (m ECRFindingsModel) SelectedFinding() *model.ECRFinding {
 	filtered := m.filteredFindings()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
@@ -220,8 +220,8 @@ func (m ECRFindingsModel) SelectedFinding() *aws.ECRFinding {
 }
 
 func (m ECRFindingsModel) RepoName() string    { return m.repoName }
-func (m ECRFindingsModel) ImageDigest() string  { return m.imageDigest }
-func (m ECRFindingsModel) IsFiltering() bool    { return m.filtering }
+func (m ECRFindingsModel) ImageDigest() string { return m.imageDigest }
+func (m ECRFindingsModel) IsFiltering() bool   { return m.filtering }
 
 func (m ECRFindingsModel) visibleRows() int {
 	overhead := 10

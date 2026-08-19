@@ -2,49 +2,16 @@ package aws
 
 import (
 	"context"
-	"fmt"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-// ECRRepo represents an ECR repository.
-type ECRRepo struct {
-	Name           string
-	URI            string
-	ARN            string
-	ScanOnPush     bool
-	TagMutability  string // MUTABLE or IMMUTABLE
-	EncryptionType string
-	CreatedAt      time.Time
-}
-
-// ECRImage represents an image in an ECR repository.
-type ECRImage struct {
-	Digest       string
-	Tags         []string
-	PushedAt     time.Time
-	SizeBytes    int64
-	MediaType    string
-	ScanStatus   string // COMPLETE, IN_PROGRESS, FAILED, etc.
-	ScanSeverity map[string]int32 // severity → count
-}
-
-// ECRFinding represents a vulnerability finding from an image scan.
-type ECRFinding struct {
-	Name        string
-	Severity    string // CRITICAL, HIGH, MEDIUM, LOW, INFORMATIONAL, UNDEFINED
-	Description string
-	URI         string
-	Package     string
-	Version     string
-}
-
 // ListECRRepos returns ECR repositories, optionally filtered by name substring.
-func (c *Client) ListECRRepos(ctx context.Context, filter string) ([]ECRRepo, error) {
-	var repos []ECRRepo
+func (c *Client) ListECRRepos(ctx context.Context, filter string) ([]model.ECRRepo, error) {
+	var repos []model.ECRRepo
 	lf := strings.ToLower(filter)
 
 	paginator := ecr.NewDescribeRepositoriesPaginator(c.ECR, &ecr.DescribeRepositoriesInput{})
@@ -65,8 +32,8 @@ func (c *Client) ListECRRepos(ctx context.Context, filter string) ([]ECRRepo, er
 }
 
 // ListECRImages returns images in a repository, sorted by push date (newest first).
-func (c *Client) ListECRImages(ctx context.Context, repoName string) ([]ECRImage, error) {
-	var images []ECRImage
+func (c *Client) ListECRImages(ctx context.Context, repoName string) ([]model.ECRImage, error) {
+	var images []model.ECRImage
 
 	paginator := ecr.NewDescribeImagesPaginator(c.ECR, &ecr.DescribeImagesInput{
 		RepositoryName: &repoName,
@@ -95,8 +62,8 @@ func (c *Client) ListECRImages(ctx context.Context, repoName string) ([]ECRImage
 }
 
 // GetECRScanFindings returns scan findings for an image.
-func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest string) ([]ECRFinding, error) {
-	var findings []ECRFinding
+func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest string) ([]model.ECRFinding, error) {
+	var findings []model.ECRFinding
 
 	paginator := ecr.NewDescribeImageScanFindingsPaginator(c.ECR, &ecr.DescribeImageScanFindingsInput{
 		RepositoryName: &repoName,
@@ -109,7 +76,7 @@ func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest s
 		}
 		if page.ImageScanFindings != nil {
 			for _, f := range page.ImageScanFindings.Findings {
-				finding := ECRFinding{
+				finding := model.ECRFinding{
 					Name:        derefStrAws(f.Name),
 					Severity:    string(f.Severity),
 					Description: derefStrAws(f.Description),
@@ -157,16 +124,8 @@ func (c *Client) DeleteECRImage(ctx context.Context, repoName, imageDigest strin
 	return err
 }
 
-// ECRImageURI returns the full image URI for an image.
-func ECRImageURI(repoURI, tag string) string {
-	if tag != "" {
-		return fmt.Sprintf("%s:%s", repoURI, tag)
-	}
-	return repoURI
-}
-
-func repoFromSDK(r ecrtypes.Repository) ECRRepo {
-	repo := ECRRepo{
+func repoFromSDK(r ecrtypes.Repository) model.ECRRepo {
+	repo := model.ECRRepo{
 		Name: derefStrAws(r.RepositoryName),
 		URI:  derefStrAws(r.RepositoryUri),
 		ARN:  derefStrAws(r.RepositoryArn),
@@ -184,8 +143,8 @@ func repoFromSDK(r ecrtypes.Repository) ECRRepo {
 	return repo
 }
 
-func imageFromSDK(d ecrtypes.ImageDetail) ECRImage {
-	img := ECRImage{
+func imageFromSDK(d ecrtypes.ImageDetail) model.ECRImage {
+	img := model.ECRImage{
 		Digest: derefStrAws(d.ImageDigest),
 		Tags:   d.ImageTags,
 	}
@@ -207,7 +166,7 @@ func imageFromSDK(d ecrtypes.ImageDetail) ECRImage {
 	return img
 }
 
-func sortImagesByPushDate(images []ECRImage) {
+func sortImagesByPushDate(images []model.ECRImage) {
 	for i := 1; i < len(images); i++ {
 		for j := i; j > 0 && images[j].PushedAt.After(images[j-1].PushedAt); j-- {
 			images[j], images[j-1] = images[j-1], images[j]
@@ -230,7 +189,7 @@ func severityOrder(s string) int {
 	return 9
 }
 
-func sortFindingsBySeverity(findings []ECRFinding) {
+func sortFindingsBySeverity(findings []model.ECRFinding) {
 	for i := 1; i < len(findings); i++ {
 		for j := i; j > 0 && severityOrder(findings[j].Severity) < severityOrder(findings[j-1].Severity); j-- {
 			findings[j], findings[j-1] = findings[j-1], findings[j]

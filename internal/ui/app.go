@@ -119,6 +119,7 @@ type App struct {
 	ec2Network                 *service.EC2Network
 	ebs                        *service.EBS
 	loadBalancing              *service.LoadBalancing
+	ecr                        *service.ECR
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -323,6 +324,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		ec2Network:    service.NewEC2Network(client),
 		ebs:           service.NewEBS(client),
 		loadBalancing: service.NewLoadBalancing(client),
+		ecr:           service.NewECR(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,

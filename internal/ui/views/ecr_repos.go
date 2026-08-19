@@ -8,13 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type ECRReposModel struct {
-	repos       []aws.ECRRepo
+	repos       []model.ECRRepo
 	cursor      int
 	filter      string
 	filtering   bool
@@ -127,12 +127,12 @@ func (m ECRReposModel) View() string {
 	return b.String()
 }
 
-func (m ECRReposModel) filteredRepos() []aws.ECRRepo {
+func (m ECRReposModel) filteredRepos() []model.ECRRepo {
 	if m.filter == "" {
 		return m.repos
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.ECRRepo
+	var out []model.ECRRepo
 	for _, r := range m.repos {
 		if strings.Contains(strings.ToLower(r.Name), lf) {
 			out = append(out, r)
@@ -141,7 +141,7 @@ func (m ECRReposModel) filteredRepos() []aws.ECRRepo {
 	return out
 }
 
-func (m ECRReposModel) SetRepos(repos []aws.ECRRepo) ECRReposModel {
+func (m ECRReposModel) SetRepos(repos []model.ECRRepo) ECRReposModel {
 	m.repos = repos
 	m.loaded = true
 	filtered := m.filteredRepos()
@@ -151,7 +151,7 @@ func (m ECRReposModel) SetRepos(repos []aws.ECRRepo) ECRReposModel {
 	return m
 }
 
-func (m ECRReposModel) SelectedRepo() *aws.ECRRepo {
+func (m ECRReposModel) SelectedRepo() *model.ECRRepo {
 	filtered := m.filteredRepos()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

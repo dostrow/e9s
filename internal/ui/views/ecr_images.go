@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -16,7 +16,7 @@ import (
 type ECRImagesModel struct {
 	repoName    string
 	repoURI     string
-	images      []aws.ECRImage
+	images      []model.ECRImage
 	cursor      int
 	filter      string
 	filtering   bool
@@ -188,12 +188,12 @@ func formatImageSize(bytes int64) string {
 	return fmt.Sprintf("%.1f MB", mb)
 }
 
-func (m ECRImagesModel) filteredImages() []aws.ECRImage {
+func (m ECRImagesModel) filteredImages() []model.ECRImage {
 	if m.filter == "" {
 		return m.images
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.ECRImage
+	var out []model.ECRImage
 	for _, img := range m.images {
 		if strings.Contains(strings.ToLower(img.Digest), lf) ||
 			strings.Contains(strings.ToLower(strings.Join(img.Tags, " ")), lf) {
@@ -203,7 +203,7 @@ func (m ECRImagesModel) filteredImages() []aws.ECRImage {
 	return out
 }
 
-func (m ECRImagesModel) SetImages(images []aws.ECRImage) ECRImagesModel {
+func (m ECRImagesModel) SetImages(images []model.ECRImage) ECRImagesModel {
 	m.images = images
 	m.loaded = true
 	filtered := m.filteredImages()
@@ -213,7 +213,7 @@ func (m ECRImagesModel) SetImages(images []aws.ECRImage) ECRImagesModel {
 	return m
 }
 
-func (m ECRImagesModel) SelectedImage() *aws.ECRImage {
+func (m ECRImagesModel) SelectedImage() *model.ECRImage {
 	filtered := m.filteredImages()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
