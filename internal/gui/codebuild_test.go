@@ -62,3 +62,23 @@ func TestCodeBuildSummariesContainNavigationContext(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatCodeBuildDetailIncludesFailuresLogsAndEnvironment(t *testing.T) {
+	detail := model.CodeBuildDetail{
+		CodeBuildBuild: model.CodeBuildBuild{
+			ID: "api:7", BuildNumber: 7, Status: "FAILED", Initiator: "pipeline",
+			StartTime: time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC),
+			EndTime:   time.Date(2026, time.August, 18, 12, 2, 0, 0, time.UTC), Duration: 2 * time.Minute,
+		},
+		ProjectName: "api", ARN: "arn:build", Source: model.CodeBuildSource{Type: "GITHUB", Version: "abc123"},
+		Phases:       []model.CodeBuildPhase{{Name: "BUILD", Status: "FAILED", Duration: time.Minute, Contexts: []string{"tests failed"}}},
+		LogGroupName: "/aws/codebuild/api", LogStreamName: "api:7",
+		Environment: []model.CodeBuildEnvVar{{Name: "TOKEN", Value: "/prod/token", Type: "PARAMETER_STORE"}},
+	}
+	got := formatCodeBuildDetail(detail)
+	for _, want := range []string{"FAILED", "tests failed", "/aws/codebuild/api", "api:7", "PARAMETER_STORE", "/prod/token"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("detail %q missing %q", got, want)
+		}
+	}
+}

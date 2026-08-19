@@ -85,6 +85,9 @@ func (s *CodeBuild) Detail(ctx context.Context, buildID string) (*model.CodeBuil
 	if detail == nil {
 		return nil, fmt.Errorf("read CodeBuild build %q: build was not found", buildID)
 	}
+	sort.SliceStable(detail.Environment, func(i, j int) bool {
+		return strings.ToLower(detail.Environment[i].Name) < strings.ToLower(detail.Environment[j].Name)
+	})
 	return detail, nil
 }
 

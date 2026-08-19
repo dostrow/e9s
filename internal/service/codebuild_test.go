@@ -89,12 +89,19 @@ func TestCodeBuildBuildsValidateAndSort(t *testing.T) {
 
 func TestCodeBuildDetailAndMutations(t *testing.T) {
 	api := &fakeCodeBuildAPI{
-		detail:  &model.CodeBuildDetail{CodeBuildBuild: model.CodeBuildBuild{ID: "api:1"}},
+		detail: &model.CodeBuildDetail{
+			CodeBuildBuild: model.CodeBuildBuild{ID: "api:1"},
+			Environment:    []model.CodeBuildEnvVar{{Name: "ZED"}, {Name: "ALPHA"}},
+		},
 		started: &model.CodeBuildBuild{ID: "api:2", BuildNumber: 2},
 	}
 	svc := NewCodeBuild(api)
-	if _, err := svc.Detail(context.Background(), " api:1 "); err != nil || api.buildID != "api:1" {
+	detail, err := svc.Detail(context.Background(), " api:1 ")
+	if err != nil || api.buildID != "api:1" {
 		t.Fatalf("Detail() error = %v, ID %q", err, api.buildID)
+	}
+	if detail.Environment[0].Name != "ALPHA" {
+		t.Fatalf("Detail() environment = %#v", detail.Environment)
 	}
 	if _, err := svc.Start(context.Background(), " api ", " main "); err != nil || api.projectName != "api" || api.sourceVersion != "main" {
 		t.Fatalf("Start() error = %v, project %q, version %q", err, api.projectName, api.sourceVersion)

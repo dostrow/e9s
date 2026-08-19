@@ -162,6 +162,10 @@ func (w *mainWindow) openTaskContainerLogs(task model.Task, container string) {
 }
 
 func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
+	w.showLogFollowFrom(source, title, time.Now().Add(-15*time.Minute).UnixMilli())
+}
+
+func (w *mainWindow) showLogFollowFrom(source model.LogSource, title string, startTime int64) {
 	if w.showingTerminal {
 		w.closeTerminalNow(false)
 	}
@@ -173,7 +177,12 @@ func (w *mainWindow) showLogFollow(source model.LogSource, title string) {
 	w.applyContextLogHighlights(nil, true)
 	w.logPauseButton.SetVisible(true)
 	w.updateLogSearchControls()
-	w.startLogFollow(source, false)
+	w.logStore = newBoundedLogs(maxGUILogEntries)
+	w.logHiddenStreams = nil
+	w.logLastTS = max(int64(0), startTime)
+	w.logSearch.SetText("")
+	w.renderLogs()
+	w.startLogFollowWithFallback(source, true)
 	if path, ok := w.activeSavedLogPath(); ok {
 		w.logHiddenStreams = stringSet(path.HiddenStreams)
 		w.renderLogs()
@@ -243,6 +252,17 @@ func taskContainerNames(task model.Task) []string {
 }
 
 func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
+	if !preserve || w.logStore == nil {
+		w.logStore = newBoundedLogs(maxGUILogEntries)
+		w.logHiddenStreams = nil
+		w.logLastTS = time.Now().Add(-15 * time.Minute).UnixMilli()
+		w.logSearch.SetText("")
+		w.renderLogs()
+	}
+	w.startLogFollowWithFallback(source, !preserve)
+}
+
+func (w *mainWindow) startLogFollowWithFallback(source model.LogSource, allowFallback bool) {
 	if w.logCancel != nil {
 		w.logCancel()
 	}
@@ -260,7 +280,7 @@ func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	w.logFollowing = true
 	w.logPauseButton.SetVisible(true)
 	w.logPauseButton.SetLabel("Pause")
-	if !preserve || w.logStore == nil {
+	if w.logStore == nil {
 		w.logStore = newBoundedLogs(maxGUILogEntries)
 		w.logHiddenStreams = nil
 		w.logLastTS = time.Now().Add(-15 * time.Minute).UnixMilli()
@@ -269,7 +289,7 @@ func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	}
 	startTime := w.logLastTS
 
-	go w.followLogs(ctx, generation, source, startTime, !preserve)
+	go w.followLogs(ctx, generation, source, startTime, allowFallback)
 }
 
 func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source model.LogSource, startTime int64, allowFallback bool) {

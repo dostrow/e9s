@@ -50,6 +50,7 @@ const (
 	detailSSM            = "ssm-parameter"
 	detailSecret         = "secret"
 	detailLambda         = "lambda-function"
+	detailCodeBuild      = "codebuild-build"
 )
 
 type mainWindow struct {
@@ -123,6 +124,8 @@ type mainWindow struct {
 	filteredCodeBuildBuilds     []model.CodeBuildBuild
 	selectedCodeBuildProject    string
 	selectedCodeBuild           string
+	codeBuildDetail             *model.CodeBuildDetail
+	codeBuildActionPending      bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -205,6 +208,10 @@ type mainWindow struct {
 	lambdaBrowseLogsButton      *gtk.Button
 	lambdaSearchLogsButton      *gtk.Button
 	lambdaEditCodeButton        *gtk.Button
+	codeBuildStartButton        *gtk.Button
+	codeBuildLogsButton         *gtk.Button
+	codeBuildSearchLogsButton   *gtk.Button
+	codeBuildStopButton         *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -542,6 +549,15 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.lambdaSearchLogsButton.ConnectClicked(w.searchLambdaLogs)
 	w.lambdaEditCodeButton = gtk.NewButtonWithLabel("Edit code…")
 	w.lambdaEditCodeButton.ConnectClicked(w.openLambdaCodeEditor)
+	w.codeBuildStartButton = gtk.NewButtonWithLabel("Start build…")
+	w.codeBuildStartButton.ConnectClicked(w.confirmStartCodeBuild)
+	w.codeBuildLogsButton = gtk.NewButtonWithLabel("View logs")
+	w.codeBuildLogsButton.ConnectClicked(w.viewCodeBuildLogs)
+	w.codeBuildSearchLogsButton = gtk.NewButtonWithLabel("Search logs")
+	w.codeBuildSearchLogsButton.ConnectClicked(w.searchCodeBuildLogs)
+	w.codeBuildStopButton = gtk.NewButtonWithLabel("Stop build…")
+	w.codeBuildStopButton.AddCSSClass("destructive-action")
+	w.codeBuildStopButton.ConnectClicked(w.confirmStopCodeBuild)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -615,6 +631,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.lambdaBrowseLogsButton)
 	header.Append(w.lambdaSearchLogsButton)
 	header.Append(w.lambdaEditCodeButton)
+	header.Append(w.codeBuildStartButton)
+	header.Append(w.codeBuildLogsButton)
+	header.Append(w.codeBuildSearchLogsButton)
+	header.Append(w.codeBuildStopButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1288,6 +1308,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.lambdaEnvironment = nil
 	w.lambdaEnvironmentResolved = false
 	w.lambdaViewMode = ""
+	w.codeBuildDetail = nil
+	w.codeBuildActionPending = false
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1905,6 +1927,12 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	if (w.currentPage == pageCodeBuildProjects || w.currentPage == pageCodeBuildBuilds) && w.codeBuildActionPending {
+		if foreground {
+			w.setStatus("A CodeBuild operation is still pending", false)
+		}
+		return
+	}
 	if w.showingTerminal {
 		if foreground {
 			w.setStatus("Disconnect ECS Exec before refreshing", false)
@@ -2424,6 +2452,19 @@ func (w *mainWindow) updateActionSensitivity() {
 	} else {
 		w.lambdaEditCodeButton.SetTooltipText("")
 	}
+	codeBuildPage := w.currentPage == pageCodeBuildProjects || w.currentPage == pageCodeBuildBuilds
+	codeBuildProject := w.currentCodeBuildProject()
+	codeBuildDetailReady := codeBuildPage && w.codeBuildDetail != nil && w.codeBuildDetail.ID == w.selectedCodeBuild
+	w.codeBuildStartButton.SetVisible(codeBuildPage && codeBuildProject != "")
+	w.codeBuildStartButton.SetSensitive(codeBuildPage && codeBuildProject != "" && !w.codeBuildActionPending && w.options.CodeBuild != nil)
+	hasCodeBuildLogs := codeBuildDetailReady && w.codeBuildDetail.LogGroupName != "" && w.codeBuildDetail.LogStreamName != "" && w.options.Logs != nil
+	w.codeBuildLogsButton.SetVisible(codeBuildDetailReady)
+	w.codeBuildLogsButton.SetSensitive(hasCodeBuildLogs && !w.codeBuildActionPending)
+	w.codeBuildSearchLogsButton.SetVisible(codeBuildDetailReady)
+	w.codeBuildSearchLogsButton.SetSensitive(hasCodeBuildLogs && !w.codeBuildActionPending)
+	canStopCodeBuild := codeBuildDetailReady && w.codeBuildDetail.Status == "IN_PROGRESS"
+	w.codeBuildStopButton.SetVisible(canStopCodeBuild)
+	w.codeBuildStopButton.SetSensitive(canStopCodeBuild && !w.codeBuildActionPending && w.options.CodeBuild != nil)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

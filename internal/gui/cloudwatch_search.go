@@ -46,8 +46,16 @@ func (w *mainWindow) promptCloudWatchSearch() {
 }
 
 func (w *mainWindow) promptCloudWatchSearchForGroup(group string) {
+	w.promptCloudWatchSearchWithDefaults(group, nil)
+}
+
+func (w *mainWindow) promptCloudWatchSearchWithDefaults(group string, defaults *cloudWatchSearch) {
 	if w.options.Logs == nil || group == "" {
 		return
+	}
+	activeSpec := w.logSearchSpec
+	if defaults != nil {
+		activeSpec = defaults
 	}
 
 	dialog := gtk.NewDialogWithFlags("Search CloudWatch logs", &w.window.Window, gtk.DialogModal)
@@ -80,9 +88,9 @@ func (w *mainWindow) promptCloudWatchSearchForGroup(group string) {
 			defaultStreams = append([]string(nil), w.logSource.Streams...)
 		}
 	}
-	if w.logSearchSpec != nil {
-		defaultGroups = append([]string(nil), w.logSearchSpec.Groups...)
-		defaultStreams = append([]string(nil), w.logSearchSpec.Streams...)
+	if activeSpec != nil {
+		defaultGroups = append([]string(nil), activeSpec.Groups...)
+		defaultStreams = append([]string(nil), activeSpec.Streams...)
 	}
 	groups := gtk.NewEntry()
 	groups.SetText(strings.Join(defaultGroups, ", "))
@@ -104,13 +112,13 @@ func (w *mainWindow) promptCloudWatchSearchForGroup(group string) {
 	from.SetText(now.Add(-time.Hour).Format("2006-01-02 15:04"))
 	to := gtk.NewEntry()
 	to.SetText(now.Format("2006-01-02 15:04"))
-	if w.logSearchSpec != nil {
-		filter.SetText(w.logSearchSpec.Filter)
-		from.SetText(time.UnixMilli(w.logSearchSpec.StartTime).UTC().Format("2006-01-02 15:04"))
-		to.SetText(time.UnixMilli(w.logSearchSpec.EndTime).UTC().Format("2006-01-02 15:04"))
+	if activeSpec != nil {
+		filter.SetText(activeSpec.Filter)
+		from.SetText(time.UnixMilli(activeSpec.StartTime).UTC().Format("2006-01-02 15:04"))
+		to.SetText(time.UnixMilli(activeSpec.EndTime).UTC().Format("2006-01-02 15:04"))
 		preset.SetSelected(uint(len(cloudWatchTimePresets) - 1))
 		for i, candidate := range cloudWatchTimePresets[:len(cloudWatchTimePresets)-1] {
-			if candidate.duration == w.logSearchSpec.Lookback {
+			if candidate.duration == activeSpec.Lookback {
 				preset.SetSelected(uint(i))
 				break
 			}
