@@ -5,6 +5,7 @@ package gui
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,14 +17,20 @@ import (
 )
 
 type metricChart struct {
-	area    *gtk.DrawingArea
-	title   string
-	unit    string
-	minZero bool
-	maxHint float64
-	start   time.Time
-	end     time.Time
-	series  []model.MetricSeries
+	area         *gtk.DrawingArea
+	overlay      *gtk.Overlay
+	expandButton *gtk.Button
+	title        string
+	unit         string
+	minZero      bool
+	maxHint      float64
+	start        time.Time
+	end          time.Time
+	series       []model.MetricSeries
+	hovering     bool
+	hoverX       float64
+	hoverY       float64
+	onExpand     func()
 }
 
 func newMetricChart(title, unit string, minZero bool, maxHint float64) *metricChart {
@@ -33,7 +40,49 @@ func newMetricChart(title, unit string, minZero bool, maxHint float64) *metricCh
 	chart.area.SetContentHeight(220)
 	chart.area.AddCSSClass("metric-chart")
 	chart.area.SetDrawFunc(chart.draw)
+	motion := gtk.NewEventControllerMotion()
+	motion.ConnectMotion(func(x, y float64) {
+		chart.hovering = true
+		chart.hoverX, chart.hoverY = x, y
+		chart.area.SetCursorFromName("crosshair")
+		chart.area.QueueDraw()
+	})
+	motion.ConnectLeave(func() {
+		chart.hovering = false
+		chart.area.SetCursorFromName("default")
+		chart.area.QueueDraw()
+	})
+	chart.area.AddController(motion)
+	chart.overlay = gtk.NewOverlay()
+	chart.overlay.SetChild(chart.area)
+	chart.expandButton = gtk.NewButtonFromIconName("view-fullscreen-symbolic")
+	chart.expandButton.AddCSSClass("flat")
+	chart.expandButton.SetHAlign(gtk.AlignEnd)
+	chart.expandButton.SetVAlign(gtk.AlignStart)
+	chart.expandButton.SetMarginTop(4)
+	chart.expandButton.SetMarginEnd(4)
+	chart.expandButton.SetTooltipText("Maximize this chart")
+	chart.expandButton.ConnectClicked(func() {
+		if chart.onExpand != nil {
+			chart.onExpand()
+		}
+	})
+	chart.overlay.AddOverlay(chart.expandButton)
 	return chart
+}
+
+func (c *metricChart) Widget() gtk.Widgetter { return c.overlay }
+
+func (c *metricChart) SetExpandHandler(handler func()) { c.onExpand = handler }
+
+func (c *metricChart) SetExpanded(expanded bool) {
+	c.expandButton.SetVisible(!expanded)
+	c.area.SetVExpand(expanded)
+	if expanded {
+		c.area.SetContentHeight(620)
+	} else {
+		c.area.SetContentHeight(220)
+	}
 }
 
 func (c *metricChart) SetData(start, end time.Time, all []model.MetricSeries, ids ...string) {
@@ -101,16 +150,11 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		drawChartText(area, cr, fmtMetricValue(value, c.unit), 4, y-8, foreground, 0.72)
 	}
 
-	colors := []gdk.RGBA{accent, foreground}
 	for index, series := range c.series {
 		if len(series.Points) == 0 {
 			continue
 		}
-		color := colors[index%len(colors)]
-		alpha := 0.95
-		if index > 1 {
-			alpha = max(0.45, 0.85-float64(index)*0.1)
-		}
+		color, alpha := metricSeriesColor(index, accent, foreground)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
 		cr.SetLineWidth(2)
 		if index%2 == 1 {
@@ -132,13 +176,12 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		cr.Stroke()
 	}
 	cr.SetDash(nil, 0)
+	if c.hovering && hasData && c.hoverX >= left && c.hoverX <= left+plotWidth && c.hoverY >= top && c.hoverY <= top+plotHeight {
+		c.drawHover(area, cr, left, top, plotWidth, plotHeight, minValue, maxValue, foreground, background, accent)
+	}
 
 	drawChartText(area, cr, c.title, 4, 4, foreground, 1)
-	legend := c.legend()
-	if legend == "" {
-		legend = "No data for this time range"
-	}
-	drawChartText(area, cr, legend, left, 24, foreground, 0.76)
+	c.drawLegend(area, cr, left, 27, foreground, accent)
 	if !c.start.IsZero() && !c.end.IsZero() {
 		drawChartText(area, cr, c.start.Local().Format("Jan 2 15:04"), left, top+plotHeight+7, foreground, 0.7)
 		endLabel := c.end.Local().Format("Jan 2 15:04")
@@ -146,6 +189,119 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		textWidth, _ := layout.PixelSize()
 		drawChartText(area, cr, endLabel, left+plotWidth-float64(textWidth), top+plotHeight+7, foreground, 0.7)
 	}
+}
+
+func metricSeriesColor(index int, accent, foreground gdk.RGBA) (gdk.RGBA, float64) {
+	if index%2 == 0 {
+		return accent, max(0.55, 0.95-float64(index/2)*0.12)
+	}
+	return foreground, max(0.5, 0.9-float64(index/2)*0.12)
+}
+
+func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y float64, foreground, accent gdk.RGBA) {
+	visible := 0
+	for index, series := range c.series {
+		if len(series.Points) == 0 {
+			continue
+		}
+		color, alpha := metricSeriesColor(index, accent, foreground)
+		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
+		cr.SetLineWidth(2)
+		if index%2 == 1 {
+			cr.SetDash([]float64{5, 3}, 0)
+		} else {
+			cr.SetDash(nil, 0)
+		}
+		cr.MoveTo(x, y+7)
+		cr.LineTo(x+22, y+7)
+		cr.Stroke()
+		cr.SetDash(nil, 0)
+		label := series.Label
+		if label == "" {
+			label = series.ID
+		}
+		latest := series.Points[len(series.Points)-1].Value
+		text := fmt.Sprintf("%s  %s", label, fmtMetricValue(latest, c.unit))
+		drawChartText(area, cr, text, x+28, y, foreground, 0.82)
+		layout := area.CreatePangoLayout(text)
+		textWidth, _ := layout.PixelSize()
+		x += 28 + float64(textWidth) + 24
+		visible++
+	}
+	if visible == 0 {
+		drawChartText(area, cr, "No data for this time range", x, y, foreground, 0.76)
+	}
+}
+
+func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, top, plotWidth, plotHeight, minValue, maxValue float64, foreground, background, accent gdk.RGBA) {
+	fraction := min(1, max(0, (c.hoverX-left)/plotWidth))
+	target := c.start.Add(time.Duration(float64(c.end.Sub(c.start)) * fraction))
+	x := left + fraction*plotWidth
+	cr.SetDash([]float64{3, 3}, 0)
+	cr.SetLineWidth(1)
+	cr.SetSourceRGBA(float64(foreground.Red()), float64(foreground.Green()), float64(foreground.Blue()), 0.55)
+	cr.MoveTo(x, top)
+	cr.LineTo(x, top+plotHeight)
+	cr.Stroke()
+	cr.SetDash(nil, 0)
+
+	lines := []string{target.Local().Format("Jan 2 2006 15:04:05")}
+	for index, series := range c.series {
+		point, ok := nearestMetricPoint(series.Points, target)
+		if !ok {
+			continue
+		}
+		label := series.Label
+		if label == "" {
+			label = series.ID
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", label, fmtMetricValue(point.Value, c.unit)))
+		pointX := left + timeFraction(point.Timestamp, c.start, c.end)*plotWidth
+		pointY := top + (maxValue-point.Value)/(maxValue-minValue)*plotHeight
+		color, alpha := metricSeriesColor(index, accent, foreground)
+		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
+		cr.Arc(pointX, pointY, 3.5, 0, 2*math.Pi)
+		cr.Fill()
+	}
+	if len(lines) == 1 {
+		return
+	}
+	text := strings.Join(lines, "\n")
+	layout := area.CreatePangoLayout(text)
+	textWidth, textHeight := layout.PixelSize()
+	boxWidth, boxHeight := float64(textWidth)+18, float64(textHeight)+14
+	boxX := x + 12
+	if boxX+boxWidth > left+plotWidth-4 {
+		boxX = x - boxWidth - 12
+	}
+	boxX = max(left+4, boxX)
+	boxY := top + 8
+	cr.SetSourceRGBA(float64(background.Red()), float64(background.Green()), float64(background.Blue()), 0.96)
+	cr.Rectangle(boxX, boxY, boxWidth, boxHeight)
+	cr.Fill()
+	cr.SetSourceRGBA(float64(accent.Red()), float64(accent.Green()), float64(accent.Blue()), 0.9)
+	cr.SetLineWidth(1)
+	cr.Rectangle(boxX+0.5, boxY+0.5, boxWidth-1, boxHeight-1)
+	cr.Stroke()
+	drawChartText(area, cr, text, boxX+9, boxY+7, foreground, 1)
+}
+
+func nearestMetricPoint(points []model.MetricPoint, target time.Time) (model.MetricPoint, bool) {
+	if len(points) == 0 {
+		return model.MetricPoint{}, false
+	}
+	index := sort.Search(len(points), func(i int) bool { return !points[i].Timestamp.Before(target) })
+	if index == 0 {
+		return points[0], true
+	}
+	if index == len(points) {
+		return points[len(points)-1], true
+	}
+	before, after := points[index-1], points[index]
+	if target.Sub(before.Timestamp) <= after.Timestamp.Sub(target) {
+		return before, true
+	}
+	return after, true
 }
 
 func (c *metricChart) bounds() (float64, float64, bool) {
@@ -157,22 +313,6 @@ func (c *metricChart) bounds() (float64, float64, bool) {
 		}
 	}
 	return minimum, maximum, minimum != math.MaxFloat64
-}
-
-func (c *metricChart) legend() string {
-	parts := make([]string, 0, len(c.series))
-	for _, series := range c.series {
-		if len(series.Points) == 0 {
-			continue
-		}
-		latest := series.Points[len(series.Points)-1].Value
-		label := series.Label
-		if label == "" {
-			label = series.ID
-		}
-		parts = append(parts, fmt.Sprintf("%s %s", label, fmtMetricValue(latest, c.unit)))
-	}
-	return strings.Join(parts, "   ·   ")
 }
 
 func lookupThemeColor(style *gtk.StyleContext, names ...string) gdk.RGBA {

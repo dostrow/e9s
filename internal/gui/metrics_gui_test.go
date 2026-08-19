@@ -2,7 +2,12 @@
 
 package gui
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/dostrow/e9s/internal/model"
+)
 
 func TestMetricFractionClampsToProgressRange(t *testing.T) {
 	for _, test := range []struct {
@@ -18,5 +23,22 @@ func TestMetricFractionClampsToProgressRange(t *testing.T) {
 		if got := metricFraction(test.value); got != test.want {
 			t.Errorf("metricFraction(%v) = %v, want %v", test.value, got, test.want)
 		}
+	}
+}
+
+func TestNearestMetricPoint(t *testing.T) {
+	start := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	points := []model.MetricPoint{
+		{Timestamp: start, Value: 1},
+		{Timestamp: start.Add(time.Minute), Value: 2},
+		{Timestamp: start.Add(2 * time.Minute), Value: 3},
+	}
+	point, ok := nearestMetricPoint(points, start.Add(40*time.Second))
+	if !ok || point.Value != 2 {
+		t.Fatalf("nearestMetricPoint() = %#v, %v", point, ok)
+	}
+	point, ok = nearestMetricPoint(points, start.Add(-time.Hour))
+	if !ok || point.Value != 1 {
+		t.Fatalf("nearestMetricPoint(before) = %#v, %v", point, ok)
 	}
 }

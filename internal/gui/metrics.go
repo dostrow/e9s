@@ -21,6 +21,8 @@ var metricTimeRanges = []struct {
 	{"6 hours", 6 * time.Hour},
 	{"24 hours", 24 * time.Hour},
 	{"7 days", 7 * 24 * time.Hour},
+	{"2 weeks", 14 * 24 * time.Hour},
+	{"30 days", 30 * 24 * time.Hour},
 }
 
 func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
@@ -40,6 +42,9 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 			w.loadMetrics(true)
 		}
 	})
+	w.metricsRestoreButton = gtk.NewButtonWithLabel("Show all charts")
+	w.metricsRestoreButton.SetVisible(false)
+	w.metricsRestoreButton.ConnectClicked(w.restoreMetricCharts)
 	w.metricsScaleButton = gtk.NewButtonWithLabel("Toggle scale-in")
 	w.metricsScaleButton.ConnectClicked(w.confirmToggleScaleIn)
 	w.metricsScaleLabel = gtk.NewLabel("Scale-in status unknown")
@@ -52,6 +57,7 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	toolbar.Append(back)
 	toolbar.Append(refresh)
 	toolbar.Append(w.metricsRange)
+	toolbar.Append(w.metricsRestoreButton)
 	toolbar.Append(w.metricsScaleButton)
 	toolbar.Append(w.metricsScaleLabel)
 
@@ -120,6 +126,9 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 }
 
 func (w *mainWindow) openMetrics() {
+	if !w.showingMetrics {
+		w.metricsFocusedTitle = ""
+	}
 	if w.currentPage == pageRDSInstances {
 		if w.selectedRDSInstance == "" {
 			return
@@ -355,19 +364,58 @@ func (w *mainWindow) setMetricCharts(snapshot *model.MetricSnapshot, specs []met
 	if w.metricsChartsBox == nil || snapshot == nil {
 		return
 	}
+	w.metricsRenderedSnapshot = snapshot
+	w.metricsChartSpecs = append([]metricChartSpec(nil), specs...)
+	if w.metricsFocusedTitle != "" {
+		found := false
+		for _, spec := range specs {
+			if spec.title == w.metricsFocusedTitle {
+				found = true
+				break
+			}
+		}
+		if !found {
+			w.metricsFocusedTitle = ""
+		}
+	}
+	w.metricsRestoreButton.SetVisible(w.metricsFocusedTitle != "")
 	for child := w.metricsChartsBox.FirstChild(); child != nil; child = w.metricsChartsBox.FirstChild() {
 		w.metricsChartsBox.Remove(child)
 	}
 	w.metricsCharts = make([]*metricChart, 0, len(specs))
 	for _, spec := range specs {
+		if w.metricsFocusedTitle != "" && spec.title != w.metricsFocusedTitle {
+			continue
+		}
 		if !metricSpecHasData(snapshot, spec.ids) {
 			continue
 		}
 		chart := newMetricChart(spec.title, spec.unit, spec.minZero, spec.maxHint)
 		chart.SetData(snapshot.StartTime, snapshot.EndTime, snapshot.Series, spec.ids...)
+		chart.SetExpanded(w.metricsFocusedTitle != "")
+		title := spec.title
+		chart.SetExpandHandler(func() { w.focusMetricChart(title) })
 		w.metricsCharts = append(w.metricsCharts, chart)
-		w.metricsChartsBox.Append(chart.area)
+		w.metricsChartsBox.Append(chart.Widget())
 	}
+}
+
+func (w *mainWindow) focusMetricChart(title string) {
+	if title == "" || w.metricsRenderedSnapshot == nil {
+		return
+	}
+	w.metricsFocusedTitle = title
+	w.setMetricCharts(w.metricsRenderedSnapshot, w.metricsChartSpecs)
+	w.setStatus("Maximized "+strings.ToLower(title)+" • Escape returns to all charts", false)
+}
+
+func (w *mainWindow) restoreMetricCharts() {
+	if w.metricsFocusedTitle == "" || w.metricsRenderedSnapshot == nil {
+		return
+	}
+	w.metricsFocusedTitle = ""
+	w.setMetricCharts(w.metricsRenderedSnapshot, w.metricsChartSpecs)
+	w.setStatus("Showing all metric charts", false)
 }
 
 func metricSpecHasData(snapshot *model.MetricSnapshot, ids []string) bool {
@@ -530,6 +578,8 @@ func (w *mainWindow) closeMetrics() {
 	}
 	w.showingMetrics = false
 	w.metricsKind = ""
+	w.metricsFocusedTitle = ""
+	w.metricsRestoreButton.SetVisible(false)
 	w.detailStack.SetVisibleChildName("detail")
 	w.setStatus("Metrics view closed", false)
 }

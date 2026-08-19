@@ -344,6 +344,7 @@ type mainWindow struct {
 	metricsChartsBox            *gtk.Box
 	metricsCharts               []*metricChart
 	metricsRange                *gtk.DropDown
+	metricsRestoreButton        *gtk.Button
 	metricsAlarmTable           *stringTable
 	metricsScaleButton          *gtk.Button
 	metricsScaleLabel           *gtk.Label
@@ -355,6 +356,9 @@ type mainWindow struct {
 	metricsSnapshot             *model.ServiceMetrics
 	metricsGenericSnapshot      *model.MetricSnapshot
 	metricsKind                 string
+	metricsFocusedTitle         string
+	metricsRenderedSnapshot     *model.MetricSnapshot
+	metricsChartSpecs           []metricChartSpec
 	metricsAlarms               []model.AlarmState
 	metricsTaskID               string
 	scaleInSuspended            bool
@@ -1347,6 +1351,10 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 	keys := gtk.NewEventControllerKey()
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		if keyval == gdk.KEY_Escape && w.showingMetrics && w.metricsFocusedTitle != "" {
+			w.restoreMetricCharts()
+			return true
+		}
 		action := printableShortcutAction(keyval, state)
 		if action == "" || w.focusAcceptsTextInput() {
 			return false
@@ -1649,6 +1657,9 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.metricsKind = ""
 	w.metricsSnapshot = nil
 	w.metricsGenericSnapshot = nil
+	w.metricsFocusedTitle = ""
+	w.metricsRenderedSnapshot = nil
+	w.metricsChartSpecs = nil
 	if w.showingTerminal {
 		w.closeTerminalNow(false)
 	}

@@ -101,9 +101,16 @@ func metricPeriod(window time.Duration, maxPoints int) time.Duration {
 		return time.Minute
 	}
 	periods := (seconds + int64(maxPoints) - 1) / int64(maxPoints)
-	periods = ((periods + 59) / 60) * 60
-	if periods < 60 {
-		periods = 60
+	minimum := int64(60)
+	if window > 15*24*time.Hour {
+		minimum = 300
+	}
+	if window > 63*24*time.Hour {
+		minimum = 3600
+	}
+	periods = ((periods + minimum - 1) / minimum) * minimum
+	if periods < minimum {
+		periods = minimum
 	}
 	return time.Duration(periods) * time.Second
 }

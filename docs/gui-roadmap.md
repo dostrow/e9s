@@ -41,7 +41,7 @@ OpenTofu/Terraform.
   adaptive resolution UI-neutral.
 - Render the same data as theme-derived Cairo charts in the GUI and compact
   terminal sparklines in the TUI.
-- Support 15-minute, 1-hour, 6-hour, 24-hour, and 7-day GUI ranges without
+- Support 15-minute, 1-hour, 6-hour, 24-hour, 7-day, 2-week, and 30-day GUI ranges without
   replacing or flashing unrelated Workspace Pane content.
 - ECS service/task, EC2 instance, and RDS instance dashboards share this path.
   Enhanced RDS monitoring and Database Insights remain capability-dependent

@@ -19,6 +19,8 @@ func TestMetricPeriodBoundsSeriesSize(t *testing.T) {
 		{6 * time.Hour, 2 * time.Minute},
 		{24 * time.Hour, 5 * time.Minute},
 		{7 * 24 * time.Hour, 34 * time.Minute},
+		{14 * 24 * time.Hour, 68 * time.Minute},
+		{30 * 24 * time.Hour, 145 * time.Minute},
 	}
 	for _, test := range tests {
 		if got := metricPeriod(test.window, 300); got != test.want {
