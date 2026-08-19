@@ -5,6 +5,8 @@ package gui
 import (
 	"fmt"
 	"html"
+	"path"
+	"sort"
 	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -144,6 +146,7 @@ func (w *mainWindow) openS3BucketAt(position uint) {
 		return
 	}
 	w.s3BucketTable.selection.SetSelected(position)
+	w.loadS3Objects(w.filteredS3Buckets[position].Name, "")
 }
 
 func filterS3Buckets(buckets []model.S3Bucket, query string) []model.S3Bucket {
@@ -212,6 +215,387 @@ func s3RefreshingMessage(filter string) string {
 		return "Refreshing S3 buckets…"
 	}
 	return "Refreshing saved S3 bucket search…"
+}
+
+func (w *mainWindow) loadS3Objects(bucket, prefix string) {
+	w.resetWorkspaceForBrowserChange()
+	w.clearS3Objects()
+	w.currentPage = pageS3Objects
+	w.selectedS3Bucket = bucket
+	w.s3Prefix = prefix
+	w.s3ObjectSearch = ""
+	w.s3ObjectSearchActive = false
+	w.updateActionSensitivity()
+	w.setBreadcrumb(s3ObjectBreadcrumb(w.activeSavedS3Search, bucket, prefix, false))
+	w.backButton.SetSensitive(true)
+	w.search.SetPlaceholderText("Filter objects…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageS3Objects)
+	w.setDetail("Loading S3 objects…", detailIntro)
+
+	if w.options.S3 == nil {
+		w.setDetail("S3 is unavailable because no S3 service was configured.", detailError)
+		w.setStatus("S3 service unavailable", true)
+		return
+	}
+
+	ctx, generation := w.startRequest("Loading s3://" + bucket + "/" + prefix + "…")
+	go func() {
+		objects, err := w.options.S3.Objects(ctx, bucket, prefix)
+		w.finishRequest(ctx, generation, err, func() {
+			w.allS3Objects = objects
+			w.applyS3ObjectFilter()
+			w.setDetail(s3ObjectListSummary(bucket, prefix, false, len(objects)), detailIntro)
+		})
+	}()
+}
+
+func (w *mainWindow) searchS3Objects(bucket, keyPrefix string) {
+	w.resetWorkspaceForBrowserChange()
+	w.clearS3Objects()
+	w.currentPage = pageS3Objects
+	w.selectedS3Bucket = bucket
+	w.s3Prefix = ""
+	w.s3ObjectSearch = keyPrefix
+	w.s3ObjectSearchActive = true
+	w.updateActionSensitivity()
+	w.setBreadcrumb(s3ObjectBreadcrumb(w.activeSavedS3Search, bucket, keyPrefix, true))
+	w.backButton.SetSensitive(true)
+	w.search.SetPlaceholderText("Filter search results…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageS3Objects)
+	w.setDetail("Searching S3 object keys…", detailIntro)
+
+	if w.options.S3 == nil {
+		w.setDetail("S3 is unavailable because no S3 service was configured.", detailError)
+		w.setStatus("S3 service unavailable", true)
+		return
+	}
+
+	ctx, generation := w.startRequest("Searching s3://" + bucket + "/" + keyPrefix + "…")
+	go func() {
+		objects, err := w.options.S3.Search(ctx, bucket, keyPrefix)
+		w.finishRequest(ctx, generation, err, func() {
+			w.allS3Objects = objects
+			w.applyS3ObjectFilter()
+			w.setDetail(s3ObjectListSummary(bucket, keyPrefix, true, len(objects)), detailIntro)
+		})
+	}()
+}
+
+func (w *mainWindow) refreshS3Objects(foreground bool) {
+	if w.options.S3 == nil || w.selectedS3Bucket == "" {
+		return
+	}
+	bucket, prefix := w.selectedS3Bucket, w.s3Prefix
+	keyPrefix, searching := w.s3ObjectSearch, w.s3ObjectSearchActive
+	selected := w.selectedS3Object
+	ctx, generation := w.startRefreshRequest("Refreshing S3 objects…", foreground)
+	go func() {
+		var objects []model.S3Object
+		var err error
+		if searching {
+			objects, err = w.options.S3.Search(ctx, bucket, keyPrefix)
+		} else {
+			objects, err = w.options.S3.Objects(ctx, bucket, prefix)
+		}
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+			w.allS3Objects = objects
+			w.applyS3ObjectFilter()
+			if selected == "" {
+				if w.detailContent == detailIntro {
+					w.setDetail(s3ObjectListSummary(bucket, valueIf(searching, keyPrefix, prefix), searching, len(objects)), detailIntro)
+				}
+				return
+			}
+			object, found := findS3Object(objects, selected)
+			if !found {
+				w.selectedS3Object = ""
+				w.s3ObjectDetail = nil
+				w.setBreadcrumb(s3ObjectBreadcrumb(w.activeSavedS3Search, bucket, valueIf(searching, keyPrefix, prefix), searching))
+				w.setDetail("The selected object is no longer available.\n\n"+s3ObjectListSummary(bucket, valueIf(searching, keyPrefix, prefix), searching, len(objects)), detailIntro)
+				return
+			}
+			if object.IsPrefix {
+				w.setDetail(formatS3Prefix(bucket, object.Key), detailS3Object)
+			} else if w.s3ObjectDetail == nil || w.s3ObjectDetail.Key != object.Key {
+				w.setDetail(formatS3ObjectSummary(bucket, object), detailS3Object)
+			}
+		})
+	}()
+}
+
+func (w *mainWindow) clearS3Objects() {
+	w.allS3Objects = nil
+	w.filteredS3Objects = nil
+	w.selectedS3Object = ""
+	w.s3ObjectDetail = nil
+	if w.s3ObjectTable != nil {
+		w.s3ObjectTable.clear()
+	}
+}
+
+func (w *mainWindow) applyS3ObjectFilter() {
+	w.filteredS3Objects = filterS3Objects(w.allS3Objects, w.search.Text(), w.s3Prefix)
+	rows := make([]string, len(w.filteredS3Objects))
+	for i, object := range w.filteredS3Objects {
+		kind, size, modified := "Object", formatS3Bytes(object.Size), formatTime(object.LastModified)
+		if object.IsPrefix {
+			kind, size, modified = "Folder", "—", "—"
+		}
+		rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s", s3ObjectDisplayName(object.Key, w.s3Prefix), kind, size, modified)
+	}
+	w.s3ObjectTable.replace(rows)
+}
+
+func (w *mainWindow) selectS3ObjectRow() {
+	if w.currentPage != pageS3Objects {
+		return
+	}
+	position := w.s3ObjectTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredS3Objects) {
+		if w.selectedS3Object != "" {
+			w.resetWorkspaceForBrowserChange()
+			w.selectedS3Object = ""
+			w.s3ObjectDetail = nil
+			w.setBreadcrumb(w.currentS3ObjectBreadcrumb())
+			w.setDetail(w.currentS3ObjectSummary(), detailIntro)
+		}
+		return
+	}
+	object := w.filteredS3Objects[position]
+	if w.selectedS3Object != object.Key {
+		w.resetWorkspaceForBrowserChange()
+	}
+	w.selectedS3Object = object.Key
+	w.s3ObjectDetail = nil
+	w.setBreadcrumb(w.currentS3ObjectBreadcrumb() + " / " + s3ObjectDisplayName(object.Key, w.s3Prefix))
+	if object.IsPrefix {
+		w.setDetail(formatS3Prefix(w.selectedS3Bucket, object.Key), detailS3Object)
+		return
+	}
+	w.setDetail(formatS3ObjectSummary(w.selectedS3Bucket, object), detailS3Object)
+	w.loadS3ObjectDetail(w.selectedS3Bucket, object.Key)
+}
+
+func (w *mainWindow) openS3ObjectAt(position uint) {
+	if int(position) >= len(w.filteredS3Objects) {
+		return
+	}
+	object := w.filteredS3Objects[position]
+	w.s3ObjectTable.selection.SetSelected(position)
+	if object.IsPrefix {
+		w.loadS3Objects(w.selectedS3Bucket, object.Key)
+	}
+}
+
+func (w *mainWindow) loadS3ObjectDetail(bucket, key string) {
+	if w.options.S3 == nil || bucket == "" || key == "" {
+		return
+	}
+	ctx, generation := w.startRequest("Loading S3 object metadata…")
+	go func() {
+		detail, err := w.options.S3.Detail(ctx, bucket, key)
+		w.finishRequest(ctx, generation, err, func() {
+			if w.currentPage != pageS3Objects || w.selectedS3Bucket != bucket || w.selectedS3Object != key {
+				return
+			}
+			w.s3ObjectDetail = detail
+			w.setDetail(formatS3ObjectDetail(bucket, detail), detailS3Object)
+		})
+	}()
+}
+
+func (w *mainWindow) promptS3KeySearch() {
+	if w.currentPage != pageS3Objects || w.selectedS3Bucket == "" {
+		return
+	}
+	initial := w.s3Prefix
+	if w.s3ObjectSearchActive {
+		initial = w.s3ObjectSearch
+	}
+	dialog, entry := w.newSavedLogNameDialog("Search S3 object keys", "Key prefix", initial)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Search", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.searchS3Objects(w.selectedS3Bucket, strings.TrimSpace(entry.Text()))
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) navigateS3Back() bool {
+	if w.currentPage != pageS3Objects {
+		return false
+	}
+	if !w.s3ObjectSearchActive && w.s3Prefix != "" {
+		w.loadS3Objects(w.selectedS3Bucket, parentS3Prefix(w.s3Prefix))
+		return true
+	}
+	w.resetWorkspaceForBrowserChange()
+	bucketName := w.selectedS3Bucket
+	w.currentPage = pageS3Buckets
+	w.clearS3Objects()
+	w.search.SetPlaceholderText("Filter buckets…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageS3Buckets)
+	w.backButton.SetSensitive(false)
+	w.applyS3BucketFilter()
+	if bucket, found := findS3Bucket(w.allS3Buckets, bucketName); found {
+		w.selectedS3Bucket = bucketName
+		w.setBreadcrumb(s3Breadcrumb(w.activeSavedS3Search, bucketName))
+		w.setDetail(formatS3Bucket(bucket), detailS3Bucket)
+		for index, candidate := range w.filteredS3Buckets {
+			if candidate.Name == bucketName {
+				w.s3BucketTable.selection.SetSelected(uint(index))
+				break
+			}
+		}
+	} else {
+		w.selectedS3Bucket = ""
+		w.setBreadcrumb(s3Breadcrumb(w.activeSavedS3Search, ""))
+		w.setDetail(s3BucketListSummary(w.s3BucketFilter, len(w.allS3Buckets)), detailIntro)
+	}
+	w.updateActionSensitivity()
+	w.setStatus("Ready", false)
+	return true
+}
+
+func (w *mainWindow) currentS3ObjectBreadcrumb() string {
+	value, searching := w.s3Prefix, false
+	if w.s3ObjectSearchActive {
+		value, searching = w.s3ObjectSearch, true
+	}
+	return s3ObjectBreadcrumb(w.activeSavedS3Search, w.selectedS3Bucket, value, searching)
+}
+
+func (w *mainWindow) currentS3ObjectSummary() string {
+	value, searching := w.s3Prefix, false
+	if w.s3ObjectSearchActive {
+		value, searching = w.s3ObjectSearch, true
+	}
+	return s3ObjectListSummary(w.selectedS3Bucket, value, searching, len(w.allS3Objects))
+}
+
+func filterS3Objects(objects []model.S3Object, query, prefix string) []model.S3Object {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return append([]model.S3Object(nil), objects...)
+	}
+	filtered := make([]model.S3Object, 0, len(objects))
+	for _, object := range objects {
+		if strings.Contains(strings.ToLower(s3ObjectDisplayName(object.Key, prefix)), query) {
+			filtered = append(filtered, object)
+		}
+	}
+	return filtered
+}
+
+func findS3Object(objects []model.S3Object, key string) (model.S3Object, bool) {
+	for _, object := range objects {
+		if object.Key == key {
+			return object, true
+		}
+	}
+	return model.S3Object{}, false
+}
+
+func s3ObjectDisplayName(key, prefix string) string {
+	relative := strings.TrimPrefix(key, prefix)
+	relative = strings.TrimSuffix(relative, "/")
+	if relative == "" {
+		return path.Base(strings.TrimSuffix(key, "/"))
+	}
+	return relative
+}
+
+func parentS3Prefix(prefix string) string {
+	prefix = strings.TrimSuffix(prefix, "/")
+	if index := strings.LastIndex(prefix, "/"); index >= 0 {
+		return prefix[:index+1]
+	}
+	return ""
+}
+
+func s3ObjectBreadcrumb(savedName, bucket, prefix string, searching bool) string {
+	root := "Buckets"
+	if savedName != "" {
+		root = savedName
+	}
+	crumb := "S3 / " + root + " / " + bucket
+	if searching {
+		if prefix == "" {
+			return crumb + " / Search: all keys"
+		}
+		return crumb + " / Search: " + prefix
+	}
+	if prefix != "" {
+		crumb += " / " + strings.TrimSuffix(prefix, "/")
+	}
+	return crumb
+}
+
+func s3ObjectListSummary(bucket, prefix string, searching bool, count int) string {
+	location := "s3://" + bucket + "/" + prefix
+	if searching {
+		location = "key-prefix search in s3://" + bucket + "/ for " + fmt.Sprintf("%q", prefix)
+	}
+	if count == 0 {
+		return "No S3 objects found for " + location + "."
+	}
+	return fmt.Sprintf("S3 OBJECTS\n\nLocation  %s\nResults   %d\n\nFolders are listed before objects. Double-click a folder to browse it; select an object to load metadata and tags.", location, count)
+}
+
+func formatS3Prefix(bucket, prefix string) string {
+	return fmt.Sprintf("S3 PREFIX\n\nURI  s3://%s/%s\n\nDouble-click this folder to browse its contents.", bucket, prefix)
+}
+
+func formatS3ObjectSummary(bucket string, object model.S3Object) string {
+	return fmt.Sprintf("S3 OBJECT\n\nURI            s3://%s/%s\nKey            %s\nSize           %s\nLast modified  %s\n\nLoading metadata and tags…",
+		bucket, object.Key, object.Key, formatS3Bytes(object.Size), formatTime(object.LastModified))
+}
+
+func formatS3ObjectDetail(bucket string, detail *model.S3ObjectDetail) string {
+	if detail == nil {
+		return "S3 object metadata is unavailable."
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "S3 OBJECT\n\nURI            s3://%s/%s\nKey            %s\nSize           %s\nContent type   %s\nETag           %s\nStorage class  %s\nLast modified  %s",
+		bucket, detail.Key, detail.Key, formatS3Bytes(detail.Size), valueOrDash(detail.ContentType), valueOrDash(detail.ETag), valueOrDash(detail.StorageClass), formatTime(detail.LastModified))
+	if len(detail.Tags) > 0 {
+		keys := make([]string, 0, len(detail.Tags))
+		for key := range detail.Tags {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		builder.WriteString("\n\nTAGS\n")
+		for _, key := range keys {
+			fmt.Fprintf(&builder, "\n%s = %s", key, detail.Tags[key])
+		}
+	}
+	return builder.String()
+}
+
+func formatS3Bytes(size int64) string {
+	switch {
+	case size >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(size)/float64(1<<30))
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(size)/float64(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(size)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
+}
+
+func valueIf(condition bool, ifTrue, ifFalse string) string {
+	if condition {
+		return ifTrue
+	}
+	return ifFalse
 }
 
 func (w *mainWindow) rebuildS3SearchRail() {

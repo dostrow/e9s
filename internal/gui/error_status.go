@@ -55,7 +55,7 @@ func moduleForPage(page string) string {
 		return moduleECR
 	case pageRDSInstances, pageRDSClusters:
 		return moduleRDS
-	case pageS3Buckets:
+	case pageS3Buckets, pageS3Objects:
 		return moduleS3
 	default:
 		return ""

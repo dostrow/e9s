@@ -40,6 +40,49 @@ func TestFindS3Search(t *testing.T) {
 	}
 }
 
+func TestS3ObjectNavigationHelpers(t *testing.T) {
+	if got := parentS3Prefix("reports/2026/august/"); got != "reports/2026/" {
+		t.Fatalf("parentS3Prefix() = %q", got)
+	}
+	if got := parentS3Prefix("reports/"); got != "" {
+		t.Fatalf("root parentS3Prefix() = %q", got)
+	}
+	if got := s3ObjectDisplayName("reports/2026/", "reports/"); got != "2026" {
+		t.Fatalf("s3ObjectDisplayName() = %q", got)
+	}
+	if got := s3ObjectBreadcrumb("", "archive", "reports/2026/", false); got != "S3 / Buckets / archive / reports/2026" {
+		t.Fatalf("s3ObjectBreadcrumb() = %q", got)
+	}
+	if got := s3ObjectBreadcrumb("Production", "archive", "reports/", true); got != "S3 / Production / archive / Search: reports/" {
+		t.Fatalf("search s3ObjectBreadcrumb() = %q", got)
+	}
+}
+
+func TestFilterS3ObjectsUsesRelativeNames(t *testing.T) {
+	objects := []model.S3Object{
+		{Key: "reports/2025/", IsPrefix: true},
+		{Key: "reports/summary.csv"},
+	}
+	got := filterS3Objects(objects, "SUMMARY", "reports/")
+	if len(got) != 1 || got[0].Key != "reports/summary.csv" {
+		t.Fatalf("filterS3Objects() = %#v", got)
+	}
+}
+
+func TestFormatS3ObjectDetailSortsTags(t *testing.T) {
+	detail := &model.S3ObjectDetail{
+		Key: "reports/summary.csv", Size: 2048, ContentType: "text/csv",
+		Tags: map[string]string{"zeta": "last", "alpha": "first"},
+	}
+	got := formatS3ObjectDetail("archive", detail)
+	if !containsAll(got, "s3://archive/reports/summary.csv", "2.0 KiB", "text/csv") {
+		t.Fatalf("formatS3ObjectDetail() = %q", got)
+	}
+	if strings.Index(got, "alpha = first") > strings.Index(got, "zeta = last") {
+		t.Fatalf("tags are not sorted in %q", got)
+	}
+}
+
 func containsAll(value string, parts ...string) bool {
 	for _, part := range parts {
 		if !strings.Contains(value, part) {

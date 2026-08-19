@@ -39,6 +39,7 @@ func TestModuleForPage(t *testing.T) {
 		pageRDSInstances:      moduleRDS,
 		pageRDSClusters:       moduleRDS,
 		pageS3Buckets:         moduleS3,
+		pageS3Objects:         moduleS3,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}

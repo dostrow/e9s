@@ -49,6 +49,7 @@ const (
 	pageRDSInstances      = "rds-instances"
 	pageRDSClusters       = "rds-clusters"
 	pageS3Buckets         = "s3-buckets"
+	pageS3Objects         = "s3-objects"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -78,6 +79,7 @@ const (
 	detailRDS              = "rds-instance"
 	detailRDSCluster       = "rds-cluster"
 	detailS3Bucket         = "s3-bucket"
+	detailS3Object         = "s3-object"
 )
 
 type mainWindow struct {
@@ -209,6 +211,13 @@ type mainWindow struct {
 	selectedS3Bucket            string
 	s3BucketFilter              string
 	activeSavedS3Search         string
+	allS3Objects                []model.S3Object
+	filteredS3Objects           []model.S3Object
+	selectedS3Object            string
+	s3Prefix                    string
+	s3ObjectSearch              string
+	s3ObjectSearchActive        bool
+	s3ObjectDetail              *model.S3ObjectDetail
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -241,6 +250,7 @@ type mainWindow struct {
 	rdsTable                    *stringTable
 	rdsClusterTable             *stringTable
 	s3BucketTable               *stringTable
+	s3ObjectTable               *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -337,6 +347,7 @@ type mainWindow struct {
 	ecrDeleteImageButton        *gtk.Button
 	s3SaveSearchButton          *gtk.Button
 	s3ManageSearchesButton      *gtk.Button
+	s3KeySearchButton           *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -626,6 +637,10 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
 	})
+	w.s3ObjectTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "TYPE", field: 1},
+		{title: "SIZE", field: 2}, {title: "MODIFIED", field: 3},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -652,6 +667,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsTable.view.ConnectActivate(w.openRDSInstanceAt)
 	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
 	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
+	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -677,6 +693,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSInstanceRow() })
 	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
+	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -817,6 +834,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.s3SaveSearchButton.ConnectClicked(w.promptSaveS3Search)
 	w.s3ManageSearchesButton = gtk.NewButtonWithLabel("Saved searches…")
 	w.s3ManageSearchesButton.ConnectClicked(w.promptManageS3Searches)
+	w.s3KeySearchButton = gtk.NewButtonWithLabel("Key prefix…")
+	w.s3KeySearchButton.ConnectClicked(w.promptS3KeySearch)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -906,6 +925,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.ecrDeleteImageButton)
 	header.Append(w.s3SaveSearchButton)
 	header.Append(w.s3ManageSearchesButton)
+	header.Append(w.s3KeySearchButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1185,6 +1205,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	s3BucketScroll.SetVExpand(true)
 	s3BucketScroll.SetHExpand(true)
 	s3BucketScroll.SetChild(w.s3BucketTable.view)
+	s3ObjectScroll := gtk.NewScrolledWindow()
+	s3ObjectScroll.SetVExpand(true)
+	s3ObjectScroll.SetHExpand(true)
+	s3ObjectScroll.SetChild(w.s3ObjectTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1221,6 +1245,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(rdsScroll, pageRDSInstances)
 	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
 	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
+	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -2217,6 +2242,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyS3BucketFilter()
 		return
 	}
+	if w.currentPage == pageS3Objects {
+		w.applyS3ObjectFilter()
+		return
+	}
 	if w.currentPage == pageECRRepositories {
 		w.applyECRRepositoryFilter()
 		return
@@ -2382,6 +2411,9 @@ func (w *mainWindow) navigateBrowserBack() {
 		return
 	}
 	if w.navigateResourceHistoryBack() {
+		return
+	}
+	if w.navigateS3Back() {
 		return
 	}
 	if w.currentPage == pageRDSInstances && w.rdsClusterContext != "" {
@@ -2658,6 +2690,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 			return
 		}
 		w.refreshS3Buckets(foreground)
+		return
+	}
+	if w.currentPage == pageS3Objects {
+		w.refreshS3Objects(foreground)
 		return
 	}
 	if w.currentPage == pageEC2LoadBalancers {
@@ -3037,10 +3073,10 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.rdsClustersNavButton.SetActive(w.currentPage == pageRDSClusters)
 		}
 		if w.s3BucketsNavButton != nil {
-			w.s3BucketsNavButton.SetActive(w.currentPage == pageS3Buckets && w.activeSavedS3Search == "")
+			w.s3BucketsNavButton.SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && w.activeSavedS3Search == "")
 			for i, search := range w.options.ConfigS3Searches() {
 				if i < len(w.savedS3SearchButtons) {
-					w.savedS3SearchButtons[i].SetActive(w.currentPage == pageS3Buckets && search.Name == w.activeSavedS3Search)
+					w.savedS3SearchButtons[i].SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && search.Name == w.activeSavedS3Search)
 				}
 			}
 		}
@@ -3229,6 +3265,9 @@ func (w *mainWindow) updateActionSensitivity() {
 	hasSavedS3Searches := w.options.Config != nil && len(w.options.Config.S3Searches) > 0
 	w.s3ManageSearchesButton.SetVisible(s3Page && hasSavedS3Searches)
 	w.s3ManageSearchesButton.SetSensitive(s3Page && hasSavedS3Searches)
+	s3ObjectPage := w.currentPage == pageS3Objects
+	w.s3KeySearchButton.SetVisible(s3ObjectPage)
+	w.s3KeySearchButton.SetSensitive(s3ObjectPage && w.options.S3 != nil)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""
