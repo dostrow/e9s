@@ -73,6 +73,16 @@ func TestTransformService(t *testing.T) {
 				CreatedAt:      timePtr(now),
 			},
 		},
+		LoadBalancers: []types.LoadBalancer{{
+			TargetGroupArn: strPtr("arn:target-group:primary"),
+			AdvancedConfiguration: &types.AdvancedConfiguration{
+				AlternateTargetGroupArn: strPtr("arn:target-group:alternate"),
+			},
+		}},
+		TaskSets: []types.TaskSet{{LoadBalancers: []types.LoadBalancer{
+			{TargetGroupArn: strPtr("arn:target-group:task-set")},
+			{TargetGroupArn: strPtr("arn:target-group:primary")},
+		}}},
 	}
 
 	result := TransformService(s)
@@ -91,6 +101,14 @@ func TestTransformService(t *testing.T) {
 	}
 	if result.Deployments[0].Status != "PRIMARY" {
 		t.Errorf("Deployment Status = %q, want %q", result.Deployments[0].Status, "PRIMARY")
+	}
+	if got, want := len(result.TargetGroups), 3; got != want {
+		t.Fatalf("TargetGroups count = %d, want %d: %#v", got, want, result.TargetGroups)
+	}
+	for index, want := range []string{"arn:target-group:primary", "arn:target-group:alternate", "arn:target-group:task-set"} {
+		if result.TargetGroups[index].ID != want {
+			t.Errorf("TargetGroups[%d] = %q, want %q", index, result.TargetGroups[index].ID, want)
+		}
 	}
 }
 

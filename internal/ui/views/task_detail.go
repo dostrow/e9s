@@ -91,7 +91,7 @@ func (m TaskDetailModel) lines() []string {
 		lines = append(lines, "", theme.TitleStyle.Render("  Service Context"), "")
 		lines = append(lines, fmt.Sprintf("  %-26s %s", "Parent Service:", m.parentService))
 		if len(m.configuredTargetGroups) == 0 {
-			lines = append(lines, fmt.Sprintf("  %-26s %s", "Configured Target Groups:", "none"))
+			lines = append(lines, fmt.Sprintf("  %-26s %s", "Configured Target Groups:", "none returned by ECS"))
 		}
 		for index, targetGroup := range m.configuredTargetGroups {
 			label := ""

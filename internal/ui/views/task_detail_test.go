@@ -36,3 +36,13 @@ func TestTaskDetailShowsParentServiceTargetGroups(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskDetailStatesWhenParentHasNoTargetGroups(t *testing.T) {
+	view := NewTaskDetail(&model.Task{TaskID: "task-1"}).
+		SetServiceContext(&model.Service{Name: "api"}).
+		SetSize(100, 40).
+		View()
+	if !strings.Contains(view, "Configured Target Groups:") || !strings.Contains(view, "none returned by ECS") {
+		t.Fatalf("task detail did not make empty target groups explicit:\n%s", view)
+	}
+}

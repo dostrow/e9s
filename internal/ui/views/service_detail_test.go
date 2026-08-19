@@ -19,3 +19,10 @@ func TestServiceDetailShowsConfiguredResources(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceDetailStatesWhenECSReturnsNoTargetGroups(t *testing.T) {
+	view := NewServiceDetail(&model.Service{Name: "api"}).View()
+	if !strings.Contains(view, "Target Groups:") || !strings.Contains(view, "none returned by ECS") {
+		t.Fatalf("service detail did not make empty target groups explicit:\n%s", view)
+	}
+}

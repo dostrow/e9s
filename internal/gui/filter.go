@@ -192,9 +192,21 @@ func formatServiceTaskContext(cluster string, svc model.Service, tasks []model.T
 	if hasMore {
 		more = " • more available"
 	}
-	return fmt.Sprintf("SERVICE TASKS\n\n%s / %s\n\nStatus            %s\nHealth            %s\nDesired           %d\nRunning           %d\nPending           %d\nTask definition   %s\nScope             %s\nLoaded            %d%s\n\nSelect a task to inspect it.",
+	var targetGroups strings.Builder
+	if len(svc.TargetGroups) == 0 {
+		targetGroups.WriteString("\nTarget groups     none returned by ECS")
+	} else {
+		for index, targetGroup := range svc.TargetGroups {
+			label := ""
+			if index == 0 {
+				label = "Target groups"
+			}
+			fmt.Fprintf(&targetGroups, "\n%-17s %s", label, targetGroup.ID)
+		}
+	}
+	return fmt.Sprintf("SERVICE TASKS\n\n%s / %s\n\nStatus            %s\nHealth            %s\nDesired           %d\nRunning           %d\nPending           %d\nTask definition   %s%s\nScope             %s\nLoaded            %d%s\n\nSelect a task to inspect it.",
 		cluster, svc.Name, valueOrDash(svc.Status), valueOrDash(svc.HealthStatus), svc.DesiredCount,
-		svc.RunningCount, svc.PendingCount, valueOrDash(svc.TaskDefinition), scope, len(tasks), more)
+		svc.RunningCount, svc.PendingCount, valueOrDash(svc.TaskDefinition), targetGroups.String(), scope, len(tasks), more)
 }
 
 func formatServiceStoppedTasksDetail(cluster string, svc model.Service, tasks []model.Task, hasMore bool) string {
@@ -219,11 +231,18 @@ func formatServiceDetailWithTasks(cluster string, svc model.Service, tasks []mod
 	fmt.Fprintf(&out, "ECS Exec          %s\n", yesNo(svc.EnableExecuteCommand))
 
 	out.WriteString("\nCONFIGURED RESOURCES\n")
-	if len(svc.TargetGroups) == 0 && len(svc.SecurityGroups) == 0 {
-		out.WriteString("  No linked infrastructure\n")
+	if len(svc.TargetGroups) == 0 {
+		out.WriteString("  Target groups      none returned by ECS\n")
 	}
-	for _, targetGroup := range svc.TargetGroups {
-		fmt.Fprintf(&out, "  %-18s %s\n", "Target group", targetGroup.ID)
+	for index, targetGroup := range svc.TargetGroups {
+		label := ""
+		if index == 0 {
+			label = "Target groups"
+		}
+		fmt.Fprintf(&out, "  %-18s %s\n", label, targetGroup.ID)
+	}
+	if len(svc.SecurityGroups) == 0 {
+		out.WriteString("  Security groups    none returned by ECS\n")
 	}
 	for _, group := range svc.SecurityGroups {
 		fmt.Fprintf(&out, "  %-18s %s\n", "Security group", group.ID)

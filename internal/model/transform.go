@@ -34,11 +34,7 @@ func TransformService(s types.Service) Service {
 	for _, d := range s.Deployments {
 		svc.Deployments = append(svc.Deployments, TransformDeployment(d))
 	}
-	for _, loadBalancer := range s.LoadBalancers {
-		if arn := derefStr(loadBalancer.TargetGroupArn); arn != "" {
-			svc.TargetGroups = append(svc.TargetGroups, ResourceRef{Kind: "ec2-target-group", ID: arn})
-		}
-	}
+	svc.TargetGroups = transformServiceTargetGroups(s)
 	if s.NetworkConfiguration != nil && s.NetworkConfiguration.AwsvpcConfiguration != nil {
 		for _, groupID := range s.NetworkConfiguration.AwsvpcConfiguration.SecurityGroups {
 			svc.SecurityGroups = append(svc.SecurityGroups, EC2SecurityGroupRef{ID: groupID})
@@ -55,6 +51,31 @@ func TransformService(s types.Service) Service {
 
 	svc.HealthStatus = computeServiceHealth(svc)
 	return svc
+}
+
+func transformServiceTargetGroups(s types.Service) []ResourceRef {
+	seen := make(map[string]bool)
+	var refs []ResourceRef
+	appendLoadBalancers := func(loadBalancers []types.LoadBalancer) {
+		for _, loadBalancer := range loadBalancers {
+			arns := []string{derefStr(loadBalancer.TargetGroupArn)}
+			if loadBalancer.AdvancedConfiguration != nil {
+				arns = append(arns, derefStr(loadBalancer.AdvancedConfiguration.AlternateTargetGroupArn))
+			}
+			for _, arn := range arns {
+				if arn == "" || seen[arn] {
+					continue
+				}
+				seen[arn] = true
+				refs = append(refs, ResourceRef{Kind: "ec2-target-group", ID: arn})
+			}
+		}
+	}
+	appendLoadBalancers(s.LoadBalancers)
+	for _, taskSet := range s.TaskSets {
+		appendLoadBalancers(taskSet.LoadBalancers)
+	}
+	return refs
 }
 
 func TransformDeployment(d types.Deployment) Deployment {

@@ -280,7 +280,11 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 
 func (w *mainWindow) renderTaskDetail(task model.Task) {
 	var parent *model.Service
-	if serviceValue, found := findService(w.allServices, w.selectedService); found {
+	parentName := w.selectedService
+	if strings.HasPrefix(task.Group, "service:") {
+		parentName = strings.TrimPrefix(task.Group, "service:")
+	}
+	if serviceValue, found := findService(w.allServices, parentName); found {
 		parent = &serviceValue
 	}
 	refs := service.ECSTaskResourceRefs(task, parent)
@@ -289,7 +293,7 @@ func (w *mainWindow) renderTaskDetail(task model.Task) {
 		var context strings.Builder
 		fmt.Fprintf(&context, "\n\nSERVICE CONTEXT\n  Parent service         %s", parent.Name)
 		if len(parent.TargetGroups) == 0 {
-			context.WriteString("\n  Configured target groups  none")
+			context.WriteString("\n  Configured target groups  none returned by ECS")
 		} else {
 			for index, targetGroup := range parent.TargetGroups {
 				label := ""

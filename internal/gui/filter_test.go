@@ -184,8 +184,9 @@ func TestFormatServiceOverviewIncludesConfiguredResourcesWithoutUnloadedTasks(t 
 func TestFormatServiceTaskContextIsCompact(t *testing.T) {
 	got := formatServiceTaskContext("prod", model.Service{
 		Name: "api", Status: "ACTIVE", HealthStatus: "healthy", DesiredCount: 3, RunningCount: 2, TaskDefinition: "api:7",
+		TargetGroups: []model.ResourceRef{{Kind: "ec2-target-group", ID: "arn:target-group:api"}},
 	}, []model.Task{{TaskID: "one"}, {TaskID: "two"}}, false, true)
-	for _, want := range []string{"SERVICE TASKS", "prod / api", "Active tasks", "Loaded", "2 • more available", "Select a task"} {
+	for _, want := range []string{"SERVICE TASKS", "prod / api", "Target groups", "arn:target-group:api", "Active tasks", "Loaded", "2 • more available", "Select a task"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatServiceTaskContext() missing %q:\n%s", want, got)
 		}
@@ -194,6 +195,13 @@ func TestFormatServiceTaskContextIsCompact(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("formatServiceTaskContext() unexpectedly contains %q:\n%s", unwanted, got)
 		}
+	}
+}
+
+func TestFormatServiceOverviewStatesWhenECSReturnsNoTargetGroups(t *testing.T) {
+	got := formatServiceOverview("prod", model.Service{Name: "api"})
+	if !strings.Contains(got, "Target groups") || !strings.Contains(got, "none returned by ECS") {
+		t.Fatalf("service overview did not make empty target groups explicit:\n%s", got)
 	}
 }
 
