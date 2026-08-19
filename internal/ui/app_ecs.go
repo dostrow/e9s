@@ -1011,6 +1011,14 @@ func (a App) refreshCurrentView() tea.Cmd {
 			_, cmd := a.loadEC2SubnetDetail(a.ec2SubnetDetail.SubnetID)
 			return cmd
 		}
+	case viewEC2Volumes:
+		_, cmd := a.openEC2Volumes()
+		return cmd
+	case viewEC2VolumeDetail:
+		if a.ec2VolumeDetail != nil {
+			_, cmd := a.loadEC2VolumeDetail(a.ec2VolumeDetail.VolumeID)
+			return cmd
+		}
 	case viewRDSInstances:
 		return a.refreshRDSInstances()
 	case viewRDSDetail:

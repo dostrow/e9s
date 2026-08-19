@@ -270,6 +270,8 @@ type ec2VPCsLoadedMsg struct{ vpcs []model.EC2VPC }
 type ec2VPCLoadedMsg struct{ vpc *model.EC2VPC }
 type ec2SubnetsLoadedMsg struct{ subnets []model.EC2Subnet }
 type ec2SubnetLoadedMsg struct{ subnet *model.EC2Subnet }
+type ec2VolumesLoadedMsg struct{ volumes []model.EC2Volume }
+type ec2VolumeLoadedMsg struct{ volume *model.EC2Volume }
 
 // --- ECR Messages ---
 

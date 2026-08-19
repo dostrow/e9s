@@ -86,6 +86,8 @@ const (
 	viewEC2VPCDetail
 	viewEC2Subnets
 	viewEC2SubnetDetail
+	viewEC2Volumes
+	viewEC2VolumeDetail
 	viewECRRepos
 	viewECRImages
 	viewECRFindings
@@ -111,6 +113,7 @@ type App struct {
 	codeBuild                  *service.CodeBuild
 	ec2                        *service.EC2
 	ec2Network                 *service.EC2Network
+	ebs                        *service.EBS
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -164,6 +167,8 @@ type App struct {
 	ec2Subnets                 []model.EC2Subnet
 	ec2SubnetDetail            *model.EC2Subnet
 	ec2SubnetVPCFilter         string
+	ec2Volumes                 []model.EC2Volume
+	ec2VolumeDetail            *model.EC2Volume
 	ecrReposView               views.ECRReposModel
 	ecrImagesView              views.ECRImagesModel
 	ecrFindingsView            views.ECRFindingsModel
@@ -307,6 +312,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		codeBuild:    service.NewCodeBuild(client),
 		ec2:          service.NewEC2(client),
 		ec2Network:   service.NewEC2Network(client),
+		ebs:          service.NewEBS(client),
 		ctx:          ctx,
 		cancel:       cancel,
 		cfg:          cfg,
@@ -1235,6 +1241,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.ec2SubnetDetail = msg.subnet
 		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2Subnet(*msg.subnet)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case ec2VolumesLoadedMsg:
+		if a.state != viewEC2Volumes {
+			return a, nil
+		}
+		a.ec2Volumes = msg.volumes
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2VolumeRows(msg.volumes))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2VolumeLoadedMsg:
+		if a.state != viewEC2VolumeDetail {
+			return a, nil
+		}
+		a.ec2VolumeDetail = msg.volume
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2Volume(*msg.volume)).SetSize(a.width-3, a.height-6)
 		a.loading = false
 		return a, nil
 
@@ -2274,9 +2296,9 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.ec2SecurityGroupsView, cmd = a.ec2SecurityGroupsView.Update(msg)
 	case viewEC2SecurityGroupDetail:
 		a.ec2SecurityGroupDetailView, cmd = a.ec2SecurityGroupDetailView.Update(msg)
-	case viewEC2VPCs, viewEC2Subnets:
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes:
 		a.ec2ResourceListView, cmd = a.ec2ResourceListView.Update(msg)
-	case viewEC2VPCDetail, viewEC2SubnetDetail:
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail:
 		a.ec2ResourceDetailView, cmd = a.ec2ResourceDetailView.Update(msg)
 	}
 	return a, cmd
@@ -2324,7 +2346,7 @@ func (a App) isFiltering() bool {
 		return a.ec2InstancesView.IsFiltering()
 	case viewEC2SecurityGroups:
 		return a.ec2SecurityGroupsView.IsFiltering()
-	case viewEC2VPCs, viewEC2Subnets:
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes:
 		return a.ec2ResourceListView.IsFiltering()
 	case viewTofuResources:
 		return a.tofuResourcesView.IsFiltering()
@@ -2484,9 +2506,9 @@ func (a App) View() string {
 		content = a.ec2SecurityGroupsView.View()
 	case viewEC2SecurityGroupDetail:
 		content = a.ec2SecurityGroupDetailView.View()
-	case viewEC2VPCs, viewEC2Subnets:
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes:
 		content = a.ec2ResourceListView.View()
-	case viewEC2VPCDetail, viewEC2SubnetDetail:
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail:
 		content = a.ec2ResourceDetailView.View()
 	}
 
@@ -2670,9 +2692,9 @@ func (a App) helpText() string {
 		primary = "[enter] detail"
 	case viewEC2SecurityGroupDetail:
 		primary = "[o] linked resources"
-	case viewEC2VPCs, viewEC2Subnets:
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes:
 		primary = "[enter] detail"
-	case viewEC2VPCDetail, viewEC2SubnetDetail:
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail:
 		primary = "[o] linked resources"
 	}
 	if primary != "" {
@@ -3102,9 +3124,9 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
-	case viewEC2VPCs, viewEC2Subnets:
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes:
 		context = []kv{{"enter", "View detail"}, {"/", "Filter resources"}, {kb.EC2Resource, "Switch EC2 resource"}}
-	case viewEC2VPCDetail, viewEC2SubnetDetail:
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail:
 		context = []kv{{kb.OpenResource, "Open linked resource"}, {kb.EC2Resource, "Switch EC2 resource"}, {"j/k", "Scroll"}}
 	}
 
@@ -3252,6 +3274,10 @@ func (a App) drillDown() (App, tea.Cmd) {
 	case viewEC2Subnets:
 		if id := a.ec2ResourceListView.SelectedID(); id != "" {
 			return a.loadEC2SubnetDetail(id)
+		}
+	case viewEC2Volumes:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2VolumeDetail(id)
 		}
 	}
 	return a, nil
@@ -3636,6 +3662,17 @@ func (a App) goBack() (App, tea.Cmd) {
 			return a.navigateEC2Resource(ref, false)
 		}
 		a.state = viewEC2Subnets
+		return a, nil
+	case viewEC2Volumes:
+		return a.showModePicker()
+	case viewEC2VolumeDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2Volumes
 		return a, nil
 	}
 	return a, nil

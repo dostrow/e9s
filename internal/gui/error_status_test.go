@@ -30,6 +30,7 @@ func TestModuleForPage(t *testing.T) {
 		pageEC2SecurityGroups: moduleEC2,
 		pageEC2VPCs:           moduleEC2,
 		pageEC2Subnets:        moduleEC2,
+		pageEC2Volumes:        moduleEC2,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}

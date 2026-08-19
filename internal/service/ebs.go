@@ -29,6 +29,10 @@ func (s *EBS) List(ctx context.Context, filter string) ([]model.EC2Volume, error
 	if err != nil {
 		return nil, fmt.Errorf("list EBS volumes: %w", err)
 	}
+	return FilterEBSVolumes(volumes, filter), nil
+}
+
+func FilterEBSVolumes(volumes []model.EC2Volume, filter string) []model.EC2Volume {
 	filter = normalizedFilter(filter)
 	filtered := make([]model.EC2Volume, 0, len(volumes))
 	for _, volume := range volumes {
@@ -48,7 +52,7 @@ func (s *EBS) List(ctx context.Context, filter string) ([]model.EC2Volume, error
 		}
 		return compareNameID(filtered[i].Name, filtered[i].VolumeID, filtered[j].Name, filtered[j].VolumeID)
 	})
-	return filtered, nil
+	return filtered
 }
 
 func (s *EBS) Detail(ctx context.Context, volumeID string) (*model.EC2Volume, error) {

@@ -93,6 +93,8 @@ func (a App) switchEC2Resource() (App, tea.Cmd) {
 	case viewEC2VPCs, viewEC2VPCDetail:
 		return a.openEC2Subnets("")
 	case viewEC2Subnets, viewEC2SubnetDetail:
+		return a.openEC2Volumes()
+	case viewEC2Volumes, viewEC2VolumeDetail:
 		return a.openEC2Instances("")
 	}
 	return a.openEC2Instances("")
@@ -127,7 +129,7 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 		if detail == nil {
 			return nil
 		}
-		links := make([]model.ResourceRef, 0, len(detail.SecurityGroups)+2)
+		links := make([]model.ResourceRef, 0, len(detail.SecurityGroups)+len(detail.Volumes)+2)
 		if detail.VpcID != "" {
 			links = append(links, model.ResourceRef{Kind: "ec2-vpc", ID: detail.VpcID})
 		}
@@ -136,6 +138,11 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 		}
 		for _, group := range detail.SecurityGroups {
 			links = append(links, model.ResourceRef{Kind: "ec2-security-group", ID: group.ID, Name: group.Name})
+		}
+		for _, volume := range detail.Volumes {
+			if volume.VolumeID != "" {
+				links = append(links, model.ResourceRef{Kind: "ec2-volume", ID: volume.VolumeID, Name: volume.Name})
+			}
 		}
 		return links
 	case viewEC2SecurityGroupDetail:
@@ -161,6 +168,16 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 		if a.ec2SubnetDetail != nil && a.ec2SubnetDetail.VpcID != "" {
 			return []model.ResourceRef{{Kind: "ec2-vpc", ID: a.ec2SubnetDetail.VpcID}}
 		}
+	case viewEC2VolumeDetail:
+		if a.ec2VolumeDetail != nil {
+			links := make([]model.ResourceRef, 0, len(a.ec2VolumeDetail.Attachments))
+			for _, attachment := range a.ec2VolumeDetail.Attachments {
+				if attachment.InstanceID != "" {
+					links = append(links, model.ResourceRef{Kind: "ec2-instance", ID: attachment.InstanceID})
+				}
+			}
+			return links
+		}
 	}
 	return nil
 }
@@ -182,6 +199,10 @@ func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
 	case viewEC2SubnetDetail:
 		if a.ec2SubnetDetail != nil {
 			return model.ResourceRef{Kind: "ec2-subnet", ID: a.ec2SubnetDetail.SubnetID, Name: a.ec2SubnetDetail.Name}, true
+		}
+	case viewEC2VolumeDetail:
+		if a.ec2VolumeDetail != nil {
+			return model.ResourceRef{Kind: "ec2-volume", ID: a.ec2VolumeDetail.VolumeID, Name: a.ec2VolumeDetail.Name}, true
 		}
 	}
 	return model.ResourceRef{}, false
@@ -225,6 +246,8 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 		a, cmd := a.openEC2Subnets(ref.ID)
 		a.resourceHistory = originHistory
 		return a, cmd
+	case "ec2-volume":
+		return a.loadEC2VolumeDetail(ref.ID)
 	default:
 		a.loading = false
 		a.err = fmt.Errorf("navigation is not implemented for %s", ref.Kind)

@@ -54,6 +54,8 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 		w.loadEC2Subnets(ref.ID, "")
 	case "ec2-subnets":
 		w.loadEC2Subnets("", ref.ID)
+	case "ec2-volume":
+		w.loadEC2Volumes(ref.ID)
 	default:
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
 	}
@@ -76,6 +78,10 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	case pageEC2Subnets:
 		if w.selectedEC2Subnet != "" {
 			return model.ResourceRef{Kind: "ec2-subnet", ID: w.selectedEC2Subnet}, true
+		}
+	case pageEC2Volumes:
+		if w.selectedEC2Volume != "" {
+			return model.ResourceRef{Kind: "ec2-volume", ID: w.selectedEC2Volume}, true
 		}
 	}
 	return model.ResourceRef{}, false
@@ -113,6 +119,11 @@ func (w *mainWindow) setEC2InstanceResourceLinks(detail model.EC2InstanceDetail)
 			label: "Security group: " + label,
 			ref:   model.ResourceRef{Kind: "ec2-security-group", ID: group.ID, Name: group.Name},
 		})
+	}
+	for _, volume := range detail.Volumes {
+		if volume.VolumeID != "" {
+			links = append(links, workspaceResourceLink{label: "Volume: " + volume.VolumeID, ref: model.ResourceRef{Kind: "ec2-volume", ID: volume.VolumeID}})
+		}
 	}
 	w.setDetailResourceLinks(links)
 }

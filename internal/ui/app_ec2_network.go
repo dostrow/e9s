@@ -39,6 +39,59 @@ func (a App) openEC2Subnets(vpcID string) (App, tea.Cmd) {
 	}
 }
 
+func (a App) openEC2Volumes() (App, tea.Cmd) {
+	a.state, a.mode, a.loading = viewEC2Volumes, modeEC2, true
+	a.resourceHistory = nil
+	a.ec2ResourceListView = views.NewEC2ResourceList("EBS Volumes", []string{"NAME", "VOLUME ID", "STATE", "TYPE", "SIZE", "AZ", "ATTACHED TO"}).SetSize(a.width-3, a.height-6)
+	service, ctx := a.ebs, a.ctx
+	return a, func() tea.Msg {
+		volumes, err := service.List(ctx, "")
+		if err != nil {
+			return errMsg{err}
+		}
+		return ec2VolumesLoadedMsg{volumes}
+	}
+}
+
+func (a App) loadEC2VolumeDetail(volumeID string) (App, tea.Cmd) {
+	a.state, a.loading = viewEC2VolumeDetail, true
+	service, ctx := a.ebs, a.ctx
+	return a, func() tea.Msg {
+		volume, err := service.Detail(ctx, volumeID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return ec2VolumeLoadedMsg{volume}
+	}
+}
+
+func ec2VolumeRows(volumes []model.EC2Volume) []views.EC2ResourceRow {
+	rows := make([]views.EC2ResourceRow, len(volumes))
+	for i, v := range volumes {
+		attached := []string{}
+		for _, a := range v.Attachments {
+			attached = append(attached, a.InstanceID+" "+a.DeviceName)
+		}
+		rows[i] = views.EC2ResourceRow{ID: v.VolumeID, Search: tagSearch(v.Tags), Cells: []string{v.Name, v.VolumeID, v.State, v.VolumeType, fmt.Sprintf("%d GiB", v.Size), v.AZ, strings.Join(attached, ",")}}
+	}
+	return rows
+}
+
+func formatTUIEC2Volume(v model.EC2Volume) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "  EBS Volume: %s\n\n  Volume ID:    %s\n  State:        %s\n  Type:         %s\n  Size:         %d GiB\n  AZ:           %s\n  IOPS:         %d\n  Throughput:   %d MiB/s\n  Encrypted:    %t\n  KMS key:      %s\n  Snapshot:     %s\n  Multi-attach: %t\n\n  Attachments", firstNonBlank(v.Name, v.VolumeID), v.VolumeID, v.State, v.VolumeType, v.Size, v.AZ, v.IOPS, v.Throughput, v.Encrypted, v.KMSKeyID, v.SnapshotID, v.MultiAttach)
+	if len(v.Attachments) == 0 {
+		out.WriteString("\n\n  None (unattached)")
+	} else {
+		for _, a := range v.Attachments {
+			fmt.Fprintf(&out, "\n\n  %-20s %-14s %s", a.InstanceID, a.DeviceName, a.State)
+		}
+		out.WriteString("\n\n  [o] open attached instance")
+	}
+	appendTUITags(&out, v.Tags)
+	return out.String()
+}
+
 func (a App) loadEC2VPCDetail(vpcID string) (App, tea.Cmd) {
 	a.state, a.loading = viewEC2VPCDetail, true
 	service, ctx := a.ec2Network, a.ctx

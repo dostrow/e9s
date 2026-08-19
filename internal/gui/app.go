@@ -106,6 +106,11 @@ type EC2NetworkService interface {
 	Subnet(context.Context, string) (*model.EC2Subnet, error)
 }
 
+type EBSService interface {
+	List(context.Context, string) ([]model.EC2Volume, error)
+	Detail(context.Context, string) (*model.EC2Volume, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -116,6 +121,7 @@ type Options struct {
 	CodeBuild       CodeBuildService
 	EC2             EC2Service
 	EC2Network      EC2NetworkService
+	EBS             EBSService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

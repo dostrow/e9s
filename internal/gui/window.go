@@ -40,6 +40,7 @@ const (
 	pageEC2SecurityGroups = "ec2-security-groups"
 	pageEC2VPCs           = "ec2-vpcs"
 	pageEC2Subnets        = "ec2-subnets"
+	pageEC2Volumes        = "ec2-volumes"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -59,6 +60,7 @@ const (
 	detailEC2SecurityGroup = "ec2-security-group"
 	detailEC2VPC           = "ec2-vpc"
 	detailEC2Subnet        = "ec2-subnet"
+	detailEC2Volume        = "ec2-volume"
 	detailEC2Console       = "ec2-console"
 )
 
@@ -154,6 +156,10 @@ type mainWindow struct {
 	selectedEC2Subnet           string
 	ec2SubnetVPCFilter          string
 	ec2SubnetDetail             *model.EC2Subnet
+	allEC2Volumes               []model.EC2Volume
+	filteredEC2Volumes          []model.EC2Volume
+	selectedEC2Volume           string
+	ec2VolumeDetail             *model.EC2Volume
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -177,6 +183,7 @@ type mainWindow struct {
 	ec2SecurityGroupTable       *stringTable
 	ec2VPCTable                 *stringTable
 	ec2SubnetTable              *stringTable
+	ec2VolumeTable              *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -208,6 +215,7 @@ type mainWindow struct {
 	ec2SecurityGroupsNavButton  *gtk.ToggleButton
 	ec2VPCsNavButton            *gtk.ToggleButton
 	ec2SubnetsNavButton         *gtk.ToggleButton
+	ec2VolumesNavButton         *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -498,6 +506,10 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "VPC", field: 2}, {title: "AZ", field: 3}, {title: "CIDR", field: 4},
 		{title: "AVAILABLE IPS", field: 5}, {title: "PUBLIC IP", field: 6},
 	})
+	w.ec2VolumeTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "VOLUME ID", field: 1}, {title: "STATE", field: 2},
+		{title: "TYPE", field: 3}, {title: "SIZE", field: 4}, {title: "AZ", field: 5}, {title: "ATTACHED TO", field: 6, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -515,6 +527,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ec2SecurityGroupTable.view.ConnectActivate(w.openEC2SecurityGroupAt)
 	w.ec2VPCTable.view.ConnectActivate(w.openEC2VPCAt)
 	w.ec2SubnetTable.view.ConnectActivate(w.openEC2SubnetAt)
+	w.ec2VolumeTable.view.ConnectActivate(w.openEC2VolumeAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
@@ -527,6 +540,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ec2SecurityGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2SecurityGroupRow() })
 	w.ec2VPCTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2VPCRow() })
 	w.ec2SubnetTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2SubnetRow() })
+	w.ec2VolumeTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2VolumeRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -774,12 +788,15 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ec2VPCsNavButton.SetGroup(w.clustersNavButton)
 	w.ec2SubnetsNavButton = newModuleRailButton("Subnets", w.openEC2SubnetsModule)
 	w.ec2SubnetsNavButton.SetGroup(w.clustersNavButton)
+	w.ec2VolumesNavButton = newModuleRailButton("Volumes", w.openEC2VolumesModule)
+	w.ec2VolumesNavButton.SetGroup(w.clustersNavButton)
 	w.ec2ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.ec2ModuleItems.AddCSSClass("module-subitems")
 	w.ec2ModuleItems.Append(w.ec2InstancesNavButton)
 	w.ec2ModuleItems.Append(w.ec2SecurityGroupsNavButton)
 	w.ec2ModuleItems.Append(w.ec2VPCsNavButton)
 	w.ec2ModuleItems.Append(w.ec2SubnetsNavButton)
+	w.ec2ModuleItems.Append(w.ec2VolumesNavButton)
 	ec2Instances := w.newModuleExpander("EC2", moduleEC2, w.ec2ModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
@@ -949,6 +966,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ec2SubnetScroll.SetVExpand(true)
 	ec2SubnetScroll.SetHExpand(true)
 	ec2SubnetScroll.SetChild(w.ec2SubnetTable.view)
+	ec2VolumeScroll := gtk.NewScrolledWindow()
+	ec2VolumeScroll.SetVExpand(true)
+	ec2VolumeScroll.SetHExpand(true)
+	ec2VolumeScroll.SetChild(w.ec2VolumeTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -976,6 +997,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(ec2SecurityGroupScroll, pageEC2SecurityGroups)
 	w.resourceStack.AddNamed(ec2VPCScroll, pageEC2VPCs)
 	w.resourceStack.AddNamed(ec2SubnetScroll, pageEC2Subnets)
+	w.resourceStack.AddNamed(ec2VolumeScroll, pageEC2Volumes)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1469,6 +1491,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.ec2SecurityGroupDetail = nil
 	w.ec2VPCDetail = nil
 	w.ec2SubnetDetail = nil
+	w.ec2VolumeDetail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1896,6 +1919,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyEC2SubnetFilter()
 		return
 	}
+	if w.currentPage == pageEC2Volumes {
+		w.applyEC2VolumeFilter()
+		return
+	}
 	if w.currentPage == pageSecrets {
 		w.applySecretFilter()
 		return
@@ -2170,6 +2197,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageEC2Subnets {
 		w.refreshEC2Subnets(foreground)
+		return
+	}
+	if w.currentPage == pageEC2Volumes {
+		w.refreshEC2Volumes(foreground)
 		return
 	}
 	if w.currentPage == pageSecrets {
@@ -2508,6 +2539,7 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.ec2SecurityGroupsNavButton.SetActive(w.currentPage == pageEC2SecurityGroups)
 			w.ec2VPCsNavButton.SetActive(w.currentPage == pageEC2VPCs)
 			w.ec2SubnetsNavButton.SetActive(w.currentPage == pageEC2Subnets)
+			w.ec2VolumesNavButton.SetActive(w.currentPage == pageEC2Volumes)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
