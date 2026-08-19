@@ -940,8 +940,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.rdsClustersNavButton.SetGroup(w.clustersNavButton)
 	w.rdsModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.rdsModuleItems.AddCSSClass("module-subitems")
-	w.rdsModuleItems.Append(w.rdsInstancesNavButton)
 	w.rdsModuleItems.Append(w.rdsClustersNavButton)
+	w.rdsModuleItems.Append(w.rdsInstancesNavButton)
 	rdsInstances := w.newModuleExpander("RDS", moduleRDS, w.rdsModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
@@ -999,7 +999,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
 		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
-		{key: moduleRDS, name: "RDS", defaultItem: "Instances", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.loadRDSInstances},
+		{key: moduleRDS, name: "RDS", defaultItem: "Clusters", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.openRDSClustersModule},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -3004,8 +3004,9 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	ec2MetricsSelected := w.currentPage == pageEC2Instances && w.selectedEC2Instance != "" && w.ec2Detail != nil
 	rdsMetricsSelected := w.currentPage == pageRDSInstances && w.selectedRDSInstance != "" && w.rdsDetail != nil
-	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected)
-	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) || (rdsMetricsSelected && w.options.RDS != nil))
+	rdsClusterMetricsSelected := w.currentPage == pageRDSClusters && w.selectedRDSCluster != "" && w.rdsClusterDetail != nil
+	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected)
+	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) || ((rdsMetricsSelected || rdsClusterMetricsSelected) && w.options.RDS != nil))
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

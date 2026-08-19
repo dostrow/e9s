@@ -137,6 +137,14 @@ func (w *mainWindow) openMetrics() {
 		w.loadMetrics(true)
 		return
 	}
+	if w.currentPage == pageRDSClusters {
+		if w.selectedRDSCluster == "" || w.rdsClusterDetail == nil {
+			return
+		}
+		w.metricsKind = "rds-cluster"
+		w.loadMetrics(true)
+		return
+	}
 	if w.currentPage == pageEC2Instances {
 		if w.selectedEC2Instance == "" {
 			return
@@ -153,6 +161,10 @@ func (w *mainWindow) openMetrics() {
 }
 
 func (w *mainWindow) loadMetrics(foreground bool) {
+	if w.metricsKind == "rds-cluster" {
+		w.loadRDSClusterMetrics(foreground)
+		return
+	}
 	if w.metricsKind == "rds" {
 		w.loadRDSMetrics(foreground)
 		return
@@ -162,6 +174,97 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 		return
 	}
 	w.loadECSMetrics(foreground)
+}
+
+func (w *mainWindow) loadRDSClusterMetrics(foreground bool) {
+	identifier := w.selectedRDSCluster
+	if identifier == "" || w.options.RDS == nil {
+		return
+	}
+	opening := !w.showingMetrics
+	ctx, generation := w.startRefreshRequest("Loading metrics for RDS cluster "+identifier+"…", foreground)
+	go func() {
+		snapshot, err := w.options.RDS.ClusterMetrics(ctx, identifier, w.metricsWindow())
+		w.finishRequestResult(ctx, generation, err, "Metrics updated for RDS cluster "+identifier, opening, foreground, func() {
+			if w.currentPage != pageRDSClusters || w.selectedRDSCluster != identifier {
+				return
+			}
+			w.showingMetrics = true
+			w.metricsKind = "rds-cluster"
+			w.metricsSnapshot = nil
+			w.metricsGenericSnapshot = snapshot
+			w.metricsTaskID = ""
+			w.renderRDSClusterMetrics()
+			w.detailStack.SetVisibleChildName("metrics")
+		})
+	}()
+}
+
+func (w *mainWindow) renderRDSClusterMetrics() {
+	snapshot := w.metricsGenericSnapshot
+	if snapshot == nil {
+		return
+	}
+	w.metricsTitle.SetLabel("DATABASE CLUSTER METRICS — " + strings.ToUpper(w.metricsRangeLabel()))
+	w.metricsScope.SetLabel("RDS cluster " + w.selectedRDSCluster + " • one standard CloudWatch series per member instance")
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(snapshot.EndTime), formatMetricPeriod(snapshot.Period)))
+	w.metricsScaleButton.SetVisible(false)
+	w.metricsScaleLabel.SetVisible(false)
+	w.metricsAlarmSection.SetVisible(false)
+	hasData := metricSnapshotHasData(snapshot)
+	w.metricsNotice.SetVisible(!hasData)
+	if !hasData {
+		w.metricsNotice.SetLabel("No standard RDS datapoints were returned for the cluster members in the selected period.")
+	}
+	w.setMetricCharts(snapshot, rdsClusterMetricChartSpecs(snapshot))
+}
+
+func rdsClusterMetricChartSpecs(snapshot *model.MetricSnapshot) []metricChartSpec {
+	definitions := []struct {
+		title   string
+		unit    string
+		baseID  string
+		maxHint float64
+	}{
+		{"CPU UTILIZATION", "%", "cpu", 100},
+		{"DATABASE CONNECTIONS", "count", "connections", 0},
+		{"AVAILABLE MEMORY", "bytes", "free_memory", 0},
+		{"FREE STORAGE", "GiB", "free_storage", 0},
+		{"READ IOPS", "iops", "read_iops", 0},
+		{"WRITE IOPS", "iops", "write_iops", 0},
+		{"READ LATENCY", "ms", "read_latency", 0},
+		{"WRITE LATENCY", "ms", "write_latency", 0},
+		{"READ THROUGHPUT", "bytes/s", "read_throughput", 0},
+		{"WRITE THROUGHPUT", "bytes/s", "write_throughput", 0},
+		{"NETWORK RECEIVE", "bytes/s", "network_receive", 0},
+		{"NETWORK TRANSMIT", "bytes/s", "network_transmit", 0},
+		{"DISK QUEUE DEPTH", "count", "disk_queue", 0},
+		{"BURST BALANCE", "%", "burst_balance", 100},
+		{"REPLICA LAG", "seconds", "replica_lag", 0},
+		{"DB LOAD", "sessions", "db_load", 0},
+		{"DB LOAD RELATIVE TO VCPU", "ratio", "db_load_per_vcpu", 1},
+	}
+	specs := make([]metricChartSpec, 0, len(definitions))
+	for _, definition := range definitions {
+		ids := metricSeriesIDsWithBase(snapshot, definition.baseID)
+		specs = append(specs, metricChartSpec{title: definition.title, unit: definition.unit,
+			minZero: true, maxHint: definition.maxHint, ids: ids})
+	}
+	return specs
+}
+
+func metricSeriesIDsWithBase(snapshot *model.MetricSnapshot, baseID string) []string {
+	if snapshot == nil {
+		return nil
+	}
+	prefix := baseID + "__"
+	ids := make([]string, 0)
+	for _, series := range snapshot.Series {
+		if strings.HasPrefix(series.ID, prefix) {
+			ids = append(ids, series.ID)
+		}
+	}
+	return ids
 }
 
 func (w *mainWindow) loadRDSMetrics(foreground bool) {

@@ -39,6 +39,10 @@ func (f *fakeRDSAPI) GetRDSMetrics(_ context.Context, id string, _ time.Duration
 	f.id = id
 	return f.metrics, f.err
 }
+func (f *fakeRDSAPI) GetRDSClusterMetrics(_ context.Context, ids []string, _ time.Duration) (*model.MetricSnapshot, error) {
+	f.id = strings.Join(ids, ",")
+	return f.metrics, f.err
+}
 
 func TestRDSListSortsAndWrapsErrors(t *testing.T) {
 	api := &fakeRDSAPI{instances: []model.RDSInstance{{Identifier: "z"}, {Identifier: "A"}}}
@@ -90,5 +94,18 @@ func TestRDSClustersSortFilterAndDrillIntoInstances(t *testing.T) {
 	instances, err := svc.ClusterInstances(context.Background(), "A")
 	if err != nil || len(instances) != 1 || instances[0].Identifier != "db-1" {
 		t.Fatalf("ClusterInstances() = %#v, %v", instances, err)
+	}
+}
+
+func TestRDSClusterMetricsUsesEveryMember(t *testing.T) {
+	api := &fakeRDSAPI{
+		cluster: &model.RDSCluster{Identifier: "cluster-1", Members: []model.RDSClusterMember{
+			{Identifier: "writer"}, {Identifier: "reader"},
+		}},
+		metrics: &model.MetricSnapshot{Period: time.Minute},
+	}
+	metrics, err := NewRDS(api).ClusterMetrics(context.Background(), "cluster-1", time.Hour)
+	if err != nil || metrics != api.metrics || api.id != "writer,reader" {
+		t.Fatalf("ClusterMetrics() = %#v, %v; ids = %q", metrics, err, api.id)
 	}
 }

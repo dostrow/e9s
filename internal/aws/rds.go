@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -413,6 +414,42 @@ func (c *Client) GetRDSMetrics(ctx context.Context, identifier string, window ti
 		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
 		Queries: queries,
 	})
+}
+
+// GetRDSClusterMetrics returns the same standard AWS/RDS metrics for every DB
+// instance in a cluster. Query IDs retain the base metric ID plus a stable
+// member index; labels identify the member for chart legends and hover values.
+func (c *Client) GetRDSClusterMetrics(ctx context.Context, identifiers []string, window time.Duration) (*model.MetricSnapshot, error) {
+	clean := make([]string, 0, len(identifiers))
+	for _, identifier := range identifiers {
+		if identifier = strings.TrimSpace(identifier); identifier != "" {
+			clean = append(clean, identifier)
+		}
+	}
+	if len(clean) == 0 {
+		return nil, fmt.Errorf("at least one DB instance identifier is required")
+	}
+	end := time.Now()
+	queries := rdsClusterMetricQueries(clean)
+	return c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
+		Queries: queries,
+	})
+}
+
+func rdsClusterMetricQueries(identifiers []string) []model.MetricQuery {
+	if len(identifiers) == 0 {
+		return nil
+	}
+	queries := make([]model.MetricQuery, 0, len(identifiers)*len(rdsMetricQueries(identifiers[0])))
+	for index, identifier := range identifiers {
+		for _, query := range rdsMetricQueries(identifier) {
+			query.ID += "__" + strconv.Itoa(index)
+			query.Label = identifier
+			queries = append(queries, query)
+		}
+	}
+	return queries
 }
 
 func rdsMetricQueries(identifier string) []model.MetricQuery {

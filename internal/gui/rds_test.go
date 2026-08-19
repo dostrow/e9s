@@ -51,3 +51,18 @@ func TestMetricSpecHasData(t *testing.T) {
 		t.Fatal("connections series did not report data")
 	}
 }
+
+func TestRDSClusterMetricSpecsGroupMemberSeriesByMetric(t *testing.T) {
+	snapshot := &model.MetricSnapshot{Series: []model.MetricSeries{
+		{ID: "cpu__0", Label: "writer"}, {ID: "cpu__1", Label: "reader"},
+		{ID: "connections__0", Label: "writer"}, {ID: "cpu_max__0", Label: "writer"},
+	}}
+	ids := metricSeriesIDsWithBase(snapshot, "cpu")
+	if len(ids) != 2 || ids[0] != "cpu__0" || ids[1] != "cpu__1" {
+		t.Fatalf("metricSeriesIDsWithBase() = %#v", ids)
+	}
+	specs := rdsClusterMetricChartSpecs(snapshot)
+	if len(specs) == 0 || len(specs[0].ids) != 2 {
+		t.Fatalf("cluster metric specs = %#v", specs)
+	}
+}

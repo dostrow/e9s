@@ -17,6 +17,7 @@ type RDSAPI interface {
 	ListRDSInstances(context.Context, string) ([]model.RDSInstance, error)
 	DescribeRDSInstance(context.Context, string) (*model.RDSInstanceDetail, error)
 	GetRDSMetrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
+	GetRDSClusterMetrics(context.Context, []string, time.Duration) (*model.MetricSnapshot, error)
 }
 
 type RDS struct{ api RDSAPI }
@@ -142,6 +143,34 @@ func (s *RDS) Metrics(ctx context.Context, identifier string, window time.Durati
 	metrics, err := s.api.GetRDSMetrics(ctx, identifier, window)
 	if err != nil {
 		return nil, fmt.Errorf("read metrics for RDS instance %q: %w", identifier, err)
+	}
+	return metrics, nil
+}
+
+func (s *RDS) ClusterMetrics(ctx context.Context, clusterID string, window time.Duration) (*model.MetricSnapshot, error) {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" {
+		return nil, fmt.Errorf("read metrics for RDS cluster: cluster identifier is required")
+	}
+	if window <= 0 {
+		return nil, fmt.Errorf("read metrics for RDS cluster %q: time range must be positive", clusterID)
+	}
+	cluster, err := s.Cluster(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	identifiers := make([]string, 0, len(cluster.Members))
+	for _, member := range cluster.Members {
+		if member.Identifier != "" {
+			identifiers = append(identifiers, member.Identifier)
+		}
+	}
+	if len(identifiers) == 0 {
+		return nil, fmt.Errorf("read metrics for RDS cluster %q: cluster has no DB instances", clusterID)
+	}
+	metrics, err := s.api.GetRDSClusterMetrics(ctx, identifiers, window)
+	if err != nil {
+		return nil, fmt.Errorf("read metrics for RDS cluster %q: %w", clusterID, err)
 	}
 	return metrics, nil
 }

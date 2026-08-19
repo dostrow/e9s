@@ -120,7 +120,7 @@ Browse ECR repositories, view images with vulnerability scan summaries, and dril
 
 ### RDS
 
-Browse RDS DB instances and DB clusters with engine, status, role, availability zone, endpoints, and membership. The GUI exposes separate Instances and Clusters sub-items; in the TUI, press `tab` to switch between them. Activating a cluster drills into its member instances.
+Browse RDS DB clusters and instances with engine, status, role, availability zone, endpoints, and membership. Clusters is the default landing view. The GUI exposes separate Clusters and Instances sub-items; in the TUI, press `tab` to switch between them. Activating a cluster drills into its member instances.
 
 - **Instance Detail** — full metadata: engine version, class, AZ, Multi-AZ, created date, CA certificate
 - **Network** — endpoint with port, VPC, subnet group, and security groups
@@ -130,6 +130,7 @@ Browse RDS DB instances and DB clusters with engine, status, role, availability 
 - **Tags** — all instance tags
 - **Aurora cluster awareness** — writer/reader roles derived from cluster membership, with failover priority for readers
 - **Cluster detail** — writer and reader endpoints, members and promotion tiers, network/security configuration, backup settings, and tags
+- **Cluster metrics** — the standard CloudWatch monitoring charts overlay one labeled series per member instance, matching the cluster-level comparison workflow in the AWS console
 
 ### Route53
 

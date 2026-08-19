@@ -3417,7 +3417,7 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 	case modeRoute53:
 		return a.openR53Zones()
 	case modeRDS:
-		return a.openRDSInstances()
+		return a.openRDSClusters()
 	}
 	return a, nil
 }
@@ -3465,7 +3465,7 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 	case modeRoute53:
 		return a.openR53Zones()
 	case modeRDS:
-		return a.openRDSInstances()
+		return a.openRDSClusters()
 	}
 	return a, nil
 }

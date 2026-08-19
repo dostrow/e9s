@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,6 +51,22 @@ func TestRDSMetricQueriesIncludeAggregateDBLoad(t *testing.T) {
 	}
 	if len(wanted) != 0 {
 		t.Fatalf("missing DB Load queries: %#v", wanted)
+	}
+}
+
+func TestRDSClusterMetricQueriesRetainMetricAndMemberIdentity(t *testing.T) {
+	identifiers := []string{"writer-db", "reader-db"}
+	queries := rdsClusterMetricQueries(identifiers)
+	perInstance := len(rdsMetricQueries("writer-db"))
+	if len(queries) != perInstance*2 {
+		t.Fatalf("query count = %d, want %d", len(queries), perInstance*2)
+	}
+	for index, identifier := range identifiers {
+		for _, query := range queries[index*perInstance : (index+1)*perInstance] {
+			if !strings.HasSuffix(query.ID, fmt.Sprintf("__%d", index)) || query.Label != identifier || query.Dimensions[0].Value != identifier {
+				t.Fatalf("cluster query = %#v", query)
+			}
+		}
 	}
 }
 
