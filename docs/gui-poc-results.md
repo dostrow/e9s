@@ -450,6 +450,18 @@ downloads are removed on every exit path, and image-based functions remain
 explicitly read-only. The TUI retains its external-editor presentation while
 sharing the same service operations.
 
+### Source editor follow-up
+
+Task-definition JSON and Lambda text files now share a small document-oriented
+editor abstraction. Full builds use GtkSourceView 5 for filename-based language
+detection, theme-aware schemes, line numbers, current-line and bracket
+highlighting, indentation, and native undo/redo. The pinned Go binding matches
+the existing gotk4 `v0.3.1` ABI; `gui`-only builds retain the former plain
+`GtkTextView` implementation as a packaging and compatibility fallback.
+
+This creates a suitable boundary for future diagnostics or completion providers
+without introducing language-server lifecycle and workspace management now.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default
@@ -459,11 +471,11 @@ tests and builds retain the default checks.
 
 ```text
 go test ./...                                      PASS
-go test -tags gui ./...                            PASS
-go test -race -tags gui -gcflags=all=-d=checkptr=0 \
+go test -tags "gui sourceview" ./...               PASS
+go test -race -tags "gui sourceview" -gcflags=all=-d=checkptr=0 \
   ./internal/gui ./internal/service                PASS
 go vet ./...                                       PASS
 go build .                                         PASS
-go build -tags gui ./cmd/e9s-gui                  PASS
+go build -tags "gui vte sourceview" ./cmd/e9s-gui PASS
 CGO_ENABLED=0 go build .                           PASS
 ```

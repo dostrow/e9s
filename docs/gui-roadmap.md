@@ -291,3 +291,11 @@ The GUI editor deliberately supports text files up to 2 MiB each; other package
 content is preserved but not rendered. The TUI continues to launch `$EDITOR`
 against the extracted directory, while both frontends use the same download,
 archive, and update service operations.
+
+Task-definition JSON and editable Lambda text files use the shared GtkSourceView
+editor when built with the `sourceview` tag. It detects Lambda languages by file
+name and provides theme-aware syntax highlighting, line numbers, current-line
+and bracket highlighting, auto-indent, and undo/redo behavior. Basic GUI builds
+retain the plain `GtkTextView` fallback. LSP process management remains deferred;
+the shared document abstraction provides the path and language boundary needed
+for a later opt-in client without coupling it to Lambda or ECS workflows.

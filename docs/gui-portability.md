@@ -46,11 +46,18 @@ gotk4 is a greater long-term risk than GTK's platform backends. The project
 currently warns that generated APIs can be incomplete and that some portions may
 leak or crash. See the [gotk4 project notes](https://github.com/diamondburned/gotk4).
 e9s is pinned to gotk4 `v0.3.1` because newer generated bindings referenced GLib
-APIs unavailable in the verified development environment.
+APIs unavailable in the verified development environment. The optional
+GtkSourceView editor likewise pins `gotk4-sourceview` to the matching gotk4
+generation; its latest branch targets a newer gotk4 and Go toolchain.
 
 Every supported platform therefore needs a pinned and tested GTK, GLib, and
 gotk4 matrix. Updating any member of that matrix is a deliberate compatibility
 change rather than an incidental dependency upgrade.
+
+Highlighted editor builds add GtkSourceView 5 as another native dependency and
+must bundle its language definitions and style schemes. The `gui`-only build
+keeps a plain `GtkTextView` fallback so the application remains usable when
+GtkSourceView is unavailable on a target platform.
 
 ### Embedded terminal
 
@@ -148,4 +155,3 @@ plain Go binary.
 
 Do not migrate preemptively. First run the native GTK packaging spike and make
 the decision from measured build, runtime, integration, and maintenance results.
-

@@ -7,13 +7,14 @@ link, or require GTK.
 ## Prerequisites
 
 Install Go 1.24 or newer, a C compiler, `pkg-config`, the GTK 4 development
-files, the GTK 4 VTE development files, and AWS's `session-manager-plugin`.
+files, the GtkSourceView 5 development files, the GTK 4 VTE development files,
+and AWS's `session-manager-plugin`.
 The following distro package sets cover the compile-time dependencies:
 
 ### Ubuntu and Debian
 
 ```bash
-sudo apt install build-essential pkg-config libgtk-4-dev libvte-2.91-gtk4-dev
+sudo apt install build-essential pkg-config libgtk-4-dev libgtksourceview-5-dev libvte-2.91-gtk4-dev
 ```
 
 The PoC was verified on Ubuntu 25.10 with GTK 4.20.1, GLib 2.86.0, gcc 15.2,
@@ -22,7 +23,7 @@ and `pkg-config` 1.8.1.
 ### Arch Linux
 
 ```bash
-sudo pacman -S --needed base-devel pkgconf gtk4 vte4
+sudo pacman -S --needed base-devel pkgconf gtk4 gtksourceview5 vte4
 ```
 
 Arch publishes the development headers, shared library, and pkg-config metadata
@@ -33,7 +34,7 @@ the pkg-config implementation.
 ### Fedora
 
 ```bash
-sudo dnf install gcc pkgconf-pkg-config gtk4-devel vte291-gtk4-devel
+sudo dnf install gcc pkgconf-pkg-config gtk4-devel gtksourceview5-devel vte291-gtk4-devel
 ```
 
 Fedora publishes the headers and build metadata in
@@ -46,10 +47,11 @@ make build-gui
 ./e9s-gui
 ```
 
-`make build-gui` enables the `gui` and `vte` tags and includes the embedded ECS
-Exec terminal. A GTK-only diagnostic build remains available as
-`make build-gui-basic`; it disables Exec and explains the missing build feature
-in the GUI.
+`make build-gui` enables the `gui`, `vte`, and `sourceview` tags. It includes the
+embedded ECS Exec terminal plus syntax-aware task-definition and Lambda source
+editors. A GTK-only diagnostic build remains available as `make build-gui-basic`;
+it uses the plain text editor fallback, disables Exec, and explains the missing
+terminal feature in the GUI.
 
 The GUI accepts the ECS-relevant TUI settings and YAML defaults:
 
@@ -100,12 +102,12 @@ GTK sources use the `gui` build tag. Run GUI package tests and static checks wit
 
 ```bash
 go test ./...
-go test -tags gui ./...
-go test -race -tags gui -gcflags=all=-d=checkptr=0 \
+go test -tags "gui sourceview" ./...
+go test -race -tags "gui sourceview" -gcflags=all=-d=checkptr=0 \
   ./internal/gui ./internal/service
 go vet ./...
 go build -tags gui ./cmd/e9s-gui
-go build -tags "gui vte" ./cmd/e9s-gui
+go build -tags "gui vte sourceview" ./cmd/e9s-gui
 ```
 
 ## Current scope

@@ -187,14 +187,15 @@ connection, query, mutation, and log services with the TUI while remaining a
 separate, build-tagged executable.
 
 ```bash
-# Requires GTK 4 development files, a C compiler, and pkg-config
+# Requires GTK 4, GtkSourceView 5, VTE development files, a C compiler, and pkg-config
 make build-gui
 GDK_BACKEND=wayland ./e9s-gui
 ```
 
-The full GUI build uses GTK 4 VTE for its embedded ECS Exec terminal. On Ubuntu
-or Debian, install `libvte-2.91-gtk4-dev` in addition to the GTK prerequisites;
-AWS's `session-manager-plugin` is required at runtime.
+The full GUI build uses GtkSourceView 5 for highlighted source editors and GTK 4
+VTE for its embedded ECS Exec terminal. On Ubuntu or Debian, install
+`libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
+prerequisites; AWS's `session-manager-plugin` is required at runtime.
 
 See the [GUI development guide](docs/gui-development.md) for distro packages and
 the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
