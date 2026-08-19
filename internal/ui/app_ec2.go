@@ -1,12 +1,10 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -18,9 +16,10 @@ func (a App) openEC2Instances(filter string) (App, tea.Cmd) {
 	a.ec2InstancesView = views.NewEC2Instances()
 	a.ec2InstancesView = a.ec2InstancesView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		instances, err := client.ListEC2Instances(context.Background(), filter)
+		instances, err := ec2Service.List(ctx, filter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -35,10 +34,11 @@ func (a App) openEC2Detail() (App, tea.Cmd) {
 	}
 	a.state = viewEC2Detail
 	a.loading = true
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	instanceID := inst.InstanceID
 	return a, func() tea.Msg {
-		detail, err := client.DescribeEC2Instance(context.Background(), instanceID)
+		detail, err := ec2Service.Detail(ctx, instanceID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -55,9 +55,10 @@ func (a App) openEC2Console() (App, tea.Cmd) {
 	a.ec2ConsoleView = views.NewEC2Console(instanceID)
 	a.ec2ConsoleView = a.ec2ConsoleView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		output, err := client.GetConsoleOutput(context.Background(), instanceID)
+		output, err := ec2Service.ConsoleOutput(ctx, instanceID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -75,21 +76,14 @@ func (a App) startEC2SSMSession() (App, tea.Cmd) {
 		a.err = fmt.Errorf("instance must be running for SSM session (current state: %s)", state)
 		return a, nil
 	}
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		pluginPath, err := e9saws.SessionManagerPluginPath()
+		launch, err := ec2Service.PrepareSession(ctx, instanceID, state)
 		if err != nil {
 			return errMsg{err}
 		}
-		session, err := client.StartSSMSession(context.Background(), instanceID)
-		if err != nil {
-			return errMsg{err}
-		}
-		args, err := session.BuildSSMPluginArgs()
-		if err != nil {
-			return errMsg{err}
-		}
-		return execSessionReadyMsg{pluginPath: pluginPath, args: args}
+		return execSessionReadyMsg{pluginPath: launch.Executable, args: launch.Args}
 	}
 }
 
@@ -119,10 +113,12 @@ func (a App) terminateEC2Instance() (App, tea.Cmd) {
 }
 
 func (a App) doStartEC2() tea.Cmd {
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	instanceID := a.ec2DetailView.InstanceID()
+	state := a.ec2DetailView.InstanceState()
 	return func() tea.Msg {
-		err := client.StartEC2Instance(context.Background(), instanceID)
+		err := ec2Service.Start(ctx, instanceID, state)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -131,10 +127,12 @@ func (a App) doStartEC2() tea.Cmd {
 }
 
 func (a App) doStopEC2() tea.Cmd {
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	instanceID := a.ec2DetailView.InstanceID()
+	state := a.ec2DetailView.InstanceState()
 	return func() tea.Msg {
-		err := client.StopEC2Instance(context.Background(), instanceID)
+		err := ec2Service.Stop(ctx, instanceID, state)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -143,10 +141,12 @@ func (a App) doStopEC2() tea.Cmd {
 }
 
 func (a App) doRebootEC2() tea.Cmd {
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	instanceID := a.ec2DetailView.InstanceID()
+	state := a.ec2DetailView.InstanceState()
 	return func() tea.Msg {
-		err := client.RebootEC2Instance(context.Background(), instanceID)
+		err := ec2Service.Reboot(ctx, instanceID, state)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -155,10 +155,12 @@ func (a App) doRebootEC2() tea.Cmd {
 }
 
 func (a App) doTerminateEC2() tea.Cmd {
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	instanceID := a.ec2DetailView.InstanceID()
+	state := a.ec2DetailView.InstanceState()
 	return func() tea.Msg {
-		err := client.TerminateEC2Instance(context.Background(), instanceID)
+		err := ec2Service.Terminate(ctx, instanceID, state)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -171,9 +173,10 @@ func (a App) refreshEC2Detail() tea.Cmd {
 	if instanceID == "" {
 		return nil
 	}
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	return func() tea.Msg {
-		detail, err := client.DescribeEC2Instance(context.Background(), instanceID)
+		detail, err := ec2Service.Detail(ctx, instanceID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -182,9 +185,10 @@ func (a App) refreshEC2Detail() tea.Cmd {
 }
 
 func (a App) refreshEC2Instances() tea.Cmd {
-	client := a.client
+	ec2Service := a.ec2
+	ctx := a.ctx
 	return func() tea.Msg {
-		instances, err := client.ListEC2Instances(context.Background(), "")
+		instances, err := ec2Service.List(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}

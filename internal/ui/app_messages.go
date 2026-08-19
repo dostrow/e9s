@@ -260,8 +260,8 @@ type cbBuildStoppedMsg struct{ message string }
 
 // --- EC2 Messages ---
 
-type ec2InstancesLoadedMsg struct{ instances []e9saws.EC2Instance }
-type ec2DetailLoadedMsg struct{ detail *e9saws.EC2InstanceDetail }
+type ec2InstancesLoadedMsg struct{ instances []model.EC2Instance }
+type ec2DetailLoadedMsg struct{ detail *model.EC2InstanceDetail }
 type ec2ConsoleLoadedMsg struct{ output string }
 type ec2ActionDoneMsg struct{ message string }
 

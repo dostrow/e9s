@@ -103,6 +103,7 @@ type App struct {
 	secrets             *service.Secrets
 	lambda              *service.Lambda
 	codeBuild           *service.CodeBuild
+	ec2                 *service.EC2
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	cfg                 *config.Config
@@ -286,6 +287,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		secrets:      service.NewSecrets(client),
 		lambda:       service.NewLambda(client),
 		codeBuild:    service.NewCodeBuild(client),
+		ec2:          service.NewEC2(client),
 		ctx:          ctx,
 		cancel:       cancel,
 		cfg:          cfg,

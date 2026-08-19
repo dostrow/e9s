@@ -3,77 +3,25 @@ package aws
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-// EC2Instance represents an EC2 instance summary.
-type EC2Instance struct {
-	InstanceID    string
-	Name          string
-	State         string // running, stopped, pending, etc.
-	Type          string // t3.micro, etc.
-	AZ            string
-	PrivateIP     string
-	PublicIP      string
-	VpcID         string
-	SubnetID      string
-	KeyName       string
-	LaunchTime    time.Time
-	Platform      string // linux, windows
-	AMI           string
-	IAMRole       string
-	Tags          map[string]string
-	SecurityGroups []EC2SecurityGroupRef
-}
-
-// EC2SecurityGroupRef is a minimal SG reference on an instance.
-type EC2SecurityGroupRef struct {
-	ID   string
-	Name string
-}
-
-// EC2InstanceDetail holds extended instance information.
-type EC2InstanceDetail struct {
-	EC2Instance
-	Architecture   string
-	RootDeviceType string
-	RootDeviceName string
-	EBSOptimized   bool
-	Monitoring     string
-	Volumes        []EC2Volume
-	SecurityGroupRules []EC2SGRule
-	ConsoleOutput  string
-}
-
-// EC2Volume represents an attached EBS volume.
-type EC2Volume struct {
-	VolumeID   string
-	DeviceName string
-	Size       int32 // GiB
-	VolumeType string
-	State      string
-}
-
-// EC2SGRule represents a security group rule.
-type EC2SGRule struct {
-	Direction string // inbound or outbound
-	Protocol  string
-	PortRange string
-	Source    string // CIDR or SG ID
-}
+type EC2Instance = model.EC2Instance
+type EC2SecurityGroupRef = model.EC2SecurityGroupRef
+type EC2InstanceDetail = model.EC2InstanceDetail
+type EC2Volume = model.EC2Volume
+type EC2SGRule = model.EC2SGRule
 
 // ListEC2Instances returns EC2 instances, optionally filtered by name substring.
-func (c *Client) ListEC2Instances(ctx context.Context, filter string) ([]EC2Instance, error) {
+func (c *Client) ListEC2Instances(ctx context.Context, _ string) ([]EC2Instance, error) {
 	input := &ec2.DescribeInstancesInput{}
 
 	var instances []EC2Instance
-	lf := strings.ToLower(filter)
 
 	paginator := ec2.NewDescribeInstancesPaginator(c.EC2, input)
 	for paginator.HasMorePages() {
@@ -83,23 +31,10 @@ func (c *Client) ListEC2Instances(ctx context.Context, filter string) ([]EC2Inst
 		}
 		for _, res := range page.Reservations {
 			for _, inst := range res.Instances {
-				i := instanceFromSDK(inst)
-				if lf != "" && !strings.Contains(strings.ToLower(i.Name), lf) &&
-					!strings.Contains(strings.ToLower(i.InstanceID), lf) {
-					continue
-				}
-				instances = append(instances, i)
+				instances = append(instances, instanceFromSDK(inst))
 			}
 		}
 	}
-
-	// Sort: running first, then by name
-	sort.Slice(instances, func(i, j int) bool {
-		if instances[i].State != instances[j].State {
-			return stateOrder(instances[i].State) < stateOrder(instances[j].State)
-		}
-		return instances[i].Name < instances[j].Name
-	})
 
 	return instances, nil
 }
@@ -308,21 +243,6 @@ func instanceFromSDK(inst ec2types.Instance) EC2Instance {
 		})
 	}
 	return i
-}
-
-func stateOrder(state string) int {
-	order := map[string]int{
-		"running":       0,
-		"pending":       1,
-		"stopping":      2,
-		"stopped":       3,
-		"shutting-down": 4,
-		"terminated":    5,
-	}
-	if o, ok := order[state]; ok {
-		return o
-	}
-	return 9
 }
 
 func sgRulesFromPerm(direction string, perm ec2types.IpPermission) []EC2SGRule {
