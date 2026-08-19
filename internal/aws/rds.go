@@ -330,30 +330,39 @@ func (c *Client) GetRDSMetrics(ctx context.Context, identifier string, window ti
 		return nil, fmt.Errorf("DB instance identifier is required")
 	}
 	end := time.Now()
+	queries := rdsMetricQueries(identifier)
+	return c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
+		Queries: queries,
+	})
+}
+
+func rdsMetricQueries(identifier string) []model.MetricQuery {
 	dimensions := []model.MetricDimension{{Name: "DBInstanceIdentifier", Value: identifier}}
 	metric := func(id, label, name, statistic, unit string, scale float64) model.MetricQuery {
 		return model.MetricQuery{ID: id, Label: label, Namespace: "AWS/RDS", MetricName: name,
 			Dimensions: dimensions, Statistic: statistic, Unit: unit, Scale: scale}
 	}
-	return c.GetMetricSeries(ctx, model.MetricRequest{
-		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
-		Queries: []model.MetricQuery{
-			metric("cpu", "Average", "CPUUtilization", "Average", "%", 1),
-			metric("cpu_max", "Maximum", "CPUUtilization", "Maximum", "%", 1),
-			metric("connections", "Connections", "DatabaseConnections", "Average", "count", 1),
-			metric("free_memory", "Free memory", "FreeableMemory", "Average", "bytes", 1),
-			metric("free_storage", "Free storage", "FreeStorageSpace", "Average", "GiB", 1/(1024*1024*1024.0)),
-			metric("read_iops", "Read", "ReadIOPS", "Average", "iops", 1),
-			metric("write_iops", "Write", "WriteIOPS", "Average", "iops", 1),
-			metric("read_latency", "Read", "ReadLatency", "Average", "ms", 1000),
-			metric("write_latency", "Write", "WriteLatency", "Average", "ms", 1000),
-			metric("read_throughput", "Read", "ReadThroughput", "Average", "bytes/s", 1),
-			metric("write_throughput", "Write", "WriteThroughput", "Average", "bytes/s", 1),
-			metric("disk_queue", "Queue depth", "DiskQueueDepth", "Average", "count", 1),
-			metric("network_receive", "Received", "NetworkReceiveThroughput", "Average", "bytes/s", 1),
-			metric("network_transmit", "Transmitted", "NetworkTransmitThroughput", "Average", "bytes/s", 1),
-			metric("burst_balance", "Burst balance", "BurstBalance", "Average", "%", 1),
-			metric("replica_lag", "Replica lag", "ReplicaLag", "Average", "seconds", 1),
-		},
-	})
+	return []model.MetricQuery{
+		metric("cpu", "Average", "CPUUtilization", "Average", "%", 1),
+		metric("cpu_max", "Maximum", "CPUUtilization", "Maximum", "%", 1),
+		metric("connections", "Connections", "DatabaseConnections", "Average", "count", 1),
+		metric("free_memory", "Free memory", "FreeableMemory", "Average", "bytes", 1),
+		metric("free_storage", "Free storage", "FreeStorageSpace", "Average", "GiB", 1/(1024*1024*1024.0)),
+		metric("read_iops", "Read", "ReadIOPS", "Average", "iops", 1),
+		metric("write_iops", "Write", "WriteIOPS", "Average", "iops", 1),
+		metric("read_latency", "Read", "ReadLatency", "Average", "ms", 1000),
+		metric("write_latency", "Write", "WriteLatency", "Average", "ms", 1000),
+		metric("read_throughput", "Read", "ReadThroughput", "Average", "bytes/s", 1),
+		metric("write_throughput", "Write", "WriteThroughput", "Average", "bytes/s", 1),
+		metric("disk_queue", "Queue depth", "DiskQueueDepth", "Average", "count", 1),
+		metric("network_receive", "Received", "NetworkReceiveThroughput", "Average", "bytes/s", 1),
+		metric("network_transmit", "Transmitted", "NetworkTransmitThroughput", "Average", "bytes/s", 1),
+		metric("burst_balance", "Burst balance", "BurstBalance", "Average", "%", 1),
+		metric("replica_lag", "Replica lag", "ReplicaLag", "Average", "seconds", 1),
+		metric("db_load", "DB load", "DBLoad", "Average", "sessions", 1),
+		metric("db_load_cpu", "CPU", "DBLoadCPU", "Average", "sessions", 1),
+		metric("db_load_non_cpu", "Non-CPU", "DBLoadNonCPU", "Average", "sessions", 1),
+		metric("db_load_per_vcpu", "Load / vCPU", "DBLoadRelativeToNumVCPUs", "Average", "ratio", 1),
+	}
 }

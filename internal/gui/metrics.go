@@ -216,6 +216,8 @@ func (w *mainWindow) renderRDSMetrics() {
 		{title: "DISK QUEUE DEPTH", unit: "count", minZero: true, ids: []string{"disk_queue"}},
 		{title: "BURST BALANCE", unit: "%", minZero: true, maxHint: 100, ids: []string{"burst_balance"}},
 		{title: "REPLICA LAG", unit: "seconds", minZero: true, ids: []string{"replica_lag"}},
+		{title: "DB LOAD", unit: "sessions", minZero: true, ids: []string{"db_load", "db_load_cpu", "db_load_non_cpu"}},
+		{title: "DB LOAD RELATIVE TO VCPU", unit: "ratio", minZero: true, maxHint: 1, ids: []string{"db_load_per_vcpu"}},
 	})
 }
 

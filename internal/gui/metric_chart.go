@@ -157,11 +157,7 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		color, alpha := metricSeriesColor(index, accent, foreground)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
 		cr.SetLineWidth(2)
-		if index%2 == 1 {
-			cr.SetDash([]float64{6, 4}, 0)
-		} else {
-			cr.SetDash(nil, 0)
-		}
+		cr.SetDash(metricSeriesDash(index), 0)
 		started := false
 		for _, point := range series.Points {
 			x := left + timeFraction(point.Timestamp, c.start, c.end)*plotWidth
@@ -198,6 +194,19 @@ func metricSeriesColor(index int, accent, foreground gdk.RGBA) (gdk.RGBA, float6
 	return foreground, max(0.5, 0.9-float64(index/2)*0.12)
 }
 
+func metricSeriesDash(index int) []float64 {
+	switch index % 4 {
+	case 1:
+		return []float64{7, 4}
+	case 2:
+		return []float64{2, 3}
+	case 3:
+		return []float64{8, 3, 2, 3}
+	default:
+		return nil
+	}
+}
+
 func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y float64, foreground, accent gdk.RGBA) {
 	visible := 0
 	for index, series := range c.series {
@@ -207,11 +216,7 @@ func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y 
 		color, alpha := metricSeriesColor(index, accent, foreground)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
 		cr.SetLineWidth(2)
-		if index%2 == 1 {
-			cr.SetDash([]float64{5, 3}, 0)
-		} else {
-			cr.SetDash(nil, 0)
-		}
+		cr.SetDash(metricSeriesDash(index), 0)
 		cr.MoveTo(x, y+7)
 		cr.LineTo(x+22, y+7)
 		cr.Stroke()
@@ -357,6 +362,10 @@ func fmtMetricValue(value float64, unit string) string {
 		return fmt.Sprintf("%.0f", value)
 	case "iops":
 		return fmt.Sprintf("%.1f IOPS", value)
+	case "sessions":
+		return fmt.Sprintf("%.2f AAS", value)
+	case "ratio":
+		return fmt.Sprintf("%.2fx", value)
 	default:
 		if math.Abs(value) >= 1000 {
 			return fmt.Sprintf("%.1fk", value/1000)

@@ -1,12 +1,33 @@
 package aws
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestRDSRole_AuroraWriter(t *testing.T) {
 	writerMap := map[string]bool{"db-1": true, "db-2": false}
 	got := rdsRole("db-1", "my-cluster", "", false, writerMap)
 	if got != "writer" {
 		t.Errorf("rdsRole = %q, want %q", got, "writer")
+	}
+}
+
+func TestRDSMetricQueriesIncludeAggregateDBLoad(t *testing.T) {
+	queries := rdsMetricQueries("db-1")
+	wanted := map[string]string{
+		"db_load": "DBLoad", "db_load_cpu": "DBLoadCPU",
+		"db_load_non_cpu": "DBLoadNonCPU", "db_load_per_vcpu": "DBLoadRelativeToNumVCPUs",
+	}
+	for _, query := range queries {
+		if metric, ok := wanted[query.ID]; ok {
+			if query.MetricName != metric || len(query.Dimensions) != 1 || query.Dimensions[0].Value != "db-1" {
+				t.Errorf("query %q = %#v", query.ID, query)
+			}
+			delete(wanted, query.ID)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("missing DB Load queries: %#v", wanted)
 	}
 }
 
