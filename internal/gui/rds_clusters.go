@@ -82,10 +82,12 @@ func (w *mainWindow) refreshRDSClusters(foreground bool) {
 				w.rdsClusterDetail = nil
 				w.setBreadcrumb("RDS / Clusters")
 				w.setDetail(rdsClusterListSummary(len(clusters)), detailIntro)
+				w.updateActionSensitivity()
 				return
 			}
 			w.rdsClusterDetail = detail
 			w.renderRDSClusterDetail(*detail)
+			w.updateActionSensitivity()
 		})
 	}()
 }
@@ -175,6 +177,7 @@ func (w *mainWindow) loadRDSClusterDetail(identifier string) {
 			w.rdsClusterDetail = detail
 			w.renderRDSClusterDetail(*detail)
 			w.setStatus("Loaded RDS cluster "+identifier, false)
+			w.updateActionSensitivity()
 		})
 	}()
 }
