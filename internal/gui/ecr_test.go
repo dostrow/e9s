@@ -48,3 +48,17 @@ func TestECRImageLabelFallsBackToDigest(t *testing.T) {
 		t.Fatalf("image label = %q", got)
 	}
 }
+
+func TestCanStartECRScan(t *testing.T) {
+	for _, status := range []string{"PENDING", "IN_PROGRESS", "pending"} {
+		if canStartECRScan(model.ECRImage{Digest: "sha256:one", ScanStatus: status}) {
+			t.Errorf("scan with status %q should be disabled", status)
+		}
+	}
+	if !canStartECRScan(model.ECRImage{Digest: "sha256:one", ScanStatus: "COMPLETE"}) {
+		t.Error("completed image should permit another scan")
+	}
+	if canStartECRScan(model.ECRImage{}) {
+		t.Error("image without a digest should not permit a scan")
+	}
+}

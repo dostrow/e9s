@@ -3,10 +3,14 @@
 package gui
 
 import (
+	"context"
 	"fmt"
+	"html"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -331,6 +335,154 @@ func (w *mainWindow) refreshECRFindings(foreground bool) {
 	}()
 }
 
+func (w *mainWindow) selectedECRImageValue() (model.ECRImage, bool) {
+	if w.selectedECRImage == "" || (w.currentPage != pageECRImages && w.currentPage != pageECRFindings) {
+		return model.ECRImage{}, false
+	}
+	return findECRImage(w.allECRImages, w.selectedECRImage)
+}
+
+func (w *mainWindow) copySelectedECRImageURI() {
+	image, found := w.selectedECRImageValue()
+	repository, repositoryFound := findECRRepository(w.allECRRepositories, w.selectedECRRepository)
+	if !found || !repositoryFound || w.options.ECR == nil {
+		return
+	}
+	uri, err := w.options.ECR.ImageURI(repository.URI, image)
+	if err != nil {
+		w.setStatus(err.Error(), true)
+		return
+	}
+	w.ecrImageTable.view.Clipboard().SetText(uri)
+	w.setStatus("Copied image URI "+uri, false)
+}
+
+func (w *mainWindow) startSelectedECRScan() {
+	image, found := w.selectedECRImageValue()
+	if !found || !canStartECRScan(image) || w.selectedECRRepository == "" || w.ecrActionPending || w.options.ECR == nil {
+		return
+	}
+	repository, digest := w.selectedECRRepository, image.Digest
+	w.ecrActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Starting image scan for " + ecrImageLabel(image) + "…")
+	go func() {
+		err := w.options.ECR.StartScan(ctx, repository, image)
+		if err != nil {
+			w.finishECRAction(ctx, generation, err, "", nil)
+			return
+		}
+		images, refreshErr := w.options.ECR.ListImages(ctx, repository)
+		success := "Started image scan for " + ecrImageLabel(image)
+		if refreshErr != nil {
+			success += " • status refresh failed: " + refreshErr.Error()
+		}
+		w.finishECRAction(ctx, generation, nil, success, func() {
+			if refreshErr == nil {
+				w.allECRImages = images
+				w.applyECRImageFilter()
+				if refreshed, stillPresent := findECRImage(images, digest); stillPresent && w.currentPage == pageECRImages {
+					w.selectedECRImage = digest
+					w.setDetail(formatECRImage(repository, refreshed), detailECRImage)
+				}
+			}
+		})
+	}()
+}
+
+func (w *mainWindow) confirmDeleteECRImage() {
+	image, found := w.selectedECRImageValue()
+	if !found || w.selectedECRRepository == "" || w.ecrActionPending || w.options.ECR == nil {
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Delete ECR image")
+	dialog.SetMarkup("Delete <b>" + html.EscapeString(ecrImageLabel(image)) + "</b> from <b>" + html.EscapeString(w.selectedECRRepository) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "The image digest "+image.Digest+" will be removed. This cannot be undone.")
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Delete", int(gtk.ResponseOK))
+	dialog.SetDefaultResponse(int(gtk.ResponseCancel))
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.deleteECRImage(image)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) deleteECRImage(image model.ECRImage) {
+	if w.ecrActionPending || w.options.ECR == nil {
+		return
+	}
+	repository, digest := w.selectedECRRepository, image.Digest
+	existingImages := append([]model.ECRImage(nil), w.allECRImages...)
+	w.ecrActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Deleting ECR image " + ecrImageLabel(image) + "…")
+	go func() {
+		err := w.options.ECR.DeleteImage(ctx, repository, digest)
+		if err != nil {
+			w.finishECRAction(ctx, generation, err, "", nil)
+			return
+		}
+		images, refreshErr := w.options.ECR.ListImages(ctx, repository)
+		success := "Deleted ECR image " + ecrImageLabel(image)
+		if refreshErr != nil {
+			images = withoutECRImage(existingImages, digest)
+			success += " • repository refresh failed: " + refreshErr.Error()
+		}
+		w.finishECRAction(ctx, generation, nil, success, func() {
+			w.currentPage = pageECRImages
+			w.clearECRFindings()
+			w.selectedECRImage = ""
+			w.allECRImages = images
+			w.search.SetText("")
+			w.search.SetPlaceholderText("Filter images…")
+			w.resourceStack.SetVisibleChildName(pageECRImages)
+			w.backButton.SetSensitive(true)
+			w.applyECRImageFilter()
+			w.setBreadcrumb("ECR / " + repository + " / Images")
+			w.setDetail(ecrImageListSummary(repository, len(images)), detailECRRepository)
+		})
+	}()
+}
+
+func (w *mainWindow) finishECRAction(ctx context.Context, generation uint64, err error, success string, apply func()) {
+	glib.IdleAdd(func() {
+		if ctx.Err() != nil || generation != w.generation {
+			return
+		}
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.ecrActionPending = false
+		if err != nil {
+			w.updateActionSensitivity()
+			w.setStatus(err.Error(), true)
+			return
+		}
+		if apply != nil {
+			apply()
+		}
+		w.lastSuccessfulLoad = time.Now()
+		w.updateActionSensitivity()
+		w.setStatus(success, false)
+	})
+}
+
+func canStartECRScan(image model.ECRImage) bool {
+	if strings.TrimSpace(image.Digest) == "" {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(image.ScanStatus)) {
+	case "IN_PROGRESS", "PENDING":
+		return false
+	default:
+		return true
+	}
+}
+
 func filterECRRepositories(repositories []model.ECRRepo, query string) []model.ECRRepo {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -390,6 +542,16 @@ func findECRImage(images []model.ECRImage, digest string) (model.ECRImage, bool)
 		}
 	}
 	return model.ECRImage{}, false
+}
+
+func withoutECRImage(images []model.ECRImage, digest string) []model.ECRImage {
+	filtered := make([]model.ECRImage, 0, len(images))
+	for _, image := range images {
+		if image.Digest != digest {
+			filtered = append(filtered, image)
+		}
+	}
+	return filtered
 }
 
 func findECRFinding(findings []model.ECRFinding, key string) (model.ECRFinding, bool) {

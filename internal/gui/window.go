@@ -187,6 +187,7 @@ type mainWindow struct {
 	allECRFindings              []model.ECRFinding
 	filteredECRFindings         []model.ECRFinding
 	selectedECRFinding          string
+	ecrActionPending            bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -300,6 +301,9 @@ type mainWindow struct {
 	ec2StopButton               *gtk.Button
 	ec2RebootButton             *gtk.Button
 	ec2TerminateButton          *gtk.Button
+	ecrCopyURIButton            *gtk.Button
+	ecrStartScanButton          *gtk.Button
+	ecrDeleteImageButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -742,6 +746,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ec2TerminateButton = gtk.NewButtonWithLabel("Terminate…")
 	w.ec2TerminateButton.AddCSSClass("destructive-action")
 	w.ec2TerminateButton.ConnectClicked(func() { w.confirmEC2Mutation("terminate") })
+	w.ecrCopyURIButton = gtk.NewButtonWithLabel("Copy image URI")
+	w.ecrCopyURIButton.ConnectClicked(w.copySelectedECRImageURI)
+	w.ecrStartScanButton = gtk.NewButtonWithLabel("Start scan")
+	w.ecrStartScanButton.ConnectClicked(w.startSelectedECRScan)
+	w.ecrDeleteImageButton = gtk.NewButtonWithLabel("Delete image…")
+	w.ecrDeleteImageButton.AddCSSClass("destructive-action")
+	w.ecrDeleteImageButton.ConnectClicked(w.confirmDeleteECRImage)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -826,6 +837,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.ec2StopButton)
 	header.Append(w.ec2RebootButton)
 	header.Append(w.ec2TerminateButton)
+	header.Append(w.ecrCopyURIButton)
+	header.Append(w.ecrStartScanButton)
+	header.Append(w.ecrDeleteImageButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -2433,6 +2447,12 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		return
 	}
 	if w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings {
+		if w.ecrActionPending {
+			if foreground {
+				w.setStatus("An ECR operation is still pending", false)
+			}
+			return
+		}
 		w.refreshECR(foreground)
 		return
 	}
@@ -3041,6 +3061,20 @@ func (w *mainWindow) updateActionSensitivity() {
 	canStopCodeBuild := codeBuildDetailReady && w.codeBuildDetail.Status == "IN_PROGRESS"
 	w.codeBuildStopButton.SetVisible(canStopCodeBuild)
 	w.codeBuildStopButton.SetSensitive(canStopCodeBuild && !w.codeBuildActionPending && w.options.CodeBuild != nil)
+	ecrPage := w.currentPage == pageECRImages || w.currentPage == pageECRFindings
+	ecrImage, ecrImageSelected := w.selectedECRImageValue()
+	ecrImageReady := ecrPage && ecrImageSelected && w.options.ECR != nil && !w.ecrActionPending
+	w.ecrCopyURIButton.SetVisible(ecrPage && ecrImageSelected)
+	w.ecrCopyURIButton.SetSensitive(ecrImageReady)
+	w.ecrStartScanButton.SetVisible(ecrPage && ecrImageSelected)
+	w.ecrStartScanButton.SetSensitive(ecrImageReady && canStartECRScan(ecrImage))
+	if ecrImageSelected && !canStartECRScan(ecrImage) {
+		w.ecrStartScanButton.SetTooltipText("The image scan is already pending or in progress")
+	} else {
+		w.ecrStartScanButton.SetTooltipText("")
+	}
+	w.ecrDeleteImageButton.SetVisible(ecrPage && ecrImageSelected)
+	w.ecrDeleteImageButton.SetSensitive(ecrImageReady)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""
