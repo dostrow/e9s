@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
@@ -17,7 +18,6 @@ import (
 // has a conservative fallback derived from colors that GTK always provides.
 type semanticPalette struct {
 	foreground gdk.RGBA
-	background gdk.RGBA
 	surface    gdk.RGBA
 	accent     gdk.RGBA
 	success    gdk.RGBA
@@ -33,16 +33,15 @@ func semanticPaletteFromStyle(style *gtk.StyleContext) semanticPalette {
 	surface := themeColorOr(style, background,
 		"content_view_bg", "text_view_bg", "view_bg_color", "theme_base_color")
 	accent := themeColorOr(style, foreground,
-		"accent_color", "link_color", "success_color", "theme_selected_bg_color", "accent_bg_color")
+		"accent_color", "link_color")
 	success := themeColorOr(style, accent, "success_color", "success_bg_color")
 	warning := themeColorOr(style, accent, "warning_color", "warning_bg_color")
 	errorColor := themeColorOr(style, accent, "error_color", "error_bg_color")
-	info := themeColorOr(style, accent, "link_color", "accent_color", "success_color")
+	info := themeColorOr(style, foreground, "link_color", "accent_color")
 	muted := themeColorOr(style, blendRGBA(foreground, background, 0.38),
 		"dim_label_fg_color", "insensitive_fg_color")
 	return semanticPalette{
 		foreground: foreground,
-		background: background,
 		surface:    surface,
 		accent:     accent,
 		success:    success,
@@ -51,6 +50,16 @@ func semanticPaletteFromStyle(style *gtk.StyleContext) semanticPalette {
 		info:       info,
 		muted:      muted,
 	}
+}
+
+// clearDrawingSurface removes the previous Cairo frame without imposing an
+// opaque application color. GTK can then composite the widget over whatever
+// surface, gradient, or texture the active theme gives its ancestors.
+func clearDrawingSurface(cr *cairo.Context) {
+	cr.Save()
+	cr.SetOperator(cairo.OperatorClear)
+	cr.Paint()
+	cr.Restore()
 }
 
 func themeColorOr(style *gtk.StyleContext, fallback gdk.RGBA, names ...string) gdk.RGBA {
@@ -74,26 +83,15 @@ func blendRGBA(from, to gdk.RGBA, amount float64) gdk.RGBA {
 }
 
 func semanticStyleCSS(palette semanticPalette) string {
-	sidebar := blendRGBA(palette.surface, palette.accent, 0.08)
-	toolbar := blendRGBA(palette.surface, palette.accent, 0.05)
-	content := blendRGBA(palette.surface, palette.foreground, 0.018)
-	status := blendRGBA(palette.surface, palette.accent, 0.035)
 	return fmt.Sprintf(`
-.app-title { color: %s; }
-.breadcrumb, .section-title { color: %s; opacity: 1; }
 .saved-log-modified, .semantic-warning { color: %s; }
 .error, .semantic-error { color: %s; }
 .semantic-success { color: %s; }
 .semantic-info { color: %s; }
 .semantic-muted { color: %s; }
 .semantic-success, .semantic-warning, .semantic-error, .semantic-info { font-weight: 600; }
-.mode-sidebar { background-color: %s; }
-.toolbar, .log-toolbar, .workspace-busy { background-color: %s; }
-.resource-pane, .inspector, .log-view { background-color: %s; }
-.status-bar { background-color: %s; }
-`, palette.accent.String(), palette.accent.String(), palette.warning.String(),
-		palette.error.String(), palette.success.String(), palette.info.String(),
-		palette.muted.String(), sidebar.String(), toolbar.String(), content.String(), status.String())
+`, palette.warning.String(), palette.error.String(), palette.success.String(),
+		palette.info.String(), palette.muted.String())
 }
 
 func installSemanticStyles(window *mainWindow) {
@@ -119,7 +117,7 @@ func installSemanticStyles(window *mainWindow) {
 
 func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	if w.detailHeadingTag != nil {
-		w.detailHeadingTag.SetObjectProperty("foreground", palette.accent.String())
+		w.detailHeadingTag.SetObjectProperty("foreground", palette.foreground.String())
 	}
 	for _, resourceTag := range w.detailResourceTags {
 		resourceTag.tag.SetObjectProperty("foreground", palette.info.String())

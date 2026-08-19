@@ -96,20 +96,7 @@ func newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
 	area.AddCSSClass("module-heading-text")
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 		style := area.StyleContext()
-		background, ok := style.LookupColor("theme_bg_color")
-		if !ok {
-			background, ok = style.LookupColor("window_bg_color")
-		}
-		if ok {
-			cr.SetSourceRGBA(
-				float64(background.Red()),
-				float64(background.Green()),
-				float64(background.Blue()),
-				float64(background.Alpha()),
-			)
-			cr.Rectangle(0, 0, float64(width), float64(height))
-			cr.Fill()
-		}
+		clearDrawingSurface(cr)
 
 		foreground := style.Color()
 		cr.SetSourceRGBA(

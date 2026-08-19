@@ -89,7 +89,7 @@ func (w *mainWindow) applyInlineResourceLink(link workspaceResourceLink, index i
 	tag.SetObjectProperty("weight", int(pango.WeightSemibold))
 	style := w.detailView.StyleContext()
 	color := themeColorOr(style, *style.Color(),
-		"link_color", "accent_color", "success_color", "theme_selected_bg_color")
+		"link_color", "accent_color")
 	tag.SetObjectProperty("foreground", color.String())
 	w.detailBuffer.TagTable().Add(tag)
 	w.detailResourceTags = append(w.detailResourceTags, detailResourceTag{tag: tag, ref: link.ref})

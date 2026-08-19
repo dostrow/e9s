@@ -1563,16 +1563,7 @@ func (w *mainWindow) newBreadcrumbArea() *gtk.DrawingArea {
 	area.AddCSSClass("breadcrumb")
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 		style := area.StyleContext()
-		palette := semanticPaletteFromStyle(style)
-		background := blendRGBA(palette.surface, palette.accent, 0.05)
-		cr.SetSourceRGBA(
-			float64(background.Red()),
-			float64(background.Green()),
-			float64(background.Blue()),
-			float64(background.Alpha()),
-		)
-		cr.Rectangle(0, 0, float64(width), float64(height))
-		cr.Fill()
+		clearDrawingSurface(cr)
 
 		foreground := style.Color()
 		cr.SetSourceRGBA(

@@ -43,7 +43,6 @@ func TestDetailHeadingDetection(t *testing.T) {
 func TestSemanticStyleUsesDerivedPalette(t *testing.T) {
 	palette := semanticPalette{
 		foreground: gdk.NewRGBA(0.8, 0.7, 0.6, 1),
-		background: gdk.NewRGBA(0.1, 0.1, 0.1, 1),
 		surface:    gdk.NewRGBA(0.12, 0.12, 0.12, 1),
 		accent:     gdk.NewRGBA(0.4, 0.5, 0.6, 1),
 		success:    gdk.NewRGBA(0.2, 0.7, 0.3, 1),
@@ -53,9 +52,14 @@ func TestSemanticStyleUsesDerivedPalette(t *testing.T) {
 		muted:      gdk.NewRGBA(0.5, 0.5, 0.5, 1),
 	}
 	css := semanticStyleCSS(palette)
-	for _, selector := range []string{".semantic-success", ".semantic-warning", ".semantic-error", ".mode-sidebar"} {
+	for _, selector := range []string{".semantic-success", ".semantic-warning", ".semantic-error"} {
 		if !strings.Contains(css, selector) {
 			t.Errorf("semantic CSS is missing %s", selector)
+		}
+	}
+	for _, selector := range []string{".mode-sidebar", ".toolbar", ".resource-pane", ".breadcrumb", ".app-title"} {
+		if strings.Contains(css, selector) {
+			t.Errorf("semantic CSS should leave theme-owned chrome alone: %s", selector)
 		}
 	}
 	if !strings.Contains(css, palette.success.String()) || !strings.Contains(css, palette.error.String()) {

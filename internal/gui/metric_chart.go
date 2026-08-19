@@ -130,7 +130,7 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 	style := area.StyleContext()
 	palette := semanticPaletteFromStyle(style)
 	foreground := palette.foreground
-	background := blendRGBA(palette.surface, palette.accent, 0.025)
+	background := palette.surface
 	seriesColors := metricSeriesColors(palette)
 
 	cr.SetSourceRGBA(float64(background.Red()), float64(background.Green()), float64(background.Blue()), float64(background.Alpha()))
