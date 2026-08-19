@@ -521,6 +521,28 @@ the TUI retains its keyboard-first instance-detail screen. That presentation
 difference is intentional; discovery, detail composition, session preparation,
 validation, mutation, cancellation, and error behavior remain shared.
 
+### ECR module follow-up
+
+ECR now uses `service.ECR` in both frontends for deterministic repository and
+image discovery, severity-ordered scan findings, scan eligibility, complete
+image URI construction, digest deletion, caller-owned cancellation, and
+contextual errors. Repository, image, and finding values are UI-neutral models;
+the GTK layer does not call the AWS adapter directly.
+
+The GTK frontend adds an alphabetically positioned, collapsible ECR module with
+Repositories as its default item. Repositories drill into newest-first images,
+which expose tags, digests, size, media type, scan status, severity summaries,
+and vulnerability findings. Context changes synchronously clear stale nested
+content, generation guards reject abandoned responses, and Back and refresh
+preserve selections that still exist.
+
+Image URI copy is local and supports both tagged and digest-only images. Scan
+and delete operations disable contextual controls, display progress in the
+Workspace, and pause automatic refresh while pending. Deletion requires an
+explicit digest-bearing confirmation and returns to the refreshed Images
+browser; if the post-delete refresh fails, the known-deleted digest is removed
+locally and the refresh error remains visible in status.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

@@ -307,6 +307,19 @@ memory than a cached rebuild.
     terminate confirmation without accepting it. Confirm invalid actions are
     unavailable, termination defaults to No, pending operations disable all EC2
     actions and refresh, and successful mutations reload the selected context.
+51. Expand ECR and open Repositories. Confirm it is alphabetically positioned,
+    Repositories is its default item, repository filtering is case-insensitive,
+    and rapid repository changes clear stale image and Workspace content before
+    the final AWS response arrives.
+52. Drill from a repository through images and completed scan findings. Confirm
+    newest images appear first, vulnerability counts and findings use severity
+    order, Back preserves the prior selection, and manual/automatic refresh does
+    not replace an unrelated Workspace context.
+53. Copy tagged and untagged image URIs and verify the tag/digest syntax. On a
+    disposable image, start a scan and confirm the action and refresh cannot be
+    spammed while pending. Inspect the deletion dialog, confirm it names the
+    digest and defaults to Cancel, then delete the disposable image and verify
+    the refreshed Images browser is restored.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

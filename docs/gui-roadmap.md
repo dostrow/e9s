@@ -448,6 +448,12 @@ auditable action.
 
 ## ECR delivery phases
 
+ECR is implemented in the GTK frontend and shares repository/image discovery,
+finding retrieval, scan validation, URI construction, and digest deletion with
+the TUI through `service.ECR`. The Module Rail exposes Repositories as its
+default destination; repository, image, and finding depth remains in the
+Browser Pane so the rail does not grow with transient registry content.
+
 ### Phase 1: shared service
 
 - Centralize repository and image discovery, deterministic ordering, scan
@@ -468,3 +474,8 @@ auditable action.
   active without replacing the user's current Workspace content.
 - Require explicit confirmation before digest deletion, disable pending actions,
   and return to the refreshed image browser after success.
+
+All three phases are complete on the GTK proof-of-concept branch. Repository,
+image, and finding context clears before asynchronous loads; Back and refresh
+preserve valid selections; scan findings retain severity ordering; and scan and
+delete operations display Workspace progress while automatic refresh is paused.
