@@ -245,6 +245,8 @@ func (m RDSDetailModel) InstanceID() string {
 	return m.detail.Identifier
 }
 
+func (m RDSDetailModel) Detail() *aws.RDSInstanceDetail { return m.detail }
+
 func (m RDSDetailModel) visibleRows() int {
 	rows := m.height - 6
 	if rows < 5 {

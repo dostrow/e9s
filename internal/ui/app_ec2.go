@@ -142,6 +142,19 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 			return nil
 		}
 		return service.ECSTaskResourceRefs(*task, a.selectedService)
+	case viewRDSDetail:
+		detail := a.rdsDetailView.Detail()
+		if detail == nil {
+			return nil
+		}
+		refs := []model.ResourceRef{}
+		if detail.VPCID != "" {
+			refs = append(refs, model.ResourceRef{Kind: "ec2-vpc", ID: detail.VPCID})
+		}
+		for _, groupID := range detail.SecurityGroups {
+			refs = append(refs, model.ResourceRef{Kind: "ec2-security-group", ID: groupID})
+		}
+		return service.UniqueResourceRefs(refs)
 	case viewEC2Detail:
 		detail := a.ec2DetailView.Detail()
 		if detail == nil {
@@ -264,6 +277,10 @@ func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
 		if task := a.detailView.Task(); task != nil {
 			return model.ResourceRef{Kind: "ecs-task", ID: task.TaskARN, Name: task.TaskID}, true
 		}
+	case viewRDSDetail:
+		if detail := a.rdsDetailView.Detail(); detail != nil {
+			return model.ResourceRef{Kind: "rds-instance", ID: detail.Identifier}, true
+		}
 	case viewEC2Detail:
 		if detail := a.ec2DetailView.Detail(); detail != nil {
 			return model.ResourceRef{Kind: "ec2-instance", ID: detail.InstanceID, Name: detail.Name}, true
@@ -302,7 +319,7 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 			a.resourceHistory = append(a.resourceHistory, origin)
 		}
 	}
-	if ref.Kind != "ecs-task" {
+	if ref.Kind != "ecs-task" && ref.Kind != "rds-instance" {
 		a.mode = modeEC2
 	}
 	a.loading = true
@@ -352,6 +369,16 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 		a.mode = modeECS
 		a.state = viewTaskDetail
 		a.detailView = a.newTaskDetail(a.selectedTask).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case "rds-instance":
+		if detail := a.rdsDetailView.Detail(); detail == nil || detail.Identifier != ref.ID {
+			a.loading = false
+			a.err = fmt.Errorf("RDS instance %s is no longer available", ref.ID)
+			return a, nil
+		}
+		a.mode = modeRDS
+		a.state = viewRDSDetail
 		a.loading = false
 		return a, nil
 	default:

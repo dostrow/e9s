@@ -1858,7 +1858,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.switchEC2Resource()
 			}
 		}
-		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewTaskDetail) {
+		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewTaskDetail || a.state == viewRDSDetail) {
 			return a.openEC2ResourcePicker()
 		}
 		switch a.state {
@@ -2723,7 +2723,7 @@ func (a App) helpText() string {
 	case viewRDSInstances:
 		primary = "[enter] detail"
 	case viewRDSDetail:
-		primary = "[j/k] scroll"
+		primary = "[o] linked resources"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3127,6 +3127,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		}
 	case viewRDSDetail:
 		context = []kv{
+			{kb.OpenResource, "Open linked EC2 resource"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
