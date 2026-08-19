@@ -98,10 +98,9 @@ func (c *Client) DescribeEC2Instance(ctx context.Context, instanceID string) (*E
 				}
 				for i, v := range detail.Volumes {
 					if vol, ok := volMap[v.VolumeID]; ok {
-						if vol.Size != nil {
-							detail.Volumes[i].Size = *vol.Size
-						}
-						detail.Volumes[i].VolumeType = string(vol.VolumeType)
+						deviceName := detail.Volumes[i].DeviceName
+						detail.Volumes[i] = volumeFromSDK(vol)
+						detail.Volumes[i].DeviceName = deviceName
 					}
 				}
 			}
@@ -266,26 +265,38 @@ func sgRulesFromPerm(direction string, perm ec2types.IpPermission) []EC2SGRule {
 	var rules []EC2SGRule
 	for _, cidr := range perm.IpRanges {
 		rules = append(rules, EC2SGRule{
-			Direction: direction,
-			Protocol:  proto,
-			PortRange: portRange,
-			Source:    derefStrAws(cidr.CidrIp),
+			Direction:   direction,
+			Protocol:    proto,
+			PortRange:   portRange,
+			Source:      derefStrAws(cidr.CidrIp),
+			Description: derefStrAws(cidr.Description),
 		})
 	}
 	for _, cidr := range perm.Ipv6Ranges {
 		rules = append(rules, EC2SGRule{
-			Direction: direction,
-			Protocol:  proto,
-			PortRange: portRange,
-			Source:    derefStrAws(cidr.CidrIpv6),
+			Direction:   direction,
+			Protocol:    proto,
+			PortRange:   portRange,
+			Source:      derefStrAws(cidr.CidrIpv6),
+			Description: derefStrAws(cidr.Description),
 		})
 	}
 	for _, sg := range perm.UserIdGroupPairs {
 		rules = append(rules, EC2SGRule{
-			Direction: direction,
-			Protocol:  proto,
-			PortRange: portRange,
-			Source:    derefStrAws(sg.GroupId),
+			Direction:   direction,
+			Protocol:    proto,
+			PortRange:   portRange,
+			Source:      derefStrAws(sg.GroupId),
+			Description: derefStrAws(sg.Description),
+		})
+	}
+	for _, prefix := range perm.PrefixListIds {
+		rules = append(rules, EC2SGRule{
+			Direction:   direction,
+			Protocol:    proto,
+			PortRange:   portRange,
+			Source:      derefStrAws(prefix.PrefixListId),
+			Description: derefStrAws(prefix.Description),
 		})
 	}
 	if len(rules) == 0 {
