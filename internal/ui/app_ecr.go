@@ -56,11 +56,11 @@ func (a App) openECRFindings() (App, tea.Cmd) {
 	ecrService, ctx := a.ecr, a.ctx
 	digest := img.Digest
 	return a, func() tea.Msg {
-		findings, err := ecrService.Findings(ctx, repoName, digest)
+		scan, err := ecrService.ScanFindings(ctx, repoName, digest)
 		if err != nil {
 			return errMsg{err}
 		}
-		return ecrFindingsLoadedMsg{findings}
+		return ecrFindingsLoadedMsg{scan}
 	}
 }
 

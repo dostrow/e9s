@@ -62,8 +62,8 @@ func (c *Client) ListECRImages(ctx context.Context, repoName string) ([]model.EC
 }
 
 // GetECRScanFindings returns scan findings for an image.
-func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest string) ([]model.ECRFinding, error) {
-	var findings []model.ECRFinding
+func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest string) (model.ECRScan, error) {
+	scan := model.ECRScan{Severity: make(map[string]int32)}
 
 	paginator := ecr.NewDescribeImageScanFindingsPaginator(c.ECR, &ecr.DescribeImageScanFindingsInput{
 		RepositoryName: &repoName,
@@ -72,21 +72,35 @@ func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest s
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return model.ECRScan{}, err
+		}
+		if page.ImageScanStatus != nil {
+			scan.Status = string(page.ImageScanStatus.Status)
+			scan.Description = derefStrAws(page.ImageScanStatus.Description)
 		}
 		if page.ImageScanFindings != nil {
+			for severity, count := range page.ImageScanFindings.FindingSeverityCounts {
+				scan.Severity[severity] = count
+			}
+			if page.ImageScanFindings.ImageScanCompletedAt != nil {
+				scan.CompletedAt = *page.ImageScanFindings.ImageScanCompletedAt
+			}
+			if page.ImageScanFindings.VulnerabilitySourceUpdatedAt != nil {
+				scan.VulnerabilitySourceUpdated = *page.ImageScanFindings.VulnerabilitySourceUpdatedAt
+			}
 			for _, f := range page.ImageScanFindings.Findings {
-				findings = append(findings, basicECRFindingFromSDK(f))
+				scan.Findings = append(scan.Findings, basicECRFindingFromSDK(f))
 			}
 			for _, f := range page.ImageScanFindings.EnhancedFindings {
-				findings = append(findings, enhancedECRFindingFromSDK(f))
+				scan.Enhanced = true
+				scan.Findings = append(scan.Findings, enhancedECRFindingFromSDK(f))
 			}
 		}
 	}
 
 	// Sort by severity
-	sortFindingsBySeverity(findings)
-	return findings, nil
+	sortFindingsBySeverity(scan.Findings)
+	return scan, nil
 }
 
 func basicECRFindingFromSDK(f ecrtypes.ImageScanFinding) model.ECRFinding {

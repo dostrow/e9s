@@ -24,6 +24,19 @@ type ECRImage struct {
 	ScanSeverity map[string]int32
 }
 
+// ECRScan is the on-demand scan metadata and findings returned for an image.
+// DescribeImages omits these fields for enhanced scanning, so callers retrieve
+// this value only for the image currently being inspected.
+type ECRScan struct {
+	Status                     string
+	Description                string
+	Severity                   map[string]int32
+	CompletedAt                time.Time
+	VulnerabilitySourceUpdated time.Time
+	Enhanced                   bool
+	Findings                   []ECRFinding
+}
+
 // ECRFinding is one vulnerability reported for an image.
 type ECRFinding struct {
 	Name        string

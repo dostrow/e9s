@@ -1318,7 +1318,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case ecrFindingsLoadedMsg:
-		a.ecrFindingsView = a.ecrFindingsView.SetFindings(msg.findings)
+		a.ecrFindingsView = a.ecrFindingsView.SetFindings(msg.scan.Findings)
+		a.ecrImagesView = a.ecrImagesView.SetSelectedScan(msg.scan)
 		a.loading = false
 		return a, nil
 

@@ -108,35 +108,59 @@ func (w *mainWindow) loadECRFindings(image model.ECRImage) {
 	w.resourceStack.SetVisibleChildName(pageECRFindings)
 	w.setDetail("Loading scan findings for "+ecrImageLabel(image)+"…", detailECRImage)
 	w.updateActionSensitivity()
+	if scan, found := w.ecrScanCache[digest]; found {
+		w.showECRScanFindings(image, scan)
+		w.setStatus("Loaded cached scan findings for "+ecrImageLabel(image), false)
+		return
+	}
 
 	ctx, generation := w.startRequest("Loading ECR scan findings…")
 	go func() {
-		findings, err := w.options.ECR.Findings(ctx, repository, digest)
+		scan, err := w.options.ECR.ScanFindings(ctx, repository, digest)
 		w.finishRequest(ctx, generation, err, func() {
 			if w.currentPage != pageECRFindings || w.selectedECRRepository != repository || w.selectedECRImage != digest {
 				return
 			}
-			w.allECRFindings = findings
-			image = w.mergeECRFindingSummary(image, findings)
-			w.applyECRFindingFilter()
-			w.setDetail(formatECRImageWithFindingCount(repository, image, len(findings)), detailECRImage)
+			w.showECRScanFindings(image, scan)
 		})
 	}()
 }
 
-func (w *mainWindow) mergeECRFindingSummary(image model.ECRImage, findings []model.ECRFinding) model.ECRImage {
-	counts := make(map[string]int32)
-	for _, finding := range findings {
-		counts[strings.ToUpper(finding.Severity)]++
+func (w *mainWindow) showECRScanFindings(image model.ECRImage, scan model.ECRScan) {
+	if w.ecrScanCache == nil {
+		w.ecrScanCache = make(map[string]model.ECRScan)
 	}
-	image.ScanSeverity = counts
+	w.ecrScanCache[image.Digest] = scan
+	w.allECRFindings = scan.Findings
+	image = w.mergeECRScanSummary(image, scan)
+	w.applyECRFindingFilter()
+	w.setDetail(formatECRImageWithFindingCount(w.selectedECRRepository, image, len(scan.Findings)), detailECRImage)
+}
+
+func (w *mainWindow) mergeECRScanSummary(image model.ECRImage, scan model.ECRScan) model.ECRImage {
+	image = imageWithECRScan(image, scan)
 	for index := range w.allECRImages {
 		if w.allECRImages[index].Digest == image.Digest {
-			w.allECRImages[index].ScanSeverity = counts
+			w.allECRImages[index].ScanStatus = scan.Status
+			w.allECRImages[index].ScanSeverity = cloneECRSeverity(scan.Severity)
 			break
 		}
 	}
 	return image
+}
+
+func imageWithECRScan(image model.ECRImage, scan model.ECRScan) model.ECRImage {
+	image.ScanStatus = scan.Status
+	image.ScanSeverity = cloneECRSeverity(scan.Severity)
+	return image
+}
+
+func cloneECRSeverity(counts map[string]int32) map[string]int32 {
+	cloned := make(map[string]int32, len(counts))
+	for severity, count := range counts {
+		cloned[severity] = count
+	}
+	return cloned
 }
 
 func (w *mainWindow) clearECRRepositories() {
@@ -152,6 +176,7 @@ func (w *mainWindow) clearECRImages() {
 	w.allECRImages = nil
 	w.filteredECRImages = nil
 	w.selectedECRImage = ""
+	w.ecrScanCache = make(map[string]model.ECRScan)
 	if w.ecrImageTable != nil {
 		w.ecrImageTable.clear()
 	}
@@ -180,9 +205,8 @@ func (w *mainWindow) applyECRImageFilter() {
 	w.filteredECRImages = filterECRImages(w.allECRImages, w.search.Text())
 	rows := make([]string, len(w.filteredECRImages))
 	for i, image := range w.filteredECRImages {
-		rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%d / %d", ecrImageTags(image), shortECRDigest(image.Digest),
-			formatTime(image.PushedAt), formatByteSize(image.SizeBytes), valueOrDash(image.ScanStatus),
-			image.ScanSeverity["CRITICAL"], image.ScanSeverity["HIGH"])
+		rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", ecrImageTags(image), shortECRDigest(image.Digest),
+			formatTime(image.PushedAt), formatByteSize(image.SizeBytes), valueOrDash(image.ScanStatus), ecrCriticalHighSummary(image))
 	}
 	w.ecrImageTable.replace(rows)
 }
@@ -246,8 +270,35 @@ func (w *mainWindow) selectECRImageRow() {
 	}
 	w.selectedECRImage = image.Digest
 	w.setBreadcrumb("ECR / " + w.selectedECRRepository + " / " + ecrImageLabel(image))
-	w.setDetail(formatECRImage(w.selectedECRRepository, image), detailECRImage)
+	if scan, found := w.ecrScanCache[image.Digest]; found {
+		image = w.mergeECRScanSummary(image, scan)
+		w.setDetail(formatECRImageWithFindingCount(w.selectedECRRepository, image, len(scan.Findings)), detailECRImage)
+	} else {
+		w.setDetail(formatECRImage(w.selectedECRRepository, image), detailECRImage)
+		w.loadECRImageScanSummary(image)
+	}
 	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) loadECRImageScanSummary(image model.ECRImage) {
+	repository, digest := w.selectedECRRepository, image.Digest
+	ctx, generation := w.startRequest("Loading scan summary for " + ecrImageLabel(image) + "…")
+	go func() {
+		scan, err := w.options.ECR.ScanFindings(ctx, repository, digest)
+		w.finishRefreshRequest(ctx, generation, err, true, func() {
+			if w.currentPage != pageECRImages || w.selectedECRRepository != repository || w.selectedECRImage != digest {
+				return
+			}
+			if w.ecrScanCache == nil {
+				w.ecrScanCache = make(map[string]model.ECRScan)
+			}
+			w.ecrScanCache[digest] = scan
+			image = w.mergeECRScanSummary(image, scan)
+			w.applyECRImageFilter()
+			w.setDetail(formatECRImageWithFindingCount(repository, image, len(scan.Findings)), detailECRImage)
+			w.updateActionSensitivity()
+		})
+	}()
 }
 
 func (w *mainWindow) openECRImageAt(position uint) {
@@ -314,10 +365,19 @@ func (w *mainWindow) refreshECRImages(foreground bool) {
 	go func() {
 		images, err := w.options.ECR.ListImages(ctx, repository)
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+			for index, image := range images {
+				if scan, found := w.ecrScanCache[image.Digest]; found {
+					images[index] = imageWithECRScan(image, scan)
+				}
+			}
 			w.allECRImages = images
 			w.applyECRImageFilter()
 			if image, found := findECRImage(images, selected); found {
-				w.setDetail(formatECRImage(repository, image), detailECRImage)
+				if scan, loaded := w.ecrScanCache[image.Digest]; loaded {
+					w.setDetail(formatECRImageWithFindingCount(repository, image, len(scan.Findings)), detailECRImage)
+				} else {
+					w.setDetail(formatECRImage(repository, image), detailECRImage)
+				}
 				return
 			}
 			w.selectedECRImage = ""
@@ -332,17 +392,19 @@ func (w *mainWindow) refreshECRFindings(foreground bool) {
 	repository, digest, selected := w.selectedECRRepository, w.selectedECRImage, w.selectedECRFinding
 	ctx, generation := w.startRefreshRequest("Refreshing ECR scan findings…", foreground)
 	go func() {
-		findings, err := w.options.ECR.Findings(ctx, repository, digest)
+		scan, err := w.options.ECR.ScanFindings(ctx, repository, digest)
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
-			w.allECRFindings = findings
-			w.applyECRFindingFilter()
+			w.ecrScanCache[digest] = scan
+			w.allECRFindings = scan.Findings
 			image, _ := findECRImage(w.allECRImages, digest)
-			if finding, found := findECRFinding(findings, selected); found {
+			image = w.mergeECRScanSummary(image, scan)
+			w.applyECRFindingFilter()
+			if finding, found := findECRFinding(scan.Findings, selected); found {
 				w.setDetail(formatECRFinding(repository, image, finding), detailECRFinding)
 				return
 			}
 			w.selectedECRFinding = ""
-			w.setDetail(formatECRImageWithFindingCount(repository, image, len(findings)), detailECRImage)
+			w.setDetail(formatECRImageWithFindingCount(repository, image, len(scan.Findings)), detailECRImage)
 		})
 	}()
 }
@@ -375,6 +437,7 @@ func (w *mainWindow) startSelectedECRScan() {
 		return
 	}
 	repository, digest := w.selectedECRRepository, image.Digest
+	delete(w.ecrScanCache, digest)
 	w.ecrActionPending = true
 	w.updateActionSensitivity()
 	ctx, generation := w.startRequest("Starting image scan for " + ecrImageLabel(image) + "…")
@@ -449,6 +512,7 @@ func (w *mainWindow) deleteECRImage(image model.ECRImage) {
 			w.currentPage = pageECRImages
 			w.clearECRFindings()
 			w.selectedECRImage = ""
+			delete(w.ecrScanCache, digest)
 			w.allECRImages = images
 			w.search.SetText("")
 			w.search.SetPlaceholderText("Filter images…")
@@ -612,10 +676,21 @@ func formatECRImageWithFindingCount(repository string, image model.ECRImage, fin
 		fmt.Fprintf(&out, "\nFindings      %d", findingCount)
 	}
 	out.WriteString("\n\nSCAN SEVERITY COUNTS")
+	if image.ScanSeverity == nil {
+		out.WriteString("\n  Not loaded — select the image to retrieve enhanced scan metadata.")
+		return out.String()
+	}
 	for _, severity := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL", "UNDEFINED"} {
 		fmt.Fprintf(&out, "\n  %-15s %d", severity, image.ScanSeverity[severity])
 	}
 	return out.String()
+}
+
+func ecrCriticalHighSummary(image model.ECRImage) string {
+	if image.ScanSeverity == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%d / %d", image.ScanSeverity["CRITICAL"], image.ScanSeverity["HIGH"])
 }
 
 func formatECRFinding(repository string, image model.ECRImage, finding model.ECRFinding) string {

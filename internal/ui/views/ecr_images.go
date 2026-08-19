@@ -157,7 +157,7 @@ func scanStatusCell(status string) components.Cell {
 }
 
 func vulnSummaryCell(counts map[string]int32) components.Cell {
-	if len(counts) == 0 {
+	if counts == nil {
 		return components.Plain("-")
 	}
 	var parts []string
@@ -204,6 +204,18 @@ func (m ECRImagesModel) filteredImages() []model.ECRImage {
 }
 
 func (m ECRImagesModel) SetImages(images []model.ECRImage) ECRImagesModel {
+	known := make(map[string]model.ECRImage, len(m.images))
+	for _, image := range m.images {
+		if image.ScanSeverity != nil {
+			known[image.Digest] = image
+		}
+	}
+	for index, image := range images {
+		if previous, found := known[image.Digest]; found && image.ScanSeverity == nil {
+			images[index].ScanStatus = previous.ScanStatus
+			images[index].ScanSeverity = cloneECRScanSeverity(previous.ScanSeverity)
+		}
+	}
 	m.images = images
 	m.loaded = true
 	filtered := m.filteredImages()
@@ -220,6 +232,31 @@ func (m ECRImagesModel) SelectedImage() *model.ECRImage {
 	}
 	img := filtered[m.cursor]
 	return &img
+}
+
+// SetSelectedScan enriches the selected image after its on-demand scan request.
+// Enhanced scan metadata is not included in ECR DescribeImages responses.
+func (m ECRImagesModel) SetSelectedScan(scan model.ECRScan) ECRImagesModel {
+	selected := m.SelectedImage()
+	if selected == nil {
+		return m
+	}
+	for index := range m.images {
+		if m.images[index].Digest == selected.Digest {
+			m.images[index].ScanStatus = scan.Status
+			m.images[index].ScanSeverity = cloneECRScanSeverity(scan.Severity)
+			break
+		}
+	}
+	return m
+}
+
+func cloneECRScanSeverity(counts map[string]int32) map[string]int32 {
+	cloned := make(map[string]int32, len(counts))
+	for severity, count := range counts {
+		cloned[severity] = count
+	}
+	return cloned
 }
 
 func (m ECRImagesModel) RepoName() string  { return m.repoName }

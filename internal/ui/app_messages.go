@@ -281,7 +281,7 @@ type ec2TargetGroupLoadedMsg struct{ targetGroup *model.EC2TargetGroup }
 
 type ecrReposLoadedMsg struct{ repos []model.ECRRepo }
 type ecrImagesLoadedMsg struct{ images []model.ECRImage }
-type ecrFindingsLoadedMsg struct{ findings []model.ECRFinding }
+type ecrFindingsLoadedMsg struct{ scan model.ECRScan }
 type ecrActionDoneMsg struct{ message string }
 
 // --- Route53 Messages ---

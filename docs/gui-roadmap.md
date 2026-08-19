@@ -457,7 +457,9 @@ Both frontends accept basic-scan `findings` and Amazon Inspector-backed enhanced
 `enhancedFindings`; an `ACTIVE` continuous scan is readable but cannot be
 manually restarted. Because `DescribeImages` omits enhanced scan status and
 severity counts, enhanced findings are retrieved on demand when an image is
-opened rather than by issuing one scan request per image in the repository.
+selected in the GUI or opened in the TUI rather than by issuing one scan request
+per image in the repository. Unknown table values remain visibly unknown until
+that request completes, and cached summaries survive ordinary list refresh.
 
 ### Phase 1: shared service
 

@@ -13,7 +13,7 @@ import (
 type ECRAPI interface {
 	ListECRRepos(context.Context, string) ([]model.ECRRepo, error)
 	ListECRImages(context.Context, string) ([]model.ECRImage, error)
-	GetECRScanFindings(context.Context, string, string) ([]model.ECRFinding, error)
+	GetECRScanFindings(context.Context, string, string) (model.ECRScan, error)
 	StartECRScan(context.Context, string, string, []string) error
 	DeleteECRImage(context.Context, string, string) error
 }
@@ -63,22 +63,33 @@ func (s *ECR) ListImages(ctx context.Context, repository string) ([]model.ECRIma
 }
 
 func (s *ECR) Findings(ctx context.Context, repository, digest string) ([]model.ECRFinding, error) {
+	scan, err := s.ScanFindings(ctx, repository, digest)
+	return scan.Findings, err
+}
+
+func (s *ECR) ScanFindings(ctx context.Context, repository, digest string) (model.ECRScan, error) {
 	repository, digest = strings.TrimSpace(repository), strings.TrimSpace(digest)
 	if repository == "" || digest == "" {
-		return nil, fmt.Errorf("read ECR scan findings: repository and image digest are required")
+		return model.ECRScan{}, fmt.Errorf("read ECR scan findings: repository and image digest are required")
 	}
-	findings, err := s.api.GetECRScanFindings(ctx, repository, digest)
+	scan, err := s.api.GetECRScanFindings(ctx, repository, digest)
 	if err != nil {
-		return nil, fmt.Errorf("read ECR scan findings for %q: %w", repository, err)
+		return model.ECRScan{}, fmt.Errorf("read ECR scan findings for %q: %w", repository, err)
 	}
-	sort.SliceStable(findings, func(i, j int) bool {
-		left, right := ecrSeverityOrder(findings[i].Severity), ecrSeverityOrder(findings[j].Severity)
+	sort.SliceStable(scan.Findings, func(i, j int) bool {
+		left, right := ecrSeverityOrder(scan.Findings[i].Severity), ecrSeverityOrder(scan.Findings[j].Severity)
 		if left == right {
-			return strings.ToLower(findings[i].Name) < strings.ToLower(findings[j].Name)
+			return strings.ToLower(scan.Findings[i].Name) < strings.ToLower(scan.Findings[j].Name)
 		}
 		return left < right
 	})
-	return findings, nil
+	if len(scan.Severity) == 0 && len(scan.Findings) > 0 {
+		scan.Severity = make(map[string]int32)
+		for _, finding := range scan.Findings {
+			scan.Severity[strings.ToUpper(finding.Severity)]++
+		}
+	}
+	return scan, nil
 }
 
 func (s *ECR) StartScan(ctx context.Context, repository string, image model.ECRImage) error {

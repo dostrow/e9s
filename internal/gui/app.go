@@ -122,6 +122,7 @@ type ECRService interface {
 	ListRepositories(context.Context, string) ([]model.ECRRepo, error)
 	ListImages(context.Context, string) ([]model.ECRImage, error)
 	Findings(context.Context, string, string) ([]model.ECRFinding, error)
+	ScanFindings(context.Context, string, string) (model.ECRScan, error)
 	StartScan(context.Context, string, model.ECRImage) error
 	DeleteImage(context.Context, string, string) error
 	ImageURI(string, model.ECRImage) (string, error)

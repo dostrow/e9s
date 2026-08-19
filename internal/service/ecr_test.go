@@ -14,6 +14,7 @@ type fakeECRAPI struct {
 	repositories []model.ECRRepo
 	images       []model.ECRImage
 	findings     []model.ECRFinding
+	scan         model.ECRScan
 	err          error
 	repository   string
 	digest       string
@@ -28,9 +29,13 @@ func (f *fakeECRAPI) ListECRImages(_ context.Context, repository string) ([]mode
 	f.repository = repository
 	return append([]model.ECRImage(nil), f.images...), f.err
 }
-func (f *fakeECRAPI) GetECRScanFindings(_ context.Context, repository, digest string) ([]model.ECRFinding, error) {
+func (f *fakeECRAPI) GetECRScanFindings(_ context.Context, repository, digest string) (model.ECRScan, error) {
 	f.repository, f.digest = repository, digest
-	return append([]model.ECRFinding(nil), f.findings...), f.err
+	scan := f.scan
+	if scan.Findings == nil {
+		scan.Findings = append([]model.ECRFinding(nil), f.findings...)
+	}
+	return scan, f.err
 }
 func (f *fakeECRAPI) StartECRScan(_ context.Context, repository, digest string, tags []string) error {
 	f.repository, f.digest, f.tags = repository, digest, append([]string(nil), tags...)
@@ -65,6 +70,10 @@ func TestECRImagesAndFindingsOrdering(t *testing.T) {
 	findings, err := svc.Findings(context.Background(), "repo", "sha256:1")
 	if err != nil || findings[0].Name != "a-critical" || findings[1].Name != "z-critical" || findings[2].Severity != "LOW" {
 		t.Fatalf("Findings() = %#v, %v", findings, err)
+	}
+	scan, err := svc.ScanFindings(context.Background(), "repo", "sha256:1")
+	if err != nil || scan.Severity["CRITICAL"] != 2 || scan.Findings[0].Name != "a-critical" {
+		t.Fatalf("ScanFindings() = %#v, %v", scan, err)
 	}
 }
 

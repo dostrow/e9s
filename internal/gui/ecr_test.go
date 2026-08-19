@@ -63,15 +63,32 @@ func TestCanStartECRScan(t *testing.T) {
 	}
 }
 
-func TestMergeECRFindingSummary(t *testing.T) {
+func TestMergeECRScanSummary(t *testing.T) {
 	w := &mainWindow{allECRImages: []model.ECRImage{{Digest: "sha256:one"}}}
-	image := w.mergeECRFindingSummary(w.allECRImages[0], []model.ECRFinding{
-		{Severity: "CRITICAL"}, {Severity: "critical"}, {Severity: "HIGH"},
+	image := w.mergeECRScanSummary(w.allECRImages[0], model.ECRScan{
+		Status: "ACTIVE", Severity: map[string]int32{"CRITICAL": 2, "HIGH": 1},
 	})
 	if image.ScanSeverity["CRITICAL"] != 2 || image.ScanSeverity["HIGH"] != 1 {
 		t.Fatalf("merged summary = %#v", image.ScanSeverity)
 	}
+	if image.ScanStatus != "ACTIVE" {
+		t.Fatalf("merged status = %q", image.ScanStatus)
+	}
 	if w.allECRImages[0].ScanSeverity["CRITICAL"] != 2 {
 		t.Fatalf("cached summary = %#v", w.allECRImages[0].ScanSeverity)
+	}
+}
+
+func TestECRUnknownAndLoadedSeverityPresentation(t *testing.T) {
+	unknown := model.ECRImage{Digest: "sha256:one"}
+	if got := ecrCriticalHighSummary(unknown); got != "—" {
+		t.Fatalf("unknown summary = %q", got)
+	}
+	if text := formatECRImage("repo", unknown); !strings.Contains(text, "Not loaded") || strings.Contains(text, "CRITICAL        0") {
+		t.Fatalf("unknown detail is misleading:\n%s", text)
+	}
+	loaded := model.ECRImage{Digest: "sha256:one", ScanSeverity: map[string]int32{"CRITICAL": 2, "HIGH": 5}}
+	if got := ecrCriticalHighSummary(loaded); got != "2 / 5" {
+		t.Fatalf("loaded summary = %q", got)
 	}
 }

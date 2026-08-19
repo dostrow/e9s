@@ -188,6 +188,7 @@ type mainWindow struct {
 	filteredECRFindings         []model.ECRFinding
 	selectedECRFinding          string
 	ecrActionPending            bool
+	ecrScanCache                map[string]model.ECRScan
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
