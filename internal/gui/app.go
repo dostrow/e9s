@@ -139,6 +139,14 @@ type RDSService interface {
 	ClusterMetrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
 }
 
+type S3Service interface {
+	Buckets(context.Context, string) ([]model.S3Bucket, error)
+	Objects(context.Context, string, string) ([]model.S3Object, error)
+	Search(context.Context, string, string) ([]model.S3Object, error)
+	Detail(context.Context, string, string) (*model.S3ObjectDetail, error)
+	Download(context.Context, model.S3DownloadRequest) (model.S3DownloadResult, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -153,6 +161,7 @@ type Options struct {
 	LoadBalancing   LoadBalancingService
 	ECR             ECRService
 	RDS             RDSService
+	S3              S3Service
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

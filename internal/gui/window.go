@@ -48,6 +48,7 @@ const (
 	pageECRFindings       = "ecr-findings"
 	pageRDSInstances      = "rds-instances"
 	pageRDSClusters       = "rds-clusters"
+	pageS3Buckets         = "s3-buckets"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -76,6 +77,7 @@ const (
 	detailECRFinding       = "ecr-finding"
 	detailRDS              = "rds-instance"
 	detailRDSCluster       = "rds-cluster"
+	detailS3Bucket         = "s3-bucket"
 )
 
 type mainWindow struct {
@@ -202,6 +204,11 @@ type mainWindow struct {
 	selectedRDSCluster          string
 	rdsClusterDetail            *model.RDSCluster
 	rdsClusterContext           string
+	allS3Buckets                []model.S3Bucket
+	filteredS3Buckets           []model.S3Bucket
+	selectedS3Bucket            string
+	s3BucketFilter              string
+	activeSavedS3Search         string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -233,6 +240,7 @@ type mainWindow struct {
 	ecrFindingTable             *stringTable
 	rdsTable                    *stringTable
 	rdsClusterTable             *stringTable
+	s3BucketTable               *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -248,6 +256,7 @@ type mainWindow struct {
 	ec2ModuleItems              *gtk.Box
 	ecrModuleItems              *gtk.Box
 	rdsModuleItems              *gtk.Box
+	s3ModuleItems               *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -272,6 +281,9 @@ type mainWindow struct {
 	ecrRepositoriesNavButton    *gtk.ToggleButton
 	rdsInstancesNavButton       *gtk.ToggleButton
 	rdsClustersNavButton        *gtk.ToggleButton
+	s3BucketsNavButton          *gtk.ToggleButton
+	savedS3SearchesLabel        *gtk.Label
+	savedS3SearchButtons        []*gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -323,6 +335,8 @@ type mainWindow struct {
 	ecrCopyURIButton            *gtk.Button
 	ecrStartScanButton          *gtk.Button
 	ecrDeleteImageButton        *gtk.Button
+	s3SaveSearchButton          *gtk.Button
+	s3ManageSearchesButton      *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -609,6 +623,9 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "STATUS", field: 2}, {title: "MEMBERS", field: 3}, {title: "WRITER", field: 4},
 		{title: "ENDPOINT", field: 5, expand: true},
 	})
+	w.s3BucketTable = newStringTable([]columnSpec{
+		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -634,6 +651,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrFindingTable.view.ConnectActivate(w.openECRFindingAt)
 	w.rdsTable.view.ConnectActivate(w.openRDSInstanceAt)
 	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
+	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -658,6 +676,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrFindingTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRFindingRow() })
 	w.rdsTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSInstanceRow() })
 	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
+	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -794,6 +813,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ecrDeleteImageButton = gtk.NewButtonWithLabel("Delete image…")
 	w.ecrDeleteImageButton.AddCSSClass("destructive-action")
 	w.ecrDeleteImageButton.ConnectClicked(w.confirmDeleteECRImage)
+	w.s3SaveSearchButton = gtk.NewButtonWithLabel("Save search…")
+	w.s3SaveSearchButton.ConnectClicked(w.promptSaveS3Search)
+	w.s3ManageSearchesButton = gtk.NewButtonWithLabel("Saved searches…")
+	w.s3ManageSearchesButton.ConnectClicked(w.promptManageS3Searches)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -881,6 +904,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.ecrCopyURIButton)
 	header.Append(w.ecrStartScanButton)
 	header.Append(w.ecrDeleteImageButton)
+	header.Append(w.s3SaveSearchButton)
+	header.Append(w.s3ManageSearchesButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -946,6 +971,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.rdsModuleItems.Append(w.rdsClustersNavButton)
 	w.rdsModuleItems.Append(w.rdsInstancesNavButton)
 	rdsInstances := w.newModuleExpander("RDS", moduleRDS, w.rdsModuleItems)
+	w.s3BucketsNavButton = newModuleRailButton("Buckets", w.openS3Module)
+	w.s3BucketsNavButton.SetGroup(w.clustersNavButton)
+	w.s3ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.s3ModuleItems.AddCSSClass("module-subitems")
+	w.s3ModuleItems.Append(w.s3BucketsNavButton)
+	w.rebuildS3SearchRail()
+	s3Buckets := w.newModuleExpander("S3", moduleS3, w.s3ModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1003,6 +1035,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
 		{key: moduleRDS, name: "RDS", defaultItem: "Clusters", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.openRDSClustersModule},
+		{key: moduleS3, name: "S3", defaultItem: "Buckets", aliases: []string{"s3", "object storage", "buckets"}, expander: s3Buckets, activate: w.openS3Module},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1148,6 +1181,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	rdsClusterScroll.SetVExpand(true)
 	rdsClusterScroll.SetHExpand(true)
 	rdsClusterScroll.SetChild(w.rdsClusterTable.view)
+	s3BucketScroll := gtk.NewScrolledWindow()
+	s3BucketScroll.SetVExpand(true)
+	s3BucketScroll.SetHExpand(true)
+	s3BucketScroll.SetChild(w.s3BucketTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1183,6 +1220,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(ecrFindingScroll, pageECRFindings)
 	w.resourceStack.AddNamed(rdsScroll, pageRDSInstances)
 	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
+	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -2175,6 +2213,10 @@ func (w *mainWindow) applyFilter() {
 	if w.currentPage == pageModulePicker {
 		return
 	}
+	if w.currentPage == pageS3Buckets {
+		w.applyS3BucketFilter()
+		return
+	}
 	if w.currentPage == pageECRRepositories {
 		w.applyECRRepositoryFilter()
 		return
@@ -2611,6 +2653,13 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		w.refreshRDSClusters(foreground)
 		return
 	}
+	if w.currentPage == pageS3Buckets {
+		if foreground && !w.reloadS3SearchConfig() {
+			return
+		}
+		w.refreshS3Buckets(foreground)
+		return
+	}
 	if w.currentPage == pageEC2LoadBalancers {
 		w.refreshEC2LoadBalancers(foreground)
 		return
@@ -2987,6 +3036,14 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.rdsInstancesNavButton.SetActive(w.currentPage == pageRDSInstances)
 			w.rdsClustersNavButton.SetActive(w.currentPage == pageRDSClusters)
 		}
+		if w.s3BucketsNavButton != nil {
+			w.s3BucketsNavButton.SetActive(w.currentPage == pageS3Buckets && w.activeSavedS3Search == "")
+			for i, search := range w.options.ConfigS3Searches() {
+				if i < len(w.savedS3SearchButtons) {
+					w.savedS3SearchButtons[i].SetActive(w.currentPage == pageS3Buckets && search.Name == w.activeSavedS3Search)
+				}
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -3166,6 +3223,12 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.ecrDeleteImageButton.SetVisible(ecrPage && ecrImageSelected)
 	w.ecrDeleteImageButton.SetSensitive(ecrImageReady)
+	s3Page := w.currentPage == pageS3Buckets
+	w.s3SaveSearchButton.SetVisible(s3Page)
+	w.s3SaveSearchButton.SetSensitive(s3Page && w.options.Config != nil)
+	hasSavedS3Searches := w.options.Config != nil && len(w.options.Config.S3Searches) > 0
+	w.s3ManageSearchesButton.SetVisible(s3Page && hasSavedS3Searches)
+	w.s3ManageSearchesButton.SetSensitive(s3Page && hasSavedS3Searches)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

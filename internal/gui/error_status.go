@@ -21,6 +21,7 @@ const (
 	moduleEC2              = "ec2"
 	moduleECR              = "ecr"
 	moduleRDS              = "rds"
+	moduleS3               = "s3"
 )
 
 func compactStatusMessage(message string) string {
@@ -54,6 +55,8 @@ func moduleForPage(page string) string {
 		return moduleECR
 	case pageRDSInstances, pageRDSClusters:
 		return moduleRDS
+	case pageS3Buckets:
+		return moduleS3
 	default:
 		return ""
 	}

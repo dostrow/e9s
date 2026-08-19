@@ -36,6 +36,9 @@ func TestModuleForPage(t *testing.T) {
 		pageECRRepositories:   moduleECR,
 		pageECRImages:         moduleECR,
 		pageECRFindings:       moduleECR,
+		pageRDSInstances:      moduleRDS,
+		pageRDSClusters:       moduleRDS,
+		pageS3Buckets:         moduleS3,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}
@@ -56,6 +59,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		{key: moduleLambda, name: "Lambda", aliases: []string{"lambda", "λ"}},
 		{key: moduleCodeBuild, name: "CodeBuild", aliases: []string{"cb", "codebuild"}},
 		{key: moduleEC2, name: "EC2", aliases: []string{"ec2", "ec2i"}},
+		{key: moduleS3, name: "S3", aliases: []string{"s3", "buckets"}},
 	}
 	tests := map[string]string{
 		"ECS":               moduleECS,
@@ -69,6 +73,8 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		"λ":                 moduleLambda,
 		"CB":                moduleCodeBuild,
 		"EC2i":              moduleEC2,
+		"S3":                moduleS3,
+		"buckets":           moduleS3,
 	}
 	for value, want := range tests {
 		index, found := moduleSectionIndex(sections, value)
@@ -79,7 +85,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 			t.Fatalf("moduleSectionIndex(%q) = %q, want %q", value, got, want)
 		}
 	}
-	if _, found := moduleSectionIndex(sections, "S3"); found {
+	if _, found := moduleSectionIndex(sections, "DynamoDB"); found {
 		t.Fatal("unimplemented GUI module unexpectedly resolved")
 	}
 }

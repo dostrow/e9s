@@ -70,6 +70,7 @@ func main() {
 				LoadBalancing:   service.NewLoadBalancing(client),
 				ECR:             service.NewECR(client),
 				RDS:             service.NewRDS(client),
+				S3:              service.NewS3(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,
