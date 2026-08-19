@@ -21,6 +21,7 @@ func TestModuleForPage(t *testing.T) {
 		pageLogStreams:      moduleCloudWatchLogs,
 		pageSavedLogSearch:  moduleCloudWatchLogs,
 		pageAlarms:          moduleCloudWatchAlarms,
+		pageSSM:             moduleSSM,
 		"unknown":           "",
 	}
 	for page, want := range tests {
@@ -35,9 +36,10 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 		{name: "ECS"},
 		{name: "CloudWatch Logs"},
 		{name: "CloudWatch Alarms"},
+		{name: "SSM Parameter Store"},
 	}
 	sortModuleRailSections(sections)
-	want := []string{"CloudWatch Alarms", "CloudWatch Logs", "ECS"}
+	want := []string{"CloudWatch Alarms", "CloudWatch Logs", "ECS", "SSM Parameter Store"}
 	for i, name := range want {
 		if sections[i].name != name {
 			t.Fatalf("section %d = %q, want %q", i, sections[i].name, name)

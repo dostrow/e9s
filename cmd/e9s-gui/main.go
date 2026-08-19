@@ -60,6 +60,7 @@ func main() {
 				ECS:             service.NewECS(client),
 				Logs:            service.NewLogs(client),
 				Alarms:          service.NewAlarms(client),
+				SSM:             service.NewSSM(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

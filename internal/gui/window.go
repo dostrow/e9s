@@ -32,6 +32,7 @@ const (
 	pageLogStreams      = "cloudwatch-log-streams"
 	pageSavedLogSearch  = "cloudwatch-saved-search"
 	pageAlarms          = "cloudwatch-alarms"
+	pageSSM             = "ssm-parameters"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -42,6 +43,7 @@ const (
 	detailLogGroup       = "log-group"
 	detailLogStream      = "log-stream"
 	detailAlarm          = "alarm"
+	detailSSM            = "ssm-parameter"
 )
 
 type mainWindow struct {
@@ -85,6 +87,11 @@ type mainWindow struct {
 	alarmDetail                 *model.AlarmDetail
 	alarmActionPending          bool
 	alarmUTCTime                bool
+	allSSMParameters            []model.Parameter
+	filteredSSMParameters       []model.Parameter
+	selectedSSMParameter        string
+	ssmPath                     string
+	activeSSMPrefix             string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -99,6 +106,7 @@ type mainWindow struct {
 	logGroupTable               *stringTable
 	logStreamTable              *stringTable
 	alarmTable                  *stringTable
+	ssmTable                    *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -107,10 +115,14 @@ type mainWindow struct {
 	taskDefinitionsNavButton    *gtk.ToggleButton
 	logGroupsNavButton          *gtk.ToggleButton
 	cloudWatchModuleItems       *gtk.Box
+	ssmModuleItems              *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	alarmNavButtons             map[string]*gtk.ToggleButton
 	savedLogsLabel              *gtk.Label
 	savedLogNavButtons          []*gtk.ToggleButton
+	ssmParametersNavButton      *gtk.ToggleButton
+	savedSSMPrefixLabel         *gtk.Label
+	savedSSMPrefixButtons       []*gtk.ToggleButton
 	activeSavedLog              string
 	peekLogStreamButton         *gtk.Button
 	followLogStreamButton       *gtk.Button
@@ -124,6 +136,9 @@ type mainWindow struct {
 	alarmActionsButton          *gtk.Button
 	alarmSetStateButton         *gtk.Button
 	alarmTimestampButton        *gtk.Button
+	ssmBrowsePathButton         *gtk.Button
+	ssmSavePrefixButton         *gtk.Button
+	ssmManagePrefixesButton     *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -289,6 +304,13 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "ACTIONS", field: 4},
 		{title: "UPDATED", field: 5},
 	})
+	w.ssmTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true},
+		{title: "TYPE", field: 1},
+		{title: "VERSION", field: 2},
+		{title: "VALUE", field: 3, expand: true},
+		{title: "MODIFIED", field: 4},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -297,9 +319,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.logGroupTable.view.ConnectActivate(w.openLogGroupAt)
 	w.logStreamTable.view.ConnectActivate(w.peekLogStreamAt)
 	w.alarmTable.view.ConnectActivate(w.openAlarmAt)
+	w.ssmTable.view.ConnectActivate(w.openSSMParameterAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
+	w.ssmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSSMParameterRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -360,6 +384,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.alarmSetStateButton.ConnectClicked(w.promptSetAlarmState)
 	w.alarmTimestampButton = gtk.NewButtonWithLabel("Time: Local")
 	w.alarmTimestampButton.ConnectClicked(w.toggleAlarmTimestamps)
+	w.ssmBrowsePathButton = gtk.NewButtonWithLabel("Browse path…")
+	w.ssmBrowsePathButton.ConnectClicked(w.promptSSMPath)
+	w.ssmSavePrefixButton = gtk.NewButtonWithLabel("Save prefix…")
+	w.ssmSavePrefixButton.ConnectClicked(w.promptSaveSSMPrefix)
+	w.ssmManagePrefixesButton = gtk.NewButtonWithLabel("Saved prefixes…")
+	w.ssmManagePrefixesButton.ConnectClicked(w.promptManageSSMPrefixes)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -411,6 +441,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.alarmActionsButton)
 	header.Append(w.alarmSetStateButton)
 	header.Append(w.alarmTimestampButton)
+	header.Append(w.ssmBrowsePathButton)
+	header.Append(w.ssmSavePrefixButton)
+	header.Append(w.ssmManagePrefixesButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -457,6 +490,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		alarmItems.Append(button)
 	}
 	cloudWatchAlarms := w.newModuleExpander("CloudWatch Alarms", moduleCloudWatchAlarms, alarmItems)
+	w.ssmParametersNavButton = newModuleRailButton("Parameters", w.openSSMModule)
+	w.ssmParametersNavButton.SetGroup(w.clustersNavButton)
+	w.ssmModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.ssmModuleItems.AddCSSClass("module-subitems")
+	w.ssmModuleItems.Append(w.ssmParametersNavButton)
+	w.rebuildSSMPrefixRail()
+	ssmParameters := w.newModuleExpander("SSM Parameter Store", moduleSSM, w.ssmModuleItems)
 	comingSoon := gtk.NewLabel("More modules planned")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
@@ -466,6 +506,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{name: "ECS", widget: ecs},
 		{name: "CloudWatch Logs", widget: cloudWatch},
 		{name: "CloudWatch Alarms", widget: cloudWatchAlarms},
+		{name: "SSM Parameter Store", widget: ssmParameters},
 	}
 	sortModuleRailSections(moduleSections)
 	for _, section := range moduleSections {
@@ -536,6 +577,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	alarmScroll.SetVExpand(true)
 	alarmScroll.SetHExpand(true)
 	alarmScroll.SetChild(w.alarmTable.view)
+	ssmScroll := gtk.NewScrolledWindow()
+	ssmScroll.SetVExpand(true)
+	ssmScroll.SetHExpand(true)
+	ssmScroll.SetChild(w.ssmTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -548,6 +593,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(logGroupScroll, pageLogGroups)
 	w.resourceStack.AddNamed(logStreamScroll, pageLogStreams)
 	w.resourceStack.AddNamed(alarmScroll, pageAlarms)
+	w.resourceStack.AddNamed(ssmScroll, pageSSM)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1408,6 +1454,10 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageSSM {
+		w.applySSMFilter()
+		return
+	}
 	if w.currentPage == pageAlarms {
 		w.applyAlarmFilter()
 		return
@@ -1591,6 +1641,13 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if path, found := w.activeSavedLogPath(); found {
 			w.openSavedLog(path)
 		}
+		return
+	}
+	if w.currentPage == pageSSM {
+		if foreground && !w.reloadSSMPrefixConfig() {
+			return
+		}
+		w.refreshSSM(foreground)
 		return
 	}
 	if w.currentPage == pageAlarms {
@@ -1883,6 +1940,14 @@ func (w *mainWindow) updateActionSensitivity() {
 		for state, button := range w.alarmNavButtons {
 			button.SetActive(w.currentPage == pageAlarms && state == w.alarmStateFilter)
 		}
+		if w.ssmParametersNavButton != nil {
+			w.ssmParametersNavButton.SetActive(w.currentPage == pageSSM && w.activeSSMPrefix == "")
+			for i, prefix := range w.options.ConfigSSMPrefixes() {
+				if i < len(w.savedSSMPrefixButtons) {
+					w.savedSSMPrefixButtons[i].SetActive(w.currentPage == pageSSM && prefix.Name == w.activeSSMPrefix)
+				}
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -1956,6 +2021,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.alarmSetStateButton.SetSensitive(alarmDetailReady && !w.alarmActionPending && w.options.Alarms != nil)
 	w.alarmTimestampButton.SetVisible(w.currentPage == pageAlarms)
 	w.alarmTimestampButton.SetSensitive(w.currentPage == pageAlarms)
+	ssmPage := w.currentPage == pageSSM
+	w.ssmBrowsePathButton.SetVisible(ssmPage)
+	w.ssmBrowsePathButton.SetSensitive(ssmPage && w.options.SSM != nil)
+	w.ssmSavePrefixButton.SetVisible(ssmPage)
+	w.ssmSavePrefixButton.SetSensitive(ssmPage && w.options.Config != nil && w.ssmPath != "")
+	hasSavedSSMPrefixes := w.options.Config != nil && len(w.options.Config.SSMPrefixes) > 0
+	w.ssmManagePrefixesButton.SetVisible(ssmPage && hasSavedSSMPrefixes)
+	w.ssmManagePrefixesButton.SetSensitive(ssmPage && hasSavedSSMPrefixes)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

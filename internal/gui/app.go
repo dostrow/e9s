@@ -56,10 +56,17 @@ type AlarmService interface {
 	SetState(context.Context, string, string, string) error
 }
 
+type SSMService interface {
+	List(context.Context, string) ([]model.Parameter, error)
+	Detail(context.Context, string) (*model.Parameter, error)
+	Update(context.Context, string, string) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
 	Alarms          AlarmService
+	SSM             SSMService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string
