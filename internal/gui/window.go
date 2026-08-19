@@ -207,6 +207,9 @@ type mainWindow struct {
 	logSearchSpec               *cloudWatchSearch
 	showingLogs                 bool
 	status                      *gtk.Label
+	statusDetailsButton         *gtk.Button
+	statusDismissButton         *gtk.Button
+	lastError                   string
 	spinner                     *gtk.Spinner
 	lastSuccessfulLoad          time.Time
 }
@@ -617,12 +620,23 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.status = gtk.NewLabel("Ready")
 	w.status.SetXAlign(0)
 	w.status.SetHExpand(true)
+	w.status.SetEllipsize(pango.EllipsizeEnd)
+	w.statusDetailsButton = gtk.NewButtonWithLabel("Details…")
+	w.statusDetailsButton.AddCSSClass("flat")
+	w.statusDetailsButton.SetVisible(false)
+	w.statusDetailsButton.ConnectClicked(w.showStatusErrorDetails)
+	w.statusDismissButton = gtk.NewButtonWithLabel("Dismiss")
+	w.statusDismissButton.AddCSSClass("flat")
+	w.statusDismissButton.SetVisible(false)
+	w.statusDismissButton.ConnectClicked(w.dismissStatusError)
 	identity := gtk.NewLabel(fmt.Sprintf("profile: %s   region: %s", valueOrDash(w.options.Profile), valueOrDash(w.options.Region)))
 	identity.AddCSSClass("muted")
 	footer := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	footer.AddCSSClass("status-bar")
 	footer.Append(w.spinner)
 	footer.Append(w.status)
+	footer.Append(w.statusDetailsButton)
+	footer.Append(w.statusDismissButton)
 	footer.Append(identity)
 
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -965,6 +979,7 @@ func (w *mainWindow) showParentDetails() {
 }
 
 func (w *mainWindow) resetWorkspaceForBrowserChange() {
+	w.setStatus("Ready", false)
 	if w.requestCancel != nil {
 		w.requestCancel()
 		w.requestCancel = nil
@@ -1800,10 +1815,22 @@ func (w *mainWindow) autoRefresh() {
 }
 
 func (w *mainWindow) setStatus(message string, isError bool) {
+	tooltip := message
+	if isError {
+		w.lastError = message
+		message = "Error: " + compactStatusMessage(message)
+	} else {
+		w.lastError = ""
+	}
 	w.status.SetLabel(message)
+	w.status.SetTooltipText(tooltip)
 	w.status.RemoveCSSClass("error")
 	if isError {
 		w.status.AddCSSClass("error")
+	}
+	if w.statusDetailsButton != nil {
+		w.statusDetailsButton.SetVisible(isError)
+		w.statusDismissButton.SetVisible(isError)
 	}
 }
 
