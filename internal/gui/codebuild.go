@@ -284,8 +284,8 @@ func (w *mainWindow) finishCodeBuildRequest(ctx context.Context, generation uint
 		w.spinner.Stop()
 		w.setWorkspaceBusy("", false)
 		w.codeBuildActionPending = false
-		w.updateActionSensitivity()
 		if err != nil {
+			w.updateActionSensitivity()
 			w.setStatus(err.Error(), true)
 			if showDetailError {
 				w.setDetail("ERROR\n\n"+err.Error(), detailError)
@@ -300,6 +300,10 @@ func (w *mainWindow) finishCodeBuildRequest(ctx context.Context, generation uint
 		if apply != nil {
 			apply()
 		}
+		// Successful callbacks install the selected build detail and its log
+		// destination. Recompute contextual actions afterward so View logs and
+		// Search logs become visible as soon as that detail is ready.
+		w.updateActionSensitivity()
 	})
 }
 
