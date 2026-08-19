@@ -139,6 +139,7 @@ func (w *mainWindow) openResourceLink(ref model.ResourceRef) {
 }
 
 func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
+	navigated := true
 	switch ref.Kind {
 	case "ec2-instance":
 		w.loadEC2InstancesAt(ref.ID)
@@ -159,7 +160,15 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 	case "ecs-task":
 		w.restoreECSTask(ref.ID)
 	default:
+		navigated = false
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
+	}
+	if navigated {
+		// Resource loaders set currentPage synchronously, even when the resource
+		// itself is fetched asynchronously. updateActionSensitivity selects the
+		// matching sub-item; revealing the parent makes that state visible.
+		w.updateActionSensitivity()
+		w.revealModuleForPage(w.currentPage)
 	}
 }
 

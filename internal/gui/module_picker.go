@@ -81,6 +81,22 @@ func (w *mainWindow) activateModule(value string) bool {
 	return true
 }
 
+// revealModuleForPage keeps the module rail in sync with navigation initiated
+// outside the rail, such as following an inline resource link in the workspace.
+// It intentionally leaves other sections as the user arranged them.
+func (w *mainWindow) revealModuleForPage(page string) {
+	module := moduleForPage(page)
+	if module == "" {
+		return
+	}
+	for i := range w.moduleSections {
+		if w.moduleSections[i].key == module {
+			w.moduleSections[i].expander.SetExpanded(true)
+			return
+		}
+	}
+}
+
 func (w *mainWindow) showModulePicker() {
 	if w.modulePickerOpen || len(w.moduleSections) == 0 {
 		return
