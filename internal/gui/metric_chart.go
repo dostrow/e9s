@@ -32,6 +32,7 @@ type metricChart struct {
 	hoverY       float64
 	onExpand     func()
 	expanded     bool
+	utc          bool
 }
 
 func newMetricChart(title, unit string, minZero bool, maxHint float64) *metricChart {
@@ -75,6 +76,11 @@ func newMetricChart(title, unit string, minZero bool, maxHint float64) *metricCh
 func (c *metricChart) Widget() gtk.Widgetter { return c.overlay }
 
 func (c *metricChart) SetExpandHandler(handler func()) { c.onExpand = handler }
+
+func (c *metricChart) SetUTC(utc bool) {
+	c.utc = utc
+	c.area.QueueDraw()
+}
 
 func (c *metricChart) SetExpanded(expanded bool) {
 	c.expanded = expanded
@@ -167,7 +173,7 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		drawChartText(area, cr, fmtMetricValue(value, c.unit), 4, y-8, foreground, 0.72)
 	}
 	span := c.end.Sub(c.start)
-	axisTimeLabel := func(timestamp time.Time) string { return formatChartAxisTime(timestamp, span) }
+	axisTimeLabel := func(timestamp time.Time) string { return formatChartAxisTime(timestamp, span, c.utc) }
 	labelLayout := area.CreatePangoLayout(axisTimeLabel(c.end))
 	labelWidth, _ := labelLayout.PixelSize()
 	maxTimeTicks := min(9, max(2, int(plotWidth/float64(max(80, labelWidth+28)))+1))
@@ -251,8 +257,8 @@ func chartTimeTicks(start, end time.Time, maxTicks int) []time.Time {
 	return ticks
 }
 
-func formatChartAxisTime(timestamp time.Time, span time.Duration) string {
-	timestamp = timestamp.Local()
+func formatChartAxisTime(timestamp time.Time, span time.Duration, utc bool) string {
+	timestamp = chartDisplayTime(timestamp, utc)
 	switch {
 	case span <= 24*time.Hour:
 		return timestamp.Format("15:04")
@@ -261,6 +267,13 @@ func formatChartAxisTime(timestamp time.Time, span time.Duration) string {
 	default:
 		return timestamp.Format("Jan 2")
 	}
+}
+
+func chartDisplayTime(timestamp time.Time, utc bool) time.Time {
+	if utc {
+		return timestamp.UTC()
+	}
+	return timestamp.Local()
 }
 
 func (c *metricChart) axisLeftGutter(area *gtk.DrawingArea, minValue, maxValue float64) float64 {
@@ -374,7 +387,12 @@ func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, 
 	cr.Stroke()
 	cr.SetDash(nil, 0)
 
-	lines := []string{target.Local().Format("Jan 2 2006 15:04:05")}
+	displayTarget := chartDisplayTime(target, c.utc)
+	zone := "local"
+	if c.utc {
+		zone = "UTC"
+	}
+	lines := []string{displayTarget.Format("Jan 2 2006 15:04:05") + " " + zone}
 	for index, series := range c.series {
 		point, ok := nearestMetricPoint(series.Points, target)
 		if !ok {

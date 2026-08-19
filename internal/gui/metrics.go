@@ -42,6 +42,9 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 			w.loadMetrics(true)
 		}
 	})
+	w.metricsTimeButton = gtk.NewButtonWithLabel("Time: Local")
+	w.metricsTimeButton.SetTooltipText("Toggle chart timestamps between local time and UTC")
+	w.metricsTimeButton.ConnectClicked(w.toggleMetricTimestamps)
 	w.metricsRestoreButton = gtk.NewButtonWithLabel("Show all charts")
 	w.metricsRestoreButton.SetVisible(false)
 	w.metricsRestoreButton.ConnectClicked(w.restoreMetricCharts)
@@ -57,6 +60,7 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	toolbar.Append(back)
 	toolbar.Append(refresh)
 	toolbar.Append(w.metricsRange)
+	toolbar.Append(w.metricsTimeButton)
 	toolbar.Append(w.metricsRestoreButton)
 	toolbar.Append(w.metricsScaleButton)
 	toolbar.Append(w.metricsScaleLabel)
@@ -123,6 +127,21 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	pane.Append(toolbar)
 	pane.Append(scroll)
 	return pane
+}
+
+func (w *mainWindow) toggleMetricTimestamps() {
+	w.metricsUTCTime = !w.metricsUTCTime
+	label := "Time: Local"
+	status := "Chart timestamps use local time"
+	if w.metricsUTCTime {
+		label = "Time: UTC"
+		status = "Chart timestamps use UTC"
+	}
+	w.metricsTimeButton.SetLabel(label)
+	if w.metricsRenderedSnapshot != nil {
+		w.setMetricCharts(w.metricsRenderedSnapshot, w.metricsChartSpecs)
+	}
+	w.setStatus(status, false)
 }
 
 func (w *mainWindow) openMetrics() {
@@ -496,6 +515,7 @@ func (w *mainWindow) setMetricCharts(snapshot *model.MetricSnapshot, specs []met
 			continue
 		}
 		chart := newMetricChart(spec.title, spec.unit, spec.minZero, spec.maxHint)
+		chart.SetUTC(w.metricsUTCTime)
 		chart.SetData(snapshot.StartTime, snapshot.EndTime, snapshot.Series, spec.ids...)
 		chart.SetExpanded(w.metricsFocusedTitle != "")
 		title := spec.title

@@ -55,8 +55,19 @@ func TestChartTimeTicksUseReadableTwoDayIntervalsForTwoWeeks(t *testing.T) {
 			t.Fatalf("tick interval %d = %s", index, interval)
 		}
 	}
-	if got := formatChartAxisTime(start, 14*24*time.Hour); got != "Aug 5" {
+	if got := formatChartAxisTime(start, 14*24*time.Hour, false); got != "Aug 5" {
 		t.Fatalf("formatChartAxisTime() = %q", got)
+	}
+}
+
+func TestChartTimestampFormattingCanUseUTC(t *testing.T) {
+	location := time.FixedZone("test-local", -5*60*60)
+	timestamp := time.Date(2026, 8, 19, 20, 30, 0, 0, time.UTC).In(location)
+	if got := formatChartAxisTime(timestamp, time.Hour, true); got != "20:30" {
+		t.Fatalf("UTC axis label = %q", got)
+	}
+	if got := chartDisplayTime(timestamp, true).Location(); got != time.UTC {
+		t.Fatalf("UTC display location = %v", got)
 	}
 }
 

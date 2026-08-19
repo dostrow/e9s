@@ -353,6 +353,8 @@ type mainWindow struct {
 	metricsChartsBox            *gtk.Box
 	metricsCharts               []*metricChart
 	metricsRange                *gtk.DropDown
+	metricsTimeButton           *gtk.Button
+	metricsUTCTime              bool
 	metricsRestoreButton        *gtk.Button
 	metricsAlarmTable           *stringTable
 	metricsScaleButton          *gtk.Button
