@@ -44,21 +44,17 @@ func TestTaskUtilizationMetricQueries(t *testing.T) {
 		t.Fatalf("len(utilizationMetricQueries()) = %d, want 4", len(queries))
 	}
 	for i, query := range queries {
-		if query.MetricStat == nil || query.MetricStat.Metric == nil {
-			t.Fatalf("query %d has no metric stat", i)
+		if query.Namespace != "ECS/ContainerInsights" {
+			t.Fatalf("query %d namespace = %q", i, query.Namespace)
 		}
-		metric := query.MetricStat.Metric
-		if aws.ToString(metric.Namespace) != "ECS/ContainerInsights" {
-			t.Fatalf("query %d namespace = %q", i, aws.ToString(metric.Namespace))
-		}
-		if len(metric.Dimensions) != 3 || aws.ToString(metric.Dimensions[2].Name) != "TaskId" {
-			t.Fatalf("query %d dimensions = %#v", i, metric.Dimensions)
+		if len(query.Dimensions) != 3 || query.Dimensions[2].Name != "TaskId" {
+			t.Fatalf("query %d dimensions = %#v", i, query.Dimensions)
 		}
 	}
-	if got := aws.ToString(queries[0].MetricStat.Metric.MetricName); got != "TaskCpuUtilization" {
+	if got := queries[0].MetricName; got != "TaskCpuUtilization" {
 		t.Fatalf("CPU metric name = %q", got)
 	}
-	if got := aws.ToString(queries[2].MetricStat.Metric.MetricName); got != "TaskMemoryUtilization" {
+	if got := queries[2].MetricName; got != "TaskMemoryUtilization" {
 		t.Fatalf("memory metric name = %q", got)
 	}
 }

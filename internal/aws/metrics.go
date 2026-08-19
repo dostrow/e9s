@@ -55,26 +55,29 @@ func (c *Client) getUtilizationMetrics(ctx context.Context, period time.Duration
 	now := time.Now()
 	start := now.Add(-period)
 	queries := utilizationMetricQueries(namespace, cpuMetric, memoryMetric, dims)
-
-	out, err := c.CW.GetMetricData(ctx, &cloudwatch.GetMetricDataInput{
-		StartTime:         &start,
-		EndTime:           &now,
-		MetricDataQueries: queries,
+	snapshot, err := c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: start,
+		EndTime:   now,
+		MaxPoints: defaultMetricMaxPoints,
+		Queries:   queries,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	m := &ServiceMetrics{Timestamp: now}
-	for _, r := range out.MetricDataResults {
-		if r.Id == nil {
-			continue
-		}
-		val, ok := latestMetricValue(r)
+	m := &ServiceMetrics{
+		Timestamp: now,
+		StartTime: snapshot.StartTime,
+		EndTime:   snapshot.EndTime,
+		Period:    snapshot.Period,
+		Series:    snapshot.Series,
+	}
+	for _, series := range snapshot.Series {
+		val, ok := latestSeriesValue(series)
 		if !ok {
 			continue
 		}
-		switch *r.Id {
+		switch series.ID {
 		case "cpu_avg":
 			m.CPUAvg = val
 			m.CPUAvgAvailable = true
@@ -92,32 +95,36 @@ func (c *Client) getUtilizationMetrics(ctx context.Context, period time.Duration
 	return m, nil
 }
 
-func utilizationMetricQueries(namespace, cpuMetric, memoryMetric string, dims []cwtypes.Dimension) []cwtypes.MetricDataQuery {
-	periodSec := int32(60)
-	specs := []struct {
-		id, metric, stat string
-	}{
-		{"cpu_avg", cpuMetric, "Average"},
-		{"cpu_max", cpuMetric, "Maximum"},
-		{"mem_avg", memoryMetric, "Average"},
-		{"mem_max", memoryMetric, "Maximum"},
+func utilizationMetricQueries(namespace, cpuMetric, memoryMetric string, dims []cwtypes.Dimension) []model.MetricQuery {
+	dimensions := make([]model.MetricDimension, 0, len(dims))
+	for _, dimension := range dims {
+		dimensions = append(dimensions, model.MetricDimension{
+			Name: aws.ToString(dimension.Name), Value: aws.ToString(dimension.Value),
+		})
 	}
-	queries := make([]cwtypes.MetricDataQuery, 0, len(specs))
+	specs := []struct {
+		id, label, metric, stat string
+	}{
+		{"cpu_avg", "CPU average", cpuMetric, "Average"},
+		{"cpu_max", "CPU maximum", cpuMetric, "Maximum"},
+		{"mem_avg", "Memory average", memoryMetric, "Average"},
+		{"mem_max", "Memory maximum", memoryMetric, "Maximum"},
+	}
+	queries := make([]model.MetricQuery, 0, len(specs))
 	for _, spec := range specs {
-		queries = append(queries, cwtypes.MetricDataQuery{
-			Id: aws.String(spec.id),
-			MetricStat: &cwtypes.MetricStat{
-				Metric: &cwtypes.Metric{
-					Namespace:  aws.String(namespace),
-					MetricName: aws.String(spec.metric),
-					Dimensions: dims,
-				},
-				Period: &periodSec,
-				Stat:   aws.String(spec.stat),
-			},
+		queries = append(queries, model.MetricQuery{
+			ID: spec.id, Label: spec.label, Namespace: namespace, MetricName: spec.metric,
+			Dimensions: dimensions, Statistic: spec.stat, Unit: "%",
 		})
 	}
 	return queries
+}
+
+func latestSeriesValue(series model.MetricSeries) (float64, bool) {
+	if len(series.Points) == 0 {
+		return 0, false
+	}
+	return series.Points[len(series.Points)-1].Value, true
 }
 
 func taskDefinitionFamily(taskDefinition string) string {

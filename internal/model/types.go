@@ -115,6 +115,63 @@ type ServiceMetrics struct {
 	MemAvgAvailable bool
 	MemMaxAvailable bool
 	Timestamp       time.Time
+	StartTime       time.Time
+	EndTime         time.Time
+	Period          time.Duration
+	Series          []MetricSeries
+}
+
+// MetricPoint is one timestamped sample in a CloudWatch metric series.
+type MetricPoint struct {
+	Timestamp time.Time
+	Value     float64
+}
+
+// MetricSeries is a UI-neutral time series. ID is stable for callers while
+// Label and Unit are intended for presentation by either frontend.
+type MetricSeries struct {
+	ID        string
+	Label     string
+	Unit      string
+	Statistic string
+	Points    []MetricPoint
+}
+
+// MetricDimension identifies one CloudWatch metric dimension.
+type MetricDimension struct {
+	Name  string
+	Value string
+}
+
+// MetricQuery describes a single CloudWatch series without exposing SDK
+// values to the shared service and presentation layers.
+type MetricQuery struct {
+	ID         string
+	Label      string
+	Namespace  string
+	MetricName string
+	Dimensions []MetricDimension
+	Statistic  string
+	Unit       string
+	Scale      float64
+}
+
+// MetricRequest describes a bounded time-series query. A zero Period lets the
+// CloudWatch adapter select a resolution that stays within MaxPoints.
+type MetricRequest struct {
+	StartTime time.Time
+	EndTime   time.Time
+	Period    time.Duration
+	MaxPoints int
+	Queries   []MetricQuery
+}
+
+// MetricSnapshot is the complete result of a time-series request.
+type MetricSnapshot struct {
+	StartTime time.Time
+	EndTime   time.Time
+	Period    time.Duration
+	Series    []MetricSeries
 }
 
 type AlarmState struct {
