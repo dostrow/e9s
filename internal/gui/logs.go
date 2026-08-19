@@ -172,6 +172,7 @@ func (w *mainWindow) showLogFollowFrom(source model.LogSource, title string, sta
 	w.showingMetrics = false
 	w.showingLogs = true
 	w.detailStack.SetVisibleChildName("logs")
+	w.logSource = source
 	w.logTitle = title
 	w.logSearchSpec = nil
 	w.applyContextLogHighlights(nil, true)
@@ -540,7 +541,7 @@ func (w *mainWindow) renderLogs() {
 	if w.logStore == nil || w.logTextBuffer == nil {
 		return
 	}
-	formatted := w.logStore.formatVisibleWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now(), w.logHiddenStreams)
+	formatted := w.formatDisplayedLogs(w.logSearch.Text())
 	w.logTextBuffer.SetText(formatted.text)
 	if w.logIndentTags == nil {
 		w.logIndentTags = make(map[int]*gtk.TextTag)
@@ -576,7 +577,7 @@ func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
 	if w.logStore == nil || w.logView == nil || w.logTextBuffer == nil {
 		return
 	}
-	formatted := w.logStore.formatVisibleWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now(), w.logHiddenStreams)
+	formatted := w.formatDisplayedLogs(w.logSearch.Text())
 	key := entry.Key()
 	for _, line := range formatted.lines {
 		if line.entry.Key() == key {
@@ -584,6 +585,16 @@ func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
 			return
 		}
 	}
+}
+
+func (w *mainWindow) formatDisplayedLogs(filter string) formattedLogBuffer {
+	return w.logStore.formatDisplayWithTimestamps(
+		filter,
+		w.logTimestampMode,
+		time.Now(),
+		w.logHiddenStreams,
+		logSourceShowsStreamLabels(w.logSource),
+	)
 }
 
 func (w *mainWindow) updateLogStreamsButton() {
@@ -813,7 +824,7 @@ func (w *mainWindow) logEntryAtCursor() (model.LogEntry, bool) {
 		return model.LogEntry{}, false
 	}
 	offset := w.logTextBuffer.IterAtMark(w.logTextBuffer.GetInsert()).Offset()
-	formatted := w.logStore.formatWithTimestamps(w.logSearch.Text(), w.logTimestampMode, time.Now())
+	formatted := w.formatDisplayedLogs(w.logSearch.Text())
 	for _, line := range formatted.lines {
 		if offset >= line.start && offset <= line.end {
 			return line.entry, true

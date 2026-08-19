@@ -173,6 +173,46 @@ func TestFormattedLogsDescribeMessageAlignedWrapping(t *testing.T) {
 	}
 }
 
+func TestFormattedLogsCanOmitASingleStreamLabel(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{{
+		Timestamp: 1,
+		Stream:    "api/worker",
+		Message:   "first line\nsecond line",
+	}})
+
+	formatted := logs.formatDisplayWithTimestamps("", logTimestampUTC, time.Now(), nil, false)
+	if strings.Contains(formatted.text, "[api/worker]") {
+		t.Fatalf("single-stream display retained its stream label: %q", formatted.text)
+	}
+	if len(formatted.lines) != 1 {
+		t.Fatalf("format produced %d lines, want 1", len(formatted.lines))
+	}
+	line := formatted.lines[0]
+	wantContinuation := "\n" + strings.Repeat(" ", len([]rune(line.prefix))) + "second line"
+	if !strings.Contains(formatted.text, wantContinuation) {
+		t.Fatalf("continuation did not align with the message after hiding its stream label: %q", formatted.text)
+	}
+}
+
+func TestLogSourceStreamLabelsAreStableForViewerScope(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		source model.LogSource
+		want   bool
+	}{
+		{name: "entire group", source: model.LogSource{Group: "api"}, want: true},
+		{name: "single stream", source: model.LogSource{Group: "api", Streams: []string{"worker"}}, want: false},
+		{name: "multiple streams", source: model.LogSource{Group: "api", Streams: []string{"api", "worker"}}, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := logSourceShowsStreamLabels(test.source); got != test.want {
+				t.Fatalf("logSourceShowsStreamLabels() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestFormattedLogsOffsetsAccountForUnicode(t *testing.T) {
 	logs := newBoundedLogs(10)
 	logs.append([]model.LogEntry{

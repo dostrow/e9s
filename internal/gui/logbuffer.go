@@ -223,6 +223,10 @@ func (b *boundedLogs) formatWithTimestamps(filter string, mode logTimestampMode,
 }
 
 func (b *boundedLogs) formatVisibleWithTimestamps(filter string, mode logTimestampMode, now time.Time, hiddenStreams map[string]struct{}) formattedLogBuffer {
+	return b.formatDisplayWithTimestamps(filter, mode, now, hiddenStreams, true)
+}
+
+func (b *boundedLogs) formatDisplayWithTimestamps(filter string, mode logTimestampMode, now time.Time, hiddenStreams map[string]struct{}, showStreams bool) formattedLogBuffer {
 	filter = strings.ToLower(strings.TrimSpace(filter))
 	var out strings.Builder
 	formatted := formattedLogBuffer{
@@ -238,7 +242,7 @@ func (b *boundedLogs) formatVisibleWithTimestamps(filter string, mode logTimesta
 		}
 		timestamp := formatLogTimestamp(entry.Timestamp, mode, now)
 		prefix := timestamp + "  "
-		if entry.Stream != "" {
+		if showStreams && entry.Stream != "" {
 			prefix += "[" + entry.Stream + "]  "
 		}
 		message := sanitizeLogText(entry.Message)
@@ -273,6 +277,13 @@ func (b *boundedLogs) formatVisibleWithTimestamps(filter string, mode logTimesta
 	}
 	formatted.text = out.String()
 	return formatted
+}
+
+// An empty stream list means the entire group, whose stream count can change
+// while following. Only an explicitly scoped single-stream source can safely
+// omit its redundant source label without changing layout as events arrive.
+func logSourceShowsStreamLabels(source model.LogSource) bool {
+	return len(source.Streams) != 1
 }
 
 func formatLogHighlights(formatted formattedLogBuffer, rules []model.LogHighlightRule) ([]formattedLogHighlight, error) {
