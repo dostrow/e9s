@@ -104,6 +104,7 @@ func Run(options Options) error {
 			window.window.Present()
 			return
 		}
+		initializeSourceEditor()
 		installStyles()
 		window = newMainWindow(ctx, app, options)
 		window.window.Present()

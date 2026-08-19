@@ -8,7 +8,7 @@ build:
 	go build $(LDFLAGS) -o $(BINARY) .
 
 build-gui:
-	go build -tags "gui vte" $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui
+	go build -tags "gui vte sourceview" $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui
 
 build-gui-basic:
 	go build -tags gui $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui

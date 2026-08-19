@@ -28,6 +28,7 @@ require (
 	github.com/diamondburned/gotk4/pkg v0.3.1
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
+	libdb.so/gotk4-sourceview/pkg v0.0.0-20240818070527-98263515a466
 )
 
 require (
