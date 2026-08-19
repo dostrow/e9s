@@ -106,6 +106,7 @@ type mainWindow struct {
 	taskDefinitionsNavButton    *gtk.ToggleButton
 	logGroupsNavButton          *gtk.ToggleButton
 	cloudWatchModuleItems       *gtk.Box
+	moduleErrorGlyphs           map[string]*gtk.Image
 	alarmNavButtons             map[string]*gtk.ToggleButton
 	savedLogsLabel              *gtk.Label
 	savedLogNavButtons          []*gtk.ToggleButton
@@ -416,20 +417,15 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	moduleItems.AddCSSClass("module-subitems")
 	moduleItems.Append(w.clustersNavButton)
 	moduleItems.Append(w.taskDefinitionsNavButton)
-	ecs := gtk.NewExpander("ECS")
-	ecs.SetExpanded(true)
-	ecs.SetChild(moduleItems)
-	ecs.AddCSSClass("module-heading")
+	w.moduleErrorGlyphs = make(map[string]*gtk.Image, 3)
+	ecs := w.newModuleExpander("ECS", moduleECS, moduleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.cloudWatchModuleItems.AddCSSClass("module-subitems")
 	w.cloudWatchModuleItems.Append(w.logGroupsNavButton)
 	w.rebuildSavedLogRail()
-	cloudWatch := gtk.NewExpander("CloudWatch Logs")
-	cloudWatch.SetExpanded(true)
-	cloudWatch.SetChild(w.cloudWatchModuleItems)
-	cloudWatch.AddCSSClass("module-heading")
+	cloudWatch := w.newModuleExpander("CloudWatch Logs", moduleCloudWatchLogs, w.cloudWatchModuleItems)
 	alarmItems := gtk.NewBox(gtk.OrientationVertical, 2)
 	alarmItems.AddCSSClass("module-subitems")
 	w.alarmNavButtons = make(map[string]*gtk.ToggleButton, 4)
@@ -448,10 +444,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		w.alarmNavButtons[state] = button
 		alarmItems.Append(button)
 	}
-	cloudWatchAlarms := gtk.NewExpander("CloudWatch Alarms")
-	cloudWatchAlarms.SetExpanded(true)
-	cloudWatchAlarms.SetChild(alarmItems)
-	cloudWatchAlarms.AddCSSClass("module-heading")
+	cloudWatchAlarms := w.newModuleExpander("CloudWatch Alarms", moduleCloudWatchAlarms, alarmItems)
 	comingSoon := gtk.NewLabel("More modules planned")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
@@ -1832,6 +1825,7 @@ func (w *mainWindow) setStatus(message string, isError bool) {
 		w.statusDetailsButton.SetVisible(isError)
 		w.statusDismissButton.SetVisible(isError)
 	}
+	w.updateModuleErrorGlyph(isError)
 }
 
 func (w *mainWindow) updateActionSensitivity() {

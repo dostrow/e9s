@@ -8,12 +8,65 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
+const (
+	moduleECS              = "ecs"
+	moduleCloudWatchLogs   = "cloudwatch-logs"
+	moduleCloudWatchAlarms = "cloudwatch-alarms"
+)
+
 func compactStatusMessage(message string) string {
 	return strings.Join(strings.Fields(message), " ")
 }
 
 func (w *mainWindow) dismissStatusError() {
 	w.setStatus("Ready", false)
+}
+
+func moduleForPage(page string) string {
+	if isECSPage(page) {
+		return moduleECS
+	}
+	switch page {
+	case pageLogGroups, pageLogStreams, pageSavedLogSearch:
+		return moduleCloudWatchLogs
+	case pageAlarms:
+		return moduleCloudWatchAlarms
+	default:
+		return ""
+	}
+}
+
+func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter) *gtk.Expander {
+	heading := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	heading.SetHExpand(true)
+	text := gtk.NewLabel(label)
+	text.SetXAlign(0)
+	text.SetHExpand(true)
+	glyph := gtk.NewImageFromIconName("dialog-error-symbolic")
+	glyph.SetPixelSize(16)
+	glyph.SetTooltipText("This module has an error")
+	glyph.SetVisible(false)
+	heading.Append(text)
+	heading.Append(glyph)
+
+	expander := gtk.NewExpander("")
+	expander.SetLabelWidget(heading)
+	expander.SetExpanded(true)
+	expander.SetChild(child)
+	expander.AddCSSClass("module-heading")
+	w.moduleErrorGlyphs[module] = glyph
+	return expander
+}
+
+func (w *mainWindow) updateModuleErrorGlyph(visible bool) {
+	module := moduleForPage(w.currentPage)
+	for name, glyph := range w.moduleErrorGlyphs {
+		show := visible && name == module
+		glyph.SetVisible(show)
+		if show {
+			glyph.SetTooltipText(w.lastError)
+		}
+	}
 }
 
 func (w *mainWindow) showStatusErrorDetails() {
