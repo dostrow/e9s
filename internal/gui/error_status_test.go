@@ -27,6 +27,8 @@ func TestModuleForPage(t *testing.T) {
 		pageCodeBuildProjects: moduleCodeBuild,
 		pageCodeBuildBuilds:   moduleCodeBuild,
 		pageEC2Instances:      moduleEC2,
+		pageEC2LoadBalancers:  moduleEC2,
+		pageEC2TargetGroups:   moduleEC2,
 		pageEC2SecurityGroups: moduleEC2,
 		pageEC2VPCs:           moduleEC2,
 		pageEC2Subnets:        moduleEC2,

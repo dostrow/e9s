@@ -87,6 +87,10 @@ func (a App) refreshEC2SecurityGroupDetail() tea.Cmd {
 func (a App) switchEC2Resource() (App, tea.Cmd) {
 	switch a.state {
 	case viewEC2Instances, viewEC2Detail, viewEC2Console:
+		return a.openEC2LoadBalancers()
+	case viewEC2LoadBalancers, viewEC2LoadBalancerDetail:
+		return a.openEC2TargetGroups()
+	case viewEC2TargetGroups, viewEC2TargetGroupDetail:
 		return a.openEC2SecurityGroups()
 	case viewEC2SecurityGroups, viewEC2SecurityGroupDetail:
 		return a.openEC2VPCs()
@@ -178,8 +182,66 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 			}
 			return links
 		}
+	case viewEC2LoadBalancerDetail:
+		if a.ec2LoadBalancerDetail != nil {
+			loadBalancer := a.ec2LoadBalancerDetail
+			links := []model.ResourceRef{}
+			if loadBalancer.VpcID != "" {
+				links = append(links, model.ResourceRef{Kind: "ec2-vpc", ID: loadBalancer.VpcID})
+			}
+			for _, zone := range loadBalancer.AvailabilityZones {
+				if zone.SubnetID != "" {
+					links = append(links, model.ResourceRef{Kind: "ec2-subnet", ID: zone.SubnetID})
+				}
+			}
+			for _, groupID := range loadBalancer.SecurityGroups {
+				links = append(links, model.ResourceRef{Kind: "ec2-security-group", ID: groupID})
+			}
+			for _, targetGroup := range loadBalancer.TargetGroups {
+				links = append(links, model.ResourceRef{Kind: "ec2-target-group", ID: targetGroup.ARN, Name: targetGroup.Name})
+				for _, target := range targetGroup.Targets {
+					if targetGroup.TargetType == "instance" && strings.HasPrefix(target.ID, "i-") {
+						links = append(links, model.ResourceRef{Kind: "ec2-instance", ID: target.ID})
+					}
+				}
+			}
+			return uniqueResourceRefs(links)
+		}
+	case viewEC2TargetGroupDetail:
+		if a.ec2TargetGroupDetail != nil {
+			targetGroup := a.ec2TargetGroupDetail
+			links := []model.ResourceRef{}
+			if targetGroup.VpcID != "" {
+				links = append(links, model.ResourceRef{Kind: "ec2-vpc", ID: targetGroup.VpcID})
+			}
+			for _, arn := range targetGroup.LoadBalancerARNs {
+				links = append(links, model.ResourceRef{Kind: "ec2-load-balancer", ID: arn})
+			}
+			if targetGroup.TargetType == "instance" {
+				for _, target := range targetGroup.Targets {
+					if strings.HasPrefix(target.ID, "i-") {
+						links = append(links, model.ResourceRef{Kind: "ec2-instance", ID: target.ID})
+					}
+				}
+			}
+			return uniqueResourceRefs(links)
+		}
 	}
 	return nil
+}
+
+func uniqueResourceRefs(refs []model.ResourceRef) []model.ResourceRef {
+	seen := make(map[string]bool, len(refs))
+	unique := make([]model.ResourceRef, 0, len(refs))
+	for _, ref := range refs {
+		key := ref.Kind + "\x00" + ref.ID
+		if ref.ID == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, ref)
+	}
+	return unique
 }
 
 func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
@@ -203,6 +265,14 @@ func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
 	case viewEC2VolumeDetail:
 		if a.ec2VolumeDetail != nil {
 			return model.ResourceRef{Kind: "ec2-volume", ID: a.ec2VolumeDetail.VolumeID, Name: a.ec2VolumeDetail.Name}, true
+		}
+	case viewEC2LoadBalancerDetail:
+		if a.ec2LoadBalancerDetail != nil {
+			return model.ResourceRef{Kind: "ec2-load-balancer", ID: a.ec2LoadBalancerDetail.ARN, Name: a.ec2LoadBalancerDetail.Name}, true
+		}
+	case viewEC2TargetGroupDetail:
+		if a.ec2TargetGroupDetail != nil {
+			return model.ResourceRef{Kind: "ec2-target-group", ID: a.ec2TargetGroupDetail.ARN, Name: a.ec2TargetGroupDetail.Name}, true
 		}
 	}
 	return model.ResourceRef{}, false
@@ -248,6 +318,10 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 		return a, cmd
 	case "ec2-volume":
 		return a.loadEC2VolumeDetail(ref.ID)
+	case "ec2-load-balancer":
+		return a.loadEC2LoadBalancerDetail(ref.ID)
+	case "ec2-target-group":
+		return a.loadEC2TargetGroupDetail(ref.ID)
 	default:
 		a.loading = false
 		a.err = fmt.Errorf("navigation is not implemented for %s", ref.Kind)

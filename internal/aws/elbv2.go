@@ -72,6 +72,30 @@ func (c *Client) DescribeEC2LoadBalancer(ctx context.Context, arn string) (*mode
 	return &loadBalancer, nil
 }
 
+// ListEC2TargetGroups returns all ALB/NLB target groups in the active region.
+func (c *Client) ListEC2TargetGroups(ctx context.Context) ([]model.EC2TargetGroup, error) {
+	return c.listEC2TargetGroups(ctx, "")
+}
+
+// DescribeEC2TargetGroup composes one target group with current target health.
+func (c *Client) DescribeEC2TargetGroup(ctx context.Context, arn string) (*model.EC2TargetGroup, error) {
+	out, err := c.ELBV2.DescribeTargetGroups(ctx, &elasticloadbalancingv2.DescribeTargetGroupsInput{
+		TargetGroupArns: []string{arn},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(out.TargetGroups) == 0 {
+		return nil, fmt.Errorf("target group %s not found", arn)
+	}
+	targetGroup := targetGroupFromSDK(out.TargetGroups[0])
+	targetGroup.Targets, err = c.listEC2TargetHealth(ctx, arn)
+	if err != nil {
+		return nil, err
+	}
+	return &targetGroup, nil
+}
+
 func (c *Client) listEC2Listeners(ctx context.Context, loadBalancerARN string) ([]model.EC2Listener, error) {
 	input := &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: awssdk.String(loadBalancerARN)}
 	paginator := elasticloadbalancingv2.NewDescribeListenersPaginator(c.ELBV2, input)
@@ -89,7 +113,10 @@ func (c *Client) listEC2Listeners(ctx context.Context, loadBalancerARN string) (
 }
 
 func (c *Client) listEC2TargetGroups(ctx context.Context, loadBalancerARN string) ([]model.EC2TargetGroup, error) {
-	input := &elasticloadbalancingv2.DescribeTargetGroupsInput{LoadBalancerArn: awssdk.String(loadBalancerARN)}
+	input := &elasticloadbalancingv2.DescribeTargetGroupsInput{}
+	if loadBalancerARN != "" {
+		input.LoadBalancerArn = awssdk.String(loadBalancerARN)
+	}
 	paginator := elasticloadbalancingv2.NewDescribeTargetGroupsPaginator(c.ELBV2, input)
 	var targetGroups []model.EC2TargetGroup
 	for paginator.HasMorePages() {
@@ -200,6 +227,7 @@ func targetGroupFromSDK(targetGroup elbtypes.TargetGroup) model.EC2TargetGroup {
 		Protocol:            string(targetGroup.Protocol),
 		ProtocolVersion:     derefStrAws(targetGroup.ProtocolVersion),
 		TargetType:          string(targetGroup.TargetType),
+		LoadBalancerARNs:    append([]string(nil), targetGroup.LoadBalancerArns...),
 		VpcID:               derefStrAws(targetGroup.VpcId),
 		HealthCheckProtocol: string(targetGroup.HealthCheckProtocol),
 		HealthCheckPort:     derefStrAws(targetGroup.HealthCheckPort),

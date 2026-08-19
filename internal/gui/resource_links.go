@@ -56,6 +56,10 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 		w.loadEC2Subnets("", ref.ID)
 	case "ec2-volume":
 		w.loadEC2Volumes(ref.ID)
+	case "ec2-load-balancer":
+		w.loadEC2LoadBalancers(ref.ID)
+	case "ec2-target-group":
+		w.loadEC2TargetGroups(ref.ID)
 	default:
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
 	}
@@ -82,6 +86,14 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	case pageEC2Volumes:
 		if w.selectedEC2Volume != "" {
 			return model.ResourceRef{Kind: "ec2-volume", ID: w.selectedEC2Volume}, true
+		}
+	case pageEC2LoadBalancers:
+		if w.selectedEC2LoadBalancer != "" {
+			return model.ResourceRef{Kind: "ec2-load-balancer", ID: w.selectedEC2LoadBalancer}, true
+		}
+	case pageEC2TargetGroups:
+		if w.selectedEC2TargetGroup != "" {
+			return model.ResourceRef{Kind: "ec2-target-group", ID: w.selectedEC2TargetGroup}, true
 		}
 	}
 	return model.ResourceRef{}, false

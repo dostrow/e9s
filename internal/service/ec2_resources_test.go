@@ -147,6 +147,8 @@ func TestEBSFiltersUnattachedFirstAndSortsAttachments(t *testing.T) {
 type fakeLoadBalancingAPI struct {
 	loadBalancers []model.EC2LoadBalancer
 	detail        *model.EC2LoadBalancer
+	targetGroups  []model.EC2TargetGroup
+	targetDetail  *model.EC2TargetGroup
 	err           error
 	arn           string
 }
@@ -157,6 +159,13 @@ func (f *fakeLoadBalancingAPI) ListEC2LoadBalancers(context.Context) ([]model.EC
 func (f *fakeLoadBalancingAPI) DescribeEC2LoadBalancer(_ context.Context, arn string) (*model.EC2LoadBalancer, error) {
 	f.arn = arn
 	return f.detail, f.err
+}
+func (f *fakeLoadBalancingAPI) ListEC2TargetGroups(context.Context) ([]model.EC2TargetGroup, error) {
+	return append([]model.EC2TargetGroup(nil), f.targetGroups...), f.err
+}
+func (f *fakeLoadBalancingAPI) DescribeEC2TargetGroup(_ context.Context, arn string) (*model.EC2TargetGroup, error) {
+	f.arn = arn
+	return f.targetDetail, f.err
 }
 
 func TestLoadBalancingFiltersAndSortsComposedDetail(t *testing.T) {
@@ -179,6 +188,23 @@ func TestLoadBalancingFiltersAndSortsComposedDetail(t *testing.T) {
 	detail, err := service.Detail(context.Background(), " alb ")
 	if err != nil || api.arn != "alb" || detail.Listeners[0].Port != 80 || detail.TargetGroups[0].Name != "a" || detail.TargetGroups[1].Targets[0].ID != "i-1" {
 		t.Fatalf("Detail() = %#v, arn %q, %v", detail, api.arn, err)
+	}
+}
+
+func TestLoadBalancingTargetGroupsFilterAndSortDetail(t *testing.T) {
+	api := &fakeLoadBalancingAPI{targetGroups: []model.EC2TargetGroup{
+		{ARN: "tg-z", Name: "z", VpcID: "vpc-2"},
+		{ARN: "tg-a", Name: "a", LoadBalancerARNs: []string{"lb-a"}},
+	}}
+	service := NewLoadBalancing(api)
+	targetGroups, err := service.ListTargetGroups(context.Background(), "lb-a")
+	if err != nil || len(targetGroups) != 1 || targetGroups[0].ARN != "tg-a" {
+		t.Fatalf("ListTargetGroups() = %#v, %v", targetGroups, err)
+	}
+	api.targetDetail = &model.EC2TargetGroup{ARN: "tg-a", LoadBalancerARNs: []string{"lb-z", "lb-a"}, Targets: []model.EC2TargetHealth{{ID: "i-2"}, {ID: "i-1"}}}
+	detail, err := service.TargetGroup(context.Background(), " tg-a ")
+	if err != nil || api.arn != "tg-a" || detail.LoadBalancerARNs[0] != "lb-a" || detail.Targets[0].ID != "i-1" {
+		t.Fatalf("TargetGroup() = %#v, arn %q, %v", detail, api.arn, err)
 	}
 }
 

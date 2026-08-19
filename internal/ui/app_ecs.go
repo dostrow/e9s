@@ -1019,6 +1019,14 @@ func (a App) refreshCurrentView() tea.Cmd {
 			_, cmd := a.loadEC2VolumeDetail(a.ec2VolumeDetail.VolumeID)
 			return cmd
 		}
+	case viewEC2LoadBalancers:
+		return a.refreshEC2LoadBalancers()
+	case viewEC2LoadBalancerDetail:
+		return a.refreshEC2LoadBalancerDetail()
+	case viewEC2TargetGroups:
+		return a.refreshEC2TargetGroups()
+	case viewEC2TargetGroupDetail:
+		return a.refreshEC2TargetGroupDetail()
 	case viewRDSInstances:
 		return a.refreshRDSInstances()
 	case viewRDSDetail:

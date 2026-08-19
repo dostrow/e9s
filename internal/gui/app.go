@@ -111,6 +111,13 @@ type EBSService interface {
 	Detail(context.Context, string) (*model.EC2Volume, error)
 }
 
+type LoadBalancingService interface {
+	List(context.Context, string) ([]model.EC2LoadBalancer, error)
+	Detail(context.Context, string) (*model.EC2LoadBalancer, error)
+	ListTargetGroups(context.Context, string) ([]model.EC2TargetGroup, error)
+	TargetGroup(context.Context, string) (*model.EC2TargetGroup, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -122,6 +129,7 @@ type Options struct {
 	EC2             EC2Service
 	EC2Network      EC2NetworkService
 	EBS             EBSService
+	LoadBalancing   LoadBalancingService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

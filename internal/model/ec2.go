@@ -172,6 +172,7 @@ type EC2Listener struct {
 type EC2TargetGroup struct {
 	ARN                 string
 	Name                string
+	LoadBalancerARNs    []string
 	Protocol            string
 	ProtocolVersion     string
 	Port                int32

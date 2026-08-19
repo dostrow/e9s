@@ -37,6 +37,8 @@ const (
 	pageCodeBuildProjects = "codebuild-projects"
 	pageCodeBuildBuilds   = "codebuild-builds"
 	pageEC2Instances      = "ec2-instances"
+	pageEC2LoadBalancers  = "ec2-load-balancers"
+	pageEC2TargetGroups   = "ec2-target-groups"
 	pageEC2SecurityGroups = "ec2-security-groups"
 	pageEC2VPCs           = "ec2-vpcs"
 	pageEC2Subnets        = "ec2-subnets"
@@ -57,6 +59,8 @@ const (
 	detailLambda           = "lambda-function"
 	detailCodeBuild        = "codebuild-build"
 	detailEC2              = "ec2-instance"
+	detailEC2LoadBalancer  = "ec2-load-balancer"
+	detailEC2TargetGroup   = "ec2-target-group"
 	detailEC2SecurityGroup = "ec2-security-group"
 	detailEC2VPC           = "ec2-vpc"
 	detailEC2Subnet        = "ec2-subnet"
@@ -160,6 +164,14 @@ type mainWindow struct {
 	filteredEC2Volumes          []model.EC2Volume
 	selectedEC2Volume           string
 	ec2VolumeDetail             *model.EC2Volume
+	allEC2LoadBalancers         []model.EC2LoadBalancer
+	filteredEC2LoadBalancers    []model.EC2LoadBalancer
+	selectedEC2LoadBalancer     string
+	ec2LoadBalancerDetail       *model.EC2LoadBalancer
+	allEC2TargetGroups          []model.EC2TargetGroup
+	filteredEC2TargetGroups     []model.EC2TargetGroup
+	selectedEC2TargetGroup      string
+	ec2TargetGroupDetail        *model.EC2TargetGroup
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -184,6 +196,8 @@ type mainWindow struct {
 	ec2VPCTable                 *stringTable
 	ec2SubnetTable              *stringTable
 	ec2VolumeTable              *stringTable
+	ec2LoadBalancerTable        *stringTable
+	ec2TargetGroupTable         *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -212,6 +226,8 @@ type mainWindow struct {
 	lambdaFunctionsNavButton    *gtk.ToggleButton
 	codeBuildProjectsNavButton  *gtk.ToggleButton
 	ec2InstancesNavButton       *gtk.ToggleButton
+	ec2LoadBalancersNavButton   *gtk.ToggleButton
+	ec2TargetGroupsNavButton    *gtk.ToggleButton
 	ec2SecurityGroupsNavButton  *gtk.ToggleButton
 	ec2VPCsNavButton            *gtk.ToggleButton
 	ec2SubnetsNavButton         *gtk.ToggleButton
@@ -510,6 +526,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "NAME", field: 0, expand: true}, {title: "VOLUME ID", field: 1}, {title: "STATE", field: 2},
 		{title: "TYPE", field: 3}, {title: "SIZE", field: 4}, {title: "AZ", field: 5}, {title: "ATTACHED TO", field: 6, expand: true},
 	})
+	w.ec2LoadBalancerTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "TYPE", field: 1}, {title: "STATE", field: 2},
+		{title: "SCHEME", field: 3}, {title: "VPC", field: 4}, {title: "DNS NAME", field: 5, expand: true},
+	})
+	w.ec2TargetGroupTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "PROTOCOL", field: 1}, {title: "PORT", field: 2},
+		{title: "TARGET TYPE", field: 3}, {title: "VPC", field: 4}, {title: "LOAD BALANCERS", field: 5, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -528,6 +552,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ec2VPCTable.view.ConnectActivate(w.openEC2VPCAt)
 	w.ec2SubnetTable.view.ConnectActivate(w.openEC2SubnetAt)
 	w.ec2VolumeTable.view.ConnectActivate(w.openEC2VolumeAt)
+	w.ec2LoadBalancerTable.view.ConnectActivate(w.openEC2LoadBalancerAt)
+	w.ec2TargetGroupTable.view.ConnectActivate(w.openEC2TargetGroupAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
@@ -541,6 +567,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ec2VPCTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2VPCRow() })
 	w.ec2SubnetTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2SubnetRow() })
 	w.ec2VolumeTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2VolumeRow() })
+	w.ec2LoadBalancerTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2LoadBalancerRow() })
+	w.ec2TargetGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2TargetGroupRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -782,6 +810,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	codeBuild := w.newModuleExpander("CodeBuild", moduleCodeBuild, w.codeBuildModuleItems)
 	w.ec2InstancesNavButton = newModuleRailButton("Instances", w.openEC2Module)
 	w.ec2InstancesNavButton.SetGroup(w.clustersNavButton)
+	w.ec2LoadBalancersNavButton = newModuleRailButton("Load Balancers", w.openEC2LoadBalancersModule)
+	w.ec2LoadBalancersNavButton.SetGroup(w.clustersNavButton)
+	w.ec2TargetGroupsNavButton = newModuleRailButton("Target Groups", w.openEC2TargetGroupsModule)
+	w.ec2TargetGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.ec2SecurityGroupsNavButton = newModuleRailButton("Security Groups", w.openEC2SecurityGroupsModule)
 	w.ec2SecurityGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.ec2VPCsNavButton = newModuleRailButton("VPCs", w.openEC2VPCsModule)
@@ -793,6 +825,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ec2ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.ec2ModuleItems.AddCSSClass("module-subitems")
 	w.ec2ModuleItems.Append(w.ec2InstancesNavButton)
+	w.ec2ModuleItems.Append(w.ec2LoadBalancersNavButton)
+	w.ec2ModuleItems.Append(w.ec2TargetGroupsNavButton)
 	w.ec2ModuleItems.Append(w.ec2SecurityGroupsNavButton)
 	w.ec2ModuleItems.Append(w.ec2VPCsNavButton)
 	w.ec2ModuleItems.Append(w.ec2SubnetsNavButton)
@@ -954,6 +988,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ec2Scroll.SetVExpand(true)
 	ec2Scroll.SetHExpand(true)
 	ec2Scroll.SetChild(w.ec2Table.view)
+	ec2LoadBalancerScroll := gtk.NewScrolledWindow()
+	ec2LoadBalancerScroll.SetVExpand(true)
+	ec2LoadBalancerScroll.SetHExpand(true)
+	ec2LoadBalancerScroll.SetChild(w.ec2LoadBalancerTable.view)
+	ec2TargetGroupScroll := gtk.NewScrolledWindow()
+	ec2TargetGroupScroll.SetVExpand(true)
+	ec2TargetGroupScroll.SetHExpand(true)
+	ec2TargetGroupScroll.SetChild(w.ec2TargetGroupTable.view)
 	ec2SecurityGroupScroll := gtk.NewScrolledWindow()
 	ec2SecurityGroupScroll.SetVExpand(true)
 	ec2SecurityGroupScroll.SetHExpand(true)
@@ -994,6 +1036,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(codeBuildProjectScroll, pageCodeBuildProjects)
 	w.resourceStack.AddNamed(codeBuildBuildScroll, pageCodeBuildBuilds)
 	w.resourceStack.AddNamed(ec2Scroll, pageEC2Instances)
+	w.resourceStack.AddNamed(ec2LoadBalancerScroll, pageEC2LoadBalancers)
+	w.resourceStack.AddNamed(ec2TargetGroupScroll, pageEC2TargetGroups)
 	w.resourceStack.AddNamed(ec2SecurityGroupScroll, pageEC2SecurityGroups)
 	w.resourceStack.AddNamed(ec2VPCScroll, pageEC2VPCs)
 	w.resourceStack.AddNamed(ec2SubnetScroll, pageEC2Subnets)
@@ -1907,6 +1951,14 @@ func (w *mainWindow) applyFilter() {
 		w.applyEC2Filter()
 		return
 	}
+	if w.currentPage == pageEC2LoadBalancers {
+		w.applyEC2LoadBalancerFilter()
+		return
+	}
+	if w.currentPage == pageEC2TargetGroups {
+		w.applyEC2TargetGroupFilter()
+		return
+	}
 	if w.currentPage == pageEC2SecurityGroups {
 		w.applyEC2SecurityGroupFilter()
 		return
@@ -2185,6 +2237,14 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageEC2Instances {
 		w.refreshEC2(foreground)
+		return
+	}
+	if w.currentPage == pageEC2LoadBalancers {
+		w.refreshEC2LoadBalancers(foreground)
+		return
+	}
+	if w.currentPage == pageEC2TargetGroups {
+		w.refreshEC2TargetGroups(foreground)
 		return
 	}
 	if w.currentPage == pageEC2SecurityGroups {
@@ -2536,6 +2596,8 @@ func (w *mainWindow) updateActionSensitivity() {
 		}
 		if w.ec2InstancesNavButton != nil {
 			w.ec2InstancesNavButton.SetActive(w.currentPage == pageEC2Instances)
+			w.ec2LoadBalancersNavButton.SetActive(w.currentPage == pageEC2LoadBalancers)
+			w.ec2TargetGroupsNavButton.SetActive(w.currentPage == pageEC2TargetGroups)
 			w.ec2SecurityGroupsNavButton.SetActive(w.currentPage == pageEC2SecurityGroups)
 			w.ec2VPCsNavButton.SetActive(w.currentPage == pageEC2VPCs)
 			w.ec2SubnetsNavButton.SetActive(w.currentPage == pageEC2Subnets)

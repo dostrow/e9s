@@ -14,6 +14,54 @@ import (
 type LoadBalancingAPI interface {
 	ListEC2LoadBalancers(context.Context) ([]model.EC2LoadBalancer, error)
 	DescribeEC2LoadBalancer(context.Context, string) (*model.EC2LoadBalancer, error)
+	ListEC2TargetGroups(context.Context) ([]model.EC2TargetGroup, error)
+	DescribeEC2TargetGroup(context.Context, string) (*model.EC2TargetGroup, error)
+}
+
+func (s *LoadBalancing) ListTargetGroups(ctx context.Context, filter string) ([]model.EC2TargetGroup, error) {
+	targetGroups, err := s.api.ListEC2TargetGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list EC2 target groups: %w", err)
+	}
+	return FilterEC2TargetGroups(targetGroups, filter), nil
+}
+
+func FilterEC2TargetGroups(targetGroups []model.EC2TargetGroup, filter string) []model.EC2TargetGroup {
+	filter = normalizedFilter(filter)
+	filtered := make([]model.EC2TargetGroup, 0, len(targetGroups))
+	for _, targetGroup := range targetGroups {
+		values := []string{targetGroup.ARN, targetGroup.Name, targetGroup.Protocol, targetGroup.ProtocolVersion,
+			targetGroup.TargetType, targetGroup.VpcID, targetGroup.HealthCheckProtocol, targetGroup.HealthCheckPath}
+		values = append(values, targetGroup.LoadBalancerARNs...)
+		if filter == "" || containsAny(filter, values...) {
+			filtered = append(filtered, targetGroup)
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return compareNameID(filtered[i].Name, filtered[i].ARN, filtered[j].Name, filtered[j].ARN)
+	})
+	return filtered
+}
+
+func (s *LoadBalancing) TargetGroup(ctx context.Context, arn string) (*model.EC2TargetGroup, error) {
+	arn, err := requireResourceID("read EC2 target group", "target group ARN", arn)
+	if err != nil {
+		return nil, err
+	}
+	targetGroup, err := s.api.DescribeEC2TargetGroup(ctx, arn)
+	if err != nil {
+		return nil, fmt.Errorf("read EC2 target group %q: %w", arn, err)
+	}
+	if targetGroup == nil {
+		return nil, fmt.Errorf("read EC2 target group %q: target group was not found", arn)
+	}
+	sort.Strings(targetGroup.LoadBalancerARNs)
+	sort.SliceStable(targetGroup.Targets, func(i, j int) bool {
+		left, right := targetGroup.Targets[i], targetGroup.Targets[j]
+		return strings.Join([]string{left.ID, fmt.Sprint(left.Port), left.AZ}, "\x00") <
+			strings.Join([]string{right.ID, fmt.Sprint(right.Port), right.AZ}, "\x00")
+	})
+	return targetGroup, nil
 }
 
 // LoadBalancing exposes ALB/NLB discovery and composed detail workflows.
@@ -30,6 +78,12 @@ func (s *LoadBalancing) List(ctx context.Context, filter string) ([]model.EC2Loa
 	if err != nil {
 		return nil, fmt.Errorf("list EC2 load balancers: %w", err)
 	}
+	return FilterEC2LoadBalancers(loadBalancers, filter), nil
+}
+
+// FilterEC2LoadBalancers filters and consistently orders an already-loaded
+// load-balancer collection. Frontends use it for responsive local filtering.
+func FilterEC2LoadBalancers(loadBalancers []model.EC2LoadBalancer, filter string) []model.EC2LoadBalancer {
 	filter = normalizedFilter(filter)
 	filtered := make([]model.EC2LoadBalancer, 0, len(loadBalancers))
 	for _, loadBalancer := range loadBalancers {
@@ -50,7 +104,7 @@ func (s *LoadBalancing) List(ctx context.Context, filter string) ([]model.EC2Loa
 		}
 		return compareNameID(filtered[i].Name, filtered[i].ARN, filtered[j].Name, filtered[j].ARN)
 	})
-	return filtered, nil
+	return filtered
 }
 
 func (s *LoadBalancing) Detail(ctx context.Context, arn string) (*model.EC2LoadBalancer, error) {

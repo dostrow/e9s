@@ -272,6 +272,10 @@ type ec2SubnetsLoadedMsg struct{ subnets []model.EC2Subnet }
 type ec2SubnetLoadedMsg struct{ subnet *model.EC2Subnet }
 type ec2VolumesLoadedMsg struct{ volumes []model.EC2Volume }
 type ec2VolumeLoadedMsg struct{ volume *model.EC2Volume }
+type ec2LoadBalancersLoadedMsg struct{ loadBalancers []model.EC2LoadBalancer }
+type ec2LoadBalancerLoadedMsg struct{ loadBalancer *model.EC2LoadBalancer }
+type ec2TargetGroupsLoadedMsg struct{ targetGroups []model.EC2TargetGroup }
+type ec2TargetGroupLoadedMsg struct{ targetGroup *model.EC2TargetGroup }
 
 // --- ECR Messages ---
 
