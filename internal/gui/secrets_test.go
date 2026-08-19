@@ -50,3 +50,17 @@ func TestSecretBreadcrumbUsesSavedFilter(t *testing.T) {
 		}
 	}
 }
+
+func TestPrettySecretValueFormatsJSON(t *testing.T) {
+	got := prettySecretValue(model.SecretValue{Name: "api", Value: `{"token":"value","enabled":true}`})
+	if !strings.Contains(got, "\n") || !strings.Contains(got, `"token": "value"`) {
+		t.Fatalf("prettySecretValue() = %q", got)
+	}
+}
+
+func TestPrettySecretValueDoesNotExposeBinaryData(t *testing.T) {
+	got := prettySecretValue(model.SecretValue{Name: "binary", Value: "should-not-render", Binary: true})
+	if strings.Contains(got, "should-not-render") || !strings.Contains(got, "binary") {
+		t.Fatalf("binary prettySecretValue() = %q", got)
+	}
+}

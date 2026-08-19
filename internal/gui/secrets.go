@@ -3,11 +3,14 @@
 package gui
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
@@ -72,6 +75,7 @@ func (w *mainWindow) refreshSecrets(foreground bool) {
 		return
 	}
 	filter, selected := w.secretNameFilter, w.selectedSecret
+	previous, previousFound := findSecret(w.allSecrets, selected)
 	ctx, generation := w.startRefreshRequest("Refreshing Secrets Manager metadata…", foreground)
 	go func() {
 		secrets, err := w.options.Secrets.List(ctx, filter)
@@ -93,8 +97,14 @@ func (w *mainWindow) refreshSecrets(foreground bool) {
 				return
 			}
 			if w.detailContent == detailSecret {
-				w.setDetail(formatSecretSummary(secret), detailSecret)
+				if previousFound && previous.LastChanged.Equal(secret.LastChanged) && w.secretDetail != nil && w.secretDetail.Name == secret.Name {
+					w.setDetail(formatSecretValueDetail(secret, *w.secretDetail), detailSecret)
+				} else {
+					w.secretDetail = nil
+					w.setDetail(formatSecretSummary(secret), detailSecret)
+				}
 			}
+			w.updateActionSensitivity()
 		})
 	}()
 }
@@ -146,6 +156,7 @@ func (w *mainWindow) selectSecretRow() {
 func (w *mainWindow) openSecretAt(position uint) {
 	if int(position) < len(w.filteredSecrets) {
 		w.secretTable.selection.SetSelected(position)
+		w.promptRevealSecret()
 	}
 }
 
@@ -422,4 +433,371 @@ func (w *mainWindow) mutateSecretFilters(mutate func(*config.Config)) bool {
 		return false
 	}
 	return true
+}
+
+func (w *mainWindow) promptRevealSecret() {
+	secret, found := findSecret(w.allSecrets, w.selectedSecret)
+	if !found || w.secretActionPending || w.options.Secrets == nil {
+		return
+	}
+	if w.secretDetail != nil && w.secretDetail.Name == secret.Name {
+		w.setDetail(formatSecretValueDetail(secret, *w.secretDetail), detailSecret)
+		return
+	}
+	w.confirmSecretValueRead(secret, "Reveal secret value",
+		"Reveal the current value of <b>"+html.EscapeString(secret.Name)+"</b>?",
+		"The plaintext value will remain visible in the Workspace Pane until you change context or select another secret.",
+		func(value *model.SecretValue) {
+			w.setDetail(formatSecretValueDetail(secret, *value), detailSecret)
+		})
+}
+
+func (w *mainWindow) editSelectedSecret() {
+	secret, found := findSecret(w.allSecrets, w.selectedSecret)
+	if !found || w.secretActionPending || w.options.Secrets == nil {
+		return
+	}
+	if w.secretDetail != nil && w.secretDetail.Name == secret.Name {
+		w.showSecretValueEditor(secret, w.secretDetail)
+		return
+	}
+	w.confirmSecretValueRead(secret, "Edit secret",
+		"Read the current value of <b>"+html.EscapeString(secret.Name)+"</b> for editing?",
+		"The plaintext value will be placed in an embedded editor. Saving requires a second confirmation.",
+		func(value *model.SecretValue) { w.showSecretValueEditor(secret, value) })
+}
+
+func (w *mainWindow) cloneSelectedSecret() {
+	secret, found := findSecret(w.allSecrets, w.selectedSecret)
+	if !found || w.secretActionPending || w.options.Secrets == nil {
+		return
+	}
+	if w.secretDetail != nil && w.secretDetail.Name == secret.Name {
+		w.showCloneSecretEditor(secret, w.secretDetail)
+		return
+	}
+	w.confirmSecretValueRead(secret, "Clone secret",
+		"Read the current value of <b>"+html.EscapeString(secret.Name)+"</b> for cloning?",
+		"The plaintext value will be placed in an embedded editor. Creating the clone requires a second confirmation.",
+		func(value *model.SecretValue) { w.showCloneSecretEditor(secret, value) })
+}
+
+func (w *mainWindow) confirmSecretValueRead(secret model.Secret, title, markup, secondary string, apply func(*model.SecretValue)) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle(title)
+	dialog.SetMarkup(markup)
+	dialog.SetObjectProperty("secondary-text", secondary)
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.loadSecretValue(secret.Name, apply)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) loadSecretValue(name string, apply func(*model.SecretValue)) {
+	if name == "" || w.options.Secrets == nil || w.secretActionPending {
+		return
+	}
+	w.secretActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Reading Secrets Manager secret " + name + "…")
+	go func() {
+		value, err := w.options.Secrets.Detail(ctx, name)
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.secretActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if w.currentPage != pageSecrets || w.selectedSecret != name {
+				return
+			}
+			w.secretDetail = value
+			apply(value)
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			w.setStatus("Loaded Secrets Manager secret "+name, false)
+		})
+	}()
+}
+
+func formatSecretValueDetail(secret model.Secret, value model.SecretValue) string {
+	display := prettySecretValue(value)
+	return fmt.Sprintf("SECRET\n\nName          %s\nARN           %s\nDescription   %s\nLast changed  %s\nLast accessed %s\n\nTags\n%s\n\nValue\n%s",
+		secret.Name, valueOrDash(secret.ARN), valueOrDash(secret.Description), formatTime(secret.LastChanged),
+		formatTime(secret.LastAccessed), formatSecretTags(secret.Tags), display)
+}
+
+func prettySecretValue(value model.SecretValue) string {
+	if value.Binary {
+		return "(binary secret; binary values are not displayed)"
+	}
+	var parsed any
+	if json.Unmarshal([]byte(value.Value), &parsed) == nil {
+		if pretty, err := json.MarshalIndent(parsed, "", "  "); err == nil {
+			return string(pretty)
+		}
+	}
+	return value.Value
+}
+
+func (w *mainWindow) showSecretValueEditor(secret model.Secret, value *model.SecretValue) {
+	if value == nil || value.Name != w.selectedSecret {
+		return
+	}
+	if value.Binary {
+		w.setStatus("Binary Secrets Manager values cannot be edited as text", true)
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Edit Secrets Manager secret", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(680, 420)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel(secret.Name)
+	label.SetXAlign(0)
+	label.SetWrap(true)
+	content.Append(label)
+	warning := gtk.NewLabel("This editor contains the decrypted secret value.")
+	warning.SetXAlign(0)
+	warning.SetWrap(true)
+	warning.AddCSSClass("error")
+	content.Append(warning)
+	buffer, view := newSecretValueEditor(value.Value)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	scroll.SetChild(view)
+	content.Append(scroll)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review update…", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		start, end := buffer.Bounds()
+		edited := buffer.Text(start, end, true)
+		dialog.Destroy()
+		if edited == value.Value {
+			w.setStatus("Secrets Manager secret was not changed", false)
+			return
+		}
+		w.confirmSecretUpdate(secret.Name, edited)
+	})
+	dialog.Present()
+}
+
+func newSecretValueEditor(value string) (*gtk.TextBuffer, *gtk.TextView) {
+	buffer := gtk.NewTextBuffer(nil)
+	buffer.SetText(value)
+	view := gtk.NewTextViewWithBuffer(buffer)
+	view.SetEditable(true)
+	view.SetCursorVisible(true)
+	view.SetMonospace(true)
+	view.SetWrapMode(gtk.WrapWordChar)
+	return buffer, view
+}
+
+func (w *mainWindow) confirmSecretUpdate(name, value string) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Update Secrets Manager secret")
+	dialog.SetMarkup("Create a new version of <b>" + html.EscapeString(name) + "</b> with the edited value?")
+	dialog.SetObjectProperty("secondary-text", "The current AWSCURRENT version will be replaced. Existing versions remain governed by Secrets Manager staging labels and retention behavior.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runSecretUpdate(name, value)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runSecretUpdate(name, value string) {
+	if name == "" || w.options.Secrets == nil || w.secretActionPending {
+		return
+	}
+	w.secretActionPending = true
+	w.updateActionSensitivity()
+	filter := w.secretNameFilter
+	ctx, generation := w.startRequest("Updating Secrets Manager secret " + name + "…")
+	go func() {
+		err := w.options.Secrets.Update(ctx, name, value)
+		var secrets []model.Secret
+		var detail *model.SecretValue
+		var refreshErr error
+		if err == nil {
+			secrets, refreshErr = w.options.Secrets.List(ctx, filter)
+			if refreshErr == nil {
+				detail, refreshErr = w.options.Secrets.Detail(ctx, name)
+			}
+		}
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.secretActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if refreshErr == nil && w.currentPage == pageSecrets && w.selectedSecret == name {
+				w.allSecrets = secrets
+				w.applySecretFilter()
+				w.secretDetail = detail
+				if secret, found := findSecret(secrets, name); found {
+					w.setDetail(formatSecretValueDetail(secret, *detail), detailSecret)
+				}
+			}
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			status := "Updated Secrets Manager secret " + name
+			if refreshErr != nil {
+				status += " • refresh failed: " + refreshErr.Error()
+			}
+			w.setStatus(status, false)
+		})
+	}()
+}
+
+func (w *mainWindow) showCloneSecretEditor(source model.Secret, value *model.SecretValue) {
+	if value == nil || value.Name != w.selectedSecret {
+		return
+	}
+	if value.Binary {
+		w.setStatus("Binary Secrets Manager values cannot be cloned as text", true)
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Clone Secrets Manager secret", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(680, 460)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	nameLabel := gtk.NewLabel("New secret name")
+	nameLabel.SetXAlign(0)
+	name := gtk.NewEntry()
+	name.SetText(source.Name + "-copy")
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.AddCSSClass("error")
+	warning := gtk.NewLabel("This editor contains the decrypted source value.")
+	warning.SetXAlign(0)
+	warning.AddCSSClass("error")
+	buffer, view := newSecretValueEditor(value.Value)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	scroll.SetChild(view)
+	content.Append(nameLabel)
+	content.Append(name)
+	content.Append(warning)
+	content.Append(scroll)
+	content.Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review clone…", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		newName := strings.TrimSpace(name.Text())
+		if newName == "" {
+			errorLabel.SetLabel("Enter a secret name")
+			return
+		}
+		start, end := buffer.Bounds()
+		cloneValue := buffer.Text(start, end, true)
+		dialog.Destroy()
+		w.confirmSecretClone(newName, cloneValue)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) confirmSecretClone(name, value string) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Create cloned secret")
+	dialog.SetMarkup("Create a new Secrets Manager secret named <b>" + html.EscapeString(name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "The new secret receives the edited plaintext value. Tags and resource policies are not copied.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runSecretClone(name, value)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runSecretClone(name, value string) {
+	if name == "" || w.options.Secrets == nil || w.secretActionPending {
+		return
+	}
+	w.secretActionPending = true
+	w.updateActionSensitivity()
+	filter := w.secretNameFilter
+	ctx, generation := w.startRequest("Creating Secrets Manager secret " + name + "…")
+	go func() {
+		err := w.options.Secrets.Create(ctx, name, value, "")
+		var secrets []model.Secret
+		var refreshErr error
+		if err == nil {
+			secrets, refreshErr = w.options.Secrets.List(ctx, filter)
+		}
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.secretActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if refreshErr == nil && w.currentPage == pageSecrets {
+				w.allSecrets = secrets
+				w.applySecretFilter()
+			}
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			status := "Created Secrets Manager secret " + name
+			if refreshErr != nil {
+				status += " • refresh failed: " + refreshErr.Error()
+			}
+			w.setStatus(status, false)
+		})
+	}()
+}
+
+func (w *mainWindow) copySelectedSecretARN() {
+	secret, found := findSecret(w.allSecrets, w.selectedSecret)
+	if !found || secret.ARN == "" {
+		return
+	}
+	w.secretTable.view.Clipboard().SetText(secret.ARN)
+	w.setStatus("Copied secret ARN", false)
 }

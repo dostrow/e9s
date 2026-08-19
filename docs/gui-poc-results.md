@@ -408,6 +408,26 @@ writes disable applicable controls, hold automatic refresh through the shared
 busy state, and refresh parameter metadata and detail after successful updates.
 The TUI also now reads values through the shared decrypted-detail path.
 
+### Secrets Manager module follow-up
+
+Secrets Manager now uses `service.Secrets` in both frontends for true substring
+filtering, stable name ordering, explicit current-value reads, creation, updates,
+validation, cancellation, and contextual errors. Secret metadata and values are
+UI-neutral model types; the GTK package does not call the AWS adapter directly.
+
+The GTK frontend adds a collapsible Secrets Manager module with fixed Secrets
+and dynamic saved-filter destinations. Its Browser Pane loads metadata only and
+can search names, descriptions, ARNs, and tags without retrieving plaintext.
+Saved filter creation, deletion, configuration reload, exact rail highlighting,
+immediate clearing, and generation guards follow the SSM navigation pattern.
+
+Selecting a secret remains metadata-only. Reveal, Edit, and Clone explicitly
+warn before the first value read; editors expose multiline plaintext only after
+that confirmation, and mutations require a second review. JSON is pretty-printed,
+binary bytes are never displayed or converted to strings, context changes clear
+loaded values, and pending operations disable contextual actions and pause
+refresh. Copy ARN remains a metadata-only operation.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

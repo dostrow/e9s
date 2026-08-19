@@ -199,3 +199,45 @@ The GUI intentionally adds explicit SecureString reveal confirmation and a
 multiline editor. The TUI retains its compact Enter/value and input-dialog
 metaphors, but now obtains decrypted values and performs writes through the same
 shared service.
+
+## Secrets Manager delivery phases
+
+Secrets Manager is implemented in the GTK frontend and shares substring
+filtering, deterministic ordering, explicit value reads, creation, updates, and
+contextual errors with the TUI through `service.Secrets`.
+
+### Phase 1: shared service
+
+- Move secret metadata and current values into the UI-neutral model package.
+- Centralize true case-insensitive substring filtering, name ordering, input
+  validation, detail reads, creation, updates, and error context.
+- Migrate TUI list, reveal, edit, and clone workflows away from direct AWS client
+  calls and detached background contexts.
+
+### Phase 2: module shell, browser, and saved filters
+
+- Add an alphabetically positioned, collapsible **Secrets Manager** Module Rail
+  entry with a fixed **Secrets** item.
+- Render configured `sm_filters` as dynamic **SAVED FILTERS** sub-items with
+  active highlighting, tooltips, direct opening, save, deletion, and explicit
+  configuration reload.
+- Browse and locally filter metadata by name, description, ARN, or tags without
+  retrieving or searching secret values.
+- Clear old rows immediately and reject late responses through the common
+  cancellation generation guard.
+
+### Phase 3: guarded values, editing, and cloning
+
+- Keep row selection metadata-only; require an explicit warning before each
+  first plaintext read for Reveal, Edit, or Clone.
+- Pretty-print JSON values, identify binary values without displaying their
+  bytes, and clear revealed plaintext on context changes.
+- Edit and clone through wrapped embedded text editors followed by a second
+  confirmation. Do not imply that clone copies tags or resource policies.
+- Copy ARNs without reading values, disable applicable actions while requests
+  are pending, pause automatic refresh, and reload metadata/detail following a
+  successful mutation.
+
+The GUI intentionally uses embedded editors and confirmation gates instead of
+the TUI's external `$EDITOR` workflow. Both presentation layers execute the same
+shared value, update, and create operations.

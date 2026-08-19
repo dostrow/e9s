@@ -181,7 +181,7 @@ go install github.com/dostrow/e9s@latest
 ### Experimental GTK 4 GUI
 
 The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
-for ECS, CloudWatch Logs, CloudWatch Alarms, and SSM Parameter Store. It shares
+for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, and Secrets Manager. It shares
 connection, query, mutation, and log services with the TUI while remaining a
 separate, build-tagged executable.
 
@@ -582,7 +582,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | CloudWatch Alarms | `cloudwatch:DescribeAlarms`, `cloudwatch:DescribeAlarmHistory`, `cloudwatch:EnableAlarmActions`, `cloudwatch:DisableAlarmActions`, `cloudwatch:SetAlarmState` |
 | CloudWatch Metrics | `cloudwatch:GetMetricData` |
 | SSM parameters | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter` |
-| Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue` |
+| Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue`, `secretsmanager:CreateSecret` |
 | S3 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging` |
 | Lambda | `lambda:ListFunctions`, `lambda:GetFunction` |
 | DynamoDB | `dynamodb:ListTables`, `dynamodb:DescribeTable`, `dynamodb:Scan`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:PutItem`, `dynamodb:ExecuteStatement` |

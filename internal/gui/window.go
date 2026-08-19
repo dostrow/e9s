@@ -101,6 +101,8 @@ type mainWindow struct {
 	selectedSecret              string
 	secretNameFilter            string
 	activeSavedSecretFilter     string
+	secretDetail                *model.SecretValue
+	secretActionPending         bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -160,6 +162,10 @@ type mainWindow struct {
 	secretFilterButton          *gtk.Button
 	secretSaveFilterButton      *gtk.Button
 	secretManageFiltersButton   *gtk.Button
+	secretRevealButton          *gtk.Button
+	secretEditButton            *gtk.Button
+	secretCloneButton           *gtk.Button
+	secretCopyARNButton         *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -427,6 +433,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.secretSaveFilterButton.ConnectClicked(w.promptSaveSecretFilter)
 	w.secretManageFiltersButton = gtk.NewButtonWithLabel("Saved filters…")
 	w.secretManageFiltersButton.ConnectClicked(w.promptManageSecretFilters)
+	w.secretRevealButton = gtk.NewButtonWithLabel("Reveal value…")
+	w.secretRevealButton.ConnectClicked(w.promptRevealSecret)
+	w.secretEditButton = gtk.NewButtonWithLabel("Edit…")
+	w.secretEditButton.ConnectClicked(w.editSelectedSecret)
+	w.secretCloneButton = gtk.NewButtonWithLabel("Clone…")
+	w.secretCloneButton.ConnectClicked(w.cloneSelectedSecret)
+	w.secretCopyARNButton = gtk.NewButtonWithLabel("Copy ARN")
+	w.secretCopyARNButton.ConnectClicked(w.copySelectedSecretARN)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -486,6 +500,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.secretFilterButton)
 	header.Append(w.secretSaveFilterButton)
 	header.Append(w.secretManageFiltersButton)
+	header.Append(w.secretRevealButton)
+	header.Append(w.secretEditButton)
+	header.Append(w.secretCloneButton)
+	header.Append(w.secretCopyARNButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1121,6 +1139,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.alarmActionPending = false
 	w.ssmActionPending = false
 	w.ssmDetail = nil
+	w.secretActionPending = false
+	w.secretDetail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1690,6 +1710,12 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	if w.currentPage == pageSecrets && w.secretActionPending {
+		if foreground {
+			w.setStatus("A Secrets Manager operation is still pending", false)
+		}
+		return
+	}
 	if w.showingTerminal {
 		if foreground {
 			w.setStatus("Disconnect ECS Exec before refreshing", false)
@@ -2131,12 +2157,30 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.ssmEditButton.SetSensitive(ssmPage && ssmSelectedFound && !w.ssmActionPending && w.options.SSM != nil)
 	secretsPage := w.currentPage == pageSecrets
 	w.secretFilterButton.SetVisible(secretsPage)
-	w.secretFilterButton.SetSensitive(secretsPage && w.options.Secrets != nil)
+	w.secretFilterButton.SetSensitive(secretsPage && !w.secretActionPending && w.options.Secrets != nil)
 	w.secretSaveFilterButton.SetVisible(secretsPage)
-	w.secretSaveFilterButton.SetSensitive(secretsPage && w.options.Config != nil)
+	w.secretSaveFilterButton.SetSensitive(secretsPage && !w.secretActionPending && w.options.Config != nil)
 	hasSavedSecretFilters := w.options.Config != nil && len(w.options.Config.SMFilters) > 0
 	w.secretManageFiltersButton.SetVisible(secretsPage && hasSavedSecretFilters)
-	w.secretManageFiltersButton.SetSensitive(secretsPage && hasSavedSecretFilters)
+	w.secretManageFiltersButton.SetSensitive(secretsPage && !w.secretActionPending && hasSavedSecretFilters)
+	_, secretSelected := findSecret(w.allSecrets, w.selectedSecret)
+	secretActionReady := secretsPage && secretSelected && !w.secretActionPending && w.options.Secrets != nil
+	textSecret := w.secretDetail == nil || w.secretDetail.Name != w.selectedSecret || !w.secretDetail.Binary
+	w.secretRevealButton.SetVisible(secretsPage && secretSelected)
+	w.secretRevealButton.SetSensitive(secretActionReady)
+	w.secretEditButton.SetVisible(secretsPage && secretSelected)
+	w.secretEditButton.SetSensitive(secretActionReady && textSecret)
+	w.secretCloneButton.SetVisible(secretsPage && secretSelected)
+	w.secretCloneButton.SetSensitive(secretActionReady && textSecret)
+	if !textSecret {
+		w.secretEditButton.SetTooltipText("Binary secret values cannot be edited as text")
+		w.secretCloneButton.SetTooltipText("Binary secret values cannot be cloned as text")
+	} else {
+		w.secretEditButton.SetTooltipText("")
+		w.secretCloneButton.SetTooltipText("")
+	}
+	w.secretCopyARNButton.SetVisible(secretsPage && secretSelected)
+	w.secretCopyARNButton.SetSensitive(secretsPage && secretSelected)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)
