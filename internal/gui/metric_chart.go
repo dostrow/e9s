@@ -31,6 +31,7 @@ type metricChart struct {
 	hoverX       float64
 	hoverY       float64
 	onExpand     func()
+	expanded     bool
 }
 
 func newMetricChart(title, unit string, minZero bool, maxHint float64) *metricChart {
@@ -76,12 +77,13 @@ func (c *metricChart) Widget() gtk.Widgetter { return c.overlay }
 func (c *metricChart) SetExpandHandler(handler func()) { c.onExpand = handler }
 
 func (c *metricChart) SetExpanded(expanded bool) {
+	c.expanded = expanded
 	c.expandButton.SetVisible(!expanded)
 	c.area.SetVExpand(expanded)
 	if expanded {
 		c.area.SetContentHeight(620)
 	} else {
-		c.area.SetContentHeight(220)
+		c.area.SetContentHeight(c.defaultContentHeight())
 	}
 }
 
@@ -99,7 +101,20 @@ func (c *metricChart) SetData(start, end time.Time, all []model.MetricSeries, id
 			c.series = append(c.series, copySeries)
 		}
 	}
+	if !c.expanded {
+		c.area.SetContentHeight(c.defaultContentHeight())
+	}
 	c.area.QueueDraw()
+}
+
+func (c *metricChart) defaultContentHeight() int {
+	visible := 0
+	for _, series := range c.series {
+		if len(series.Points) > 0 {
+			visible++
+		}
+	}
+	return 220 + max(0, (visible-3)/3)*20
 }
 
 func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
@@ -118,13 +133,6 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 	cr.Rectangle(0, 0, float64(width), float64(height))
 	cr.Fill()
 
-	left, right, top, bottom := 56.0, 14.0, 48.0, 28.0
-	plotWidth := float64(width) - left - right
-	plotHeight := float64(height) - top - bottom
-	if plotWidth <= 0 || plotHeight <= 0 {
-		return
-	}
-
 	minValue, maxValue, hasData := c.bounds()
 	if !hasData {
 		minValue, maxValue = 0, 1
@@ -137,6 +145,15 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 	}
 	if maxValue <= minValue {
 		maxValue = minValue + 1
+	}
+	left := c.axisLeftGutter(area, minValue, maxValue)
+	right, bottom := 14.0, 28.0
+	legendRows := c.legendRowCount(area, left, float64(width)-right)
+	top := max(48, 30+float64(legendRows*20))
+	plotWidth := float64(width) - left - right
+	plotHeight := float64(height) - top - bottom
+	if plotWidth <= 0 || plotHeight <= 0 {
+		return
 	}
 
 	cr.SetLineWidth(1)
@@ -177,7 +194,7 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 	}
 
 	drawChartText(area, cr, c.title, 4, 4, foreground, 1)
-	c.drawLegend(area, cr, left, 27, foreground, accent)
+	c.drawLegend(area, cr, left, 27, left+plotWidth, foreground, accent)
 	if !c.start.IsZero() && !c.end.IsZero() {
 		drawChartText(area, cr, c.start.Local().Format("Jan 2 15:04"), left, top+plotHeight+7, foreground, 0.7)
 		endLabel := c.end.Local().Format("Jan 2 15:04")
@@ -185,6 +202,19 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		textWidth, _ := layout.PixelSize()
 		drawChartText(area, cr, endLabel, left+plotWidth-float64(textWidth), top+plotHeight+7, foreground, 0.7)
 	}
+}
+
+func (c *metricChart) axisLeftGutter(area *gtk.DrawingArea, minValue, maxValue float64) float64 {
+	maxWidth := 0
+	for i := 0; i <= 4; i++ {
+		value := maxValue - (maxValue-minValue)*float64(i)/4
+		layout := area.CreatePangoLayout(fmtMetricValue(value, c.unit))
+		width, _ := layout.PixelSize()
+		if width > maxWidth {
+			maxWidth = width
+		}
+	}
+	return max(56, float64(maxWidth+12))
 }
 
 func metricSeriesColor(index int, accent, foreground gdk.RGBA) (gdk.RGBA, float64) {
@@ -207,11 +237,25 @@ func metricSeriesDash(index int) []float64 {
 	}
 }
 
-func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y float64, foreground, accent gdk.RGBA) {
+func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y, maxX float64, foreground, accent gdk.RGBA) {
+	startX := x
 	visible := 0
 	for index, series := range c.series {
 		if len(series.Points) == 0 {
 			continue
+		}
+		label := series.Label
+		if label == "" {
+			label = series.ID
+		}
+		latest := series.Points[len(series.Points)-1].Value
+		text := fmt.Sprintf("%s  %s", label, fmtMetricValue(latest, c.unit))
+		layout := area.CreatePangoLayout(text)
+		textWidth, _ := layout.PixelSize()
+		entryWidth := 28 + float64(textWidth) + 24
+		if x > startX && x+entryWidth > maxX {
+			x = startX
+			y += 20
 		}
 		color, alpha := metricSeriesColor(index, accent, foreground)
 		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), alpha)
@@ -221,21 +265,42 @@ func (c *metricChart) drawLegend(area *gtk.DrawingArea, cr *cairo.Context, x, y 
 		cr.LineTo(x+22, y+7)
 		cr.Stroke()
 		cr.SetDash(nil, 0)
-		label := series.Label
-		if label == "" {
-			label = series.ID
-		}
-		latest := series.Points[len(series.Points)-1].Value
-		text := fmt.Sprintf("%s  %s", label, fmtMetricValue(latest, c.unit))
 		drawChartText(area, cr, text, x+28, y, foreground, 0.82)
-		layout := area.CreatePangoLayout(text)
-		textWidth, _ := layout.PixelSize()
-		x += 28 + float64(textWidth) + 24
+		x += entryWidth
 		visible++
 	}
 	if visible == 0 {
 		drawChartText(area, cr, "No data for this time range", x, y, foreground, 0.76)
 	}
+}
+
+func (c *metricChart) legendRowCount(area *gtk.DrawingArea, startX, maxX float64) int {
+	rows := 1
+	x := startX
+	visible := 0
+	for _, series := range c.series {
+		if len(series.Points) == 0 {
+			continue
+		}
+		label := series.Label
+		if label == "" {
+			label = series.ID
+		}
+		latest := series.Points[len(series.Points)-1].Value
+		layout := area.CreatePangoLayout(fmt.Sprintf("%s  %s", label, fmtMetricValue(latest, c.unit)))
+		textWidth, _ := layout.PixelSize()
+		entryWidth := 28 + float64(textWidth) + 24
+		if x > startX && x+entryWidth > maxX {
+			rows++
+			x = startX
+		}
+		x += entryWidth
+		visible++
+	}
+	if visible == 0 {
+		return 1
+	}
+	return rows
 }
 
 func (c *metricChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, top, plotWidth, plotHeight, minValue, maxValue float64, foreground, background, accent gdk.RGBA) {
