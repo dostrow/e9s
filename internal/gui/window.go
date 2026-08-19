@@ -332,8 +332,8 @@ type mainWindow struct {
 	workspaceBusySpinner        *gtk.Spinner
 	workspaceBusyLabel          *gtk.Label
 	workspaceBusy               bool
-	metricsCPUChart             *metricChart
-	metricsMemoryChart          *metricChart
+	metricsChartsBox            *gtk.Box
+	metricsCharts               []*metricChart
 	metricsRange                *gtk.DropDown
 	metricsAlarmTable           *stringTable
 	metricsScaleButton          *gtk.Button
@@ -344,6 +344,8 @@ type mainWindow struct {
 	metricsTimestamp            *gtk.Label
 	metricsAlarmSection         *gtk.Box
 	metricsSnapshot             *model.ServiceMetrics
+	metricsGenericSnapshot      *model.MetricSnapshot
+	metricsKind                 string
 	metricsAlarms               []model.AlarmState
 	metricsTaskID               string
 	scaleInSuspended            bool
@@ -1615,6 +1617,9 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.ec2VolumeDetail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
+	w.metricsKind = ""
+	w.metricsSnapshot = nil
+	w.metricsGenericSnapshot = nil
 	if w.showingTerminal {
 		w.closeTerminalNow(false)
 	}
@@ -2908,8 +2913,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		w.loadMoreTasksButton.SetVisible(taskBrowser && w.showingStoppedTasks && w.taskNextToken != "")
 		w.loadMoreTasksButton.SetSensitive(w.taskNextToken != "")
 	}
-	w.metricsButton.SetVisible(serviceSelected || taskSelected)
-	w.metricsButton.SetSensitive(serviceSelected || taskSelected)
+	ec2MetricsSelected := w.currentPage == pageEC2Instances && w.selectedEC2Instance != "" && w.ec2Detail != nil
+	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected)
+	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil))
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/model"
@@ -22,6 +23,22 @@ type EC2API interface {
 	RebootEC2Instance(context.Context, string) error
 	TerminateEC2Instance(context.Context, string) error
 	StartSSMSession(context.Context, string) (*model.ExecSession, error)
+	GetEC2Metrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
+}
+
+func (s *EC2) Metrics(ctx context.Context, instanceID string, window time.Duration) (*model.MetricSnapshot, error) {
+	instanceID, err := requireEC2InstanceID("read metrics for", instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if window <= 0 {
+		return nil, fmt.Errorf("read metrics for EC2 instance %q: time range must be positive", instanceID)
+	}
+	metrics, err := s.api.GetEC2Metrics(ctx, instanceID, window)
+	if err != nil {
+		return nil, fmt.Errorf("read metrics for EC2 instance %q: %w", instanceID, err)
+	}
+	return metrics, nil
 }
 
 // EC2 exposes instance workflows without frontend dependencies.

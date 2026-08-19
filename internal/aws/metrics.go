@@ -15,6 +15,35 @@ import (
 type ServiceMetrics = model.ServiceMetrics
 type AlarmState = model.AlarmState
 
+// GetEC2Metrics fetches the core instance utilization, network, disk, and
+// status-check histories used by the shared metrics dashboard.
+func (c *Client) GetEC2Metrics(ctx context.Context, instanceID string, window time.Duration) (*model.MetricSnapshot, error) {
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return nil, fmt.Errorf("instance ID is required")
+	}
+	end := time.Now()
+	dimensions := []model.MetricDimension{{Name: "InstanceId", Value: instanceID}}
+	metric := func(id, label, name, statistic, unit string) model.MetricQuery {
+		return model.MetricQuery{
+			ID: id, Label: label, Namespace: "AWS/EC2", MetricName: name,
+			Dimensions: dimensions, Statistic: statistic, Unit: unit,
+		}
+	}
+	return c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
+		Queries: []model.MetricQuery{
+			metric("cpu_avg", "Average", "CPUUtilization", "Average", "%"),
+			metric("cpu_max", "Maximum", "CPUUtilization", "Maximum", "%"),
+			metric("network_in", "Inbound", "NetworkIn", "Sum", "bytes"),
+			metric("network_out", "Outbound", "NetworkOut", "Sum", "bytes"),
+			metric("disk_read", "Read", "DiskReadBytes", "Sum", "bytes"),
+			metric("disk_write", "Write", "DiskWriteBytes", "Sum", "bytes"),
+			metric("status_failed", "Failed checks", "StatusCheckFailed", "Maximum", "count"),
+		},
+	})
+}
+
 // GetServiceMetrics fetches CPU and memory utilization for an ECS service.
 func (c *Client) GetServiceMetrics(ctx context.Context, clusterName, serviceName string, period time.Duration) (*ServiceMetrics, error) {
 	dims := []cwtypes.Dimension{

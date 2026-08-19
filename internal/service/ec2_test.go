@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -18,6 +19,7 @@ type fakeEC2API struct {
 	err       error
 	action    string
 	id        string
+	metrics   *model.MetricSnapshot
 }
 
 func (f *fakeEC2API) ListEC2Instances(context.Context, string) ([]model.EC2Instance, error) {
@@ -50,6 +52,22 @@ func (f *fakeEC2API) TerminateEC2Instance(_ context.Context, id string) error {
 func (f *fakeEC2API) StartSSMSession(_ context.Context, id string) (*model.ExecSession, error) {
 	f.action, f.id = "session", id
 	return f.session, f.err
+}
+func (f *fakeEC2API) GetEC2Metrics(_ context.Context, id string, _ time.Duration) (*model.MetricSnapshot, error) {
+	f.id = id
+	return f.metrics, f.err
+}
+
+func TestEC2MetricsValidatesAndWrapsErrors(t *testing.T) {
+	want := &model.MetricSnapshot{Period: time.Minute}
+	api := &fakeEC2API{metrics: want}
+	got, err := NewEC2(api).Metrics(context.Background(), " i-1 ", time.Hour)
+	if err != nil || got != want || api.id != "i-1" {
+		t.Fatalf("Metrics() = %#v, %v; id = %q", got, err, api.id)
+	}
+	if _, err := NewEC2(api).Metrics(context.Background(), "", time.Hour); err == nil {
+		t.Fatal("Metrics() accepted an empty instance ID")
+	}
 }
 
 func TestEC2ListFiltersLoadedMetadataAndSortsStates(t *testing.T) {

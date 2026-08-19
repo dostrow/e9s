@@ -58,8 +58,8 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	w.metricsTimestamp = gtk.NewLabel("No metrics loaded")
 	w.metricsTimestamp.SetXAlign(0)
 	w.metricsTimestamp.AddCSSClass("muted")
-	w.metricsCPUChart = newMetricChart("CPU UTILIZATION", "%", true, 100)
-	w.metricsMemoryChart = newMetricChart("MEMORY UTILIZATION", "%", true, 100)
+	w.metricsChartsBox = gtk.NewBox(gtk.OrientationVertical, 12)
+	w.metricsChartsBox.SetHExpand(true)
 
 	metrics := gtk.NewBox(gtk.OrientationVertical, 8)
 	metrics.SetMarginTop(16)
@@ -82,8 +82,7 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	metrics.Append(w.metricsScope)
 	metrics.Append(w.metricsTimestamp)
 	metrics.Append(w.metricsNotice)
-	metrics.Append(w.metricsCPUChart.area)
-	metrics.Append(w.metricsMemoryChart.area)
+	metrics.Append(w.metricsChartsBox)
 
 	w.metricsAlarmTable = newStringTable([]columnSpec{
 		{title: "ALARM", field: 0, expand: true},
@@ -116,13 +115,30 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 }
 
 func (w *mainWindow) openMetrics() {
+	if w.currentPage == pageEC2Instances {
+		if w.selectedEC2Instance == "" {
+			return
+		}
+		w.metricsKind = "ec2"
+		w.loadMetrics(true)
+		return
+	}
 	if w.selectedCluster == "" || (w.selectedService == "" && w.selectedTask == "") {
 		return
 	}
+	w.metricsKind = "ecs"
 	w.loadMetrics(true)
 }
 
 func (w *mainWindow) loadMetrics(foreground bool) {
+	if w.metricsKind == "ec2" {
+		w.loadEC2Metrics(foreground)
+		return
+	}
+	w.loadECSMetrics(foreground)
+}
+
+func (w *mainWindow) loadECSMetrics(foreground bool) {
 	if w.selectedCluster == "" || (w.selectedService == "" && w.selectedTask == "") {
 		return
 	}
@@ -184,7 +200,9 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 			}
 			w.showingLogs = false
 			w.showingMetrics = true
+			w.metricsKind = "ecs"
 			w.metricsSnapshot = metrics
+			w.metricsGenericSnapshot = nil
 			w.metricsAlarms = alarms
 			w.metricsTaskID = task.TaskID
 			w.scaleInKnown = scaleKnown
@@ -200,8 +218,10 @@ func (w *mainWindow) renderMetrics() {
 		return
 	}
 	m := w.metricsSnapshot
-	w.metricsCPUChart.SetData(m.StartTime, m.EndTime, m.Series, "cpu_avg", "cpu_max")
-	w.metricsMemoryChart.SetData(m.StartTime, m.EndTime, m.Series, "mem_avg", "mem_max")
+	w.setMetricCharts(&model.MetricSnapshot{StartTime: m.StartTime, EndTime: m.EndTime, Period: m.Period, Series: m.Series}, []metricChartSpec{
+		{title: "CPU UTILIZATION", unit: "%", minZero: true, maxHint: 100, ids: []string{"cpu_avg", "cpu_max"}},
+		{title: "MEMORY UTILIZATION", unit: "%", minZero: true, maxHint: 100, ids: []string{"mem_avg", "mem_max"}},
+	})
 	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(m.Timestamp), formatMetricPeriod(m.Period)))
 
 	taskScope := w.metricsTaskID != ""
@@ -249,6 +269,89 @@ func (w *mainWindow) renderMetrics() {
 		w.metricsScaleButton.SetLabel("Toggle scale-in")
 	}
 	w.metricsScaleButton.SetSensitive(w.scaleInKnown)
+}
+
+type metricChartSpec struct {
+	title   string
+	unit    string
+	minZero bool
+	maxHint float64
+	ids     []string
+}
+
+func (w *mainWindow) setMetricCharts(snapshot *model.MetricSnapshot, specs []metricChartSpec) {
+	if w.metricsChartsBox == nil || snapshot == nil {
+		return
+	}
+	for child := w.metricsChartsBox.FirstChild(); child != nil; child = w.metricsChartsBox.FirstChild() {
+		w.metricsChartsBox.Remove(child)
+	}
+	w.metricsCharts = make([]*metricChart, 0, len(specs))
+	for _, spec := range specs {
+		chart := newMetricChart(spec.title, spec.unit, spec.minZero, spec.maxHint)
+		chart.SetData(snapshot.StartTime, snapshot.EndTime, snapshot.Series, spec.ids...)
+		w.metricsCharts = append(w.metricsCharts, chart)
+		w.metricsChartsBox.Append(chart.area)
+	}
+}
+
+func (w *mainWindow) loadEC2Metrics(foreground bool) {
+	instanceID := w.selectedEC2Instance
+	if instanceID == "" || w.options.EC2 == nil {
+		return
+	}
+	opening := !w.showingMetrics
+	ctx, generation := w.startRefreshRequest("Loading metrics for "+instanceID+"…", foreground)
+	go func() {
+		snapshot, err := w.options.EC2.Metrics(ctx, instanceID, w.metricsWindow())
+		w.finishRequestResult(ctx, generation, err, "Metrics updated for "+instanceID, opening, foreground, func() {
+			if w.currentPage != pageEC2Instances || w.selectedEC2Instance != instanceID {
+				return
+			}
+			w.showingMetrics = true
+			w.metricsKind = "ec2"
+			w.metricsSnapshot = nil
+			w.metricsGenericSnapshot = snapshot
+			w.metricsTaskID = ""
+			w.renderEC2Metrics()
+			w.detailStack.SetVisibleChildName("metrics")
+		})
+	}()
+}
+
+func (w *mainWindow) renderEC2Metrics() {
+	snapshot := w.metricsGenericSnapshot
+	if snapshot == nil {
+		return
+	}
+	w.metricsTitle.SetLabel("INSTANCE METRICS — " + strings.ToUpper(w.metricsRangeLabel()))
+	w.metricsScope.SetLabel("EC2 instance " + w.selectedEC2Instance)
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(snapshot.EndTime), formatMetricPeriod(snapshot.Period)))
+	w.metricsScaleButton.SetVisible(false)
+	w.metricsScaleLabel.SetVisible(false)
+	w.metricsAlarmSection.SetVisible(false)
+	w.metricsNotice.SetVisible(!metricSnapshotHasData(snapshot))
+	if !metricSnapshotHasData(snapshot) {
+		w.metricsNotice.SetLabel("No instance datapoints were returned for the selected period.")
+	}
+	w.setMetricCharts(snapshot, []metricChartSpec{
+		{title: "CPU UTILIZATION", unit: "%", minZero: true, maxHint: 100, ids: []string{"cpu_avg", "cpu_max"}},
+		{title: "NETWORK TRAFFIC PER PERIOD", unit: "bytes", minZero: true, ids: []string{"network_in", "network_out"}},
+		{title: "INSTANCE STORE I/O PER PERIOD", unit: "bytes", minZero: true, ids: []string{"disk_read", "disk_write"}},
+		{title: "FAILED STATUS CHECKS", unit: "count", minZero: true, maxHint: 1, ids: []string{"status_failed"}},
+	})
+}
+
+func metricSnapshotHasData(snapshot *model.MetricSnapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	for _, series := range snapshot.Series {
+		if len(series.Points) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *mainWindow) metricsWindow() time.Duration {
@@ -334,6 +437,7 @@ func (w *mainWindow) closeMetrics() {
 		return
 	}
 	w.showingMetrics = false
+	w.metricsKind = ""
 	w.detailStack.SetVisibleChildName("detail")
 	w.setStatus("Metrics view closed", false)
 }

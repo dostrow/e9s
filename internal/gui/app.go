@@ -95,6 +95,7 @@ type EC2Service interface {
 	Stop(context.Context, string, string) error
 	Reboot(context.Context, string, string) error
 	Terminate(context.Context, string, string) error
+	Metrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
 }
 
 type EC2NetworkService interface {
