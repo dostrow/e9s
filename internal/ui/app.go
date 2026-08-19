@@ -99,6 +99,7 @@ type App struct {
 	ecs                 *service.ECS
 	logs                *service.Logs
 	alarms              *service.Alarms
+	ssm                 *service.SSM
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	cfg                 *config.Config
@@ -278,6 +279,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		ecs:          service.NewECS(client),
 		logs:         service.NewLogs(client),
 		alarms:       service.NewAlarms(client),
+		ssm:          service.NewSSM(client),
 		ctx:          ctx,
 		cancel:       cancel,
 		cfg:          cfg,

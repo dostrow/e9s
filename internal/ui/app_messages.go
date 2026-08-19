@@ -108,7 +108,7 @@ type metricsLoadedMsg struct {
 
 // --- SSM Messages ---
 
-type ssmParamsLoadedMsg struct{ params []e9saws.Parameter }
+type ssmParamsLoadedMsg struct{ params []model.Parameter }
 type ssmEditReadyMsg struct {
 	name         string
 	currentValue string
@@ -116,7 +116,7 @@ type ssmEditReadyMsg struct {
 }
 type ssmUpdatedMsg struct {
 	name   string
-	params []e9saws.Parameter
+	params []model.Parameter
 }
 
 // --- Secrets Manager Messages ---

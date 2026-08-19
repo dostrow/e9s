@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -58,9 +58,10 @@ func (a App) editSSMParam() (App, tea.Cmd) {
 	}
 	if p.Type == "SecureString" {
 		a.ssmEditName = p.Name
-		client := a.client
+		ssmService := a.ssm
+		ctx := a.ctx
 		return a, func() tea.Msg {
-			resolved, err := client.GetParameter(context.Background(), p.Name)
+			resolved, err := ssmService.Detail(ctx, p.Name)
 			if err != nil {
 				return errMsg{fmt.Errorf("failed to read current value: %w", err)}
 			}
@@ -82,16 +83,17 @@ func (a App) confirmSSMUpdate(newValue string) (App, tea.Cmd) {
 }
 
 func (a App) doSSMUpdate() tea.Cmd {
-	client := a.client
+	ssmService := a.ssm
+	ctx := a.ctx
 	name := a.ssmEditName
 	value := a.ssmEditValue
 	pathPrefix := a.ssmView.PathPrefix()
 	return func() tea.Msg {
-		err := client.PutParameter(context.Background(), name, value)
+		err := ssmService.Update(ctx, name, value)
 		if err != nil {
 			return errMsg{err}
 		}
-		params, err := client.ListParameters(context.Background(), pathPrefix)
+		params, err := ssmService.List(ctx, pathPrefix)
 		if err != nil {
 			return actionSuccessMsg{fmt.Sprintf("Updated %q (reload failed: %v)", name, err)}
 		}
@@ -100,6 +102,12 @@ func (a App) doSSMUpdate() tea.Cmd {
 }
 
 func (a App) openSSM(pathPrefix string) (App, tea.Cmd) {
+	normalized, err := service.NormalizeParameterPath(pathPrefix)
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	pathPrefix = normalized
 	a.mode = modeSSM
 	a.state = viewSSM
 	a.ssmView = views.NewSSM(pathPrefix)
@@ -109,9 +117,10 @@ func (a App) openSSM(pathPrefix string) (App, tea.Cmd) {
 }
 
 func (a App) loadSSMParams(pathPrefix string) tea.Cmd {
-	client := a.client
+	ssmService := a.ssm
+	ctx := a.ctx
 	return func() tea.Msg {
-		params, err := client.ListParameters(context.Background(), pathPrefix)
+		params, err := ssmService.List(ctx, pathPrefix)
 		if err != nil {
 			return errMsg{err}
 		}

@@ -8,13 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type SSMModel struct {
-	params      []aws.Parameter
+	params      []model.Parameter
 	pathPrefix  string
 	cursor      int
 	filter      string
@@ -146,12 +146,12 @@ func ssmTypeStyle(t string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.ColorCyan)
 }
 
-func (m SSMModel) filteredParams() []aws.Parameter {
+func (m SSMModel) filteredParams() []model.Parameter {
 	if m.filter == "" {
 		return m.params
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.Parameter
+	var out []model.Parameter
 	for _, p := range m.params {
 		if strings.Contains(strings.ToLower(p.Name), lf) ||
 			strings.Contains(strings.ToLower(p.Value), lf) {
@@ -161,7 +161,7 @@ func (m SSMModel) filteredParams() []aws.Parameter {
 	return out
 }
 
-func (m SSMModel) SetParams(params []aws.Parameter) SSMModel {
+func (m SSMModel) SetParams(params []model.Parameter) SSMModel {
 	m.params = params
 	m.loaded = true
 	filtered := m.filteredParams()
@@ -171,7 +171,7 @@ func (m SSMModel) SetParams(params []aws.Parameter) SSMModel {
 	return m
 }
 
-func (m SSMModel) SelectedParam() *aws.Parameter {
+func (m SSMModel) SelectedParam() *model.Parameter {
 	filtered := m.filteredParams()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
