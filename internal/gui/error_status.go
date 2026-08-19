@@ -19,6 +19,7 @@ const (
 	moduleLambda           = "lambda"
 	moduleCodeBuild        = "codebuild"
 	moduleEC2              = "ec2"
+	moduleECR              = "ecr"
 )
 
 func compactStatusMessage(message string) string {
@@ -48,6 +49,8 @@ func moduleForPage(page string) string {
 		return moduleCodeBuild
 	case pageEC2Instances, pageEC2LoadBalancers, pageEC2TargetGroups, pageEC2SecurityGroups, pageEC2VPCs, pageEC2Subnets, pageEC2Volumes:
 		return moduleEC2
+	case pageECRRepositories, pageECRImages, pageECRFindings:
+		return moduleECR
 	default:
 		return ""
 	}

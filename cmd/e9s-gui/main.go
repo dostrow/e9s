@@ -68,6 +68,7 @@ func main() {
 				EC2Network:      service.NewEC2Network(client),
 				EBS:             service.NewEBS(client),
 				LoadBalancing:   service.NewLoadBalancing(client),
+				ECR:             service.NewECR(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

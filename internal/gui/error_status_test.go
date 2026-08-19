@@ -33,6 +33,9 @@ func TestModuleForPage(t *testing.T) {
 		pageEC2VPCs:           moduleEC2,
 		pageEC2Subnets:        moduleEC2,
 		pageEC2Volumes:        moduleEC2,
+		pageECRRepositories:   moduleECR,
+		pageECRImages:         moduleECR,
+		pageECRFindings:       moduleECR,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}

@@ -118,6 +118,15 @@ type LoadBalancingService interface {
 	TargetGroup(context.Context, string) (*model.EC2TargetGroup, error)
 }
 
+type ECRService interface {
+	ListRepositories(context.Context, string) ([]model.ECRRepo, error)
+	ListImages(context.Context, string) ([]model.ECRImage, error)
+	Findings(context.Context, string, string) ([]model.ECRFinding, error)
+	StartScan(context.Context, string, model.ECRImage) error
+	DeleteImage(context.Context, string, string) error
+	ImageURI(string, model.ECRImage) (string, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -130,6 +139,7 @@ type Options struct {
 	EC2Network      EC2NetworkService
 	EBS             EBSService
 	LoadBalancing   LoadBalancingService
+	ECR             ECRService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string
