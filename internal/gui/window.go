@@ -32,6 +32,7 @@ const (
 	pageSavedLogSearch  = "cloudwatch-saved-search"
 	pageAlarms          = "cloudwatch-alarms"
 	pageSSM             = "ssm-parameters"
+	pageSecrets         = "secrets-manager"
 	pageModulePicker    = "module-picker"
 
 	detailIntro          = "intro"
@@ -44,6 +45,7 @@ const (
 	detailLogStream      = "log-stream"
 	detailAlarm          = "alarm"
 	detailSSM            = "ssm-parameter"
+	detailSecret         = "secret"
 )
 
 type mainWindow struct {
@@ -94,6 +96,11 @@ type mainWindow struct {
 	activeSSMPrefix             string
 	ssmDetail                   *model.Parameter
 	ssmActionPending            bool
+	allSecrets                  []model.Secret
+	filteredSecrets             []model.Secret
+	selectedSecret              string
+	secretNameFilter            string
+	activeSavedSecretFilter     string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -109,6 +116,7 @@ type mainWindow struct {
 	logStreamTable              *stringTable
 	alarmTable                  *stringTable
 	ssmTable                    *stringTable
+	secretTable                 *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -118,6 +126,7 @@ type mainWindow struct {
 	logGroupsNavButton          *gtk.ToggleButton
 	cloudWatchModuleItems       *gtk.Box
 	ssmModuleItems              *gtk.Box
+	secretsModuleItems          *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -127,6 +136,9 @@ type mainWindow struct {
 	ssmParametersNavButton      *gtk.ToggleButton
 	savedSSMPrefixLabel         *gtk.Label
 	savedSSMPrefixButtons       []*gtk.ToggleButton
+	secretsNavButton            *gtk.ToggleButton
+	savedSecretFiltersLabel     *gtk.Label
+	savedSecretFilterButtons    []*gtk.ToggleButton
 	activeSavedLog              string
 	peekLogStreamButton         *gtk.Button
 	followLogStreamButton       *gtk.Button
@@ -145,6 +157,9 @@ type mainWindow struct {
 	ssmManagePrefixesButton     *gtk.Button
 	ssmViewValueButton          *gtk.Button
 	ssmEditButton               *gtk.Button
+	secretFilterButton          *gtk.Button
+	secretSaveFilterButton      *gtk.Button
+	secretManageFiltersButton   *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -315,6 +330,12 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "VALUE", field: 3, expand: true},
 		{title: "MODIFIED", field: 4},
 	})
+	w.secretTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true},
+		{title: "DESCRIPTION", field: 1, expand: true},
+		{title: "LAST CHANGED", field: 2},
+		{title: "LAST ACCESSED", field: 3},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -324,10 +345,12 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.logStreamTable.view.ConnectActivate(w.peekLogStreamAt)
 	w.alarmTable.view.ConnectActivate(w.openAlarmAt)
 	w.ssmTable.view.ConnectActivate(w.openSSMParameterAt)
+	w.secretTable.view.ConnectActivate(w.openSecretAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
 	w.ssmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSSMParameterRow() })
+	w.secretTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSecretRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -398,6 +421,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ssmViewValueButton.ConnectClicked(w.promptViewSSMParameter)
 	w.ssmEditButton = gtk.NewButtonWithLabel("Edit…")
 	w.ssmEditButton.ConnectClicked(w.editSelectedSSMParameter)
+	w.secretFilterButton = gtk.NewButtonWithLabel("Name filter…")
+	w.secretFilterButton.ConnectClicked(w.promptSecretFilter)
+	w.secretSaveFilterButton = gtk.NewButtonWithLabel("Save filter…")
+	w.secretSaveFilterButton.ConnectClicked(w.promptSaveSecretFilter)
+	w.secretManageFiltersButton = gtk.NewButtonWithLabel("Saved filters…")
+	w.secretManageFiltersButton.ConnectClicked(w.promptManageSecretFilters)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -454,6 +483,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.ssmManagePrefixesButton)
 	header.Append(w.ssmViewValueButton)
 	header.Append(w.ssmEditButton)
+	header.Append(w.secretFilterButton)
+	header.Append(w.secretSaveFilterButton)
+	header.Append(w.secretManageFiltersButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -507,6 +539,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ssmModuleItems.Append(w.ssmParametersNavButton)
 	w.rebuildSSMPrefixRail()
 	ssmParameters := w.newModuleExpander("SSM Parameter Store", moduleSSM, w.ssmModuleItems)
+	w.secretsNavButton = newModuleRailButton("Secrets", w.openSecretsModule)
+	w.secretsNavButton.SetGroup(w.clustersNavButton)
+	w.secretsModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.secretsModuleItems.AddCSSClass("module-subitems")
+	w.secretsModuleItems.Append(w.secretsNavButton)
+	w.rebuildSecretFilterRail()
+	secretsManager := w.newModuleExpander("Secrets Manager", moduleSecrets, w.secretsModuleItems)
 	comingSoon := gtk.NewLabel("More modules planned")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
@@ -517,6 +556,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
 		{key: moduleSSM, name: "SSM Parameter Store", defaultItem: "Parameters", aliases: []string{"ssm", "parameter store", "ssm parameter store"}, expander: ssmParameters, activate: func() { w.loadSSMPath("/", "") }},
+		{key: moduleSecrets, name: "Secrets Manager", defaultItem: "Secrets", aliases: []string{"sm", "secrets", "secrets manager", "secrets-manager"}, expander: secretsManager, activate: func() { w.loadSecrets("", "") }},
 	}
 	sortModuleRailSections(w.moduleSections)
 	for _, section := range w.moduleSections {
@@ -592,6 +632,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ssmScroll.SetVExpand(true)
 	ssmScroll.SetHExpand(true)
 	ssmScroll.SetChild(w.ssmTable.view)
+	secretScroll := gtk.NewScrolledWindow()
+	secretScroll.SetVExpand(true)
+	secretScroll.SetHExpand(true)
+	secretScroll.SetChild(w.secretTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -611,6 +655,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(logStreamScroll, pageLogStreams)
 	w.resourceStack.AddNamed(alarmScroll, pageAlarms)
 	w.resourceStack.AddNamed(ssmScroll, pageSSM)
+	w.resourceStack.AddNamed(secretScroll, pageSecrets)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1474,6 +1519,10 @@ func (w *mainWindow) applyFilter() {
 	if w.currentPage == pageModulePicker {
 		return
 	}
+	if w.currentPage == pageSecrets {
+		w.applySecretFilter()
+		return
+	}
 	if w.currentPage == pageSSM {
 		w.applySSMFilter()
 		return
@@ -1667,6 +1716,13 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if path, found := w.activeSavedLogPath(); found {
 			w.openSavedLog(path)
 		}
+		return
+	}
+	if w.currentPage == pageSecrets {
+		if foreground && !w.reloadSecretFilterConfig() {
+			return
+		}
+		w.refreshSecrets(foreground)
 		return
 	}
 	if w.currentPage == pageSSM {
@@ -1974,6 +2030,14 @@ func (w *mainWindow) updateActionSensitivity() {
 				}
 			}
 		}
+		if w.secretsNavButton != nil {
+			w.secretsNavButton.SetActive(w.currentPage == pageSecrets && w.activeSavedSecretFilter == "")
+			for i, filter := range w.options.ConfigSecretFilters() {
+				if i < len(w.savedSecretFilterButtons) {
+					w.savedSecretFilterButtons[i].SetActive(w.currentPage == pageSecrets && filter.Name == w.activeSavedSecretFilter)
+				}
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -2065,6 +2129,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.ssmEditButton.SetVisible(ssmPage && ssmSelectedFound)
 	w.ssmEditButton.SetSensitive(ssmPage && ssmSelectedFound && !w.ssmActionPending && w.options.SSM != nil)
+	secretsPage := w.currentPage == pageSecrets
+	w.secretFilterButton.SetVisible(secretsPage)
+	w.secretFilterButton.SetSensitive(secretsPage && w.options.Secrets != nil)
+	w.secretSaveFilterButton.SetVisible(secretsPage)
+	w.secretSaveFilterButton.SetSensitive(secretsPage && w.options.Config != nil)
+	hasSavedSecretFilters := w.options.Config != nil && len(w.options.Config.SMFilters) > 0
+	w.secretManageFiltersButton.SetVisible(secretsPage && hasSavedSecretFilters)
+	w.secretManageFiltersButton.SetSensitive(secretsPage && hasSavedSecretFilters)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

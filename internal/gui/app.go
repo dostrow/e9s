@@ -62,11 +62,19 @@ type SSMService interface {
 	Update(context.Context, string, string) error
 }
 
+type SecretsService interface {
+	List(context.Context, string) ([]model.Secret, error)
+	Detail(context.Context, string) (*model.SecretValue, error)
+	Create(context.Context, string, string, string) error
+	Update(context.Context, string, string) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
 	Alarms          AlarmService
 	SSM             SSMService
+	Secrets         SecretsService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

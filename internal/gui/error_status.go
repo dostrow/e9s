@@ -13,6 +13,7 @@ const (
 	moduleCloudWatchLogs   = "cloudwatch-logs"
 	moduleCloudWatchAlarms = "cloudwatch-alarms"
 	moduleSSM              = "ssm"
+	moduleSecrets          = "secrets-manager"
 )
 
 func compactStatusMessage(message string) string {
@@ -34,6 +35,8 @@ func moduleForPage(page string) string {
 		return moduleCloudWatchAlarms
 	case pageSSM:
 		return moduleSSM
+	case pageSecrets:
+		return moduleSecrets
 	default:
 		return ""
 	}

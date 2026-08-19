@@ -22,6 +22,7 @@ func TestModuleForPage(t *testing.T) {
 		pageSavedLogSearch:  moduleCloudWatchLogs,
 		pageAlarms:          moduleCloudWatchAlarms,
 		pageSSM:             moduleSSM,
+		pageSecrets:         moduleSecrets,
 		pageModulePicker:    "",
 		"unknown":           "",
 	}
@@ -38,6 +39,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch"}},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", aliases: []string{"cwa", "cloudwatch-alarms"}},
 		{key: moduleSSM, name: "SSM Parameter Store", aliases: []string{"ssm"}},
+		{key: moduleSecrets, name: "Secrets Manager", aliases: []string{"sm", "secrets"}},
 	}
 	tests := map[string]string{
 		"ECS":               moduleECS,
@@ -46,6 +48,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		"CWA":               moduleCloudWatchAlarms,
 		"cloudwatch-alarms": moduleCloudWatchAlarms,
 		"SSM":               moduleSSM,
+		"SM":                moduleSecrets,
 	}
 	for value, want := range tests {
 		index, found := moduleSectionIndex(sections, value)
