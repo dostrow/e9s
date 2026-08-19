@@ -42,3 +42,29 @@ func TestNearestMetricPoint(t *testing.T) {
 		t.Fatalf("nearestMetricPoint(before) = %#v, %v", point, ok)
 	}
 }
+
+func TestChartTimeTicksUseReadableTwoDayIntervalsForTwoWeeks(t *testing.T) {
+	start := time.Date(2026, 8, 5, 15, 19, 0, 0, time.Local)
+	end := start.Add(14 * 24 * time.Hour)
+	ticks := chartTimeTicks(start, end, 9)
+	if len(ticks) != 8 {
+		t.Fatalf("chartTimeTicks() returned %d ticks: %#v", len(ticks), ticks)
+	}
+	for index := 1; index < len(ticks); index++ {
+		if interval := ticks[index].Sub(ticks[index-1]); interval != 2*24*time.Hour {
+			t.Fatalf("tick interval %d = %s", index, interval)
+		}
+	}
+	if got := formatChartAxisTime(start, 14*24*time.Hour); got != "Aug 5" {
+		t.Fatalf("formatChartAxisTime() = %q", got)
+	}
+}
+
+func TestChartTimeTicksAlwaysIncludeEndpoints(t *testing.T) {
+	start := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	end := start.Add(75 * time.Minute)
+	ticks := chartTimeTicks(start, end, 5)
+	if len(ticks) < 2 || !ticks[0].Equal(start) || !ticks[len(ticks)-1].Equal(end) {
+		t.Fatalf("chartTimeTicks() = %#v", ticks)
+	}
+}

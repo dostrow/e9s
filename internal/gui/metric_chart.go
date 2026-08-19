@@ -166,6 +166,20 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		value := maxValue - (maxValue-minValue)*float64(i)/4
 		drawChartText(area, cr, fmtMetricValue(value, c.unit), 4, y-8, foreground, 0.72)
 	}
+	span := c.end.Sub(c.start)
+	axisTimeLabel := func(timestamp time.Time) string { return formatChartAxisTime(timestamp, span) }
+	labelLayout := area.CreatePangoLayout(axisTimeLabel(c.end))
+	labelWidth, _ := labelLayout.PixelSize()
+	maxTimeTicks := min(9, max(2, int(plotWidth/float64(max(80, labelWidth+28)))+1))
+	timeTicks := chartTimeTicks(c.start, c.end, maxTimeTicks)
+	cr.SetSourceRGBA(float64(foreground.Red()), float64(foreground.Green()), float64(foreground.Blue()), 0.11)
+	cr.SetLineWidth(1)
+	for _, tick := range timeTicks {
+		x := left + timeFraction(tick, c.start, c.end)*plotWidth
+		cr.MoveTo(x, top)
+		cr.LineTo(x, top+plotHeight)
+		cr.Stroke()
+	}
 
 	for index, series := range c.series {
 		if len(series.Points) == 0 {
@@ -195,12 +209,57 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 
 	drawChartText(area, cr, c.title, 4, 4, foreground, 1)
 	c.drawLegend(area, cr, left, 27, left+plotWidth, foreground, accent)
-	if !c.start.IsZero() && !c.end.IsZero() {
-		drawChartText(area, cr, c.start.Local().Format("Jan 2 15:04"), left, top+plotHeight+7, foreground, 0.7)
-		endLabel := c.end.Local().Format("Jan 2 15:04")
-		layout := area.CreatePangoLayout(endLabel)
+	for index, tick := range timeTicks {
+		label := axisTimeLabel(tick)
+		layout := area.CreatePangoLayout(label)
 		textWidth, _ := layout.PixelSize()
-		drawChartText(area, cr, endLabel, left+plotWidth-float64(textWidth), top+plotHeight+7, foreground, 0.7)
+		x := left + timeFraction(tick, c.start, c.end)*plotWidth - float64(textWidth)/2
+		if index == 0 {
+			x = left
+		} else if index == len(timeTicks)-1 {
+			x = left + plotWidth - float64(textWidth)
+		}
+		drawChartText(area, cr, label, x, top+plotHeight+7, foreground, 0.7)
+	}
+}
+
+func chartTimeTicks(start, end time.Time, maxTicks int) []time.Time {
+	if start.IsZero() || end.IsZero() || !end.After(start) {
+		return nil
+	}
+	maxTicks = max(2, maxTicks)
+	span := end.Sub(start)
+	target := span / time.Duration(maxTicks-1)
+	intervals := []time.Duration{
+		time.Minute, 5 * time.Minute, 15 * time.Minute, 30 * time.Minute,
+		time.Hour, 3 * time.Hour, 6 * time.Hour, 12 * time.Hour,
+		24 * time.Hour, 2 * 24 * time.Hour, 3 * 24 * time.Hour, 5 * 24 * time.Hour,
+		7 * 24 * time.Hour, 14 * 24 * time.Hour, 30 * 24 * time.Hour,
+	}
+	interval := intervals[len(intervals)-1]
+	for _, candidate := range intervals {
+		if candidate >= target {
+			interval = candidate
+			break
+		}
+	}
+	ticks := []time.Time{start}
+	for tick := start.Add(interval); tick.Before(end); tick = tick.Add(interval) {
+		ticks = append(ticks, tick)
+	}
+	ticks = append(ticks, end)
+	return ticks
+}
+
+func formatChartAxisTime(timestamp time.Time, span time.Duration) string {
+	timestamp = timestamp.Local()
+	switch {
+	case span <= 24*time.Hour:
+		return timestamp.Format("15:04")
+	case span <= 7*24*time.Hour:
+		return timestamp.Format("Mon 15:04")
+	default:
+		return timestamp.Format("Jan 2")
 	}
 }
 
