@@ -252,9 +252,9 @@ type alarmActionDoneMsg struct {
 
 // --- CodeBuild Messages ---
 
-type cbProjectsLoadedMsg struct{ projects []e9saws.CBProject }
-type cbBuildsLoadedMsg struct{ builds []e9saws.CBBuild }
-type cbBuildDetailLoadedMsg struct{ detail *e9saws.CBBuildDetail }
+type cbProjectsLoadedMsg struct{ projects []model.CodeBuildProject }
+type cbBuildsLoadedMsg struct{ builds []model.CodeBuildBuild }
+type cbBuildDetailLoadedMsg struct{ detail *model.CodeBuildDetail }
 type cbBuildStartedMsg struct{ message string }
 type cbBuildStoppedMsg struct{ message string }
 

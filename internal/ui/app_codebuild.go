@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -17,9 +17,10 @@ func (a App) openCBProjects() (App, tea.Cmd) {
 	a.cbProjectsView = views.NewCBProjects()
 	a.cbProjectsView = a.cbProjectsView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		projects, err := client.ListCBProjects(context.Background())
+		projects, err := codeBuild.ListProjects(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -32,9 +33,10 @@ func (a App) openCBBuilds(projectName string) (App, tea.Cmd) {
 	a.cbBuildsView = views.NewCBBuilds(projectName)
 	a.cbBuildsView = a.cbBuildsView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		builds, err := client.ListCBBuilds(context.Background(), projectName, 50)
+		builds, err := codeBuild.ListBuilds(ctx, projectName, service.CodeBuildHistoryLimit)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -49,10 +51,11 @@ func (a App) openCBBuildDetail() (App, tea.Cmd) {
 	}
 	a.state = viewCBBuildDetail
 	a.loading = true
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	buildID := build.ID
 	return a, func() tea.Msg {
-		detail, err := client.GetCBBuildDetail(context.Background(), buildID)
+		detail, err := codeBuild.Detail(ctx, buildID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -82,10 +85,11 @@ func (a App) triggerCBBuild() (App, tea.Cmd) {
 }
 
 func (a App) doStartCBBuild() tea.Cmd {
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	projectName := a.cbTriggerProject
 	return func() tea.Msg {
-		build, err := client.StartCBBuild(context.Background(), projectName, "")
+		build, err := codeBuild.Start(ctx, projectName, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -105,10 +109,15 @@ func (a App) stopCBBuild() (App, tea.Cmd) {
 }
 
 func (a App) doStopCBBuild() tea.Cmd {
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	buildID := a.cbBuildDetailView.BuildID()
+	status := ""
+	if detail := a.cbBuildDetailView.Detail(); detail != nil {
+		status = detail.Status
+	}
 	return func() tea.Msg {
-		err := client.StopCBBuild(context.Background(), buildID)
+		err := codeBuild.Stop(ctx, buildID, status)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -172,9 +181,10 @@ func (a App) searchCBBuildLogs() (App, tea.Cmd) {
 
 func (a App) refreshCBBuilds() tea.Cmd {
 	projectName := a.cbBuildsView.ProjectName()
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	return func() tea.Msg {
-		builds, err := client.ListCBBuilds(context.Background(), projectName, 50)
+		builds, err := codeBuild.ListBuilds(ctx, projectName, service.CodeBuildHistoryLimit)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -187,9 +197,10 @@ func (a App) refreshCBBuildDetail() tea.Cmd {
 	if buildID == "" {
 		return nil
 	}
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	return func() tea.Msg {
-		detail, err := client.GetCBBuildDetail(context.Background(), buildID)
+		detail, err := codeBuild.Detail(ctx, buildID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -198,9 +209,10 @@ func (a App) refreshCBBuildDetail() tea.Cmd {
 }
 
 func (a App) refreshCBProjects() tea.Cmd {
-	client := a.client
+	codeBuild := a.codeBuild
+	ctx := a.ctx
 	return func() tea.Msg {
-		projects, err := client.ListCBProjects(context.Background())
+		projects, err := codeBuild.ListProjects(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
