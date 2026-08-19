@@ -455,9 +455,11 @@ sharing the same service operations.
 Task-definition JSON and Lambda text files now share a small document-oriented
 editor abstraction. Full builds use GtkSourceView 5 for filename-based language
 detection, theme-aware schemes, line numbers, current-line and bracket
-highlighting, indentation, and native undo/redo. The pinned Go binding matches
-the existing gotk4 `v0.3.1` ABI; `gui`-only builds retain the former plain
-`GtkTextView` implementation as a packaging and compatibility fallback.
+highlighting, indentation, and native undo/redo. A narrow cgo bridge targets the
+GtkSourceView 5 C API and exposes the editor through its `GtkTextView` base class,
+avoiding a second generated binding with a mismatched GTK or gotk4 generation.
+`gui`-only builds retain the former plain `GtkTextView` implementation as a
+packaging and compatibility fallback.
 
 This creates a suitable boundary for future diagnostics or completion providers
 without introducing language-server lifecycle and workspace management now.

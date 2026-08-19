@@ -53,6 +53,16 @@ editors. A GTK-only diagnostic build remains available as `make build-gui-basic`
 it uses the plain text editor fallback, disables Exec, and explains the missing
 terminal feature in the GUI.
 
+The highlighted editor uses the GtkSourceView 5 C API through its
+`gtksourceview-5` pkg-config module. If detection fails, verify the development
+package—not only the runtime library—is installed:
+
+```bash
+pkg-config --modversion gtk4 gtksourceview-5 vte-2.91-gtk4
+```
+
+`gtksourceview-4` is the GTK 3 generation and cannot be used by this GTK 4 GUI.
+
 The GUI accepts the ECS-relevant TUI settings and YAML defaults:
 
 ```bash
