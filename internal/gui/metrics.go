@@ -12,11 +12,34 @@ import (
 	"github.com/dostrow/e9s/internal/model"
 )
 
+var metricTimeRanges = []struct {
+	label    string
+	duration time.Duration
+}{
+	{"15 minutes", 15 * time.Minute},
+	{"1 hour", time.Hour},
+	{"6 hours", 6 * time.Hour},
+	{"24 hours", 24 * time.Hour},
+	{"7 days", 7 * 24 * time.Hour},
+}
+
 func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	back := gtk.NewButtonWithLabel("Back to details")
 	back.ConnectClicked(w.closeMetrics)
 	refresh := gtk.NewButtonWithLabel("Refresh metrics")
 	refresh.ConnectClicked(func() { w.loadMetrics(true) })
+	rangeLabels := make([]string, len(metricTimeRanges))
+	for i, item := range metricTimeRanges {
+		rangeLabels[i] = item.label
+	}
+	w.metricsRange = gtk.NewDropDownFromStrings(rangeLabels)
+	w.metricsRange.SetSelected(0)
+	w.metricsRange.SetTooltipText("Metrics time range")
+	w.metricsRange.NotifyProperty("selected", func() {
+		if w.showingMetrics {
+			w.loadMetrics(true)
+		}
+	})
 	w.metricsScaleButton = gtk.NewButtonWithLabel("Toggle scale-in")
 	w.metricsScaleButton.ConnectClicked(w.confirmToggleScaleIn)
 	w.metricsScaleLabel = gtk.NewLabel("Scale-in status unknown")
@@ -28,23 +51,22 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	toolbar.AddCSSClass("log-toolbar")
 	toolbar.Append(back)
 	toolbar.Append(refresh)
+	toolbar.Append(w.metricsRange)
 	toolbar.Append(w.metricsScaleButton)
 	toolbar.Append(w.metricsScaleLabel)
 
 	w.metricsTimestamp = gtk.NewLabel("No metrics loaded")
 	w.metricsTimestamp.SetXAlign(0)
 	w.metricsTimestamp.AddCSSClass("muted")
-	w.metricsCPUAvg = newMetricBar()
-	w.metricsCPUMax = newMetricBar()
-	w.metricsMemAvg = newMetricBar()
-	w.metricsMemMax = newMetricBar()
+	w.metricsCPUChart = newMetricChart("CPU UTILIZATION", "%", true, 100)
+	w.metricsMemoryChart = newMetricChart("MEMORY UTILIZATION", "%", true, 100)
 
 	metrics := gtk.NewBox(gtk.OrientationVertical, 8)
 	metrics.SetMarginTop(16)
 	metrics.SetMarginBottom(16)
 	metrics.SetMarginStart(16)
 	metrics.SetMarginEnd(16)
-	w.metricsTitle = gtk.NewLabel("SERVICE UTILIZATION — LAST 15 MINUTES")
+	w.metricsTitle = gtk.NewLabel("SERVICE UTILIZATION")
 	w.metricsTitle.SetXAlign(0)
 	w.metricsTitle.AddCSSClass("section-title")
 	w.metricsScope = gtk.NewLabel("")
@@ -60,10 +82,8 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	metrics.Append(w.metricsScope)
 	metrics.Append(w.metricsTimestamp)
 	metrics.Append(w.metricsNotice)
-	appendMetricBar(metrics, "CPU average", w.metricsCPUAvg)
-	appendMetricBar(metrics, "CPU maximum", w.metricsCPUMax)
-	appendMetricBar(metrics, "Memory average", w.metricsMemAvg)
-	appendMetricBar(metrics, "Memory maximum", w.metricsMemMax)
+	metrics.Append(w.metricsCPUChart.area)
+	metrics.Append(w.metricsMemoryChart.area)
 
 	w.metricsAlarmTable = newStringTable([]columnSpec{
 		{title: "ALARM", field: 0, expand: true},
@@ -93,20 +113,6 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	pane.Append(toolbar)
 	pane.Append(content)
 	return pane
-}
-
-func newMetricBar() *gtk.ProgressBar {
-	bar := gtk.NewProgressBar()
-	bar.SetShowText(true)
-	bar.SetText("—")
-	return bar
-}
-
-func appendMetricBar(box *gtk.Box, labelText string, bar *gtk.ProgressBar) {
-	label := gtk.NewLabel(labelText)
-	label.SetXAlign(0)
-	box.Append(label)
-	box.Append(bar)
 }
 
 func (w *mainWindow) openMetrics() {
@@ -139,10 +145,11 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 	go func() {
 		var metrics *model.ServiceMetrics
 		var err error
+		window := w.metricsWindow()
 		if selectedTask != "" {
-			metrics, err = w.options.ECS.GetTaskMetrics(ctx, cluster, service, task, 15*time.Minute)
+			metrics, err = w.options.ECS.GetTaskMetrics(ctx, cluster, service, task, window)
 		} else {
-			metrics, err = w.options.ECS.GetServiceMetrics(ctx, cluster, service, 15*time.Minute)
+			metrics, err = w.options.ECS.GetServiceMetrics(ctx, cluster, service, window)
 		}
 		var (
 			alarms     []model.AlarmState
@@ -193,22 +200,20 @@ func (w *mainWindow) renderMetrics() {
 		return
 	}
 	m := w.metricsSnapshot
-	setMetricBar(w.metricsCPUAvg, m.CPUAvg, m.CPUAvgAvailable)
-	setMetricBar(w.metricsCPUMax, m.CPUMax, m.CPUMaxAvailable)
-	setMetricBar(w.metricsMemAvg, m.MemAvg, m.MemAvgAvailable)
-	setMetricBar(w.metricsMemMax, m.MemMax, m.MemMaxAvailable)
-	w.metricsTimestamp.SetLabel("Sampled " + formatTime(m.Timestamp))
+	w.metricsCPUChart.SetData(m.StartTime, m.EndTime, m.Series, "cpu_avg", "cpu_max")
+	w.metricsMemoryChart.SetData(m.StartTime, m.EndTime, m.Series, "mem_avg", "mem_max")
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(m.Timestamp), formatMetricPeriod(m.Period)))
 
 	taskScope := w.metricsTaskID != ""
 	if taskScope {
-		w.metricsTitle.SetLabel("TASK UTILIZATION — LAST 15 MINUTES")
+		w.metricsTitle.SetLabel("TASK UTILIZATION — " + strings.ToUpper(w.metricsRangeLabel()))
 		scope := "Task " + w.metricsTaskID
 		if w.selectedService != "" {
 			scope += " • service " + w.selectedService
 		}
 		w.metricsScope.SetLabel(scope)
 	} else {
-		w.metricsTitle.SetLabel("SERVICE UTILIZATION — LAST 15 MINUTES")
+		w.metricsTitle.SetLabel("SERVICE UTILIZATION — " + strings.ToUpper(w.metricsRangeLabel()))
 		w.metricsScope.SetLabel("Service " + w.selectedService + " • all running tasks")
 	}
 	hasData := m.CPUAvgAvailable || m.CPUMaxAvailable || m.MemAvgAvailable || m.MemMaxAvailable
@@ -246,24 +251,39 @@ func (w *mainWindow) renderMetrics() {
 	w.metricsScaleButton.SetSensitive(w.scaleInKnown)
 }
 
-func setMetricBar(bar *gtk.ProgressBar, value float64, available bool) {
-	if !available {
-		bar.SetFraction(0)
-		bar.SetText("No data")
-		return
+func (w *mainWindow) metricsWindow() time.Duration {
+	if w.metricsRange == nil {
+		return metricTimeRanges[0].duration
 	}
-	bar.SetFraction(metricFraction(value))
-	bar.SetText(fmt.Sprintf("%.1f%%", value))
+	selected := int(w.metricsRange.Selected())
+	if selected < 0 || selected >= len(metricTimeRanges) {
+		return metricTimeRanges[0].duration
+	}
+	return metricTimeRanges[selected].duration
 }
 
-func metricFraction(value float64) float64 {
-	if value < 0 {
-		return 0
+func (w *mainWindow) metricsRangeLabel() string {
+	if w.metricsRange == nil {
+		return metricTimeRanges[0].label
 	}
-	if value > 100 {
-		return 1
+	selected := int(w.metricsRange.Selected())
+	if selected < 0 || selected >= len(metricTimeRanges) {
+		return metricTimeRanges[0].label
 	}
-	return value / 100
+	return metricTimeRanges[selected].label
+}
+
+func formatMetricPeriod(period time.Duration) string {
+	if period <= 0 {
+		return "unknown"
+	}
+	if period%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(period/time.Hour))
+	}
+	if period%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(period/time.Minute))
+	}
+	return period.String()
 }
 
 func (w *mainWindow) confirmToggleScaleIn() {

@@ -332,10 +332,9 @@ type mainWindow struct {
 	workspaceBusySpinner        *gtk.Spinner
 	workspaceBusyLabel          *gtk.Label
 	workspaceBusy               bool
-	metricsCPUAvg               *gtk.ProgressBar
-	metricsCPUMax               *gtk.ProgressBar
-	metricsMemAvg               *gtk.ProgressBar
-	metricsMemMax               *gtk.ProgressBar
+	metricsCPUChart             *metricChart
+	metricsMemoryChart          *metricChart
+	metricsRange                *gtk.DropDown
 	metricsAlarmTable           *stringTable
 	metricsScaleButton          *gtk.Button
 	metricsScaleLabel           *gtk.Label

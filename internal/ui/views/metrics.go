@@ -2,10 +2,12 @@ package views
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -46,12 +48,14 @@ func (m MetricsModel) View() string {
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderMetric(m.metrics.CPUAvg, m.metrics.CPUAvgAvailable, m.width-20))
 	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderMetric(m.metrics.CPUMax, m.metrics.CPUMaxAvailable, m.width-20))
+	b.WriteString(renderMetricHistory(m.metrics.Series, "cpu_avg", "  History:    ", m.width-18, theme.ColorCyan))
 	b.WriteString("\n")
 
 	b.WriteString(theme.TitleStyle.Render("  Memory Utilization"))
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "  %-12s %s\n", "Average:", renderMetric(m.metrics.MemAvg, m.metrics.MemAvgAvailable, m.width-20))
 	fmt.Fprintf(&b, "  %-12s %s\n", "Maximum:", renderMetric(m.metrics.MemMax, m.metrics.MemMaxAvailable, m.width-20))
+	b.WriteString(renderMetricHistory(m.metrics.Series, "mem_avg", "  History:    ", m.width-18, theme.ColorMagenta))
 	b.WriteString("\n")
 
 	if !metricsAvailable(m.metrics) {
@@ -113,6 +117,42 @@ func (m MetricsModel) View() string {
 	}
 
 	return b.String()
+}
+
+func renderMetricHistory(series []model.MetricSeries, id, prefix string, width int, color lipgloss.Color) string {
+	var points []model.MetricPoint
+	for _, candidate := range series {
+		if candidate.ID == id {
+			points = candidate.Points
+			break
+		}
+	}
+	if len(points) == 0 {
+		return prefix + theme.HelpStyle.Render("No history") + "\n"
+	}
+	if width < 8 {
+		width = 8
+	}
+	if len(points) > width {
+		points = points[len(points)-width:]
+	}
+	minimum, maximum := points[0].Value, points[0].Value
+	for _, point := range points[1:] {
+		minimum = math.Min(minimum, point.Value)
+		maximum = math.Max(maximum, point.Value)
+	}
+	const glyphs = "▁▂▃▄▅▆▇█"
+	var spark strings.Builder
+	for _, point := range points {
+		level := 0
+		if maximum > minimum {
+			level = int(math.Round((point.Value - minimum) / (maximum - minimum) * 7))
+		}
+		level = min(7, max(0, level))
+		spark.WriteRune([]rune(glyphs)[level])
+	}
+	rangeLabel := fmt.Sprintf(" %.1f–%.1f%%", minimum, maximum)
+	return prefix + lipgloss.NewStyle().Foreground(color).Render(spark.String()) + theme.HelpStyle.Render(rangeLabel) + "\n"
 }
 
 func renderMetric(value float64, available bool, width int) string {
