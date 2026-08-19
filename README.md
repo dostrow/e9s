@@ -182,7 +182,7 @@ go install github.com/dostrow/e9s@latest
 
 The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
 for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager,
-and Lambda. It shares
+Lambda, and CodeBuild. It shares
 connection, query, mutation, and log services with the TUI while remaining a
 separate, build-tagged executable.
 

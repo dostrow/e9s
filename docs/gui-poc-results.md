@@ -464,6 +464,35 @@ packaging and compatibility fallback.
 This creates a suitable boundary for future diagnostics or completion providers
 without introducing language-server lifecycle and workspace management now.
 
+### CodeBuild module follow-up
+
+CodeBuild now uses `service.CodeBuild` in both frontends for stable project and
+build discovery, detail reads, environment ordering, start/stop validation and
+mutations, caller-owned cancellation, and contextual errors. Project, build,
+source, phase, and environment values are UI-neutral models; neither frontend
+duplicates AWS SDK workflow logic.
+
+The GTK frontend adds an alphabetically positioned, collapsible CodeBuild module
+with Projects as its default item. Projects drill into a newest-first 50-build
+history, and build selection loads source data, phases and failure contexts,
+duration/current phase, initiator, environment references, and the CloudWatch
+log destination. Context changes clear stale Browser and Workspace content,
+generation guards reject late responses, and refresh preserves a selected build
+when it still exists.
+
+Completed and in-progress builds reuse the shared CloudWatch Logs Workspace.
+Completed builds open the newest bounded window from the build's start and can
+page backward; active builds follow from the padded start timestamp. The existing
+overlap-and-deduplication polling keeps late final events even when they share a
+timestamp with an earlier event. Server-side search opens with the exact build
+group/stream and padded build range. Start and stop use explicit confirmations,
+stop is limited to in-progress builds, pending operations disable applicable
+actions and refresh, and successful mutations reload their project/build context.
+
+The GUI embeds actions in contextual Header Bar controls while the TUI retains
+its keyboard-first detail screen. The presentation differs intentionally; query,
+mutation, cancellation, log fallback, and final-line behavior remain shared.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

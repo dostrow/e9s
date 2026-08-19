@@ -76,12 +76,12 @@ The Module Rail starts collapsed. With no `defaults.default_mode`, the GUI opens
 a module picker; choosing a module expands only that module and opens its default
 sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
 CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
-Parameter Store, **Secrets** for Secrets Manager, and **Functions** for Lambda.
-Use `Ctrl+P` to reopen the
-picker from anywhere.
+Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda, and
+**Projects** for CodeBuild. Use `Ctrl+P` to reopen the picker from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
+`CB` and `CodeBuild` select the CodeBuild project browser.
 For example:
 
 ```yaml
@@ -132,8 +132,10 @@ operations; SSM Parameter Store browsing, saved prefixes, decrypted value
 inspection, and guarded multiline editing; Secrets Manager metadata browsing,
 saved filters, guarded JSON/plaintext reveal, editing, and cloning; Lambda
 browsing, saved searches, configuration/environment inspection, CloudWatch log
-workflows, and guarded ZIP editing; service-wide and selected-task metrics;
-scaling and guarded ECS mutations; and ECS Exec in an embedded VTE terminal.
+workflows, and guarded ZIP editing; CodeBuild project/build browsing, phase and
+failure inspection, environment references, log viewing/search, and confirmed
+start/stop operations; service-wide and selected-task metrics; scaling and
+guarded ECS mutations; and ECS Exec in an embedded VTE terminal.
 The GTK frontend and Bubble Tea frontend both call the same UI-neutral
 services in `internal/service`; GTK code does not call AWS SDK adapters directly.
 
@@ -269,6 +271,23 @@ memory than a cached rebuild.
     upload after the mutation confirmation. Confirm binary content remains
     usable and the function configuration refreshes. Repeat with an image-based
     function and confirm editing is unavailable with an explanation.
+43. Expand CodeBuild and open Projects. Filter project metadata, drill into a
+    project's newest-first 50-build history, then use Back to return to Projects.
+    Confirm Browser and Workspace content clear immediately during rapid project
+    and build changes and that only the final request is displayed.
+44. Select successful, failed, and in-progress builds. Confirm source, initiator,
+    duration/current phase, phase failures, environment references, and log
+    destination render in the Workspace. Refresh and verify the selected build
+    remains selected when it still exists.
+45. Open a completed build's logs and page backward through history; open an
+    in-progress build and verify follow begins at the build start, receives a
+    final event sharing the previous event's timestamp, and continues after the
+    build reaches a terminal state. Search logs and confirm the dialog defaults
+    to the exact build group, stream, and padded build time range.
+46. Start a disposable project build and stop an in-progress build. Confirm both
+    operations require confirmation, all CodeBuild actions and refresh remain
+    disabled while pending, errors use the shared dismissible error surface, and
+    the affected build context reloads after success.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

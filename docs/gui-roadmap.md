@@ -311,6 +311,11 @@ for a later opt-in client without coupling it to Lambda or ECS workflows.
 
 ## CodeBuild delivery phases
 
+CodeBuild is implemented in the GTK frontend and shares project/build
+discovery, detail retrieval, start/stop validation and mutations, and
+CloudWatch log access with the TUI through `service.CodeBuild` and
+`service.Logs`.
+
 ### Phase 1: shared service
 
 - Move project, build summary, build detail, phase, environment, and log-source
