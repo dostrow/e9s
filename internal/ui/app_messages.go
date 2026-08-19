@@ -239,8 +239,8 @@ type logStreamsLoadedMsg struct{ streams []e9saws.LogStreamInfo }
 
 // --- CloudWatch Alarms Messages ---
 
-type alarmsLoadedMsg struct{ alarms []e9saws.CWAlarm }
-type alarmDetailLoadedMsg struct{ detail *e9saws.CWAlarmDetail }
+type alarmsLoadedMsg struct{ alarms []model.Alarm }
+type alarmDetailLoadedMsg struct{ detail *model.AlarmDetail }
 type alarmActionDoneMsg struct {
 	message   string
 	alarmName string

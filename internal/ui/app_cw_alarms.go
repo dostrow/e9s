@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,9 +25,10 @@ func (a App) openCWAlarms(stateFilter string) (App, tea.Cmd) {
 	a.alarmsView = views.NewAlarms(stateFilter)
 	a.alarmsView = a.alarmsView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	alarmsService := a.alarms
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		alarms, err := client.ListCWAlarms(context.Background(), stateFilter)
+		alarms, err := alarmsService.List(ctx, stateFilter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -43,10 +43,11 @@ func (a App) openAlarmDetail() (App, tea.Cmd) {
 	}
 	a.state = viewAlarmDetail
 	a.loading = true
-	client := a.client
+	alarmsService := a.alarms
+	ctx := a.ctx
 	name := alarm.Name
 	return a, func() tea.Msg {
-		detail, err := client.DescribeCWAlarm(context.Background(), name)
+		detail, err := alarmsService.Detail(ctx, name)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -61,15 +62,11 @@ func (a App) toggleAlarmActions() (App, tea.Cmd) {
 	}
 	name := detail.Name
 	enabled := detail.ActionsEnabled
-	client := a.client
+	alarmsService := a.alarms
+	ctx := a.ctx
 	a.loading = true
 	return a, func() tea.Msg {
-		var err error
-		if enabled {
-			err = client.DisableAlarmActions(context.Background(), name)
-		} else {
-			err = client.EnableAlarmActions(context.Background(), name)
-		}
+		err := alarmsService.SetActionsEnabled(ctx, name, !enabled)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -99,10 +96,11 @@ func (a App) promptSetAlarmState() (App, tea.Cmd) {
 
 func (a App) doSetAlarmState(state string) (App, tea.Cmd) {
 	name := a.alarmDetailView.AlarmName()
-	client := a.client
+	alarmsService := a.alarms
+	ctx := a.ctx
 	a.loading = true
 	return a, func() tea.Msg {
-		err := client.SetAlarmState(context.Background(), name, state, "Set manually via e9s")
+		err := alarmsService.SetState(ctx, name, state, "Set manually via e9s")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -118,9 +116,10 @@ func (a App) refreshAlarmDetail() tea.Cmd {
 	if name == "" {
 		return nil
 	}
-	client := a.client
+	alarmsService := a.alarms
+	ctx := a.ctx
 	return func() tea.Msg {
-		detail, err := client.DescribeCWAlarm(context.Background(), name)
+		detail, err := alarmsService.Detail(ctx, name)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -129,10 +128,11 @@ func (a App) refreshAlarmDetail() tea.Cmd {
 }
 
 func (a App) refreshAlarms() tea.Cmd {
-	client := a.client
+	alarmsService := a.alarms
+	ctx := a.ctx
 	stateFilter := a.alarmsView.StateFilter()
 	return func() tea.Msg {
-		alarms, err := client.ListCWAlarms(context.Background(), stateFilter)
+		alarms, err := alarmsService.List(ctx, stateFilter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -142,10 +142,10 @@ func (a App) refreshAlarms() tea.Cmd {
 
 func (a App) handleCWAlarmStatePick(value string) (App, tea.Cmd) {
 	stateMap := map[string]string{
-		"All alarms":              "",
-		"ALARM only":              "ALARM",
-		"OK only":                 "OK",
-		"INSUFFICIENT_DATA only":  "INSUFFICIENT_DATA",
+		"All alarms":             "",
+		"ALARM only":             "ALARM",
+		"OK only":                "OK",
+		"INSUFFICIENT_DATA only": "INSUFFICIENT_DATA",
 	}
 	state := stateMap[value]
 	return a.openCWAlarms(state)
@@ -154,4 +154,3 @@ func (a App) handleCWAlarmStatePick(value string) (App, tea.Cmd) {
 func (a App) handleSetAlarmStatePick(value string) (App, tea.Cmd) {
 	return a.doSetAlarmState(value)
 }
-

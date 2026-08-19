@@ -9,13 +9,13 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type AlarmsModel struct {
-	alarms      []aws.CWAlarm
+	alarms      []model.Alarm
 	stateFilter string
 	cursor      int
 	filter      string
@@ -146,12 +146,12 @@ func stateStyledCell(state string) components.Cell {
 	return components.Styled(state, style)
 }
 
-func (m AlarmsModel) filteredAlarms() []aws.CWAlarm {
+func (m AlarmsModel) filteredAlarms() []model.Alarm {
 	if m.filter == "" {
 		return m.alarms
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.CWAlarm
+	var out []model.Alarm
 	for _, a := range m.alarms {
 		if strings.Contains(strings.ToLower(a.Name), lf) ||
 			strings.Contains(strings.ToLower(a.MetricName), lf) ||
@@ -162,7 +162,7 @@ func (m AlarmsModel) filteredAlarms() []aws.CWAlarm {
 	return out
 }
 
-func (m AlarmsModel) SetAlarms(alarms []aws.CWAlarm) AlarmsModel {
+func (m AlarmsModel) SetAlarms(alarms []model.Alarm) AlarmsModel {
 	sort.Slice(alarms, func(i, j int) bool {
 		return alarms[i].StateUpdatedAt.After(alarms[j].StateUpdatedAt)
 	})
@@ -175,7 +175,7 @@ func (m AlarmsModel) SetAlarms(alarms []aws.CWAlarm) AlarmsModel {
 	return m
 }
 
-func (m AlarmsModel) SelectedAlarm() *aws.CWAlarm {
+func (m AlarmsModel) SelectedAlarm() *model.Alarm {
 	filtered := m.filteredAlarms()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
@@ -184,8 +184,8 @@ func (m AlarmsModel) SelectedAlarm() *aws.CWAlarm {
 	return &a
 }
 
-func (m AlarmsModel) IsFiltering() bool    { return m.filtering }
-func (m AlarmsModel) StateFilter() string  { return m.stateFilter }
+func (m AlarmsModel) IsFiltering() bool   { return m.filtering }
+func (m AlarmsModel) StateFilter() string { return m.stateFilter }
 
 func (m AlarmsModel) visibleRows() int {
 	overhead := 9
