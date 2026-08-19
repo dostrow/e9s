@@ -30,6 +30,7 @@ const (
 	pageLogGroups       = "cloudwatch-log-groups"
 	pageLogStreams      = "cloudwatch-log-streams"
 	pageSavedLogSearch  = "cloudwatch-saved-search"
+	pageAlarms          = "cloudwatch-alarms"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -39,6 +40,7 @@ const (
 	detailError          = "error"
 	detailLogGroup       = "log-group"
 	detailLogStream      = "log-stream"
+	detailAlarm          = "alarm"
 )
 
 type mainWindow struct {
@@ -75,6 +77,10 @@ type mainWindow struct {
 	allLogStreams               []model.LogStream
 	filteredLogStreams          []model.LogStream
 	selectedLogStream           string
+	allAlarms                   []model.Alarm
+	filteredAlarms              []model.Alarm
+	selectedAlarm               string
+	alarmStateFilter            string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -88,6 +94,7 @@ type mainWindow struct {
 	taskDefinitionTable         *stringTable
 	logGroupTable               *stringTable
 	logStreamTable              *stringTable
+	alarmTable                  *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -96,6 +103,7 @@ type mainWindow struct {
 	taskDefinitionsNavButton    *gtk.ToggleButton
 	logGroupsNavButton          *gtk.ToggleButton
 	cloudWatchModuleItems       *gtk.Box
+	alarmNavButtons             map[string]*gtk.ToggleButton
 	savedLogsLabel              *gtk.Label
 	savedLogNavButtons          []*gtk.ToggleButton
 	activeSavedLog              string
@@ -251,6 +259,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "LAST EVENT", field: 1},
 		{title: "FIRST EVENT", field: 2},
 	})
+	w.alarmTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true},
+		{title: "STATE", field: 1},
+		{title: "METRIC", field: 2},
+		{title: "NAMESPACE", field: 3},
+		{title: "ACTIONS", field: 4},
+		{title: "UPDATED", field: 5},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -258,8 +274,10 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.taskDefinitionTable.view.ConnectActivate(w.openTaskDefinitionAt)
 	w.logGroupTable.view.ConnectActivate(w.openLogGroupAt)
 	w.logStreamTable.view.ConnectActivate(w.peekLogStreamAt)
+	w.alarmTable.view.ConnectActivate(w.openAlarmAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
+	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -393,6 +411,28 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	cloudWatch.SetExpanded(true)
 	cloudWatch.SetChild(w.cloudWatchModuleItems)
 	cloudWatch.AddCSSClass("module-heading")
+	alarmItems := gtk.NewBox(gtk.OrientationVertical, 2)
+	alarmItems.AddCSSClass("module-subitems")
+	w.alarmNavButtons = make(map[string]*gtk.ToggleButton, 4)
+	for _, scope := range []struct {
+		label string
+		state string
+	}{
+		{label: "All alarms"},
+		{label: "In alarm", state: model.AlarmStateAlarm},
+		{label: "OK", state: model.AlarmStateOK},
+		{label: "Insufficient data", state: model.AlarmStateInsufficientData},
+	} {
+		state := scope.state
+		button := newModuleRailButton(scope.label, func() { w.openAlarmsModule(state) })
+		button.SetGroup(w.clustersNavButton)
+		w.alarmNavButtons[state] = button
+		alarmItems.Append(button)
+	}
+	cloudWatchAlarms := gtk.NewExpander("CloudWatch Alarms")
+	cloudWatchAlarms.SetExpanded(true)
+	cloudWatchAlarms.SetChild(alarmItems)
+	cloudWatchAlarms.AddCSSClass("module-heading")
 	comingSoon := gtk.NewLabel("More modules planned")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
@@ -400,6 +440,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebar.Append(modules)
 	sidebar.Append(ecs)
 	sidebar.Append(cloudWatch)
+	sidebar.Append(cloudWatchAlarms)
 	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
@@ -461,6 +502,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	logStreamScroll.SetVExpand(true)
 	logStreamScroll.SetHExpand(true)
 	logStreamScroll.SetChild(w.logStreamTable.view)
+	alarmScroll := gtk.NewScrolledWindow()
+	alarmScroll.SetVExpand(true)
+	alarmScroll.SetHExpand(true)
+	alarmScroll.SetChild(w.alarmTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -472,6 +517,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(taskDefinitionScroll, pageTaskDefinitions)
 	w.resourceStack.AddNamed(logGroupScroll, pageLogGroups)
 	w.resourceStack.AddNamed(logStreamScroll, pageLogStreams)
+	w.resourceStack.AddNamed(alarmScroll, pageAlarms)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -599,7 +645,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	})
 	w.addAction(app, "back", []string{"Escape"}, w.goBack)
 	w.addAction(app, "modes", []string{"<Control>p"}, func() {
-		w.setStatus("Choose ECS or CloudWatch Logs from the Module Rail", false)
+		w.setStatus("Choose ECS, CloudWatch Logs, or CloudWatch Alarms from the Module Rail", false)
 	})
 	w.addAction(app, "help", nil, func() {
 		if w.showingTerminal {
@@ -1318,6 +1364,10 @@ func (w *mainWindow) openClusterByName(name string) {
 }
 
 func (w *mainWindow) applyFilter() {
+	if w.currentPage == pageAlarms {
+		w.applyAlarmFilter()
+		return
+	}
 	if w.currentPage == pageLogStreams {
 		w.applyLogStreamFilter()
 		return
@@ -1497,6 +1547,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if path, found := w.activeSavedLogPath(); found {
 			w.openSavedLog(path)
 		}
+		return
+	}
+	if w.currentPage == pageAlarms {
+		w.refreshAlarms(foreground)
 		return
 	}
 	if w.currentPage == pageLogStreams {
@@ -1768,6 +1822,9 @@ func (w *mainWindow) updateActionSensitivity() {
 			if i < len(w.savedLogNavButtons) {
 				w.savedLogNavButtons[i].SetActive(cloudWatchPage && path.Name == w.activeSavedLog)
 			}
+		}
+		for state, button := range w.alarmNavButtons {
+			button.SetActive(w.currentPage == pageAlarms && state == w.alarmStateFilter)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

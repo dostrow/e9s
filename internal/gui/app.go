@@ -49,9 +49,17 @@ type LogService interface {
 	Fetch(context.Context, string, model.LogQuery) (model.LogPage, error)
 }
 
+type AlarmService interface {
+	List(context.Context, string) ([]model.Alarm, error)
+	Detail(context.Context, string) (*model.AlarmDetail, error)
+	SetActionsEnabled(context.Context, string, bool) error
+	SetState(context.Context, string, string, string) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
+	Alarms          AlarmService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

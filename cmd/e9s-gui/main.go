@@ -59,6 +59,7 @@ func main() {
 			return gui.Run(gui.Options{
 				ECS:             service.NewECS(client),
 				Logs:            service.NewLogs(client),
+				Alarms:          service.NewAlarms(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,
