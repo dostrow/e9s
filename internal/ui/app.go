@@ -116,6 +116,7 @@ type App struct {
 	lambda                     *service.Lambda
 	codeBuild                  *service.CodeBuild
 	ec2                        *service.EC2
+	rds                        *service.RDS
 	ec2Network                 *service.EC2Network
 	ebs                        *service.EBS
 	loadBalancing              *service.LoadBalancing
@@ -321,6 +322,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		lambda:        service.NewLambda(client),
 		codeBuild:     service.NewCodeBuild(client),
 		ec2:           service.NewEC2(client),
+		rds:           service.NewRDS(client),
 		ec2Network:    service.NewEC2Network(client),
 		ebs:           service.NewEBS(client),
 		loadBalancing: service.NewLoadBalancing(client),

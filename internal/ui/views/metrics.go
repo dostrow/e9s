@@ -120,6 +120,10 @@ func (m MetricsModel) View() string {
 }
 
 func renderMetricHistory(series []model.MetricSeries, id, prefix string, width int, color lipgloss.Color) string {
+	return renderMetricHistoryUnit(series, id, prefix, width, color, "%")
+}
+
+func renderMetricHistoryUnit(series []model.MetricSeries, id, prefix string, width int, color lipgloss.Color, unit string) string {
 	var points []model.MetricPoint
 	for _, candidate := range series {
 		if candidate.ID == id {
@@ -151,7 +155,7 @@ func renderMetricHistory(series []model.MetricSeries, id, prefix string, width i
 		level = min(7, max(0, level))
 		spark.WriteRune([]rune(glyphs)[level])
 	}
-	rangeLabel := fmt.Sprintf(" %.1f–%.1f%%", minimum, maximum)
+	rangeLabel := fmt.Sprintf(" %.1f–%.1f%s", minimum, maximum, unit)
 	return prefix + lipgloss.NewStyle().Foreground(color).Render(spark.String()) + theme.HelpStyle.Render(rangeLabel) + "\n"
 }
 

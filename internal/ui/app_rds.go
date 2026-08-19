@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"context"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -13,9 +11,10 @@ func (a App) openRDSInstances() (App, tea.Cmd) {
 	a.rdsInstancesView = views.NewRDSInstances()
 	a.rdsInstancesView = a.rdsInstancesView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	rdsService := a.rds
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		instances, err := client.ListRDSInstances(context.Background(), "")
+		instances, err := rdsService.List(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -25,9 +24,10 @@ func (a App) openRDSInstances() (App, tea.Cmd) {
 
 func (a App) openRDSDetail(identifier string) (App, tea.Cmd) {
 	a.loading = true
-	client := a.client
+	rdsService := a.rds
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		detail, err := client.DescribeRDSInstance(context.Background(), identifier)
+		detail, err := rdsService.Detail(ctx, identifier)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -36,9 +36,10 @@ func (a App) openRDSDetail(identifier string) (App, tea.Cmd) {
 }
 
 func (a App) refreshRDSInstances() tea.Cmd {
-	client := a.client
+	rdsService := a.rds
+	ctx := a.ctx
 	return func() tea.Msg {
-		instances, err := client.ListRDSInstances(context.Background(), "")
+		instances, err := rdsService.List(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -51,9 +52,10 @@ func (a App) refreshRDSDetail() tea.Cmd {
 	if identifier == "" {
 		return nil
 	}
-	client := a.client
+	rdsService := a.rds
+	ctx := a.ctx
 	return func() tea.Msg {
-		detail, err := client.DescribeRDSInstance(context.Background(), identifier)
+		detail, err := rdsService.Detail(ctx, identifier)
 		if err != nil {
 			return errMsg{err}
 		}

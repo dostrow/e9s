@@ -126,7 +126,7 @@ Browse RDS DB instances and Aurora cluster members with engine, instance class, 
 - **Network** — endpoint with port, VPC, subnet group, and security groups
 - **Storage** — allocated storage (GiB), storage type, encryption, and deletion protection status
 - **Backup & Maintenance** — backup retention period, backup window, latest restorable time, maintenance window, parameter groups, and replica source
-- **CloudWatch Metrics** — live CPU utilization (color-coded), active connections, free storage, read/write IOPS, and read/write latency (last 5 min average)
+- **CloudWatch Metrics** — selectable 15-minute through 7-day histories for CPU, connections, memory, storage, IOPS, latency, throughput, disk queue, networking, burst balance, and replica lag when supported by the engine
 - **Tags** — all instance tags
 - **Aurora cluster awareness** — writer/reader roles derived from cluster membership, with failover priority for readers
 

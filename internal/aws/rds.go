@@ -2,62 +2,17 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-// RDSInstance represents an RDS DB instance summary.
-type RDSInstance struct {
-	Identifier         string
-	Engine             string
-	Version            string
-	Class              string
-	Status             string
-	// Role is "writer", "reader", "primary", "replica", or "" for standalone.
-	Role               string
-	ClusterID          string
-	AZ                 string
-	MultiAZ            bool
-	Endpoint           string
-	Port               int32
-	StorageGB          int32
-	StorageType        string
-	Encrypted          bool
-	DeletionProtection bool
-	// ReadReplicaSource is set when this instance is a read replica.
-	ReadReplicaSource  string
-	Created            time.Time
-}
-
-// RDSInstanceDetail holds extended information for a single DB instance.
-type RDSInstanceDetail struct {
-	RDSInstance
-	SubnetGroup             string
-	VPCID                   string
-	SecurityGroups          []string
-	ParameterGroups         []string
-	BackupRetentionDays     int32
-	BackupWindow            string
-	MaintenanceWindow       string
-	LatestRestorableTime    time.Time
-	CACertificate           string
-	PromotionTier           int32 // Aurora reader failover priority
-	Tags                    map[string]string
-	// CloudWatch metrics (last 5 minutes, average)
-	CPUPercent     float64
-	DBConnections  float64
-	FreeStorageGB  float64
-	ReadIOPS       float64
-	WriteIOPS      float64
-	ReadLatencyMs  float64
-	WriteLatencyMs float64
-	MetricsLoaded  bool
-}
+type RDSInstance = model.RDSInstance
+type RDSInstanceDetail = model.RDSInstanceDetail
 
 // ListRDSInstances returns all RDS DB instances annotated with their cluster role.
 // It fetches Aurora cluster data to determine writer vs reader status.
@@ -295,6 +250,7 @@ func (c *Client) DescribeRDSInstance(ctx context.Context, identifier string) (*R
 		detail.WriteIOPS = metrics.WriteIOPS
 		detail.ReadLatencyMs = metrics.ReadLatencyMs
 		detail.WriteLatencyMs = metrics.WriteLatencyMs
+		detail.Metrics = metrics.Snapshot
 		detail.MetricsLoaded = true
 	}
 
@@ -331,71 +287,73 @@ type rdsMetrics struct {
 	WriteIOPS      float64
 	ReadLatencyMs  float64
 	WriteLatencyMs float64
+	Snapshot       *model.MetricSnapshot
 }
 
 func (c *Client) fetchRDSMetrics(ctx context.Context, identifier string) (*rdsMetrics, error) {
-	now := time.Now()
-	start := now.Add(-10 * time.Minute)
-	period := int32(300) // 5-minute period
-
-	dims := []cwtypes.Dimension{
-		{Name: awssdk.String("DBInstanceIdentifier"), Value: awssdk.String(identifier)},
-	}
-
-	makeQ := func(id, metric string) cwtypes.MetricDataQuery {
-		return cwtypes.MetricDataQuery{
-			Id: awssdk.String(id),
-			MetricStat: &cwtypes.MetricStat{
-				Metric: &cwtypes.Metric{
-					Namespace:  awssdk.String("AWS/RDS"),
-					MetricName: awssdk.String(metric),
-					Dimensions: dims,
-				},
-				Period: &period,
-				Stat:   awssdk.String("Average"),
-			},
-		}
-	}
-
-	out, err := c.CW.GetMetricData(ctx, &cloudwatch.GetMetricDataInput{
-		StartTime: &start,
-		EndTime:   &now,
-		MetricDataQueries: []cwtypes.MetricDataQuery{
-			makeQ("cpu", "CPUUtilization"),
-			makeQ("conns", "DatabaseConnections"),
-			makeQ("free_storage", "FreeStorageSpace"),
-			makeQ("read_iops", "ReadIOPS"),
-			makeQ("write_iops", "WriteIOPS"),
-			makeQ("read_lat", "ReadLatency"),
-			makeQ("write_lat", "WriteLatency"),
-		},
-	})
+	snapshot, err := c.GetRDSMetrics(ctx, identifier, 15*time.Minute)
 	if err != nil {
 		return nil, err
 	}
 
-	m := &rdsMetrics{}
-	for _, r := range out.MetricDataResults {
-		if r.Id == nil || len(r.Values) == 0 {
+	m := &rdsMetrics{Snapshot: snapshot}
+	for _, series := range snapshot.Series {
+		if len(series.Points) == 0 {
 			continue
 		}
-		v := r.Values[0]
-		switch *r.Id {
+		v := series.Points[len(series.Points)-1].Value
+		switch series.ID {
 		case "cpu":
 			m.CPUPercent = v
-		case "conns":
+		case "connections":
 			m.DBConnections = v
 		case "free_storage":
-			m.FreeStorageGB = v / (1024 * 1024 * 1024)
+			m.FreeStorageGB = v
 		case "read_iops":
 			m.ReadIOPS = v
 		case "write_iops":
 			m.WriteIOPS = v
-		case "read_lat":
-			m.ReadLatencyMs = v * 1000
-		case "write_lat":
-			m.WriteLatencyMs = v * 1000
+		case "read_latency":
+			m.ReadLatencyMs = v
+		case "write_latency":
+			m.WriteLatencyMs = v
 		}
 	}
 	return m, nil
+}
+
+// GetRDSMetrics returns standard AWS/RDS CloudWatch histories. Unsupported
+// engine-specific metrics simply contain no points.
+func (c *Client) GetRDSMetrics(ctx context.Context, identifier string, window time.Duration) (*model.MetricSnapshot, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return nil, fmt.Errorf("DB instance identifier is required")
+	}
+	end := time.Now()
+	dimensions := []model.MetricDimension{{Name: "DBInstanceIdentifier", Value: identifier}}
+	metric := func(id, label, name, statistic, unit string, scale float64) model.MetricQuery {
+		return model.MetricQuery{ID: id, Label: label, Namespace: "AWS/RDS", MetricName: name,
+			Dimensions: dimensions, Statistic: statistic, Unit: unit, Scale: scale}
+	}
+	return c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
+		Queries: []model.MetricQuery{
+			metric("cpu", "Average", "CPUUtilization", "Average", "%", 1),
+			metric("cpu_max", "Maximum", "CPUUtilization", "Maximum", "%", 1),
+			metric("connections", "Connections", "DatabaseConnections", "Average", "count", 1),
+			metric("free_memory", "Free memory", "FreeableMemory", "Average", "bytes", 1),
+			metric("free_storage", "Free storage", "FreeStorageSpace", "Average", "GiB", 1/(1024*1024*1024.0)),
+			metric("read_iops", "Read", "ReadIOPS", "Average", "iops", 1),
+			metric("write_iops", "Write", "WriteIOPS", "Average", "iops", 1),
+			metric("read_latency", "Read", "ReadLatency", "Average", "ms", 1000),
+			metric("write_latency", "Write", "WriteLatency", "Average", "ms", 1000),
+			metric("read_throughput", "Read", "ReadThroughput", "Average", "bytes/s", 1),
+			metric("write_throughput", "Write", "WriteThroughput", "Average", "bytes/s", 1),
+			metric("disk_queue", "Queue depth", "DiskQueueDepth", "Average", "count", 1),
+			metric("network_receive", "Received", "NetworkReceiveThroughput", "Average", "bytes/s", 1),
+			metric("network_transmit", "Transmitted", "NetworkTransmitThroughput", "Average", "bytes/s", 1),
+			metric("burst_balance", "Burst balance", "BurstBalance", "Average", "%", 1),
+			metric("replica_lag", "Replica lag", "ReplicaLag", "Average", "seconds", 1),
+		},
+	})
 }
