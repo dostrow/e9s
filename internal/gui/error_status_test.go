@@ -29,3 +29,18 @@ func TestModuleForPage(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
+	sections := []moduleRailSection{
+		{name: "ECS"},
+		{name: "CloudWatch Logs"},
+		{name: "CloudWatch Alarms"},
+	}
+	sortModuleRailSections(sections)
+	want := []string{"CloudWatch Alarms", "CloudWatch Logs", "ECS"}
+	for i, name := range want {
+		if sections[i].name != name {
+			t.Fatalf("section %d = %q, want %q", i, sections[i].name, name)
+		}
+	}
+}

@@ -5,6 +5,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -213,6 +214,17 @@ type mainWindow struct {
 	lastError                   string
 	spinner                     *gtk.Spinner
 	lastSuccessfulLoad          time.Time
+}
+
+type moduleRailSection struct {
+	name   string
+	widget gtk.Widgetter
+}
+
+func sortModuleRailSections(sections []moduleRailSection) {
+	sort.SliceStable(sections, func(i, j int) bool {
+		return strings.ToLower(sections[i].name) < strings.ToLower(sections[j].name)
+	})
 }
 
 func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *mainWindow {
@@ -450,9 +462,15 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	comingSoon.SetWrap(true)
 	comingSoon.AddCSSClass("muted")
 	sidebar.Append(modules)
-	sidebar.Append(ecs)
-	sidebar.Append(cloudWatch)
-	sidebar.Append(cloudWatchAlarms)
+	moduleSections := []moduleRailSection{
+		{name: "ECS", widget: ecs},
+		{name: "CloudWatch Logs", widget: cloudWatch},
+		{name: "CloudWatch Alarms", widget: cloudWatchAlarms},
+	}
+	sortModuleRailSections(moduleSections)
+	for _, section := range moduleSections {
+		sidebar.Append(section.widget)
+	}
 	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
