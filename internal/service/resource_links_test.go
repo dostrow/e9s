@@ -24,3 +24,20 @@ func TestECSTaskResourceRefsIncludesTaskAndServiceInfrastructure(t *testing.T) {
 		t.Fatalf("ECSTaskResourceRefs() = %#v, want %#v", got, want)
 	}
 }
+
+func TestECSServiceResourceRefsIncludesConfiguredInfrastructure(t *testing.T) {
+	svc := model.Service{
+		SecurityGroups: []model.EC2SecurityGroupRef{{ID: "sg-1", Name: "service"}},
+		TargetGroups: []model.ResourceRef{
+			{Kind: "ec2-target-group", ID: "tg-1"},
+			{Kind: "ec2-target-group", ID: "tg-1"},
+		},
+	}
+	want := []model.ResourceRef{
+		{Kind: "ec2-security-group", ID: "sg-1", Name: "service"},
+		{Kind: "ec2-target-group", ID: "tg-1"},
+	}
+	if got := ECSServiceResourceRefs(svc); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ECSServiceResourceRefs() = %#v, want %#v", got, want)
+	}
+}

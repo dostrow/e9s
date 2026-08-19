@@ -160,6 +160,10 @@ func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) 
 	return formatServiceDetailWithTasks(cluster, svc, tasks, "TASKS", false)
 }
 
+func formatServiceOverview(cluster string, svc model.Service) string {
+	return formatServiceDetailWithTasks(cluster, svc, nil, "", false)
+}
+
 func formatServiceStoppedTasksDetail(cluster string, svc model.Service, tasks []model.Task, hasMore bool) string {
 	heading := fmt.Sprintf("RECENTLY STOPPED TASKS — %d LOADED", len(tasks))
 	if hasMore {
@@ -181,6 +185,17 @@ func formatServiceDetailWithTasks(cluster string, svc model.Service, tasks []mod
 	fmt.Fprintf(&out, "Created           %s\n", formatTime(svc.CreatedAt))
 	fmt.Fprintf(&out, "ECS Exec          %s\n", yesNo(svc.EnableExecuteCommand))
 
+	out.WriteString("\nCONFIGURED RESOURCES\n")
+	if len(svc.TargetGroups) == 0 && len(svc.SecurityGroups) == 0 {
+		out.WriteString("  No linked infrastructure\n")
+	}
+	for _, targetGroup := range svc.TargetGroups {
+		fmt.Fprintf(&out, "  %-18s %s\n", "Target group", targetGroup.ID)
+	}
+	for _, group := range svc.SecurityGroups {
+		fmt.Fprintf(&out, "  %-18s %s\n", "Security group", group.ID)
+	}
+
 	out.WriteString("\nDEPLOYMENTS\n")
 	if len(svc.Deployments) == 0 {
 		out.WriteString("  No deployments\n")
@@ -192,18 +207,20 @@ func formatServiceDetailWithTasks(cluster string, svc model.Service, tasks []mod
 			valueOrDash(deployment.TaskDefinition))
 	}
 
-	fmt.Fprintf(&out, "\n%s\n", taskHeading)
-	if len(tasks) == 0 {
-		out.WriteString("  No tasks\n")
-	}
-	for _, task := range tasks {
-		if stopped {
-			fmt.Fprintf(&out, "  %-12s %s  exit %-16s %s\n",
-				shortID(task.TaskID), formatTime(task.StoppedAt), taskExitSummary(task), valueOrDash(task.StopCode))
-		} else {
-			fmt.Fprintf(&out, "  %-12s %-12s %-10s %-16s %s\n",
-				shortID(task.TaskID), valueOrDash(task.Status), valueOrDash(task.HealthStatus),
-				valueOrDash(task.AvailabilityZone), valueOrDash(task.PrivateIP))
+	if taskHeading != "" {
+		fmt.Fprintf(&out, "\n%s\n", taskHeading)
+		if len(tasks) == 0 {
+			out.WriteString("  No tasks\n")
+		}
+		for _, task := range tasks {
+			if stopped {
+				fmt.Fprintf(&out, "  %-12s %s  exit %-16s %s\n",
+					shortID(task.TaskID), formatTime(task.StoppedAt), taskExitSummary(task), valueOrDash(task.StopCode))
+			} else {
+				fmt.Fprintf(&out, "  %-12s %-12s %-10s %-16s %s\n",
+					shortID(task.TaskID), valueOrDash(task.Status), valueOrDash(task.HealthStatus),
+					valueOrDash(task.AvailabilityZone), valueOrDash(task.PrivateIP))
+			}
 		}
 	}
 

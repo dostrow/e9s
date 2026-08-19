@@ -72,11 +72,8 @@ func (w *mainWindow) applyInlineResourceLink(link workspaceResourceLink, index i
 	tag.SetObjectProperty("underline", int(pango.UnderlineSingle))
 	tag.SetObjectProperty("weight", int(pango.WeightSemibold))
 	color := w.detailView.StyleContext().Color()
-	for _, name := range []string{"accent_color", "theme_selected_bg_color"} {
-		if candidate, ok := w.detailView.StyleContext().LookupColor(name); ok {
-			color = candidate
-			break
-		}
+	if candidate, ok := w.detailView.StyleContext().LookupColor("link_color"); ok {
+		color = candidate
 	}
 	tag.SetObjectProperty("foreground", color.String())
 	w.detailBuffer.TagTable().Add(tag)
@@ -94,6 +91,28 @@ func (w *mainWindow) applyInlineResourceLink(link workspaceResourceLink, index i
 		w.detailBuffer.ApplyTag(tag, w.detailBuffer.IterAtOffset(start), w.detailBuffer.IterAtOffset(end))
 		searchFrom = byteEnd
 	}
+}
+
+func (w *mainWindow) renderServiceOverview(svc model.Service) {
+	w.renderServiceText(formatServiceOverview(w.selectedCluster, svc), svc)
+}
+
+func (w *mainWindow) renderServiceTaskSummary(svc model.Service, prefix string) {
+	text := w.serviceTaskSummary(svc)
+	if prefix != "" {
+		text = prefix + "\n\n" + text
+	}
+	w.renderServiceText(text, svc)
+}
+
+func (w *mainWindow) renderServiceText(text string, svc model.Service) {
+	refs := service.ECSServiceResourceRefs(svc)
+	w.setDetail(text, detailService)
+	links := make([]workspaceResourceLink, 0, len(refs))
+	for _, ref := range refs {
+		links = append(links, workspaceResourceLink{label: resourceRefLabel(ref), ref: ref})
+	}
+	w.setDetailResourceLinks(links)
 }
 
 func (w *mainWindow) installDetailLinkControllers() {
@@ -217,6 +236,22 @@ func (w *mainWindow) renderTaskDetail(task model.Task) {
 	}
 	refs := service.ECSTaskResourceRefs(task, parent)
 	text := formatTaskDetail(task)
+	if parent != nil {
+		var context strings.Builder
+		fmt.Fprintf(&context, "\n\nSERVICE CONTEXT\n  Parent service         %s", parent.Name)
+		if len(parent.TargetGroups) == 0 {
+			context.WriteString("\n  Configured target groups  none")
+		} else {
+			for index, targetGroup := range parent.TargetGroups {
+				label := ""
+				if index == 0 {
+					label = "Configured target groups"
+				}
+				fmt.Fprintf(&context, "\n  %-22s %s", label, targetGroup.ID)
+			}
+		}
+		text += context.String()
+	}
 	if len(refs) > 0 {
 		var related strings.Builder
 		related.WriteString("\n\nRELATED RESOURCES")

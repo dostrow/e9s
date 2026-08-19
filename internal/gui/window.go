@@ -557,6 +557,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ec2LoadBalancerTable.view.ConnectActivate(w.openEC2LoadBalancerAt)
 	w.ec2TargetGroupTable.view.ConnectActivate(w.openEC2TargetGroupAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
+	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
 	w.ssmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSSMParameterRow() })
@@ -1490,7 +1491,7 @@ func (w *mainWindow) showParentDetails() {
 	}
 	service, _ := findService(w.allServices, w.selectedService)
 	w.setBreadcrumb(w.serviceTaskBreadcrumb())
-	w.setDetail(w.serviceTaskSummary(service), detailService)
+	w.renderServiceTaskSummary(service, "")
 }
 
 func (w *mainWindow) resetWorkspaceForBrowserChange() {
@@ -1678,11 +1679,11 @@ func (w *mainWindow) loadServiceTaskScope(service model.Service, stopped bool) {
 	if stopped {
 		w.resourceStack.SetVisibleChildName(pageStoppedTasks)
 		w.applyTaskFilter()
-		w.setDetail("Loading recently stopped tasks for "+service.Name+"…", detailService)
+		w.renderServiceOverview(service)
 	} else {
 		w.resourceStack.SetVisibleChildName(pageTasks)
 		w.applyTaskFilter()
-		w.setDetail("Loading active tasks and service details…", detailService)
+		w.renderServiceOverview(service)
 	}
 
 	cluster := w.selectedCluster
@@ -1709,7 +1710,7 @@ func (w *mainWindow) loadServiceTaskScope(service model.Service, stopped bool) {
 			w.taskNextToken = nextToken
 			w.applyTaskFilter()
 			w.updateActionSensitivity()
-			w.setDetail(w.serviceTaskSummary(service), detailService)
+			w.renderServiceTaskSummary(service, "")
 		})
 	}()
 }
@@ -1824,7 +1825,7 @@ func (w *mainWindow) loadMoreStoppedTasks() {
 						w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
 					} else if w.currentPage == pageTasks && w.detailContent == detailService {
 						if selectedService, found := findService(w.allServices, service); found {
-							w.setDetail(w.serviceTaskSummary(selectedService), detailService)
+							w.renderServiceTaskSummary(selectedService, "")
 						}
 					}
 				}
@@ -1892,6 +1893,31 @@ func (w *mainWindow) openServiceAt(position uint) {
 		return
 	}
 	w.loadTasks(w.filteredServices[position])
+}
+
+func (w *mainWindow) selectServiceRow() {
+	if w.currentPage != pageServices {
+		return
+	}
+	position := w.serviceTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredServices) {
+		if w.selectedService != "" {
+			w.resetWorkspaceForBrowserChange()
+			w.selectedService = ""
+			w.setBreadcrumb("ECS / " + w.selectedCluster)
+			w.setDetail(clusterSummary(w.selectedCluster, len(w.allServices)), detailClusterSummary)
+			w.updateActionSensitivity()
+		}
+		return
+	}
+	svc := w.filteredServices[position]
+	if w.selectedService != svc.Name {
+		w.resetWorkspaceForBrowserChange()
+	}
+	w.selectedService = svc.Name
+	w.setBreadcrumb("ECS / " + w.selectedCluster + " / " + svc.Name)
+	w.renderServiceOverview(svc)
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) openTaskAt(position uint) {
@@ -2405,7 +2431,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 
 			if taskARN == "" {
 				if w.detailContent == detailService {
-					w.setDetail(w.serviceTaskSummary(service), detailService)
+					w.renderServiceTaskSummary(service, "")
 				}
 				return
 			}
@@ -2415,7 +2441,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 				w.updateActionSensitivity()
 				w.setBreadcrumb(w.serviceTaskBreadcrumb())
 				if w.detailContent == detailTask {
-					w.setDetail("The selected task is no longer available.\n\n"+w.serviceTaskSummary(service), detailService)
+					w.renderServiceTaskSummary(service, "The selected task is no longer available.")
 				}
 				return
 			}
@@ -2447,14 +2473,10 @@ func (w *mainWindow) refreshServices(foreground bool) {
 		services, err := w.options.ECS.ListServices(ctx, cluster)
 		var (
 			selected model.Service
-			tasks    []model.Task
 			found    bool
 		)
 		if err == nil && selectedName != "" {
 			selected, found = findService(services, selectedName)
-			if found {
-				tasks, err = w.options.ECS.ListTasks(ctx, cluster, selectedName)
-			}
 		}
 
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
@@ -2477,7 +2499,7 @@ func (w *mainWindow) refreshServices(foreground bool) {
 				return
 			}
 			if w.detailContent == detailService {
-				w.setDetail(formatServiceDetail(cluster, selected, tasks), detailService)
+				w.renderServiceOverview(selected)
 			}
 		})
 	}()

@@ -153,6 +153,23 @@ func TestFormatServiceDetail(t *testing.T) {
 	}
 }
 
+func TestFormatServiceOverviewIncludesConfiguredResourcesWithoutUnloadedTasks(t *testing.T) {
+	svc := model.Service{
+		Name:           "api",
+		TargetGroups:   []model.ResourceRef{{Kind: "ec2-target-group", ID: "arn:aws:elasticloadbalancing:region:account:targetgroup/api/123"}},
+		SecurityGroups: []model.EC2SecurityGroupRef{{ID: "sg-123"}},
+	}
+	got := formatServiceOverview("prod", svc)
+	for _, want := range []string{"CONFIGURED RESOURCES", "targetgroup/api/123", "sg-123"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatServiceOverview() missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "\nTASKS\n") {
+		t.Fatalf("formatServiceOverview() should not imply that tasks were loaded:\n%s", got)
+	}
+}
+
 func TestFormatServiceStoppedTasksDetail(t *testing.T) {
 	exitCode := 137
 	stoppedAt := time.Date(2026, 8, 18, 10, 30, 0, 0, time.Local)
