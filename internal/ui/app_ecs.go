@@ -991,6 +991,10 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshEC2Instances()
 	case viewEC2Detail:
 		return a.refreshEC2Detail()
+	case viewEC2SecurityGroups:
+		return a.refreshEC2SecurityGroups()
+	case viewEC2SecurityGroupDetail:
+		return a.refreshEC2SecurityGroupDetail()
 	case viewRDSInstances:
 		return a.refreshRDSInstances()
 	case viewRDSDetail:

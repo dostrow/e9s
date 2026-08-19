@@ -27,6 +27,9 @@ func (f *fakeEC2NetworkAPI) DescribeEC2SecurityGroup(_ context.Context, id strin
 	f.id = id
 	return f.group, f.err
 }
+func (f *fakeEC2NetworkAPI) ListEC2SecurityGroupAssociations(context.Context, string) ([]model.ResourceRef, error) {
+	return []model.ResourceRef{{Kind: "ec2-instance", ID: "i-1"}}, f.err
+}
 func (f *fakeEC2NetworkAPI) ListEC2VPCs(context.Context) ([]model.EC2VPC, error) {
 	return append([]model.EC2VPC(nil), f.vpcs...), f.err
 }
@@ -86,6 +89,9 @@ func TestEC2NetworkDetailsValidateAndSort(t *testing.T) {
 	group, err := service.SecurityGroup(context.Background(), " sg-1 ")
 	if err != nil || api.id != "sg-1" || group.Rules[0].RuleID != "sgr-1" {
 		t.Fatalf("SecurityGroup() = %#v, id %q, %v", group, api.id, err)
+	}
+	if len(group.Associations) != 1 || group.Associations[0].ID != "i-1" {
+		t.Fatalf("SecurityGroup() associations = %#v", group.Associations)
 	}
 	vpc, err := service.VPC(context.Background(), "vpc-1")
 	if err != nil || vpc.CIDRs[0] != "10.0.0.0/16" {

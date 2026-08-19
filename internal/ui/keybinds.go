@@ -92,6 +92,7 @@ type KeyBindings struct {
 	StopInstance   string
 	RebootInstance string
 	TermInstance   string
+	EC2Resource    string
 
 	// Route53
 	TestDNS      string
@@ -110,9 +111,10 @@ type KeyBindings struct {
 	RunInit  string
 
 	// Shared
-	Save      string // W — save/bookmark
-	Search    string // s — general search/find
-	Timestamp string // t — toggle timestamps
+	Save         string // W — save/bookmark
+	Search       string // s — general search/find
+	Timestamp    string // t — toggle timestamps
+	OpenResource string // o — open a linked resource
 }
 
 // NewKeyBindings returns KeyBindings with all defaults.
@@ -206,6 +208,7 @@ func NewKeyBindings() KeyBindings {
 		StopInstance:   "X",
 		RebootInstance: "r",
 		TermInstance:   "T",
+		EC2Resource:    "tab",
 
 		// Route53
 		TestDNS:      "t",
@@ -224,9 +227,10 @@ func NewKeyBindings() KeyBindings {
 		RunInit:  "i",
 
 		// Shared
-		Save:      "W",
-		Search:    "s",
-		Timestamp: "t",
+		Save:         "W",
+		Search:       "s",
+		Timestamp:    "t",
+		OpenResource: "o",
 	}
 }
 
@@ -394,6 +398,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.RebootInstance = key
 		case "terminate_instance":
 			kb.TermInstance = key
+		case "ec2_resource":
+			kb.EC2Resource = key
 
 		// Route53
 		case "test_dns":
@@ -428,6 +434,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.Search = key
 		case "timestamp":
 			kb.Timestamp = key
+		case "open_resource":
+			kb.OpenResource = key
 		}
 	}
 }

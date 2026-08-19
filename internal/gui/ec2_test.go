@@ -76,3 +76,18 @@ func TestFormatEC2ConsoleOutputNormalizesLineEndings(t *testing.T) {
 		t.Fatalf("formatEC2ConsoleOutput() = %q", got)
 	}
 }
+
+func TestFormatEC2SecurityGroupIncludesRulesAssociationsAndTags(t *testing.T) {
+	group := model.EC2SecurityGroup{
+		GroupID: "sg-1", Name: "api", VpcID: "vpc-1", Description: "API traffic",
+		Rules:        []model.EC2SGRule{{RuleID: "sgr-1", Direction: "inbound", Protocol: "tcp", PortRange: "443", Source: "10.0.0.0/8", Description: "private HTTPS"}},
+		Associations: []model.ResourceRef{{Kind: "ec2-instance", ID: "i-1", Name: "api"}},
+		Tags:         map[string]string{"Team": "platform"},
+	}
+	got := formatEC2SecurityGroup(group)
+	for _, want := range []string{"sg-1", "vpc-1", "sgr-1", "private HTTPS", "i-1", "platform"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("security group detail missing %q:\n%s", want, got)
+		}
+	}
+}

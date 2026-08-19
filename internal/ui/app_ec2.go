@@ -2,15 +2,18 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
 // --- EC2 ---
 
 func (a App) openEC2Instances(filter string) (App, tea.Cmd) {
+	a.resourceHistory = nil
 	a.mode = modeEC2
 	a.state = viewEC2Instances
 	a.ec2InstancesView = views.NewEC2Instances()
@@ -24,6 +27,169 @@ func (a App) openEC2Instances(filter string) (App, tea.Cmd) {
 			return errMsg{err}
 		}
 		return ec2InstancesLoadedMsg{instances}
+	}
+}
+
+func (a App) openEC2SecurityGroups() (App, tea.Cmd) {
+	a.mode = modeEC2
+	a.state = viewEC2SecurityGroups
+	a.resourceHistory = nil
+	a.ec2SecurityGroupsView = views.NewEC2SecurityGroups().SetSize(a.width-3, a.height-6)
+	a.loading = true
+	ec2Network := a.ec2Network
+	ctx := a.ctx
+	return a, func() tea.Msg {
+		groups, err := ec2Network.SecurityGroups(ctx, "", "")
+		if err != nil {
+			return errMsg{err}
+		}
+		return ec2SecurityGroupsLoadedMsg{groups}
+	}
+}
+
+func (a App) openEC2SecurityGroupDetail() (App, tea.Cmd) {
+	group := a.ec2SecurityGroupsView.SelectedGroup()
+	if group == nil {
+		return a, nil
+	}
+	return a.navigateEC2Resource(model.ResourceRef{Kind: "ec2-security-group", ID: group.GroupID}, false)
+}
+
+func (a App) refreshEC2SecurityGroups() tea.Cmd {
+	ec2Network := a.ec2Network
+	ctx := a.ctx
+	return func() tea.Msg {
+		groups, err := ec2Network.SecurityGroups(ctx, "", "")
+		if err != nil {
+			return errMsg{err}
+		}
+		return ec2SecurityGroupsLoadedMsg{groups}
+	}
+}
+
+func (a App) refreshEC2SecurityGroupDetail() tea.Cmd {
+	group := a.ec2SecurityGroupDetailView.Group()
+	if group == nil {
+		return nil
+	}
+	ec2Network := a.ec2Network
+	ctx := a.ctx
+	groupID := group.GroupID
+	return func() tea.Msg {
+		detail, err := ec2Network.SecurityGroup(ctx, groupID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return ec2SecurityGroupLoadedMsg{detail}
+	}
+}
+
+func (a App) switchEC2Resource() (App, tea.Cmd) {
+	switch a.state {
+	case viewEC2SecurityGroups, viewEC2SecurityGroupDetail:
+		return a.openEC2Instances("")
+	default:
+		return a.openEC2SecurityGroups()
+	}
+}
+
+func (a App) openEC2ResourcePicker() (App, tea.Cmd) {
+	links := a.currentEC2ResourceLinks()
+	if len(links) == 0 {
+		a.flashMessage = "No implemented linked resources are available"
+		a.flashExpiry = time.Now().Add(3 * time.Second)
+		return a, nil
+	}
+	items := make([]string, len(links))
+	for index, link := range links {
+		label := link.Name
+		if label == "" {
+			label = link.ID
+		} else if link.ID != "" && link.ID != link.Name {
+			label += " (" + link.ID + ")"
+		}
+		items[index] = strings.ReplaceAll(link.Kind, "-", " ") + ": " + label
+	}
+	a.resourceLinks = links
+	a.picker = NewPicker(PickerResourceLink, "Open linked resource", items)
+	return a, nil
+}
+
+func (a App) currentEC2ResourceLinks() []model.ResourceRef {
+	switch a.state {
+	case viewEC2Detail:
+		detail := a.ec2DetailView.Detail()
+		if detail == nil {
+			return nil
+		}
+		links := make([]model.ResourceRef, 0, len(detail.SecurityGroups))
+		for _, group := range detail.SecurityGroups {
+			links = append(links, model.ResourceRef{Kind: "ec2-security-group", ID: group.ID, Name: group.Name})
+		}
+		return links
+	case viewEC2SecurityGroupDetail:
+		group := a.ec2SecurityGroupDetailView.Group()
+		if group == nil {
+			return nil
+		}
+		links := make([]model.ResourceRef, 0, len(group.Associations))
+		for _, association := range group.Associations {
+			if association.Kind == "ec2-instance" {
+				links = append(links, association)
+			}
+		}
+		return links
+	}
+	return nil
+}
+
+func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
+	switch a.state {
+	case viewEC2Detail:
+		if detail := a.ec2DetailView.Detail(); detail != nil {
+			return model.ResourceRef{Kind: "ec2-instance", ID: detail.InstanceID, Name: detail.Name}, true
+		}
+	case viewEC2SecurityGroupDetail:
+		if group := a.ec2SecurityGroupDetailView.Group(); group != nil {
+			return model.ResourceRef{Kind: "ec2-security-group", ID: group.GroupID, Name: group.Name}, true
+		}
+	}
+	return model.ResourceRef{}, false
+}
+
+func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, tea.Cmd) {
+	if pushOrigin {
+		if origin, ok := a.currentEC2ResourceRef(); ok && (origin.Kind != ref.Kind || origin.ID != ref.ID) {
+			a.resourceHistory = append(a.resourceHistory, origin)
+		}
+	}
+	a.loading = true
+	ctx := a.ctx
+	switch ref.Kind {
+	case "ec2-instance":
+		a.state = viewEC2Detail
+		ec2Service := a.ec2
+		return a, func() tea.Msg {
+			detail, err := ec2Service.Detail(ctx, ref.ID)
+			if err != nil {
+				return errMsg{err}
+			}
+			return ec2DetailLoadedMsg{detail}
+		}
+	case "ec2-security-group":
+		a.state = viewEC2SecurityGroupDetail
+		ec2Network := a.ec2Network
+		return a, func() tea.Msg {
+			group, err := ec2Network.SecurityGroup(ctx, ref.ID)
+			if err != nil {
+				return errMsg{err}
+			}
+			return ec2SecurityGroupLoadedMsg{group}
+		}
+	default:
+		a.loading = false
+		a.err = fmt.Errorf("navigation is not implemented for %s", ref.Kind)
+		return a, nil
 	}
 }
 

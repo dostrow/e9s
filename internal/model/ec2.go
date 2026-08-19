@@ -81,13 +81,22 @@ type EC2SGRule struct {
 
 // EC2SecurityGroup is the UI-neutral representation of a security group.
 type EC2SecurityGroup struct {
-	GroupID     string
-	Name        string
-	Description string
-	VpcID       string
-	OwnerID     string
-	Tags        map[string]string
-	Rules       []EC2SGRule
+	GroupID      string
+	Name         string
+	Description  string
+	VpcID        string
+	OwnerID      string
+	Tags         map[string]string
+	Rules        []EC2SGRule
+	Associations []ResourceRef
+}
+
+// ResourceRef identifies a related resource that a frontend may navigate to.
+// Kind values are stable, presentation-neutral names such as "ec2-instance".
+type ResourceRef struct {
+	Kind string
+	ID   string
+	Name string
 }
 
 // EC2VPC is the UI-neutral representation of a VPC.

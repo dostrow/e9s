@@ -264,6 +264,8 @@ type ec2InstancesLoadedMsg struct{ instances []model.EC2Instance }
 type ec2DetailLoadedMsg struct{ detail *model.EC2InstanceDetail }
 type ec2ConsoleLoadedMsg struct{ output string }
 type ec2ActionDoneMsg struct{ message string }
+type ec2SecurityGroupsLoadedMsg struct{ groups []model.EC2SecurityGroup }
+type ec2SecurityGroupLoadedMsg struct{ group *model.EC2SecurityGroup }
 
 // --- ECR Messages ---
 

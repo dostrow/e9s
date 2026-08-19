@@ -45,6 +45,45 @@ func (c *Client) DescribeEC2SecurityGroup(ctx context.Context, groupID string) (
 	return &group, nil
 }
 
+// ListEC2SecurityGroupAssociations returns network interfaces and their
+// attached instances for one security group.
+func (c *Client) ListEC2SecurityGroupAssociations(ctx context.Context, groupID string) ([]model.ResourceRef, error) {
+	input := &ec2.DescribeNetworkInterfacesInput{Filters: []ec2types.Filter{{
+		Name: awssdk.String("group-id"), Values: []string{groupID},
+	}}}
+	paginator := ec2.NewDescribeNetworkInterfacesPaginator(c.EC2, input)
+	var associations []model.ResourceRef
+	seen := make(map[string]struct{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, networkInterface := range page.NetworkInterfaces {
+			ref := model.ResourceRef{
+				Kind: "network-interface",
+				ID:   derefStrAws(networkInterface.NetworkInterfaceId),
+				Name: derefStrAws(networkInterface.Description),
+			}
+			if networkInterface.Attachment != nil {
+				if instanceID := derefStrAws(networkInterface.Attachment.InstanceId); instanceID != "" {
+					ref = model.ResourceRef{Kind: "ec2-instance", ID: instanceID, Name: ref.Name}
+				}
+			}
+			key := ref.Kind + "\x00" + ref.ID
+			if ref.ID == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			associations = append(associations, ref)
+		}
+	}
+	return associations, nil
+}
+
 func (c *Client) describeEC2SecurityGroupRules(ctx context.Context, groupID string) ([]model.EC2SGRule, error) {
 	input := &ec2.DescribeSecurityGroupRulesInput{Filters: []ec2types.Filter{{
 		Name: awssdk.String("group-id"), Values: []string{groupID},

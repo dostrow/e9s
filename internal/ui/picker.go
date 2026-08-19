@@ -30,6 +30,7 @@ const (
 	PickerCWAlarmState
 	PickerSetAlarmState
 	PickerTofuDir
+	PickerResourceLink
 )
 
 type PickerModel struct {

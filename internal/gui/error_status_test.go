@@ -27,6 +27,7 @@ func TestModuleForPage(t *testing.T) {
 		pageCodeBuildProjects: moduleCodeBuild,
 		pageCodeBuildBuilds:   moduleCodeBuild,
 		pageEC2Instances:      moduleEC2,
+		pageEC2SecurityGroups: moduleEC2,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}

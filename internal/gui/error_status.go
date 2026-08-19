@@ -46,7 +46,7 @@ func moduleForPage(page string) string {
 		return moduleLambda
 	case pageCodeBuildProjects, pageCodeBuildBuilds:
 		return moduleCodeBuild
-	case pageEC2Instances:
+	case pageEC2Instances, pageEC2SecurityGroups:
 		return moduleEC2
 	default:
 		return ""

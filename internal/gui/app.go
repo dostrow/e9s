@@ -97,6 +97,15 @@ type EC2Service interface {
 	Terminate(context.Context, string, string) error
 }
 
+type EC2NetworkService interface {
+	SecurityGroups(context.Context, string, string) ([]model.EC2SecurityGroup, error)
+	SecurityGroup(context.Context, string) (*model.EC2SecurityGroup, error)
+	VPCs(context.Context, string) ([]model.EC2VPC, error)
+	VPC(context.Context, string) (*model.EC2VPC, error)
+	Subnets(context.Context, string, string) ([]model.EC2Subnet, error)
+	Subnet(context.Context, string) (*model.EC2Subnet, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -106,6 +115,7 @@ type Options struct {
 	Lambda          LambdaService
 	CodeBuild       CodeBuildService
 	EC2             EC2Service
+	EC2Network      EC2NetworkService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

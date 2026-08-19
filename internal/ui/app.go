@@ -80,6 +80,8 @@ const (
 	viewEC2Instances
 	viewEC2Detail
 	viewEC2Console
+	viewEC2SecurityGroups
+	viewEC2SecurityGroupDetail
 	viewECRRepos
 	viewECRImages
 	viewECRFindings
@@ -95,72 +97,75 @@ const (
 )
 
 type App struct {
-	client              *e9saws.Client
-	ecs                 *service.ECS
-	logs                *service.Logs
-	alarms              *service.Alarms
-	ssm                 *service.SSM
-	secrets             *service.Secrets
-	lambda              *service.Lambda
-	codeBuild           *service.CodeBuild
-	ec2                 *service.EC2
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	cfg                 *config.Config
-	mode                topMode
-	state               viewState
-	prevState           viewState
-	clusterView         views.ClusterListModel
-	serviceView         views.ServiceListModel
-	taskView            views.TaskListModel
-	detailView          views.TaskDetailModel
-	taskDefsView        views.TaskDefsModel
-	taskDefDetailView   views.TaskDefDetailModel
-	serviceDetailView   views.ServiceDetailModel
-	logView             views.LogViewerModel
-	standaloneView      views.StandaloneTasksModel
-	diffView            views.TaskDefDiffModel
-	metricsView         views.MetricsModel
-	envVarsView         views.EnvVarsModel
-	logGroupsView       views.LogGroupsModel
-	logStreamsView      views.LogStreamsModel
-	logSearchView       views.LogSearchModel
-	ssmView             views.SSMModel
-	secretsView         views.SecretsModel
-	secretValueView     views.SecretValueModel
-	s3BucketsView       views.S3BucketsModel
-	s3ObjectsView       views.S3ObjectsModel
-	s3DetailView        views.S3DetailModel
-	lambdaListView      views.LambdaListModel
-	lambdaDetailView    views.LambdaDetailModel
-	dynamoTablesView    views.DynamoTablesModel
-	dynamoItemsView     views.DynamoItemsModel
-	dynamoDetailView    views.DynamoItemDetailModel
-	sqsQueuesView       views.SQSQueuesModel
-	sqsDetailView       views.SQSDetailModel
-	sqsMessagesView     views.SQSMessagesModel
-	sqsMsgDetailView    views.SQSMessageDetailModel
-	alarmsView          views.AlarmsModel
-	alarmDetailView     views.AlarmDetailModel
-	cbProjectsView      views.CBProjectsModel
-	cbBuildsView        views.CBBuildsModel
-	cbBuildDetailView   views.CBBuildDetailModel
-	ec2InstancesView    views.EC2InstancesModel
-	ec2DetailView       views.EC2DetailModel
-	ec2ConsoleView      views.EC2ConsoleModel
-	ecrReposView        views.ECRReposModel
-	ecrImagesView       views.ECRImagesModel
-	ecrFindingsView     views.ECRFindingsModel
-	tofuResourcesView   views.TofuResourcesModel
-	tofuStateDetailView views.TofuStateDetailModel
-	tofuPlanView        views.TofuPlanModel
-	tofuPlanDetailView  views.TofuPlanDetailModel
-	r53ZonesView        views.R53ZonesModel
-	r53RecordsView      views.R53RecordsModel
-	r53DetailView       views.R53RecordDetailModel
-	rdsInstancesView    views.RDSInstancesModel
-	rdsDetailView       views.RDSDetailModel
-	regionPicker        views.RegionPickerModel
+	client                     *e9saws.Client
+	ecs                        *service.ECS
+	logs                       *service.Logs
+	alarms                     *service.Alarms
+	ssm                        *service.SSM
+	secrets                    *service.Secrets
+	lambda                     *service.Lambda
+	codeBuild                  *service.CodeBuild
+	ec2                        *service.EC2
+	ec2Network                 *service.EC2Network
+	ctx                        context.Context
+	cancel                     context.CancelFunc
+	cfg                        *config.Config
+	mode                       topMode
+	state                      viewState
+	prevState                  viewState
+	clusterView                views.ClusterListModel
+	serviceView                views.ServiceListModel
+	taskView                   views.TaskListModel
+	detailView                 views.TaskDetailModel
+	taskDefsView               views.TaskDefsModel
+	taskDefDetailView          views.TaskDefDetailModel
+	serviceDetailView          views.ServiceDetailModel
+	logView                    views.LogViewerModel
+	standaloneView             views.StandaloneTasksModel
+	diffView                   views.TaskDefDiffModel
+	metricsView                views.MetricsModel
+	envVarsView                views.EnvVarsModel
+	logGroupsView              views.LogGroupsModel
+	logStreamsView             views.LogStreamsModel
+	logSearchView              views.LogSearchModel
+	ssmView                    views.SSMModel
+	secretsView                views.SecretsModel
+	secretValueView            views.SecretValueModel
+	s3BucketsView              views.S3BucketsModel
+	s3ObjectsView              views.S3ObjectsModel
+	s3DetailView               views.S3DetailModel
+	lambdaListView             views.LambdaListModel
+	lambdaDetailView           views.LambdaDetailModel
+	dynamoTablesView           views.DynamoTablesModel
+	dynamoItemsView            views.DynamoItemsModel
+	dynamoDetailView           views.DynamoItemDetailModel
+	sqsQueuesView              views.SQSQueuesModel
+	sqsDetailView              views.SQSDetailModel
+	sqsMessagesView            views.SQSMessagesModel
+	sqsMsgDetailView           views.SQSMessageDetailModel
+	alarmsView                 views.AlarmsModel
+	alarmDetailView            views.AlarmDetailModel
+	cbProjectsView             views.CBProjectsModel
+	cbBuildsView               views.CBBuildsModel
+	cbBuildDetailView          views.CBBuildDetailModel
+	ec2InstancesView           views.EC2InstancesModel
+	ec2DetailView              views.EC2DetailModel
+	ec2ConsoleView             views.EC2ConsoleModel
+	ec2SecurityGroupsView      views.EC2SecurityGroupsModel
+	ec2SecurityGroupDetailView views.EC2SecurityGroupDetailModel
+	ecrReposView               views.ECRReposModel
+	ecrImagesView              views.ECRImagesModel
+	ecrFindingsView            views.ECRFindingsModel
+	tofuResourcesView          views.TofuResourcesModel
+	tofuStateDetailView        views.TofuStateDetailModel
+	tofuPlanView               views.TofuPlanModel
+	tofuPlanDetailView         views.TofuPlanDetailModel
+	r53ZonesView               views.R53ZonesModel
+	r53RecordsView             views.R53RecordsModel
+	r53DetailView              views.R53RecordDetailModel
+	rdsInstancesView           views.RDSInstancesModel
+	rdsDetailView              views.RDSDetailModel
+	regionPicker               views.RegionPickerModel
 
 	// Navigation context
 	selectedCluster          *model.Cluster
@@ -242,6 +247,8 @@ type App struct {
 	dynamoEditValue          string
 	dynamoEditItem           *e9saws.DynamoItem
 	dynamoCloneItem          *e9saws.DynamoItem
+	resourceLinks            []model.ResourceRef
+	resourceHistory          []model.ResourceRef
 
 	// Modal dialogs
 	confirm      ConfirmModel
@@ -288,6 +295,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		lambda:       service.NewLambda(client),
 		codeBuild:    service.NewCodeBuild(client),
 		ec2:          service.NewEC2(client),
+		ec2Network:   service.NewEC2Network(client),
 		ctx:          ctx,
 		cancel:       cancel,
 		cfg:          cfg,
@@ -446,6 +454,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ec2InstancesView = a.ec2InstancesView.SetSize(w, h)
 		a.ec2DetailView = a.ec2DetailView.SetSize(w, h)
 		a.ec2ConsoleView = a.ec2ConsoleView.SetSize(w, h)
+		a.ec2SecurityGroupsView = a.ec2SecurityGroupsView.SetSize(w, h)
+		a.ec2SecurityGroupDetailView = a.ec2SecurityGroupDetailView.SetSize(w, h)
 		a.ecrReposView = a.ecrReposView.SetSize(w, h)
 		a.ecrImagesView = a.ecrImagesView.SetSize(w, h)
 		a.ecrFindingsView = a.ecrFindingsView.SetSize(w, h)
@@ -1164,6 +1174,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ec2ActionDoneMsg:
 		return a.handleEC2Action(msg)
 
+	case ec2SecurityGroupsLoadedMsg:
+		if a.state != viewEC2SecurityGroups {
+			return a, nil
+		}
+		a.ec2SecurityGroupsView = a.ec2SecurityGroupsView.SetGroups(msg.groups)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ec2SecurityGroupLoadedMsg:
+		if a.state != viewEC2SecurityGroupDetail {
+			return a, nil
+		}
+		a.ec2SecurityGroupDetailView = views.NewEC2SecurityGroupDetail(msg.group).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
 	// --- ECR messages ---
 	case ecrReposLoadedMsg:
 		a.ecrReposView = a.ecrReposView.SetRepos(msg.repos)
@@ -1583,6 +1611,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openTofuResources(td.Dir)
 		case PickerSetAlarmState:
 			return a.handleSetAlarmStatePick(msg.Value)
+		case PickerResourceLink:
+			if msg.Index >= 0 && msg.Index < len(a.resourceLinks) {
+				return a.navigateEC2Resource(a.resourceLinks[msg.Index], true)
+			}
 		}
 		return a, nil
 
@@ -1711,6 +1743,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Context-specific keys (configurable via keybindings)
 		k := msg.String()
+		if a.mode == modeEC2 {
+			if k == a.kb.EC2Resource {
+				return a.switchEC2Resource()
+			}
+			if k == a.kb.OpenResource {
+				return a.openEC2ResourcePicker()
+			}
+		}
 		switch a.state {
 		case viewClusters:
 			switch k {
@@ -2184,6 +2224,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.ec2DetailView, cmd = a.ec2DetailView.Update(msg)
 	case viewEC2Console:
 		a.ec2ConsoleView, cmd = a.ec2ConsoleView.Update(msg)
+	case viewEC2SecurityGroups:
+		a.ec2SecurityGroupsView, cmd = a.ec2SecurityGroupsView.Update(msg)
+	case viewEC2SecurityGroupDetail:
+		a.ec2SecurityGroupDetailView, cmd = a.ec2SecurityGroupDetailView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2228,6 +2272,8 @@ func (a App) isFiltering() bool {
 		return a.cbProjectsView.IsFiltering()
 	case viewEC2Instances:
 		return a.ec2InstancesView.IsFiltering()
+	case viewEC2SecurityGroups:
+		return a.ec2SecurityGroupsView.IsFiltering()
 	case viewTofuResources:
 		return a.tofuResourcesView.IsFiltering()
 	case viewTofuPlan:
@@ -2382,6 +2428,10 @@ func (a App) View() string {
 		content = a.ec2DetailView.View()
 	case viewEC2Console:
 		content = a.ec2ConsoleView.View()
+	case viewEC2SecurityGroups:
+		content = a.ec2SecurityGroupsView.View()
+	case viewEC2SecurityGroupDetail:
+		content = a.ec2SecurityGroupDetailView.View()
 	}
 
 	helpLine := a.helpText()
@@ -2560,6 +2610,10 @@ func (a App) helpText() string {
 		primary = "[e] SSM session"
 	case viewEC2Console:
 		primary = "[j/k] scroll"
+	case viewEC2SecurityGroups:
+		primary = "[enter] detail"
+	case viewEC2SecurityGroupDetail:
+		primary = "[o] linked resources"
 	}
 	if primary != "" {
 		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
@@ -2955,6 +3009,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"enter", "View instance detail"},
 			{"/", "Filter instances"},
+			{kb.EC2Resource, "Switch EC2 resource"},
 		}
 	case viewEC2Detail:
 		context = []kv{
@@ -2964,11 +3019,26 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.StopInstance, "Stop instance"},
 			{kb.RebootInstance, "Reboot instance"},
 			{kb.TermInstance, "Terminate instance"},
+			{kb.OpenResource, "Open linked resource"},
+			{kb.EC2Resource, "Switch EC2 resource"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewEC2Console:
 		context = []kv{
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewEC2SecurityGroups:
+		context = []kv{
+			{"enter", "View security group detail"},
+			{"/", "Filter security groups"},
+			{kb.EC2Resource, "Switch EC2 resource"},
+		}
+	case viewEC2SecurityGroupDetail:
+		context = []kv{
+			{kb.OpenResource, "Open linked resource"},
+			{kb.EC2Resource, "Switch EC2 resource"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -3109,6 +3179,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 		return a.openR53RecordDetail()
 	case viewEC2Instances:
 		return a.openEC2Detail()
+	case viewEC2SecurityGroups:
+		return a.openEC2SecurityGroupDetail()
 	}
 	return a, nil
 }
@@ -3443,10 +3515,27 @@ func (a App) goBack() (App, tea.Cmd) {
 	case viewEC2Instances:
 		return a.showModePicker()
 	case viewEC2Detail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
 		a.state = viewEC2Instances
 		return a, nil
 	case viewEC2Console:
 		a.state = viewEC2Detail
+		return a, nil
+	case viewEC2SecurityGroups:
+		return a.showModePicker()
+	case viewEC2SecurityGroupDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2SecurityGroups
 		return a, nil
 	}
 	return a, nil

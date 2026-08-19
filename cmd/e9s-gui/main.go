@@ -65,6 +65,7 @@ func main() {
 				Lambda:          service.NewLambda(client),
 				CodeBuild:       service.NewCodeBuild(client),
 				EC2:             service.NewEC2(client),
+				EC2Network:      service.NewEC2Network(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

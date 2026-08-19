@@ -37,23 +37,25 @@ const (
 	pageCodeBuildProjects = "codebuild-projects"
 	pageCodeBuildBuilds   = "codebuild-builds"
 	pageEC2Instances      = "ec2-instances"
+	pageEC2SecurityGroups = "ec2-security-groups"
 	pageModulePicker      = "module-picker"
 
-	detailIntro          = "intro"
-	detailClusterSummary = "cluster-summary"
-	detailService        = "service"
-	detailTask           = "task"
-	detailHelp           = "help"
-	detailError          = "error"
-	detailLogGroup       = "log-group"
-	detailLogStream      = "log-stream"
-	detailAlarm          = "alarm"
-	detailSSM            = "ssm-parameter"
-	detailSecret         = "secret"
-	detailLambda         = "lambda-function"
-	detailCodeBuild      = "codebuild-build"
-	detailEC2            = "ec2-instance"
-	detailEC2Console     = "ec2-console"
+	detailIntro            = "intro"
+	detailClusterSummary   = "cluster-summary"
+	detailService          = "service"
+	detailTask             = "task"
+	detailHelp             = "help"
+	detailError            = "error"
+	detailLogGroup         = "log-group"
+	detailLogStream        = "log-stream"
+	detailAlarm            = "alarm"
+	detailSSM              = "ssm-parameter"
+	detailSecret           = "secret"
+	detailLambda           = "lambda-function"
+	detailCodeBuild        = "codebuild-build"
+	detailEC2              = "ec2-instance"
+	detailEC2SecurityGroup = "ec2-security-group"
+	detailEC2Console       = "ec2-console"
 )
 
 type mainWindow struct {
@@ -135,6 +137,10 @@ type mainWindow struct {
 	ec2Detail                   *model.EC2InstanceDetail
 	ec2ViewMode                 string
 	ec2ActionPending            bool
+	allEC2SecurityGroups        []model.EC2SecurityGroup
+	filteredEC2SecurityGroups   []model.EC2SecurityGroup
+	selectedEC2SecurityGroup    string
+	ec2SecurityGroupDetail      *model.EC2SecurityGroup
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -155,6 +161,7 @@ type mainWindow struct {
 	codeBuildProjectTable       *stringTable
 	codeBuildBuildTable         *stringTable
 	ec2Table                    *stringTable
+	ec2SecurityGroupTable       *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -183,6 +190,7 @@ type mainWindow struct {
 	lambdaFunctionsNavButton    *gtk.ToggleButton
 	codeBuildProjectsNavButton  *gtk.ToggleButton
 	ec2InstancesNavButton       *gtk.ToggleButton
+	ec2SecurityGroupsNavButton  *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -247,6 +255,7 @@ type mainWindow struct {
 	breadcrumb                  *gtk.DrawingArea
 	breadcrumbText              string
 	detailToolbar               *gtk.Box
+	detailLinks                 *gtk.FlowBox
 	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
 	detailText                  string
@@ -305,6 +314,7 @@ type mainWindow struct {
 	terminalCommand             string
 	terminalDescription         string
 	showingTerminal             bool
+	resourceHistory             []model.ResourceRef
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
 	logSearch                   *gtk.SearchEntry
@@ -453,6 +463,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "PUBLIC IP", field: 6},
 		{title: "AGE", field: 7},
 	})
+	w.ec2SecurityGroupTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true},
+		{title: "GROUP ID", field: 1},
+		{title: "VPC", field: 2},
+		{title: "INBOUND", field: 3},
+		{title: "OUTBOUND", field: 4},
+		{title: "DESCRIPTION", field: 5, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -467,6 +485,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.codeBuildProjectTable.view.ConnectActivate(w.openCodeBuildProjectAt)
 	w.codeBuildBuildTable.view.ConnectActivate(w.openCodeBuildBuildAt)
 	w.ec2Table.view.ConnectActivate(w.openEC2InstanceAt)
+	w.ec2SecurityGroupTable.view.ConnectActivate(w.openEC2SecurityGroupAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
@@ -476,6 +495,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.codeBuildProjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildProjectRow() })
 	w.codeBuildBuildTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildBuildRow() })
 	w.ec2Table.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2InstanceRow() })
+	w.ec2SecurityGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2SecurityGroupRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -717,9 +737,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	codeBuild := w.newModuleExpander("CodeBuild", moduleCodeBuild, w.codeBuildModuleItems)
 	w.ec2InstancesNavButton = newModuleRailButton("Instances", w.openEC2Module)
 	w.ec2InstancesNavButton.SetGroup(w.clustersNavButton)
+	w.ec2SecurityGroupsNavButton = newModuleRailButton("Security Groups", w.openEC2SecurityGroupsModule)
+	w.ec2SecurityGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.ec2ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.ec2ModuleItems.AddCSSClass("module-subitems")
 	w.ec2ModuleItems.Append(w.ec2InstancesNavButton)
+	w.ec2ModuleItems.Append(w.ec2SecurityGroupsNavButton)
 	ec2Instances := w.newModuleExpander("EC2", moduleEC2, w.ec2ModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
@@ -877,6 +900,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ec2Scroll.SetVExpand(true)
 	ec2Scroll.SetHExpand(true)
 	ec2Scroll.SetChild(w.ec2Table.view)
+	ec2SecurityGroupScroll := gtk.NewScrolledWindow()
+	ec2SecurityGroupScroll.SetVExpand(true)
+	ec2SecurityGroupScroll.SetHExpand(true)
+	ec2SecurityGroupScroll.SetChild(w.ec2SecurityGroupTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -901,6 +928,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(codeBuildProjectScroll, pageCodeBuildProjects)
 	w.resourceStack.AddNamed(codeBuildBuildScroll, pageCodeBuildBuilds)
 	w.resourceStack.AddNamed(ec2Scroll, pageEC2Instances)
+	w.resourceStack.AddNamed(ec2SecurityGroupScroll, pageEC2SecurityGroups)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -936,6 +964,17 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	detailScroll.SetChild(detail)
 	detailPane := gtk.NewBox(gtk.OrientationVertical, 0)
 	detailPane.Append(w.detailToolbar)
+	w.detailLinks = gtk.NewFlowBox()
+	w.detailLinks.SetSelectionMode(gtk.SelectionNone)
+	w.detailLinks.SetMaxChildrenPerLine(8)
+	w.detailLinks.SetColumnSpacing(6)
+	w.detailLinks.SetRowSpacing(6)
+	w.detailLinks.SetMarginStart(8)
+	w.detailLinks.SetMarginEnd(8)
+	w.detailLinks.SetMarginTop(6)
+	w.detailLinks.SetMarginBottom(6)
+	w.detailLinks.SetVisible(false)
+	detailPane.Append(w.detailLinks)
 	detailPane.Append(detailScroll)
 
 	w.detailStack = gtk.NewStack()
@@ -1229,6 +1268,7 @@ func (w *mainWindow) setDetail(text, content string) {
 	if w.detailText == text && w.detailContent == content {
 		return
 	}
+	w.clearDetailResourceLinks()
 	w.detailBuffer.SetText(text)
 	w.detailText = text
 	w.detailContent = content
@@ -1379,6 +1419,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.ec2Detail = nil
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
+	w.ec2SecurityGroupDetail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1794,6 +1835,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyEC2Filter()
 		return
 	}
+	if w.currentPage == pageEC2SecurityGroups {
+		w.applyEC2SecurityGroupFilter()
+		return
+	}
 	if w.currentPage == pageSecrets {
 		w.applySecretFilter()
 		return
@@ -1896,6 +1941,9 @@ func (w *mainWindow) goBack() {
 func (w *mainWindow) navigateBrowserBack() {
 	if w.showingEditor {
 		w.closeEditorThen(w.navigateBrowserBack)
+		return
+	}
+	if w.navigateResourceHistoryBack() {
 		return
 	}
 	if w.currentPage == pageCodeBuildBuilds {
@@ -2053,6 +2101,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageEC2Instances {
 		w.refreshEC2(foreground)
+		return
+	}
+	if w.currentPage == pageEC2SecurityGroups {
+		w.refreshEC2SecurityGroups(foreground)
 		return
 	}
 	if w.currentPage == pageSecrets {
@@ -2388,6 +2440,7 @@ func (w *mainWindow) updateActionSensitivity() {
 		}
 		if w.ec2InstancesNavButton != nil {
 			w.ec2InstancesNavButton.SetActive(w.currentPage == pageEC2Instances)
+			w.ec2SecurityGroupsNavButton.SetActive(w.currentPage == pageEC2SecurityGroups)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

@@ -23,15 +23,22 @@ const (
 
 func (w *mainWindow) openEC2Module() {
 	if w.currentPage == pageEC2Instances {
+		w.resourceHistory = nil
+		w.backButton.SetSensitive(false)
 		return
 	}
 	if w.guardEditorNavigation(w.openEC2Module) {
 		return
 	}
+	w.resourceHistory = nil
 	w.loadEC2Instances()
 }
 
 func (w *mainWindow) loadEC2Instances() {
+	w.loadEC2InstancesAt("")
+}
+
+func (w *mainWindow) loadEC2InstancesAt(instanceID string) {
 	w.resetWorkspaceForBrowserChange()
 	w.clearEC2Browser()
 	w.currentPage = pageEC2Instances
@@ -42,7 +49,7 @@ func (w *mainWindow) loadEC2Instances() {
 	w.ec2ViewMode = ""
 	w.updateActionSensitivity()
 	w.setBreadcrumb("EC2 / Instances")
-	w.backButton.SetSensitive(false)
+	w.backButton.SetSensitive(len(w.resourceHistory) > 0)
 	w.search.SetPlaceholderText("Filter instances…")
 	w.search.SetText("")
 	w.resourceStack.SetVisibleChildName(pageEC2Instances)
@@ -61,6 +68,9 @@ func (w *mainWindow) loadEC2Instances() {
 			w.allEC2Instances = instances
 			w.applyEC2Filter()
 			w.setDetail(ec2ListSummary(len(instances)), detailIntro)
+			if instanceID != "" {
+				w.selectEC2InstanceByID(instanceID)
+			}
 		})
 	}()
 }
@@ -102,7 +112,7 @@ func (w *mainWindow) refreshEC2(foreground bool) {
 				w.ec2Detail = detail
 				if w.ec2ViewMode != ec2ConsoleMode {
 					w.ec2ViewMode = ec2DetailMode
-					w.setDetail(formatEC2Detail(*detail), detailEC2)
+					w.renderEC2Detail(*detail)
 				}
 			} else {
 				if w.ec2ViewMode != ec2ConsoleMode {
@@ -194,7 +204,7 @@ func (w *mainWindow) loadEC2Detail(instanceID string) {
 			}
 			w.ec2Detail = detail
 			w.ec2ViewMode = ec2DetailMode
-			w.setDetail(formatEC2Detail(*detail), detailEC2)
+			w.renderEC2Detail(*detail)
 		})
 	}()
 }
@@ -232,8 +242,24 @@ func (w *mainWindow) showEC2Details() {
 		return
 	}
 	w.ec2ViewMode = ec2DetailMode
-	w.setDetail(formatEC2Detail(*w.ec2Detail), detailEC2)
+	w.renderEC2Detail(*w.ec2Detail)
 	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) renderEC2Detail(detail model.EC2InstanceDetail) {
+	w.setDetail(formatEC2Detail(detail), detailEC2)
+	w.setEC2InstanceResourceLinks(detail)
+}
+
+func (w *mainWindow) selectEC2InstanceByID(instanceID string) bool {
+	for position, instance := range w.filteredEC2Instances {
+		if instance.InstanceID == instanceID {
+			w.ec2Table.selection.SetSelected(uint(position))
+			return true
+		}
+	}
+	w.setStatus("EC2 instance "+instanceID+" was not found", true)
+	return false
 }
 
 func (w *mainWindow) loadEC2ConsoleOutput() {
@@ -320,7 +346,7 @@ func (w *mainWindow) runEC2Mutation(action, instanceID, state string) {
 	}
 	if w.ec2Detail != nil {
 		w.ec2ViewMode = ec2DetailMode
-		w.setDetail(formatEC2Detail(*w.ec2Detail), detailEC2)
+		w.renderEC2Detail(*w.ec2Detail)
 	}
 	verb := strings.ToUpper(action[:1]) + action[1:]
 	w.ec2ActionPending = true

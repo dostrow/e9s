@@ -14,6 +14,7 @@ import (
 type EC2NetworkAPI interface {
 	ListEC2SecurityGroups(context.Context) ([]model.EC2SecurityGroup, error)
 	DescribeEC2SecurityGroup(context.Context, string) (*model.EC2SecurityGroup, error)
+	ListEC2SecurityGroupAssociations(context.Context, string) ([]model.ResourceRef, error)
 	ListEC2VPCs(context.Context) ([]model.EC2VPC, error)
 	DescribeEC2VPC(context.Context, string) (*model.EC2VPC, error)
 	ListEC2Subnets(context.Context) ([]model.EC2Subnet, error)
@@ -34,6 +35,12 @@ func (s *EC2Network) SecurityGroups(ctx context.Context, filter, vpcID string) (
 	if err != nil {
 		return nil, fmt.Errorf("list EC2 security groups: %w", err)
 	}
+	return FilterEC2SecurityGroups(groups, filter, vpcID), nil
+}
+
+// FilterEC2SecurityGroups filters and deterministically orders an already
+// loaded security-group result set without another AWS request.
+func FilterEC2SecurityGroups(groups []model.EC2SecurityGroup, filter, vpcID string) []model.EC2SecurityGroup {
 	filter, vpcID = normalizedFilter(filter), strings.TrimSpace(vpcID)
 	filtered := make([]model.EC2SecurityGroup, 0, len(groups))
 	for _, group := range groups {
@@ -47,7 +54,7 @@ func (s *EC2Network) SecurityGroups(ctx context.Context, filter, vpcID string) (
 	sort.SliceStable(filtered, func(i, j int) bool {
 		return compareNameID(filtered[i].Name, filtered[i].GroupID, filtered[j].Name, filtered[j].GroupID)
 	})
-	return filtered, nil
+	return filtered
 }
 
 func (s *EC2Network) SecurityGroup(ctx context.Context, groupID string) (*model.EC2SecurityGroup, error) {
@@ -62,8 +69,17 @@ func (s *EC2Network) SecurityGroup(ctx context.Context, groupID string) (*model.
 	if group == nil {
 		return nil, fmt.Errorf("read EC2 security group %q: security group was not found", groupID)
 	}
+	associations, err := s.api.ListEC2SecurityGroupAssociations(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("read associations for EC2 security group %q: %w", groupID, err)
+	}
+	group.Associations = associations
 	sort.SliceStable(group.Rules, func(i, j int) bool {
 		return securityGroupRuleSortKey(group.Rules[i]) < securityGroupRuleSortKey(group.Rules[j])
+	})
+	sort.SliceStable(group.Associations, func(i, j int) bool {
+		left, right := group.Associations[i], group.Associations[j]
+		return strings.Join([]string{left.Kind, left.Name, left.ID}, "\x00") < strings.Join([]string{right.Kind, right.Name, right.ID}, "\x00")
 	})
 	return group, nil
 }
