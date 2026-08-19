@@ -83,6 +83,7 @@ type mainWindow struct {
 	alarmStateFilter            string
 	alarmDetail                 *model.AlarmDetail
 	alarmActionPending          bool
+	alarmUTCTime                bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -120,6 +121,7 @@ type mainWindow struct {
 	manageSavedLogButton        *gtk.Button
 	alarmActionsButton          *gtk.Button
 	alarmSetStateButton         *gtk.Button
+	alarmTimestampButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -340,6 +342,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.alarmSetStateButton = gtk.NewButtonWithLabel("Set state…")
 	w.alarmSetStateButton.AddCSSClass("destructive-action")
 	w.alarmSetStateButton.ConnectClicked(w.promptSetAlarmState)
+	w.alarmTimestampButton = gtk.NewButtonWithLabel("Time: Local")
+	w.alarmTimestampButton.ConnectClicked(w.toggleAlarmTimestamps)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -390,6 +394,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.manageSavedLogButton)
 	header.Append(w.alarmActionsButton)
 	header.Append(w.alarmSetStateButton)
+	header.Append(w.alarmTimestampButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1910,6 +1915,8 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.alarmSetStateButton.SetVisible(alarmSelected)
 	w.alarmSetStateButton.SetSensitive(alarmDetailReady && !w.alarmActionPending && w.options.Alarms != nil)
+	w.alarmTimestampButton.SetVisible(w.currentPage == pageAlarms)
+	w.alarmTimestampButton.SetSensitive(w.currentPage == pageAlarms)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

@@ -41,7 +41,7 @@ func TestFormatAlarmSummaryIncludesOperationalState(t *testing.T) {
 		StateUpdatedAt: time.Date(2026, time.August, 18, 12, 0, 0, 0, time.Local),
 		MetricName:     "Errors", Namespace: "AWS/Lambda", ActionsEnabled: true,
 	}
-	got := formatAlarmSummary(alarm)
+	got := formatAlarmSummary(alarm, false)
 	for _, want := range []string{"api-errors", "ALARM", "threshold crossed", "AWS/Lambda", "enabled"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("summary missing %q:\n%s", want, got)
@@ -57,11 +57,18 @@ func TestFormatAlarmDetailIncludesConfigurationActionsAndHistory(t *testing.T) {
 		AlarmActions: []string{"arn:aws:sns:::alarm"},
 		History:      []model.AlarmHistoryItem{{Type: "StateUpdate", Summary: "threshold crossed"}},
 	}
-	got := formatAlarmDetail(detail)
+	got := formatAlarmDetail(detail, false)
 	for _, want := range []string{"CONFIGURATION", "GreaterThanThreshold", "FunctionName", "ALARM ACTIONS", "RECENT HISTORY", "threshold crossed"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("detail missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestFormatAlarmTimeUTC(t *testing.T) {
+	value := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.FixedZone("test", -5*60*60))
+	if got := formatAlarmTime(value, true); got != "2026-08-18 17:00:00 UTC" {
+		t.Fatalf("UTC time = %q", got)
 	}
 }
 

@@ -373,11 +373,32 @@ copy, and portal-backed buffer export. Multi-scope entry and local match
 navigation intentionally follow native GUI metaphors as documented in the
 roadmap.
 
+### CloudWatch Alarms module follow-up
+
+The next module now validates the same architecture for operational state and
+mutations. `service.Alarms` is shared by the TUI and GUI and owns state
+validation, deterministic ordering, error context, detail retrieval, action
+enablement, and manual state overrides.
+
+The GTK frontend exposes state scopes as sub-items in a collapsible CloudWatch
+Alarms rail entry. Its Browser Pane supports alarm/metric/namespace filtering;
+the Workspace Pane shows current state, configuration, dimensions, configured
+actions, and recent history. Local/UTC timestamps, guarded contextual actions,
+pending-state disabling, post-mutation refresh, and stale-response rejection
+complete the TUI parity pass.
+
 ### Final verification
+
+With Go 1.24, gotk4's weak-reference internals trip the race build's default
+checkptr instrumentation while constructing GTK objects. The GUI race suite is
+therefore run with checkptr disabled at the binding boundary; the ordinary GUI
+tests and builds retain the default checks.
 
 ```text
 go test ./...                                      PASS
-go test -race ./internal/gui ./internal/service    PASS
+go test -tags gui ./...                            PASS
+go test -race -tags gui -gcflags=all=-d=checkptr=0 \
+  ./internal/gui ./internal/service                PASS
 go vet ./...                                       PASS
 go build .                                         PASS
 go build -tags gui ./cmd/e9s-gui                  PASS

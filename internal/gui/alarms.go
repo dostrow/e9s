@@ -94,7 +94,7 @@ func (w *mainWindow) refreshAlarms(foreground bool) {
 			}
 			w.updateActionSensitivity()
 			if w.detailContent == detailAlarm && w.alarmDetail != nil {
-				w.setDetail(formatAlarmDetail(*w.alarmDetail), detailAlarm)
+				w.setDetail(formatAlarmDetail(*w.alarmDetail, w.alarmUTCTime), detailAlarm)
 			}
 		})
 	}()
@@ -118,7 +118,7 @@ func (w *mainWindow) applyAlarmFilter() {
 			actions = "disabled"
 		}
 		rows[i] = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", alarm.Name, alarm.State,
-			valueOrDash(alarm.MetricName), valueOrDash(alarm.Namespace), actions, formatTime(alarm.StateUpdatedAt))
+			valueOrDash(alarm.MetricName), valueOrDash(alarm.Namespace), actions, formatAlarmTime(alarm.StateUpdatedAt, w.alarmUTCTime))
 	}
 	w.alarmTable.replace(rows)
 }
@@ -145,7 +145,7 @@ func (w *mainWindow) selectAlarmRow() {
 	}
 	w.selectedAlarm = alarm.Name
 	w.setBreadcrumb(alarmBreadcrumb(w.alarmStateFilter, alarm.Name))
-	w.setDetail("Loading details for "+alarm.Name+"…\n\n"+formatAlarmSummary(alarm), detailAlarm)
+	w.setDetail("Loading details for "+alarm.Name+"…\n\n"+formatAlarmSummary(alarm, w.alarmUTCTime), detailAlarm)
 	w.updateActionSensitivity()
 	w.loadAlarmDetail(alarm.Name)
 }
@@ -173,7 +173,7 @@ func (w *mainWindow) loadAlarmDetail(name string) {
 			}
 			w.alarmDetail = detail
 			w.mergeAlarmDetail(detail)
-			w.setDetail(formatAlarmDetail(*detail), detailAlarm)
+			w.setDetail(formatAlarmDetail(*detail, w.alarmUTCTime), detailAlarm)
 			w.updateActionSensitivity()
 		})
 	}()
@@ -327,7 +327,7 @@ func (w *mainWindow) runAlarmMutation(name, label, success string, mutate func(c
 			}
 			w.mergeAlarmDetail(w.alarmDetail)
 			if w.alarmDetail != nil {
-				w.setDetail(formatAlarmDetail(*w.alarmDetail), detailAlarm)
+				w.setDetail(formatAlarmDetail(*w.alarmDetail, w.alarmUTCTime), detailAlarm)
 			}
 			w.updateActionSensitivity()
 			w.lastSuccessfulLoad = time.Now()
@@ -347,6 +347,22 @@ func alarmStateOptionIndex(state string) int {
 		return 2
 	default:
 		return 0
+	}
+}
+
+func (w *mainWindow) toggleAlarmTimestamps() {
+	if w.currentPage != pageAlarms {
+		return
+	}
+	w.alarmUTCTime = !w.alarmUTCTime
+	if w.alarmUTCTime {
+		w.alarmTimestampButton.SetLabel("Time: UTC")
+	} else {
+		w.alarmTimestampButton.SetLabel("Time: Local")
+	}
+	w.applyAlarmFilter()
+	if w.alarmDetail != nil && w.selectedAlarm == w.alarmDetail.Name {
+		w.setDetail(formatAlarmDetail(*w.alarmDetail, w.alarmUTCTime), detailAlarm)
 	}
 }
 
@@ -401,12 +417,12 @@ func alarmListSummary(state string, count int) string {
 		alarmScopeLabel(state), count)
 }
 
-func formatAlarmSummary(alarm model.Alarm) string {
+func formatAlarmSummary(alarm model.Alarm, utc bool) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "CLOUDWATCH ALARM\n\n")
 	fmt.Fprintf(&out, "Name             %s\n", alarm.Name)
 	fmt.Fprintf(&out, "State            %s\n", valueOrDash(alarm.State))
-	fmt.Fprintf(&out, "Updated          %s\n", formatTime(alarm.StateUpdatedAt))
+	fmt.Fprintf(&out, "Updated          %s\n", formatAlarmTime(alarm.StateUpdatedAt, utc))
 	fmt.Fprintf(&out, "Actions          %s\n", yesNo(alarm.ActionsEnabled))
 	fmt.Fprintf(&out, "Namespace        %s\n", valueOrDash(alarm.Namespace))
 	fmt.Fprintf(&out, "Metric           %s\n", valueOrDash(alarm.MetricName))
@@ -416,12 +432,12 @@ func formatAlarmSummary(alarm model.Alarm) string {
 	return out.String()
 }
 
-func formatAlarmDetail(detail model.AlarmDetail) string {
+func formatAlarmDetail(detail model.AlarmDetail, utc bool) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "CLOUDWATCH ALARM\n\n")
 	fmt.Fprintf(&out, "Name                 %s\n", detail.Name)
 	fmt.Fprintf(&out, "State                %s\n", valueOrDash(detail.State))
-	fmt.Fprintf(&out, "Updated              %s\n", formatTime(detail.StateUpdatedAt))
+	fmt.Fprintf(&out, "Updated              %s\n", formatAlarmTime(detail.StateUpdatedAt, utc))
 	fmt.Fprintf(&out, "Actions              %s\n", yesNo(detail.ActionsEnabled))
 	if detail.StateReason != "" {
 		fmt.Fprintf(&out, "Reason               %s\n", detail.StateReason)
@@ -465,10 +481,20 @@ func formatAlarmDetail(detail model.AlarmDetail) string {
 	if len(detail.History) > 0 {
 		fmt.Fprintf(&out, "\nRECENT HISTORY\n\n")
 		for _, item := range detail.History {
-			fmt.Fprintf(&out, "%s  %-22s %s\n", formatTime(item.Timestamp), valueOrDash(item.Type), item.Summary)
+			fmt.Fprintf(&out, "%s  %-22s %s\n", formatAlarmTime(item.Timestamp, utc), valueOrDash(item.Type), item.Summary)
 		}
 	}
 	return out.String()
+}
+
+func formatAlarmTime(value time.Time, utc bool) string {
+	if value.IsZero() {
+		return "—"
+	}
+	if utc {
+		return value.UTC().Format("2006-01-02 15:04:05 UTC")
+	}
+	return value.Local().Format("2006-01-02 15:04:05")
 }
 
 func appendAlarmActionSection(out *strings.Builder, title string, actions []string) {

@@ -127,3 +127,33 @@ selection is entered as a comma-separated scope in the GUI search dialog rather
 than using terminal-style marked rows, and buffered filtering hides non-matches
 instead of providing `n`/`N` match navigation. GTK selection, cursor placement,
 and the Correlate action provide the corresponding graphical navigation.
+
+## CloudWatch Alarms delivery phases
+
+CloudWatch Alarms is implemented in the GTK frontend and shares its domain
+values, validation, ordering, error context, and mutations with the TUI through
+`service.Alarms`.
+
+### Phase 1: shared service
+
+- Move alarm summaries, details, and history into the UI-neutral model package.
+- Centralize state validation, newest-first ordering, detail lookup, action
+  enablement, and manual state overrides.
+- Migrate the TUI alarm workflows to the shared service.
+
+### Phase 2: module shell and browser
+
+- Add a collapsible **CloudWatch Alarms** Module Rail entry with **All alarms**,
+  **In alarm**, **OK**, and **Insufficient data** sub-items.
+- Browse and filter alarms by name, metric, or namespace.
+- Clear stale Browser and Workspace state immediately when scopes change and
+  reject late responses using the common request-generation guard.
+
+### Phase 3: detail and operations
+
+- Load configuration, dimensions, action destinations, and recent history into
+  the Workspace Pane when an alarm is selected.
+- Support local and UTC timestamp presentation.
+- Provide contextual action enable/disable and manual state override controls.
+- Require explicit dialogs, disable long-running actions while pending, and
+  refresh the selected alarm after successful mutations.

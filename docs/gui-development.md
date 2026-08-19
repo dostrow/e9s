@@ -166,6 +166,17 @@ memory than a cached rebuild.
 25. Rapidly switch between ECS, Log groups, streams, and saved searches while
     requests or follow polling are active. Confirm old rows clear immediately
     and no stale result replaces the new Browser or Workspace context.
+26. Expand CloudWatch Alarms and switch among All alarms, In alarm, OK, and
+    Insufficient data. Confirm each exact rail sub-item highlights, old rows
+    clear before the new request returns, and filtering matches alarm name,
+    metric, and namespace.
+27. Select alarms rapidly and confirm only the final selection's configuration,
+    dimensions, actions, and recent history appear in the Workspace Pane. Toggle
+    Local/UTC time and verify both the Browser and Workspace update together.
+28. Enable or disable an alarm's actions and exercise a manual state override in
+    a safe test account. Confirm dialogs clearly describe the operation, buttons
+    remain disabled while pending, and an alarm leaves a state-filtered scope
+    when its new state no longer belongs there.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.
