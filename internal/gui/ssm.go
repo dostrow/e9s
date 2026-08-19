@@ -193,7 +193,7 @@ func ssmListValue(parameter model.Parameter) string {
 }
 
 func ssmBreadcrumb(savedName, path, parameter string) string {
-	root := path
+	root := "Parameters (" + path + ")"
 	if savedName != "" {
 		root = savedName + " (" + path + ")"
 	}

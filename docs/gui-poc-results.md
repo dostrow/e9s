@@ -387,6 +387,27 @@ actions, and recent history. Local/UTC timestamps, guarded contextual actions,
 pending-state disabling, post-mutation refresh, and stale-response rejection
 complete the TUI parity pass.
 
+### SSM Parameter Store module follow-up
+
+The configuration-data workflow now uses `service.SSM` in both frontends for
+normalized paths, stable name ordering, decrypted detail reads, updates, and
+contextual errors. Parameter Store values live in the UI-neutral model package;
+the GTK layer does not call AWS adapters directly.
+
+The GTK frontend adds an alphabetically sorted, collapsible SSM module with a
+fixed Parameters destination and dynamic saved-prefix sub-items. Custom path
+browsing, non-sensitive filtering, prefix save/delete/reload, exact rail
+highlighting, immediate context clearing, and generation-guarded requests cover
+the Browser workflow. SecureString list values remain masked and are excluded
+from value filtering.
+
+Workspace value inspection is explicit. SecureString decryption requires a
+warning confirmation, and changing context clears revealed plaintext. Editing
+uses a wrapped multiline buffer followed by a second confirmation. Reads and
+writes disable applicable controls, hold automatic refresh through the shared
+busy state, and refresh parameter metadata and detail after successful updates.
+The TUI also now reads values through the shared decrypted-detail path.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

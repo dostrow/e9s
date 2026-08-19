@@ -181,8 +181,9 @@ go install github.com/dostrow/e9s@latest
 ### Experimental GTK 4 GUI
 
 The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
-for the ECS vertical slice. It shares ECS connection, query, mutation, and log
-services with the TUI while remaining a separate, build-tagged executable.
+for ECS, CloudWatch Logs, CloudWatch Alarms, and SSM Parameter Store. It shares
+connection, query, mutation, and log services with the TUI while remaining a
+separate, build-tagged executable.
 
 ```bash
 # Requires GTK 4 development files, a C compiler, and pkg-config

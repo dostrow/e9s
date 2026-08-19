@@ -1,6 +1,6 @@
 # Experimental GTK GUI development
 
-The GUI is an experimental GTK 4 frontend for the ECS proof of concept. It is
+The GUI is an experimental GTK 4 frontend for e9s. It is
 built as a separate `e9s-gui` executable; the normal `e9s` TUI does not compile,
 link, or require GTK.
 
@@ -76,7 +76,9 @@ GTK sources use the `gui` build tag. Run GUI package tests and static checks wit
 
 ```bash
 go test ./...
-go test -race ./internal/gui ./internal/service
+go test -tags gui ./...
+go test -race -tags gui -gcflags=all=-d=checkptr=0 \
+  ./internal/gui ./internal/service
 go vet ./...
 go build -tags gui ./cmd/e9s-gui
 go build -tags "gui vte" ./cmd/e9s-gui
@@ -88,8 +90,11 @@ The GUI provides cluster, service, service-task, and standalone-task browsing,
 including recent stopped-task diagnostics for both service and standalone
 tasks loaded in 50-task pages;
 task-definition inspection, diffing, environment lookup, and revision editing;
-service and per-container logs; service-wide and selected-task metrics, service
-alarms; scaling and guarded ECS mutations; and ECS Exec in an embedded VTE
+service and per-container logs; CloudWatch Logs browsing, searches, saved
+destinations, and follow workflows; CloudWatch Alarm browsing and guarded
+operations; SSM Parameter Store browsing, saved prefixes, decrypted value
+inspection, and guarded multiline editing; service-wide and selected-task
+metrics; scaling and guarded ECS mutations; and ECS Exec in an embedded VTE
 terminal. The GTK frontend and Bubble Tea frontend both call the same UI-neutral
 services in `internal/service`; GTK code does not call AWS SDK adapters directly.
 
@@ -177,6 +182,20 @@ memory than a cached rebuild.
     a safe test account. Confirm dialogs clearly describe the operation, buttons
     remain disabled while pending, and an alarm leaves a state-filtered scope
     when its new state no longer belongs there.
+29. Expand SSM Parameter Store, open `/`, then browse a custom nested path.
+    Confirm old Browser and Workspace content clears before each request and the
+    Parameters rail item remains highlighted for unsaved paths.
+30. Save the current path, open its dynamic SAVED PREFIXES rail item, and delete
+    it through Saved prefixes. Confirm its tooltip shows the path, exact active
+    highlighting follows navigation, and Refresh imports external
+    `ssm_prefixes` configuration changes.
+31. Filter String, StringList, and SecureString parameters. Confirm ordinary
+    values are searchable while SecureString plaintext is neither displayed nor
+    searched in the Browser or metadata Workspace.
+32. View and edit a disposable SecureString. Confirm reveal requires an explicit
+    warning, the multiline editor shows decrypted content only after that read,
+    update requires a second confirmation, action buttons remain disabled and
+    auto-refresh pauses while pending, and the new version appears afterward.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

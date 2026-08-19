@@ -157,3 +157,45 @@ values, validation, ordering, error context, and mutations with the TUI through
 - Provide contextual action enable/disable and manual state override controls.
 - Require explicit dialogs, disable long-running actions while pending, and
   refresh the selected alarm after successful mutations.
+
+## SSM Parameter Store delivery phases
+
+SSM Parameter Store is implemented in the GTK frontend and shares path
+normalization, deterministic ordering, decrypted detail lookup, error context,
+and updates with the TUI through `service.SSM`.
+
+### Phase 1: shared service
+
+- Move parameter values into the UI-neutral model package.
+- Centralize path validation and normalization, name ordering, decrypted detail
+  reads, mutation validation, and contextual errors.
+- Migrate TUI listing, value inspection, and editing away from direct AWS client
+  calls.
+
+### Phase 2: module shell, browser, and saved prefixes
+
+- Add an alphabetically positioned, collapsible **SSM Parameter Store** Module
+  Rail entry with a fixed **Parameters** item.
+- Render configured `ssm_prefixes` as dynamic **SAVED PREFIXES** sub-items with
+  active highlighting, tooltips, direct opening, save, deletion, and explicit
+  configuration reload.
+- Browse custom normalized paths, filter by name/type/non-sensitive value, and
+  mask SecureString content in the Browser and metadata Workspace.
+- Clear old rows immediately and reject late responses through the common
+  cancellation generation guard.
+
+### Phase 3: values and editing
+
+- Keep ordinary selection metadata-only and perform value reads only through an
+  explicit View action or row activation.
+- Require a warning confirmation before revealing decrypted SecureString
+  content and clear revealed content when selection or module context changes.
+- Edit potentially multiline values in a wrapped GTK text buffer, require a
+  second review confirmation, and disable actions while the mutation is pending.
+- Pause automatic refresh while reads or writes are pending, then refresh list
+  metadata and selected detail after a successful update.
+
+The GUI intentionally adds explicit SecureString reveal confirmation and a
+multiline editor. The TUI retains its compact Enter/value and input-dialog
+metaphors, but now obtains decrypted values and performs writes through the same
+shared service.

@@ -472,7 +472,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	moduleItems.AddCSSClass("module-subitems")
 	moduleItems.Append(w.clustersNavButton)
 	moduleItems.Append(w.taskDefinitionsNavButton)
-	w.moduleErrorGlyphs = make(map[string]*gtk.Image, 3)
+	w.moduleErrorGlyphs = make(map[string]*gtk.Image, 4)
 	ecs := w.newModuleExpander("ECS", moduleECS, moduleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
