@@ -10,6 +10,7 @@ type KeyBindings struct {
 	PauseResume  string
 	EditConfig   string
 	SwitchRegion string
+	ErrorDetails string
 
 	// ECS
 	ForceRedeploy   string
@@ -123,6 +124,7 @@ func NewKeyBindings() KeyBindings {
 		PauseResume:  "ctrl+s",
 		EditConfig:   "ctrl+e",
 		SwitchRegion: "ctrl+r",
+		ErrorDetails: "!",
 
 		// ECS
 		ForceRedeploy:   "r",
@@ -246,6 +248,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.EditConfig = key
 		case "switch_region":
 			kb.SwitchRegion = key
+		case "error_details":
+			kb.ErrorDetails = key
 
 		// ECS
 		case "force_redeploy":

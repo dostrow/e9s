@@ -133,7 +133,7 @@ func padToWidth(s string, width int) string {
 }
 
 // buildInfoBar constructs the top info bar content.
-func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, paused bool, flashMessage string, flashExpiry time.Time, err error) string {
+func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, paused bool, flashMessage string, flashExpiry time.Time, err error, errorDetailsKey string) string {
 	left := "e9s"
 	if len(breadcrumbs) > 0 {
 		left += " ── " + strings.Join(breadcrumbs, " ► ")
@@ -146,7 +146,8 @@ func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, pa
 	if flashMessage != "" && time.Now().Before(flashExpiry) {
 		right = lipgloss.NewStyle().Foreground(theme.ColorGreen).Render(flashMessage)
 	} else if err != nil {
-		right = theme.ErrorStyle.Render(fmt.Sprintf("error: %s", err))
+		summary := strings.Join(strings.Fields(err.Error()), " ")
+		right = theme.ErrorStyle.Render(fmt.Sprintf("error [%s]: %s", errorDetailsKey, summary))
 	} else if paused {
 		right = lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("⏸ paused (press any key)")
 	} else if !lastRefresh.IsZero() {
@@ -160,14 +161,14 @@ func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, pa
 // modeDisplayName returns the full display name for a mode.
 func modeDisplayName(mode topMode) string {
 	names := map[topMode]string{
-		modeECS:      "ECS",
-		modeCWLogs:   "CloudWatch Logs",
-		modeCWAlarms: "CloudWatch Alarms",
-		modeSSM:      "SSM",
-		modeSM:       "Secrets Manager",
-		modeS3:       "S3",
-		modeLambda:   "Lambda",
-		modeDynamoDB: "DynamoDB",
+		modeECS:       "ECS",
+		modeCWLogs:    "CloudWatch Logs",
+		modeCWAlarms:  "CloudWatch Alarms",
+		modeSSM:       "SSM",
+		modeSM:        "Secrets Manager",
+		modeS3:        "S3",
+		modeLambda:    "Lambda",
+		modeDynamoDB:  "DynamoDB",
 		modeSQS:       "SQS",
 		modeCodeBuild: "CodeBuild",
 		modeEC2:       "EC2",
@@ -185,14 +186,14 @@ func modeDisplayName(mode topMode) string {
 // modeShortName returns the short label for the bottom-left corner.
 func modeShortName(mode topMode) string {
 	names := map[topMode]string{
-		modeECS:      "ECS",
-		modeCWLogs:   "CWL",
-		modeCWAlarms: "CWA",
-		modeSSM:      "SSM",
-		modeSM:       "SM",
-		modeS3:       "S3",
-		modeLambda:   "λ",
-		modeDynamoDB: "DDB",
+		modeECS:       "ECS",
+		modeCWLogs:    "CWL",
+		modeCWAlarms:  "CWA",
+		modeSSM:       "SSM",
+		modeSM:        "SM",
+		modeS3:        "S3",
+		modeLambda:    "λ",
+		modeDynamoDB:  "DDB",
 		modeSQS:       "SQS",
 		modeCodeBuild: "CB",
 		modeEC2:       "EC2i",

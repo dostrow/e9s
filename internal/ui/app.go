@@ -243,6 +243,7 @@ type App struct {
 	input        InputModel
 	picker       PickerModel
 	help         HelpModel
+	errorDetails ErrorDetailsModel
 	modeSwitcher ModeSwitcherModel
 
 	// Mode tabs (built from config)
@@ -451,10 +452,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
 		a.logSearchView = a.logSearchView.SetSize(w, h)
+		a.errorDetails = a.errorDetails.SetSize(wsm.Width, wsm.Height)
 		return a, nil
 	}
 
 	// Handle overlays — these consume all input when active
+	if a.errorDetails.Active {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			if km.String() == "d" || km.String() == "D" {
+				a.err = nil
+				a.errorDetails = ErrorDetailsModel{}
+				return a, nil
+			}
+			a.errorDetails = a.errorDetails.Update(km)
+		}
+		return a, nil
+	}
 	if a.help.Active {
 		if _, ok := msg.(tea.KeyMsg); ok {
 			a.help.Active = false
@@ -1273,6 +1286,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.switchRegion(msg.Region)
 
 	case actionSuccessMsg:
+		a.err = nil
 		a.flashMessage = msg.message
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, a.refreshCurrentView()
@@ -1637,10 +1651,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, theme.Keys.Back):
 			return a.goBack()
 		case key.Matches(msg, theme.Keys.Refresh):
+			a.err = nil
 			a.loading = true
 			return a, a.refreshCurrentView()
+		case msg.String() == a.kb.ErrorDetails && a.err != nil:
+			a.errorDetails = NewErrorDetails(a.err.Error(), a.width, a.height)
+			return a, nil
 		case key.Matches(msg, theme.Keys.Enter):
 			if a.state != viewLogSearch {
+				a.err = nil
 				return a.drillDown()
 			}
 		case key.Matches(msg, theme.Keys.Help):
@@ -2243,7 +2262,7 @@ func (a App) buildBreadcrumbs() []string {
 func (a App) View() string {
 	breadcrumbs := a.buildBreadcrumbs()
 	infoBar := buildInfoBar(breadcrumbs, a.client.Region(), a.lastRefresh,
-		a.paused, a.flashMessage, a.flashExpiry, a.err)
+		a.paused, a.flashMessage, a.flashExpiry, a.err, a.kb.ErrorDetails)
 
 	var content string
 	switch a.state {
@@ -2360,6 +2379,9 @@ func (a App) View() string {
 	if a.help.Active {
 		helpContent := RenderHelp(a.contextHelpLines(), a.width-10)
 		return renderOverlay(fullView, helpContent, a.width, a.height)
+	}
+	if a.errorDetails.Active {
+		return renderOverlay(fullView, a.errorDetails.View(), a.width, a.height)
 	}
 	if a.modeSwitcher.Active {
 		return renderOverlay(fullView, a.modeSwitcher.View(), a.width, a.height)
@@ -2535,6 +2557,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	type kv = struct{ key, desc string }
 
 	global := []kv{
+		{a.kb.ErrorDetails, "Show the full error (when present)"},
 		{a.kb.SwitchMode, "Switch mode"},
 		{a.kb.ReopenPicker, "Reopen mode picker"},
 		{a.kb.PauseResume, "Pause/resume polling"},
@@ -3080,6 +3103,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 
 // reopenModePicker re-launches the current mode's entry picker/prompt.
 func (a App) reopenModePicker() (App, tea.Cmd) {
+	a.err = nil
+	a.errorDetails = ErrorDetailsModel{}
 	switch a.mode {
 	case modeECS:
 		a.state = viewClusters
@@ -3125,6 +3150,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 	if mode == a.mode {
 		return a, nil
 	}
+	a.err = nil
+	a.errorDetails = ErrorDetailsModel{}
 	a.mode = mode
 	switch mode {
 	case modeECS:
@@ -3173,6 +3200,8 @@ func (a App) showModePicker() (App, tea.Cmd) {
 }
 
 func (a App) goBack() (App, tea.Cmd) {
+	a.err = nil
+	a.errorDetails = ErrorDetailsModel{}
 	switch a.state {
 	case viewClusters:
 		// Root of ECS — show mode picker
