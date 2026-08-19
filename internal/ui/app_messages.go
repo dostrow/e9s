@@ -266,6 +266,10 @@ type ec2ConsoleLoadedMsg struct{ output string }
 type ec2ActionDoneMsg struct{ message string }
 type ec2SecurityGroupsLoadedMsg struct{ groups []model.EC2SecurityGroup }
 type ec2SecurityGroupLoadedMsg struct{ group *model.EC2SecurityGroup }
+type ec2VPCsLoadedMsg struct{ vpcs []model.EC2VPC }
+type ec2VPCLoadedMsg struct{ vpc *model.EC2VPC }
+type ec2SubnetsLoadedMsg struct{ subnets []model.EC2Subnet }
+type ec2SubnetLoadedMsg struct{ subnet *model.EC2Subnet }
 
 // --- ECR Messages ---
 

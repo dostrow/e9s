@@ -48,6 +48,12 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 		w.loadEC2InstancesAt(ref.ID)
 	case "ec2-security-group":
 		w.loadEC2SecurityGroups(ref.ID)
+	case "ec2-vpc":
+		w.loadEC2VPCs(ref.ID)
+	case "ec2-subnet":
+		w.loadEC2Subnets(ref.ID, "")
+	case "ec2-subnets":
+		w.loadEC2Subnets("", ref.ID)
 	default:
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
 	}
@@ -62,6 +68,14 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	case pageEC2SecurityGroups:
 		if w.selectedEC2SecurityGroup != "" {
 			return model.ResourceRef{Kind: "ec2-security-group", ID: w.selectedEC2SecurityGroup}, true
+		}
+	case pageEC2VPCs:
+		if w.selectedEC2VPC != "" {
+			return model.ResourceRef{Kind: "ec2-vpc", ID: w.selectedEC2VPC}, true
+		}
+	case pageEC2Subnets:
+		if w.selectedEC2Subnet != "" {
+			return model.ResourceRef{Kind: "ec2-subnet", ID: w.selectedEC2Subnet}, true
 		}
 	}
 	return model.ResourceRef{}, false
@@ -79,7 +93,15 @@ func (w *mainWindow) navigateResourceHistoryBack() bool {
 }
 
 func (w *mainWindow) setEC2InstanceResourceLinks(detail model.EC2InstanceDetail) {
-	links := make([]workspaceResourceLink, 0, len(detail.SecurityGroups))
+	links := make([]workspaceResourceLink, 0, len(detail.SecurityGroups)+2)
+	if detail.VpcID != "" {
+		links = append(links, workspaceResourceLink{label: "VPC: " + detail.VpcID,
+			ref: model.ResourceRef{Kind: "ec2-vpc", ID: detail.VpcID}})
+	}
+	if detail.SubnetID != "" {
+		links = append(links, workspaceResourceLink{label: "Subnet: " + detail.SubnetID,
+			ref: model.ResourceRef{Kind: "ec2-subnet", ID: detail.SubnetID}})
+	}
 	for _, group := range detail.SecurityGroups {
 		label := group.Name
 		if label == "" {

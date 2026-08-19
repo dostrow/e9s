@@ -995,6 +995,22 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshEC2SecurityGroups()
 	case viewEC2SecurityGroupDetail:
 		return a.refreshEC2SecurityGroupDetail()
+	case viewEC2VPCs:
+		_, cmd := a.openEC2VPCs()
+		return cmd
+	case viewEC2VPCDetail:
+		if a.ec2VPCDetail != nil {
+			_, cmd := a.loadEC2VPCDetail(a.ec2VPCDetail.VpcID)
+			return cmd
+		}
+	case viewEC2Subnets:
+		_, cmd := a.openEC2Subnets(a.ec2SubnetVPCFilter)
+		return cmd
+	case viewEC2SubnetDetail:
+		if a.ec2SubnetDetail != nil {
+			_, cmd := a.loadEC2SubnetDetail(a.ec2SubnetDetail.SubnetID)
+			return cmd
+		}
 	case viewRDSInstances:
 		return a.refreshRDSInstances()
 	case viewRDSDetail:
@@ -1002,6 +1018,7 @@ func (a App) refreshCurrentView() tea.Cmd {
 	default:
 		return nil
 	}
+	return nil
 }
 
 func (a App) tick() tea.Cmd {

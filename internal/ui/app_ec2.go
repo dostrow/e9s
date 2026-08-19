@@ -86,11 +86,16 @@ func (a App) refreshEC2SecurityGroupDetail() tea.Cmd {
 
 func (a App) switchEC2Resource() (App, tea.Cmd) {
 	switch a.state {
-	case viewEC2SecurityGroups, viewEC2SecurityGroupDetail:
-		return a.openEC2Instances("")
-	default:
+	case viewEC2Instances, viewEC2Detail, viewEC2Console:
 		return a.openEC2SecurityGroups()
+	case viewEC2SecurityGroups, viewEC2SecurityGroupDetail:
+		return a.openEC2VPCs()
+	case viewEC2VPCs, viewEC2VPCDetail:
+		return a.openEC2Subnets("")
+	case viewEC2Subnets, viewEC2SubnetDetail:
+		return a.openEC2Instances("")
 	}
+	return a.openEC2Instances("")
 }
 
 func (a App) openEC2ResourcePicker() (App, tea.Cmd) {
@@ -122,7 +127,13 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 		if detail == nil {
 			return nil
 		}
-		links := make([]model.ResourceRef, 0, len(detail.SecurityGroups))
+		links := make([]model.ResourceRef, 0, len(detail.SecurityGroups)+2)
+		if detail.VpcID != "" {
+			links = append(links, model.ResourceRef{Kind: "ec2-vpc", ID: detail.VpcID})
+		}
+		if detail.SubnetID != "" {
+			links = append(links, model.ResourceRef{Kind: "ec2-subnet", ID: detail.SubnetID})
+		}
 		for _, group := range detail.SecurityGroups {
 			links = append(links, model.ResourceRef{Kind: "ec2-security-group", ID: group.ID, Name: group.Name})
 		}
@@ -132,13 +143,24 @@ func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 		if group == nil {
 			return nil
 		}
-		links := make([]model.ResourceRef, 0, len(group.Associations))
+		links := make([]model.ResourceRef, 0, len(group.Associations)+1)
+		if group.VpcID != "" {
+			links = append(links, model.ResourceRef{Kind: "ec2-vpc", ID: group.VpcID})
+		}
 		for _, association := range group.Associations {
 			if association.Kind == "ec2-instance" {
 				links = append(links, association)
 			}
 		}
 		return links
+	case viewEC2VPCDetail:
+		if a.ec2VPCDetail != nil {
+			return []model.ResourceRef{{Kind: "ec2-subnets", ID: a.ec2VPCDetail.VpcID, Name: "Subnets in " + a.ec2VPCDetail.VpcID}}
+		}
+	case viewEC2SubnetDetail:
+		if a.ec2SubnetDetail != nil && a.ec2SubnetDetail.VpcID != "" {
+			return []model.ResourceRef{{Kind: "ec2-vpc", ID: a.ec2SubnetDetail.VpcID}}
+		}
 	}
 	return nil
 }
@@ -152,6 +174,14 @@ func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
 	case viewEC2SecurityGroupDetail:
 		if group := a.ec2SecurityGroupDetailView.Group(); group != nil {
 			return model.ResourceRef{Kind: "ec2-security-group", ID: group.GroupID, Name: group.Name}, true
+		}
+	case viewEC2VPCDetail:
+		if a.ec2VPCDetail != nil {
+			return model.ResourceRef{Kind: "ec2-vpc", ID: a.ec2VPCDetail.VpcID, Name: a.ec2VPCDetail.Name}, true
+		}
+	case viewEC2SubnetDetail:
+		if a.ec2SubnetDetail != nil {
+			return model.ResourceRef{Kind: "ec2-subnet", ID: a.ec2SubnetDetail.SubnetID, Name: a.ec2SubnetDetail.Name}, true
 		}
 	}
 	return model.ResourceRef{}, false
@@ -186,6 +216,15 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 			}
 			return ec2SecurityGroupLoadedMsg{group}
 		}
+	case "ec2-vpc":
+		return a.loadEC2VPCDetail(ref.ID)
+	case "ec2-subnet":
+		return a.loadEC2SubnetDetail(ref.ID)
+	case "ec2-subnets":
+		originHistory := a.resourceHistory
+		a, cmd := a.openEC2Subnets(ref.ID)
+		a.resourceHistory = originHistory
+		return a, cmd
 	default:
 		a.loading = false
 		a.err = fmt.Errorf("navigation is not implemented for %s", ref.Kind)

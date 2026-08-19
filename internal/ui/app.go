@@ -82,6 +82,10 @@ const (
 	viewEC2Console
 	viewEC2SecurityGroups
 	viewEC2SecurityGroupDetail
+	viewEC2VPCs
+	viewEC2VPCDetail
+	viewEC2Subnets
+	viewEC2SubnetDetail
 	viewECRRepos
 	viewECRImages
 	viewECRFindings
@@ -153,6 +157,13 @@ type App struct {
 	ec2ConsoleView             views.EC2ConsoleModel
 	ec2SecurityGroupsView      views.EC2SecurityGroupsModel
 	ec2SecurityGroupDetailView views.EC2SecurityGroupDetailModel
+	ec2ResourceListView        views.EC2ResourceListModel
+	ec2ResourceDetailView      views.EC2ResourceDetailModel
+	ec2VPCs                    []model.EC2VPC
+	ec2VPCDetail               *model.EC2VPC
+	ec2Subnets                 []model.EC2Subnet
+	ec2SubnetDetail            *model.EC2Subnet
+	ec2SubnetVPCFilter         string
 	ecrReposView               views.ECRReposModel
 	ecrImagesView              views.ECRImagesModel
 	ecrFindingsView            views.ECRFindingsModel
@@ -456,6 +467,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ec2ConsoleView = a.ec2ConsoleView.SetSize(w, h)
 		a.ec2SecurityGroupsView = a.ec2SecurityGroupsView.SetSize(w, h)
 		a.ec2SecurityGroupDetailView = a.ec2SecurityGroupDetailView.SetSize(w, h)
+		a.ec2ResourceListView = a.ec2ResourceListView.SetSize(w, h)
+		a.ec2ResourceDetailView = a.ec2ResourceDetailView.SetSize(w, h)
 		a.ecrReposView = a.ecrReposView.SetSize(w, h)
 		a.ecrImagesView = a.ecrImagesView.SetSize(w, h)
 		a.ecrFindingsView = a.ecrFindingsView.SetSize(w, h)
@@ -1190,6 +1203,39 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ec2SecurityGroupDetailView = views.NewEC2SecurityGroupDetail(msg.group).SetSize(a.width-3, a.height-6)
 		a.loading = false
 		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ec2VPCsLoadedMsg:
+		if a.state != viewEC2VPCs {
+			return a, nil
+		}
+		a.ec2VPCs = msg.vpcs
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2VPCRows(msg.vpcs))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2VPCLoadedMsg:
+		if a.state != viewEC2VPCDetail {
+			return a, nil
+		}
+		a.ec2VPCDetail = msg.vpc
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2VPC(*msg.vpc)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case ec2SubnetsLoadedMsg:
+		if a.state != viewEC2Subnets {
+			return a, nil
+		}
+		a.ec2Subnets = msg.subnets
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2SubnetRows(msg.subnets))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2SubnetLoadedMsg:
+		if a.state != viewEC2SubnetDetail {
+			return a, nil
+		}
+		a.ec2SubnetDetail = msg.subnet
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2Subnet(*msg.subnet)).SetSize(a.width-3, a.height-6)
+		a.loading = false
 		return a, nil
 
 	// --- ECR messages ---
@@ -2228,6 +2274,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.ec2SecurityGroupsView, cmd = a.ec2SecurityGroupsView.Update(msg)
 	case viewEC2SecurityGroupDetail:
 		a.ec2SecurityGroupDetailView, cmd = a.ec2SecurityGroupDetailView.Update(msg)
+	case viewEC2VPCs, viewEC2Subnets:
+		a.ec2ResourceListView, cmd = a.ec2ResourceListView.Update(msg)
+	case viewEC2VPCDetail, viewEC2SubnetDetail:
+		a.ec2ResourceDetailView, cmd = a.ec2ResourceDetailView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2274,6 +2324,8 @@ func (a App) isFiltering() bool {
 		return a.ec2InstancesView.IsFiltering()
 	case viewEC2SecurityGroups:
 		return a.ec2SecurityGroupsView.IsFiltering()
+	case viewEC2VPCs, viewEC2Subnets:
+		return a.ec2ResourceListView.IsFiltering()
 	case viewTofuResources:
 		return a.tofuResourcesView.IsFiltering()
 	case viewTofuPlan:
@@ -2432,6 +2484,10 @@ func (a App) View() string {
 		content = a.ec2SecurityGroupsView.View()
 	case viewEC2SecurityGroupDetail:
 		content = a.ec2SecurityGroupDetailView.View()
+	case viewEC2VPCs, viewEC2Subnets:
+		content = a.ec2ResourceListView.View()
+	case viewEC2VPCDetail, viewEC2SubnetDetail:
+		content = a.ec2ResourceDetailView.View()
 	}
 
 	helpLine := a.helpText()
@@ -2613,6 +2669,10 @@ func (a App) helpText() string {
 	case viewEC2SecurityGroups:
 		primary = "[enter] detail"
 	case viewEC2SecurityGroupDetail:
+		primary = "[o] linked resources"
+	case viewEC2VPCs, viewEC2Subnets:
+		primary = "[enter] detail"
+	case viewEC2VPCDetail, viewEC2SubnetDetail:
 		primary = "[o] linked resources"
 	}
 	if primary != "" {
@@ -3042,6 +3102,10 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewEC2VPCs, viewEC2Subnets:
+		context = []kv{{"enter", "View detail"}, {"/", "Filter resources"}, {kb.EC2Resource, "Switch EC2 resource"}}
+	case viewEC2VPCDetail, viewEC2SubnetDetail:
+		context = []kv{{kb.OpenResource, "Open linked resource"}, {kb.EC2Resource, "Switch EC2 resource"}, {"j/k", "Scroll"}}
 	}
 
 	// Combine: context first, then separator, then global
@@ -3181,6 +3245,14 @@ func (a App) drillDown() (App, tea.Cmd) {
 		return a.openEC2Detail()
 	case viewEC2SecurityGroups:
 		return a.openEC2SecurityGroupDetail()
+	case viewEC2VPCs:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2VPCDetail(id)
+		}
+	case viewEC2Subnets:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2SubnetDetail(id)
+		}
 	}
 	return a, nil
 }
@@ -3536,6 +3608,34 @@ func (a App) goBack() (App, tea.Cmd) {
 			return a.navigateEC2Resource(ref, false)
 		}
 		a.state = viewEC2SecurityGroups
+		return a, nil
+	case viewEC2VPCs:
+		return a.showModePicker()
+	case viewEC2Subnets:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		return a.showModePicker()
+	case viewEC2VPCDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2VPCs
+		return a, nil
+	case viewEC2SubnetDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2Subnets
 		return a, nil
 	}
 	return a, nil

@@ -180,7 +180,11 @@ func (w *mainWindow) selectEC2SecurityGroupByID(groupID string) bool {
 
 func (w *mainWindow) renderEC2SecurityGroup(group model.EC2SecurityGroup) {
 	w.setDetail(formatEC2SecurityGroup(group), detailEC2SecurityGroup)
-	links := make([]workspaceResourceLink, 0, len(group.Associations))
+	links := make([]workspaceResourceLink, 0, len(group.Associations)+1)
+	if group.VpcID != "" {
+		links = append(links, workspaceResourceLink{label: "VPC: " + group.VpcID,
+			ref: model.ResourceRef{Kind: "ec2-vpc", ID: group.VpcID}})
+	}
 	for _, association := range group.Associations {
 		if association.Kind != "ec2-instance" {
 			continue

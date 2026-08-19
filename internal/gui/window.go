@@ -38,6 +38,8 @@ const (
 	pageCodeBuildBuilds   = "codebuild-builds"
 	pageEC2Instances      = "ec2-instances"
 	pageEC2SecurityGroups = "ec2-security-groups"
+	pageEC2VPCs           = "ec2-vpcs"
+	pageEC2Subnets        = "ec2-subnets"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -55,6 +57,8 @@ const (
 	detailCodeBuild        = "codebuild-build"
 	detailEC2              = "ec2-instance"
 	detailEC2SecurityGroup = "ec2-security-group"
+	detailEC2VPC           = "ec2-vpc"
+	detailEC2Subnet        = "ec2-subnet"
 	detailEC2Console       = "ec2-console"
 )
 
@@ -141,6 +145,15 @@ type mainWindow struct {
 	filteredEC2SecurityGroups   []model.EC2SecurityGroup
 	selectedEC2SecurityGroup    string
 	ec2SecurityGroupDetail      *model.EC2SecurityGroup
+	allEC2VPCs                  []model.EC2VPC
+	filteredEC2VPCs             []model.EC2VPC
+	selectedEC2VPC              string
+	ec2VPCDetail                *model.EC2VPC
+	allEC2Subnets               []model.EC2Subnet
+	filteredEC2Subnets          []model.EC2Subnet
+	selectedEC2Subnet           string
+	ec2SubnetVPCFilter          string
+	ec2SubnetDetail             *model.EC2Subnet
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -162,6 +175,8 @@ type mainWindow struct {
 	codeBuildBuildTable         *stringTable
 	ec2Table                    *stringTable
 	ec2SecurityGroupTable       *stringTable
+	ec2VPCTable                 *stringTable
+	ec2SubnetTable              *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -191,6 +206,8 @@ type mainWindow struct {
 	codeBuildProjectsNavButton  *gtk.ToggleButton
 	ec2InstancesNavButton       *gtk.ToggleButton
 	ec2SecurityGroupsNavButton  *gtk.ToggleButton
+	ec2VPCsNavButton            *gtk.ToggleButton
+	ec2SubnetsNavButton         *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -471,6 +488,16 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "OUTBOUND", field: 4},
 		{title: "DESCRIPTION", field: 5, expand: true},
 	})
+	w.ec2VPCTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "VPC ID", field: 1},
+		{title: "STATE", field: 2}, {title: "CIDRS", field: 3, expand: true},
+		{title: "DEFAULT", field: 4}, {title: "TENANCY", field: 5},
+	})
+	w.ec2SubnetTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "SUBNET ID", field: 1},
+		{title: "VPC", field: 2}, {title: "AZ", field: 3}, {title: "CIDR", field: 4},
+		{title: "AVAILABLE IPS", field: 5}, {title: "PUBLIC IP", field: 6},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -486,6 +513,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.codeBuildBuildTable.view.ConnectActivate(w.openCodeBuildBuildAt)
 	w.ec2Table.view.ConnectActivate(w.openEC2InstanceAt)
 	w.ec2SecurityGroupTable.view.ConnectActivate(w.openEC2SecurityGroupAt)
+	w.ec2VPCTable.view.ConnectActivate(w.openEC2VPCAt)
+	w.ec2SubnetTable.view.ConnectActivate(w.openEC2SubnetAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
@@ -496,6 +525,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.codeBuildBuildTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildBuildRow() })
 	w.ec2Table.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2InstanceRow() })
 	w.ec2SecurityGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2SecurityGroupRow() })
+	w.ec2VPCTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2VPCRow() })
+	w.ec2SubnetTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectEC2SubnetRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -739,10 +770,16 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ec2InstancesNavButton.SetGroup(w.clustersNavButton)
 	w.ec2SecurityGroupsNavButton = newModuleRailButton("Security Groups", w.openEC2SecurityGroupsModule)
 	w.ec2SecurityGroupsNavButton.SetGroup(w.clustersNavButton)
+	w.ec2VPCsNavButton = newModuleRailButton("VPCs", w.openEC2VPCsModule)
+	w.ec2VPCsNavButton.SetGroup(w.clustersNavButton)
+	w.ec2SubnetsNavButton = newModuleRailButton("Subnets", w.openEC2SubnetsModule)
+	w.ec2SubnetsNavButton.SetGroup(w.clustersNavButton)
 	w.ec2ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
 	w.ec2ModuleItems.AddCSSClass("module-subitems")
 	w.ec2ModuleItems.Append(w.ec2InstancesNavButton)
 	w.ec2ModuleItems.Append(w.ec2SecurityGroupsNavButton)
+	w.ec2ModuleItems.Append(w.ec2VPCsNavButton)
+	w.ec2ModuleItems.Append(w.ec2SubnetsNavButton)
 	ec2Instances := w.newModuleExpander("EC2", moduleEC2, w.ec2ModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
@@ -904,6 +941,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ec2SecurityGroupScroll.SetVExpand(true)
 	ec2SecurityGroupScroll.SetHExpand(true)
 	ec2SecurityGroupScroll.SetChild(w.ec2SecurityGroupTable.view)
+	ec2VPCScroll := gtk.NewScrolledWindow()
+	ec2VPCScroll.SetVExpand(true)
+	ec2VPCScroll.SetHExpand(true)
+	ec2VPCScroll.SetChild(w.ec2VPCTable.view)
+	ec2SubnetScroll := gtk.NewScrolledWindow()
+	ec2SubnetScroll.SetVExpand(true)
+	ec2SubnetScroll.SetHExpand(true)
+	ec2SubnetScroll.SetChild(w.ec2SubnetTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -929,6 +974,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(codeBuildBuildScroll, pageCodeBuildBuilds)
 	w.resourceStack.AddNamed(ec2Scroll, pageEC2Instances)
 	w.resourceStack.AddNamed(ec2SecurityGroupScroll, pageEC2SecurityGroups)
+	w.resourceStack.AddNamed(ec2VPCScroll, pageEC2VPCs)
+	w.resourceStack.AddNamed(ec2SubnetScroll, pageEC2Subnets)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1420,6 +1467,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
+	w.ec2VPCDetail = nil
+	w.ec2SubnetDetail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1839,6 +1888,14 @@ func (w *mainWindow) applyFilter() {
 		w.applyEC2SecurityGroupFilter()
 		return
 	}
+	if w.currentPage == pageEC2VPCs {
+		w.applyEC2VPCFilter()
+		return
+	}
+	if w.currentPage == pageEC2Subnets {
+		w.applyEC2SubnetFilter()
+		return
+	}
 	if w.currentPage == pageSecrets {
 		w.applySecretFilter()
 		return
@@ -2105,6 +2162,14 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageEC2SecurityGroups {
 		w.refreshEC2SecurityGroups(foreground)
+		return
+	}
+	if w.currentPage == pageEC2VPCs {
+		w.refreshEC2VPCs(foreground)
+		return
+	}
+	if w.currentPage == pageEC2Subnets {
+		w.refreshEC2Subnets(foreground)
 		return
 	}
 	if w.currentPage == pageSecrets {
@@ -2441,6 +2506,8 @@ func (w *mainWindow) updateActionSensitivity() {
 		if w.ec2InstancesNavButton != nil {
 			w.ec2InstancesNavButton.SetActive(w.currentPage == pageEC2Instances)
 			w.ec2SecurityGroupsNavButton.SetActive(w.currentPage == pageEC2SecurityGroups)
+			w.ec2VPCsNavButton.SetActive(w.currentPage == pageEC2VPCs)
+			w.ec2SubnetsNavButton.SetActive(w.currentPage == pageEC2Subnets)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

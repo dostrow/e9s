@@ -89,6 +89,11 @@ func (s *EC2Network) VPCs(ctx context.Context, filter string) ([]model.EC2VPC, e
 	if err != nil {
 		return nil, fmt.Errorf("list EC2 VPCs: %w", err)
 	}
+	return FilterEC2VPCs(vpcs, filter), nil
+}
+
+// FilterEC2VPCs filters and orders an already loaded VPC result set.
+func FilterEC2VPCs(vpcs []model.EC2VPC, filter string) []model.EC2VPC {
 	filter = normalizedFilter(filter)
 	filtered := make([]model.EC2VPC, 0, len(vpcs))
 	for _, vpc := range vpcs {
@@ -103,7 +108,7 @@ func (s *EC2Network) VPCs(ctx context.Context, filter string) ([]model.EC2VPC, e
 		}
 		return compareNameID(filtered[i].Name, filtered[i].VpcID, filtered[j].Name, filtered[j].VpcID)
 	})
-	return filtered, nil
+	return filtered
 }
 
 func (s *EC2Network) VPC(ctx context.Context, vpcID string) (*model.EC2VPC, error) {
@@ -128,6 +133,11 @@ func (s *EC2Network) Subnets(ctx context.Context, filter, vpcID string) ([]model
 	if err != nil {
 		return nil, fmt.Errorf("list EC2 subnets: %w", err)
 	}
+	return FilterEC2Subnets(subnets, filter, vpcID), nil
+}
+
+// FilterEC2Subnets filters and orders an already loaded subnet result set.
+func FilterEC2Subnets(subnets []model.EC2Subnet, filter, vpcID string) []model.EC2Subnet {
 	filter, vpcID = normalizedFilter(filter), strings.TrimSpace(vpcID)
 	filtered := make([]model.EC2Subnet, 0, len(subnets))
 	for _, subnet := range subnets {
@@ -145,7 +155,7 @@ func (s *EC2Network) Subnets(ctx context.Context, filter, vpcID string) ([]model
 		}
 		return compareNameID(filtered[i].Name, filtered[i].SubnetID, filtered[j].Name, filtered[j].SubnetID)
 	})
-	return filtered, nil
+	return filtered
 }
 
 func (s *EC2Network) Subnet(ctx context.Context, subnetID string) (*model.EC2Subnet, error) {
