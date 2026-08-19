@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -28,6 +29,13 @@ func (a App) openEC2Instances(filter string) (App, tea.Cmd) {
 		}
 		return ec2InstancesLoadedMsg{instances}
 	}
+}
+
+func (a App) newTaskDetail(task *model.Task) views.TaskDetailModel {
+	if task == nil {
+		return views.NewTaskDetail(nil)
+	}
+	return views.NewTaskDetail(task).SetResourceRefs(service.ECSTaskResourceRefs(*task, a.selectedService))
 }
 
 func (a App) openEC2SecurityGroups() (App, tea.Cmd) {
@@ -128,6 +136,12 @@ func (a App) openEC2ResourcePicker() (App, tea.Cmd) {
 
 func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 	switch a.state {
+	case viewTaskDetail:
+		task := a.detailView.Task()
+		if task == nil {
+			return nil
+		}
+		return service.ECSTaskResourceRefs(*task, a.selectedService)
 	case viewEC2Detail:
 		detail := a.ec2DetailView.Detail()
 		if detail == nil {
@@ -246,6 +260,10 @@ func uniqueResourceRefs(refs []model.ResourceRef) []model.ResourceRef {
 
 func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
 	switch a.state {
+	case viewTaskDetail:
+		if task := a.detailView.Task(); task != nil {
+			return model.ResourceRef{Kind: "ecs-task", ID: task.TaskARN, Name: task.TaskID}, true
+		}
 	case viewEC2Detail:
 		if detail := a.ec2DetailView.Detail(); detail != nil {
 			return model.ResourceRef{Kind: "ec2-instance", ID: detail.InstanceID, Name: detail.Name}, true
@@ -283,6 +301,9 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 		if origin, ok := a.currentEC2ResourceRef(); ok && (origin.Kind != ref.Kind || origin.ID != ref.ID) {
 			a.resourceHistory = append(a.resourceHistory, origin)
 		}
+	}
+	if ref.Kind != "ecs-task" {
+		a.mode = modeEC2
 	}
 	a.loading = true
 	ctx := a.ctx
@@ -322,6 +343,17 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 		return a.loadEC2LoadBalancerDetail(ref.ID)
 	case "ec2-target-group":
 		return a.loadEC2TargetGroupDetail(ref.ID)
+	case "ecs-task":
+		if a.selectedTask == nil || a.selectedTask.TaskARN != ref.ID {
+			a.loading = false
+			a.err = fmt.Errorf("ECS task %s is no longer available", ref.ID)
+			return a, nil
+		}
+		a.mode = modeECS
+		a.state = viewTaskDetail
+		a.detailView = a.newTaskDetail(a.selectedTask).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
 	default:
 		a.loading = false
 		a.err = fmt.Errorf("navigation is not implemented for %s", ref.Kind)

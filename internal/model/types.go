@@ -25,6 +25,8 @@ type Service struct {
 	CreatedAt            time.Time
 	HealthStatus         string // "healthy", "degraded", "unhealthy"
 	EnableExecuteCommand bool
+	TargetGroups         []ResourceRef
+	SecurityGroups       []EC2SecurityGroupRef
 }
 
 type Deployment struct {
@@ -46,22 +48,30 @@ type ServiceEvent struct {
 }
 
 type Task struct {
-	TaskID           string // short ID extracted from ARN
-	TaskARN          string
-	TaskDefinition   string
-	Status           string // PROVISIONING, PENDING, ACTIVATING, RUNNING, DEACTIVATING, STOPPING, STOPPED
-	HealthStatus     string
-	DesiredStatus    string
-	LaunchType       string
-	StartedAt        time.Time
-	StoppedAt        time.Time
-	StopCode         string
-	StoppedReason    string
-	Containers       []Container
-	PrivateIP        string
-	AvailabilityZone string
-	Group            string // "service:name" or "family:name"
-	ExecAgentRunning bool   // whether the ExecuteCommandAgent managed agent is running
+	TaskID               string // short ID extracted from ARN
+	TaskARN              string
+	TaskDefinition       string
+	Status               string // PROVISIONING, PENDING, ACTIVATING, RUNNING, DEACTIVATING, STOPPING, STOPPED
+	HealthStatus         string
+	DesiredStatus        string
+	LaunchType           string
+	StartedAt            time.Time
+	StoppedAt            time.Time
+	StopCode             string
+	StoppedReason        string
+	Containers           []Container
+	PrivateIP            string
+	NetworkInterfaceID   string
+	SubnetID             string
+	VpcID                string
+	EC2InstanceID        string
+	ContainerInstanceARN string
+	SecurityGroups       []EC2SecurityGroupRef
+	VolumeIDs            []string
+	ResourceWarnings     []string
+	AvailabilityZone     string
+	Group                string // "service:name" or "family:name"
+	ExecAgentRunning     bool   // whether the ExecuteCommandAgent managed agent is running
 }
 
 // TaskPage is a bounded page of tasks plus the opaque ECS continuation token.

@@ -227,6 +227,20 @@ func formatTaskDetail(task model.Task) string {
 	fmt.Fprintf(&out, "Launch type       %s\n", valueOrDash(task.LaunchType))
 	fmt.Fprintf(&out, "Availability zone %s\n", valueOrDash(task.AvailabilityZone))
 	fmt.Fprintf(&out, "Private IP        %s\n", valueOrDash(task.PrivateIP))
+	fmt.Fprintf(&out, "Network interface %s\n", valueOrDash(task.NetworkInterfaceID))
+	fmt.Fprintf(&out, "Subnet            %s\n", valueOrDash(task.SubnetID))
+	fmt.Fprintf(&out, "VPC               %s\n", valueOrDash(task.VpcID))
+	fmt.Fprintf(&out, "EC2 instance      %s\n", valueOrDash(task.EC2InstanceID))
+	if len(task.SecurityGroups) > 0 {
+		groups := make([]string, 0, len(task.SecurityGroups))
+		for _, group := range task.SecurityGroups {
+			groups = append(groups, group.ID)
+		}
+		fmt.Fprintf(&out, "Security groups   %s\n", strings.Join(groups, ", "))
+	}
+	if len(task.VolumeIDs) > 0 {
+		fmt.Fprintf(&out, "EBS volumes       %s\n", strings.Join(task.VolumeIDs, ", "))
+	}
 	fmt.Fprintf(&out, "Group             %s\n", valueOrDash(task.Group))
 	fmt.Fprintf(&out, "ECS Exec agent    %s\n", yesNo(task.ExecAgentRunning))
 	fmt.Fprintf(&out, "Started           %s\n", formatTime(task.StartedAt))
@@ -240,6 +254,9 @@ func formatTaskDetail(task model.Task) string {
 		fmt.Fprintf(&out, "Stop reason       %s\n", task.StoppedReason)
 	}
 	fmt.Fprintf(&out, "Task ARN          %s\n", valueOrDash(task.TaskARN))
+	for _, warning := range task.ResourceWarnings {
+		fmt.Fprintf(&out, "Resource warning  %s\n", warning)
+	}
 
 	out.WriteString("\nCONTAINERS\n")
 	if len(task.Containers) == 0 {

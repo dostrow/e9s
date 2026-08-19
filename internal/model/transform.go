@@ -34,6 +34,16 @@ func TransformService(s types.Service) Service {
 	for _, d := range s.Deployments {
 		svc.Deployments = append(svc.Deployments, TransformDeployment(d))
 	}
+	for _, loadBalancer := range s.LoadBalancers {
+		if arn := derefStr(loadBalancer.TargetGroupArn); arn != "" {
+			svc.TargetGroups = append(svc.TargetGroups, ResourceRef{Kind: "ec2-target-group", ID: arn})
+		}
+	}
+	if s.NetworkConfiguration != nil && s.NetworkConfiguration.AwsvpcConfiguration != nil {
+		for _, groupID := range s.NetworkConfiguration.AwsvpcConfiguration.SecurityGroups {
+			svc.SecurityGroups = append(svc.SecurityGroups, EC2SecurityGroupRef{ID: groupID})
+		}
+	}
 
 	for _, e := range s.Events {
 		svc.Events = append(svc.Events, ServiceEvent{
@@ -63,26 +73,35 @@ func TransformDeployment(d types.Deployment) Deployment {
 
 func TransformTask(t types.Task) Task {
 	task := Task{
-		TaskID:           shortTaskID(derefStr(t.TaskArn)),
-		TaskARN:          derefStr(t.TaskArn),
-		TaskDefinition:   shortTaskDef(derefStr(t.TaskDefinitionArn)),
-		Status:           derefStr(t.LastStatus),
-		HealthStatus:     string(t.HealthStatus),
-		DesiredStatus:    derefStr(t.DesiredStatus),
-		LaunchType:       string(t.LaunchType),
-		StartedAt:        derefTime(t.StartedAt),
-		StoppedAt:        derefTime(t.StoppedAt),
-		StopCode:         string(t.StopCode),
-		StoppedReason:    derefStr(t.StoppedReason),
-		AvailabilityZone: derefStr(t.AvailabilityZone),
-		Group:            derefStr(t.Group),
+		TaskID:               shortTaskID(derefStr(t.TaskArn)),
+		TaskARN:              derefStr(t.TaskArn),
+		TaskDefinition:       shortTaskDef(derefStr(t.TaskDefinitionArn)),
+		Status:               derefStr(t.LastStatus),
+		HealthStatus:         string(t.HealthStatus),
+		DesiredStatus:        derefStr(t.DesiredStatus),
+		LaunchType:           string(t.LaunchType),
+		StartedAt:            derefTime(t.StartedAt),
+		StoppedAt:            derefTime(t.StoppedAt),
+		StopCode:             string(t.StopCode),
+		StoppedReason:        derefStr(t.StoppedReason),
+		AvailabilityZone:     derefStr(t.AvailabilityZone),
+		Group:                derefStr(t.Group),
+		ContainerInstanceARN: derefStr(t.ContainerInstanceArn),
 	}
 
 	for _, a := range t.Attachments {
-		if derefStr(a.Type) == "ElasticNetworkInterface" {
-			for _, d := range a.Details {
-				if derefStr(d.Name) == "privateIPv4Address" {
-					task.PrivateIP = derefStr(d.Value)
+		for _, d := range a.Details {
+			name, value := derefStr(d.Name), derefStr(d.Value)
+			switch name {
+			case "privateIPv4Address":
+				task.PrivateIP = value
+			case "networkInterfaceId":
+				task.NetworkInterfaceID = value
+			case "subnetId":
+				task.SubnetID = value
+			case "volumeId":
+				if value != "" {
+					task.VolumeIDs = append(task.VolumeIDs, value)
 				}
 			}
 		}

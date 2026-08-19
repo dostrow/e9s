@@ -10,6 +10,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 )
 
 type workspaceResourceLink struct {
@@ -155,6 +156,8 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 		w.loadEC2LoadBalancers(ref.ID)
 	case "ec2-target-group":
 		w.loadEC2TargetGroups(ref.ID)
+	case "ecs-task":
+		w.restoreECSTask(ref.ID)
 	default:
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
 	}
@@ -162,6 +165,10 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 
 func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	switch w.currentPage {
+	case pageTasks, pageStandaloneTasks, pageStoppedTasks:
+		if w.detailContent == detailTask && w.selectedTask != "" {
+			return model.ResourceRef{Kind: "ecs-task", ID: w.selectedTask}, true
+		}
 	case pageEC2Instances:
 		if w.selectedEC2Instance != "" {
 			return model.ResourceRef{Kind: "ec2-instance", ID: w.selectedEC2Instance}, true
@@ -192,6 +199,68 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 		}
 	}
 	return model.ResourceRef{}, false
+}
+
+func (w *mainWindow) renderTaskDetail(task model.Task) {
+	var parent *model.Service
+	if serviceValue, found := findService(w.allServices, w.selectedService); found {
+		parent = &serviceValue
+	}
+	refs := service.ECSTaskResourceRefs(task, parent)
+	text := formatTaskDetail(task)
+	if len(refs) > 0 {
+		var related strings.Builder
+		related.WriteString("\n\nRELATED RESOURCES")
+		for _, ref := range refs {
+			fmt.Fprintf(&related, "\n  %-22s %s", strings.ReplaceAll(ref.Kind, "-", " "), ref.ID)
+		}
+		text += related.String()
+	}
+	w.setDetail(text, detailTask)
+	links := make([]workspaceResourceLink, 0, len(refs))
+	for _, ref := range refs {
+		links = append(links, workspaceResourceLink{label: resourceRefLabel(ref), ref: ref})
+	}
+	w.setDetailResourceLinks(links)
+}
+
+func resourceRefLabel(ref model.ResourceRef) string {
+	kind := strings.ReplaceAll(ref.Kind, "-", " ")
+	name := ref.Name
+	if name == "" {
+		name = ref.ID
+	} else if name != ref.ID {
+		name += " (" + ref.ID + ")"
+	}
+	return kind + ": " + name
+}
+
+func (w *mainWindow) restoreECSTask(taskARN string) {
+	task, found := findTask(w.allTasks, taskARN)
+	if !found {
+		w.setStatus("The ECS task is no longer available in the current browser buffer", true)
+		return
+	}
+	if w.selectedService != "" {
+		w.currentPage = pageTasks
+		w.resourceStack.SetVisibleChildName(pageTasks)
+		w.setBreadcrumb(w.serviceTaskBreadcrumb() + " / " + shortID(task.TaskID))
+		w.search.SetPlaceholderText("Filter tasks…")
+	} else if w.showingStoppedTasks {
+		w.currentPage = pageStoppedTasks
+		w.resourceStack.SetVisibleChildName(pageStoppedTasks)
+		w.setBreadcrumb(w.standaloneTaskBreadcrumb() + " / " + shortID(task.TaskID))
+		w.search.SetPlaceholderText("Filter stopped tasks…")
+	} else {
+		w.currentPage = pageStandaloneTasks
+		w.resourceStack.SetVisibleChildName(pageStandaloneTasks)
+		w.setBreadcrumb(w.standaloneTaskBreadcrumb() + " / " + shortID(task.TaskID))
+		w.search.SetPlaceholderText("Filter tasks…")
+	}
+	w.selectedTask = taskARN
+	w.renderTaskDetail(task)
+	w.backButton.SetSensitive(true)
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) navigateResourceHistoryBack() bool {

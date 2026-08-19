@@ -170,17 +170,19 @@ func TestFormatServiceStoppedTasksDetail(t *testing.T) {
 func TestFormatTaskDetail(t *testing.T) {
 	exitCode := 17
 	task := model.Task{
-		TaskID:           "1234567890abcdef",
-		TaskARN:          "arn:aws:ecs:task/1234567890abcdef",
-		TaskDefinition:   "api:42",
-		Status:           "STOPPED",
-		DesiredStatus:    "STOPPED",
-		HealthStatus:     "UNHEALTHY",
-		LaunchType:       "FARGATE",
-		AvailabilityZone: "us-east-1a",
-		PrivateIP:        "10.0.0.5",
-		StopCode:         "EssentialContainerExited",
-		StoppedReason:    "container failed",
+		TaskID:             "1234567890abcdef",
+		TaskARN:            "arn:aws:ecs:task/1234567890abcdef",
+		TaskDefinition:     "api:42",
+		Status:             "STOPPED",
+		DesiredStatus:      "STOPPED",
+		HealthStatus:       "UNHEALTHY",
+		LaunchType:         "FARGATE",
+		AvailabilityZone:   "us-east-1a",
+		PrivateIP:          "10.0.0.5",
+		NetworkInterfaceID: "eni-1", VpcID: "vpc-1", SubnetID: "subnet-1", EC2InstanceID: "i-1",
+		SecurityGroups: []model.EC2SecurityGroupRef{{ID: "sg-1"}}, VolumeIDs: []string{"vol-1"},
+		StopCode:      "EssentialContainerExited",
+		StoppedReason: "container failed",
 		Containers: []model.Container{{
 			Name: "api", Image: "example/api:42", Status: "STOPPED",
 			ExitCode: &exitCode, Reason: "process exited", LogGroup: "/ecs/api",
@@ -188,7 +190,7 @@ func TestFormatTaskDetail(t *testing.T) {
 	}
 
 	got := formatTaskDetail(task)
-	for _, want := range []string{"1234567890abcdef", "api:42", "10.0.0.5", "EssentialContainerExited", "container failed", "example/api:42", "Exit code    17", "/ecs/api"} {
+	for _, want := range []string{"1234567890abcdef", "api:42", "10.0.0.5", "eni-1", "vpc-1", "subnet-1", "i-1", "sg-1", "vol-1", "EssentialContainerExited", "container failed", "example/api:42", "Exit code    17", "/ecs/api"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("formatTaskDetail() missing %q:\n%s", want, got)
 		}

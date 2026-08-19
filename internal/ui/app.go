@@ -654,7 +654,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.task != nil {
 			a.selectedTask = msg.task
-			a.detailView = views.NewTaskDetail(msg.task)
+			a.detailView = a.newTaskDetail(msg.task)
 			a.detailView = a.detailView.SetSize(a.width, a.height-3)
 			a.lastRefresh = time.Now()
 		}
@@ -1857,9 +1857,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if k == a.kb.EC2Resource {
 				return a.switchEC2Resource()
 			}
-			if k == a.kb.OpenResource {
-				return a.openEC2ResourcePicker()
-			}
+		}
+		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewTaskDetail) {
+			return a.openEC2ResourcePicker()
 		}
 		switch a.state {
 		case viewClusters:
@@ -2647,7 +2647,7 @@ func (a App) helpText() string {
 	case viewTasks, viewStandaloneTasks:
 		primary = "[enter] detail"
 	case viewTaskDetail:
-		primary = "[E] env vars"
+		primary = "[E] env vars  [o] linked resources"
 	case viewTaskDefs:
 		primary = "[enter] detail"
 	case viewTaskDefDetail:
@@ -2815,6 +2815,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.EnvVars, "View environment variables"},
 			{kb.TaskLogs, "Tail logs"},
 			{kb.Metrics, "Task CPU/memory metrics"},
+			{kb.OpenResource, "Open linked resource"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -3209,7 +3210,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 			a.selectedTask = t
 			a.taskDetailReturnState = viewTasks
 			a.state = viewTaskDetail
-			a.detailView = views.NewTaskDetail(t)
+			a.detailView = a.newTaskDetail(t)
 			return a, nil
 		}
 	case viewTaskDefs:
@@ -3219,7 +3220,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 			a.selectedTask = t
 			a.taskDetailReturnState = viewStandaloneTasks
 			a.state = viewTaskDetail
-			a.detailView = views.NewTaskDetail(t)
+			a.detailView = a.newTaskDetail(t)
 			return a, nil
 		}
 	case viewSSM:

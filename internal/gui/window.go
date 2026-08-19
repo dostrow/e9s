@@ -1917,7 +1917,7 @@ func (w *mainWindow) openTaskFromFiltered(position uint) {
 	} else {
 		w.setBreadcrumb(w.serviceTaskBreadcrumb() + " / " + shortID(task.TaskID))
 	}
-	w.setDetail(formatTaskDetail(task), detailTask)
+	w.renderTaskDetail(task)
 }
 
 func (w *mainWindow) openClusterByName(name string) {
@@ -2357,7 +2357,7 @@ func (w *mainWindow) refreshStandaloneTasks(foreground bool) {
 				return
 			}
 			if w.detailContent == detailTask {
-				w.setDetail(formatTaskDetail(task), detailTask)
+				w.renderTaskDetail(task)
 			}
 		})
 	}()
@@ -2420,7 +2420,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 				return
 			}
 			if w.detailContent == detailTask {
-				w.setDetail(formatTaskDetail(task), detailTask)
+				w.renderTaskDetail(task)
 			}
 		})
 	}()

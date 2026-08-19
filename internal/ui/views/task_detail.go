@@ -12,10 +12,11 @@ import (
 )
 
 type TaskDetailModel struct {
-	task   *model.Task
-	scroll int
-	width  int
-	height int
+	task      *model.Task
+	resources []model.ResourceRef
+	scroll    int
+	width     int
+	height    int
 }
 
 func NewTaskDetail(task *model.Task) TaskDetailModel {
@@ -69,6 +70,20 @@ func (m TaskDetailModel) lines() []string {
 	lines = append(lines, fmt.Sprintf("  %-20s %s", "Task Definition:", t.TaskDefinition))
 	lines = append(lines, fmt.Sprintf("  %-20s %s", "Launch Type:", t.LaunchType))
 	lines = append(lines, fmt.Sprintf("  %-20s %s", "Private IP:", t.PrivateIP))
+	lines = append(lines, fmt.Sprintf("  %-20s %s", "Network Interface:", t.NetworkInterfaceID))
+	lines = append(lines, fmt.Sprintf("  %-20s %s", "Subnet:", t.SubnetID))
+	lines = append(lines, fmt.Sprintf("  %-20s %s", "VPC:", t.VpcID))
+	lines = append(lines, fmt.Sprintf("  %-20s %s", "EC2 Instance:", t.EC2InstanceID))
+	if len(t.SecurityGroups) > 0 {
+		groups := make([]string, 0, len(t.SecurityGroups))
+		for _, group := range t.SecurityGroups {
+			groups = append(groups, group.ID)
+		}
+		lines = append(lines, fmt.Sprintf("  %-20s %s", "Security Groups:", strings.Join(groups, ", ")))
+	}
+	if len(t.VolumeIDs) > 0 {
+		lines = append(lines, fmt.Sprintf("  %-20s %s", "EBS Volumes:", strings.Join(t.VolumeIDs, ", ")))
+	}
 	lines = append(lines, fmt.Sprintf("  %-20s %s", "Group:", t.Group))
 
 	if !t.StartedAt.IsZero() {
@@ -82,6 +97,9 @@ func (m TaskDetailModel) lines() []string {
 	}
 	if t.StoppedReason != "" {
 		lines = append(lines, fmt.Sprintf("  %-20s %s", "Stop Reason:", t.StoppedReason))
+	}
+	for _, warning := range t.ResourceWarnings {
+		lines = append(lines, fmt.Sprintf("  %-20s %s", "Resource Warning:", warning))
 	}
 
 	if len(t.Containers) > 0 {
@@ -122,6 +140,13 @@ func (m TaskDetailModel) lines() []string {
 			}
 		}
 	}
+	if len(m.resources) > 0 {
+		lines = append(lines, "", theme.TitleStyle.Render("  Linked Resources"), "")
+		for _, ref := range m.resources {
+			lines = append(lines, fmt.Sprintf("  %-22s %s", strings.ReplaceAll(ref.Kind, "-", " ")+":", ref.ID))
+		}
+		lines = append(lines, "", "  [o] open linked resource")
+	}
 
 	return lines
 }
@@ -137,5 +162,12 @@ func (m TaskDetailModel) visibleLines() int {
 func (m TaskDetailModel) SetSize(w, h int) TaskDetailModel {
 	m.width = w
 	m.height = h
+	return m
+}
+
+func (m TaskDetailModel) Task() *model.Task { return m.task }
+
+func (m TaskDetailModel) SetResourceRefs(refs []model.ResourceRef) TaskDetailModel {
+	m.resources = append([]model.ResourceRef(nil), refs...)
 	return m
 }
