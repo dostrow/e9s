@@ -7,13 +7,13 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type SecretsModel struct {
-	secrets     []aws.Secret
+	secrets     []model.Secret
 	nameFilter  string
 	cursor      int
 	filter      string
@@ -131,12 +131,12 @@ func (m SecretsModel) View() string {
 	return b.String()
 }
 
-func (m SecretsModel) filteredSecrets() []aws.Secret {
+func (m SecretsModel) filteredSecrets() []model.Secret {
 	if m.filter == "" {
 		return m.secrets
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.Secret
+	var out []model.Secret
 	for _, s := range m.secrets {
 		if strings.Contains(strings.ToLower(s.Name), lf) ||
 			strings.Contains(strings.ToLower(s.Description), lf) {
@@ -146,7 +146,7 @@ func (m SecretsModel) filteredSecrets() []aws.Secret {
 	return out
 }
 
-func (m SecretsModel) SetSecrets(secrets []aws.Secret) SecretsModel {
+func (m SecretsModel) SetSecrets(secrets []model.Secret) SecretsModel {
 	m.secrets = secrets
 	m.loaded = true
 	filtered := m.filteredSecrets()
@@ -156,7 +156,7 @@ func (m SecretsModel) SetSecrets(secrets []aws.Secret) SecretsModel {
 	return m
 }
 
-func (m SecretsModel) SelectedSecret() *aws.Secret {
+func (m SecretsModel) SelectedSecret() *model.Secret {
 	filtered := m.filteredSecrets()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

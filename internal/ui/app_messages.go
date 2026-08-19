@@ -125,7 +125,7 @@ type ssmUpdatedMsg struct {
 
 // --- Secrets Manager Messages ---
 
-type smSecretsLoadedMsg struct{ secrets []e9saws.Secret }
+type smSecretsLoadedMsg struct{ secrets []model.Secret }
 type smValueReadyMsg struct {
 	name  string
 	value string
@@ -141,7 +141,7 @@ type smEditedMsg struct {
 }
 type smUpdatedMsg struct {
 	name    string
-	secrets []e9saws.Secret
+	secrets []model.Secret
 }
 type smCloneReadyMsg struct {
 	sourceName string
