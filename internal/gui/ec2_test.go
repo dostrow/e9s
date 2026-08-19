@@ -48,3 +48,31 @@ func TestFormatEC2DetailIncludesInfrastructureSections(t *testing.T) {
 		}
 	}
 }
+
+func TestEC2ActionAvailabilityTracksInstanceState(t *testing.T) {
+	tests := []struct {
+		action string
+		state  string
+		want   bool
+	}{
+		{action: "start", state: "stopped", want: true},
+		{action: "start", state: "running"},
+		{action: "stop", state: "running", want: true},
+		{action: "reboot", state: "running", want: true},
+		{action: "terminate", state: "stopped", want: true},
+		{action: "terminate", state: "terminated"},
+	}
+	for _, test := range tests {
+		if got := ec2ActionAllowed(test.action, test.state); got != test.want {
+			t.Errorf("ec2ActionAllowed(%q, %q) = %t, want %t", test.action, test.state, got, test.want)
+		}
+	}
+}
+
+func TestFormatEC2ConsoleOutputNormalizesLineEndings(t *testing.T) {
+	instance := model.EC2InstanceDetail{EC2Instance: model.EC2Instance{InstanceID: "i-123", Name: "api", State: "running"}}
+	got := formatEC2ConsoleOutput(instance, "booting\r\nready\r\n")
+	if strings.Contains(got, "\r") || !strings.Contains(got, "booting\nready") {
+		t.Fatalf("formatEC2ConsoleOutput() = %q", got)
+	}
+}

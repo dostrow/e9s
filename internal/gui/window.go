@@ -53,6 +53,7 @@ const (
 	detailLambda         = "lambda-function"
 	detailCodeBuild      = "codebuild-build"
 	detailEC2            = "ec2-instance"
+	detailEC2Console     = "ec2-console"
 )
 
 type mainWindow struct {
@@ -132,6 +133,8 @@ type mainWindow struct {
 	filteredEC2Instances        []model.EC2Instance
 	selectedEC2Instance         string
 	ec2Detail                   *model.EC2InstanceDetail
+	ec2ViewMode                 string
+	ec2ActionPending            bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -221,6 +224,13 @@ type mainWindow struct {
 	codeBuildLogsButton         *gtk.Button
 	codeBuildSearchLogsButton   *gtk.Button
 	codeBuildStopButton         *gtk.Button
+	ec2DetailsButton            *gtk.Button
+	ec2ConsoleButton            *gtk.Button
+	ec2SessionButton            *gtk.Button
+	ec2StartButton              *gtk.Button
+	ec2StopButton               *gtk.Button
+	ec2RebootButton             *gtk.Button
+	ec2TerminateButton          *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -293,6 +303,7 @@ type mainWindow struct {
 	terminalTask                model.Task
 	terminalContainer           string
 	terminalCommand             string
+	terminalDescription         string
 	showingTerminal             bool
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
@@ -579,6 +590,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.codeBuildStopButton = gtk.NewButtonWithLabel("Stop build…")
 	w.codeBuildStopButton.AddCSSClass("destructive-action")
 	w.codeBuildStopButton.ConnectClicked(w.confirmStopCodeBuild)
+	w.ec2DetailsButton = gtk.NewButtonWithLabel("Details")
+	w.ec2DetailsButton.ConnectClicked(w.showEC2Details)
+	w.ec2ConsoleButton = gtk.NewButtonWithLabel("Console output")
+	w.ec2ConsoleButton.ConnectClicked(w.loadEC2ConsoleOutput)
+	w.ec2SessionButton = gtk.NewButtonWithLabel("Session Manager")
+	w.ec2SessionButton.ConnectClicked(w.openEC2Session)
+	w.ec2StartButton = gtk.NewButtonWithLabel("Start…")
+	w.ec2StartButton.ConnectClicked(func() { w.confirmEC2Mutation("start") })
+	w.ec2StopButton = gtk.NewButtonWithLabel("Stop…")
+	w.ec2StopButton.ConnectClicked(func() { w.confirmEC2Mutation("stop") })
+	w.ec2RebootButton = gtk.NewButtonWithLabel("Reboot…")
+	w.ec2RebootButton.ConnectClicked(func() { w.confirmEC2Mutation("reboot") })
+	w.ec2TerminateButton = gtk.NewButtonWithLabel("Terminate…")
+	w.ec2TerminateButton.AddCSSClass("destructive-action")
+	w.ec2TerminateButton.ConnectClicked(func() { w.confirmEC2Mutation("terminate") })
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -656,6 +682,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.codeBuildLogsButton)
 	header.Append(w.codeBuildSearchLogsButton)
 	header.Append(w.codeBuildStopButton)
+	header.Append(w.ec2DetailsButton)
+	header.Append(w.ec2ConsoleButton)
+	header.Append(w.ec2SessionButton)
+	header.Append(w.ec2StartButton)
+	header.Append(w.ec2StopButton)
+	header.Append(w.ec2RebootButton)
+	header.Append(w.ec2TerminateButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1009,7 +1042,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "modes", []string{"<Control>p"}, w.showModulePicker)
 	w.addAction(app, "help", nil, func() {
 		if w.showingTerminal {
-			w.setStatus("Disconnect ECS Exec before opening help", false)
+			w.setStatus("Disconnect the terminal session before opening help", false)
 			return
 		}
 		if w.showingEditor {
@@ -1344,6 +1377,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.codeBuildDetail = nil
 	w.codeBuildActionPending = false
 	w.ec2Detail = nil
+	w.ec2ViewMode = ""
+	w.ec2ActionPending = false
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1971,9 +2006,15 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	if w.currentPage == pageEC2Instances && w.ec2ActionPending {
+		if foreground {
+			w.setStatus("An EC2 operation is still pending", false)
+		}
+		return
+	}
 	if w.showingTerminal {
 		if foreground {
-			w.setStatus("Disconnect ECS Exec before refreshing", false)
+			w.setStatus("Disconnect the terminal session before refreshing", false)
 		}
 		return
 	}
@@ -2510,6 +2551,32 @@ func (w *mainWindow) updateActionSensitivity() {
 	canStopCodeBuild := codeBuildDetailReady && w.codeBuildDetail.Status == "IN_PROGRESS"
 	w.codeBuildStopButton.SetVisible(canStopCodeBuild)
 	w.codeBuildStopButton.SetSensitive(canStopCodeBuild && !w.codeBuildActionPending && w.options.CodeBuild != nil)
+	ec2Page := w.currentPage == pageEC2Instances
+	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
+	ec2State := ""
+	if ec2Ready {
+		ec2State = normalizedEC2State(w.ec2Detail.State)
+	}
+	ec2ActionsReady := ec2Ready && !w.ec2ActionPending && w.options.EC2 != nil
+	w.ec2DetailsButton.SetVisible(ec2Ready && w.ec2ViewMode == ec2ConsoleMode)
+	w.ec2DetailsButton.SetSensitive(ec2ActionsReady)
+	w.ec2ConsoleButton.SetVisible(ec2Ready && w.ec2ViewMode != ec2ConsoleMode)
+	w.ec2ConsoleButton.SetSensitive(ec2ActionsReady)
+	w.ec2SessionButton.SetVisible(ec2Ready && ec2State == "running")
+	w.ec2SessionButton.SetSensitive(ec2ActionsReady && vteAvailable())
+	if ec2Ready && ec2State == "running" && !vteAvailable() {
+		w.ec2SessionButton.SetTooltipText("Rebuild with the gui and vte tags to enable the embedded terminal")
+	} else {
+		w.ec2SessionButton.SetTooltipText("")
+	}
+	w.ec2StartButton.SetVisible(ec2Ready && ec2State == "stopped")
+	w.ec2StartButton.SetSensitive(ec2ActionsReady && ec2State == "stopped")
+	w.ec2StopButton.SetVisible(ec2Ready && ec2State == "running")
+	w.ec2StopButton.SetSensitive(ec2ActionsReady && ec2State == "running")
+	w.ec2RebootButton.SetVisible(ec2Ready && ec2State == "running")
+	w.ec2RebootButton.SetSensitive(ec2ActionsReady && ec2State == "running")
+	w.ec2TerminateButton.SetVisible(ec2Ready && ec2CanTerminateState(ec2State))
+	w.ec2TerminateButton.SetSensitive(ec2ActionsReady && ec2CanTerminateState(ec2State))
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

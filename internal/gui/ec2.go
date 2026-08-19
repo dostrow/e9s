@@ -3,14 +3,22 @@
 package gui
 
 import (
+	"context"
 	"fmt"
+	"html"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/service"
+)
+
+const (
+	ec2DetailMode  = "detail"
+	ec2ConsoleMode = "console"
 )
 
 func (w *mainWindow) openEC2Module() {
@@ -31,6 +39,7 @@ func (w *mainWindow) loadEC2Instances() {
 	w.selectedService = ""
 	w.selectedTask = ""
 	w.selectedTaskDefinition = nil
+	w.ec2ViewMode = ""
 	w.updateActionSensitivity()
 	w.setBreadcrumb("EC2 / Instances")
 	w.backButton.SetSensitive(false)
@@ -83,6 +92,7 @@ func (w *mainWindow) refreshEC2(foreground bool) {
 			if !found {
 				w.selectedEC2Instance = ""
 				w.ec2Detail = nil
+				w.ec2ViewMode = ""
 				w.setBreadcrumb("EC2 / Instances")
 				w.setDetail("The selected EC2 instance is no longer available.\n\n"+ec2ListSummary(len(instances)), detailIntro)
 				w.updateActionSensitivity()
@@ -90,9 +100,15 @@ func (w *mainWindow) refreshEC2(foreground bool) {
 			}
 			if detail != nil {
 				w.ec2Detail = detail
-				w.setDetail(formatEC2Detail(*detail), detailEC2)
+				if w.ec2ViewMode != ec2ConsoleMode {
+					w.ec2ViewMode = ec2DetailMode
+					w.setDetail(formatEC2Detail(*detail), detailEC2)
+				}
 			} else {
-				w.setDetail(formatEC2InstanceSummary(instance), detailEC2)
+				if w.ec2ViewMode != ec2ConsoleMode {
+					w.ec2ViewMode = ec2DetailMode
+					w.setDetail(formatEC2InstanceSummary(instance), detailEC2)
+				}
 			}
 			w.updateActionSensitivity()
 		})
@@ -104,6 +120,7 @@ func (w *mainWindow) clearEC2Browser() {
 	w.filteredEC2Instances = nil
 	w.selectedEC2Instance = ""
 	w.ec2Detail = nil
+	w.ec2ViewMode = ""
 	if w.ec2Table != nil {
 		w.ec2Table.clear()
 	}
@@ -132,6 +149,7 @@ func (w *mainWindow) selectEC2InstanceRow() {
 		}
 		w.selectedEC2Instance = ""
 		w.ec2Detail = nil
+		w.ec2ViewMode = ""
 		w.setBreadcrumb("EC2 / Instances")
 		w.setDetail(ec2ListSummary(len(w.allEC2Instances)), detailIntro)
 		w.updateActionSensitivity()
@@ -143,6 +161,7 @@ func (w *mainWindow) selectEC2InstanceRow() {
 	}
 	w.selectedEC2Instance = instance.InstanceID
 	w.ec2Detail = nil
+	w.ec2ViewMode = ec2DetailMode
 	w.setBreadcrumb("EC2 / Instances / " + ec2DisplayName(instance))
 	w.setDetail("Loading instance details…\n\n"+formatEC2InstanceSummary(instance), detailEC2)
 	w.updateActionSensitivity()
@@ -161,21 +180,211 @@ func (w *mainWindow) openEC2InstanceAt(position uint) {
 }
 
 func (w *mainWindow) loadEC2Detail(instanceID string) {
-	if instanceID == "" || w.options.EC2 == nil {
+	if instanceID == "" || w.options.EC2 == nil || w.ec2ActionPending {
 		return
 	}
+	w.ec2ActionPending = true
+	w.updateActionSensitivity()
 	ctx, generation := w.startRequest("Loading EC2 instance " + instanceID + "…")
 	go func() {
 		detail, err := w.options.EC2.Detail(ctx, instanceID)
-		w.finishRequest(ctx, generation, err, func() {
+		w.finishEC2Request(ctx, generation, err, "Loaded EC2 instance "+instanceID, true, func() {
 			if w.currentPage != pageEC2Instances || w.selectedEC2Instance != instanceID {
 				return
 			}
 			w.ec2Detail = detail
+			w.ec2ViewMode = ec2DetailMode
 			w.setDetail(formatEC2Detail(*detail), detailEC2)
-			w.updateActionSensitivity()
 		})
 	}()
+}
+
+func (w *mainWindow) finishEC2Request(ctx context.Context, generation uint64, err error, success string, showDetailError bool, apply func()) {
+	glib.IdleAdd(func() {
+		if ctx.Err() != nil || generation != w.generation {
+			return
+		}
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.ec2ActionPending = false
+		w.updateActionSensitivity()
+		if err != nil {
+			w.setStatus(err.Error(), true)
+			if showDetailError {
+				w.setDetail("ERROR\n\n"+err.Error(), detailError)
+			}
+			return
+		}
+		w.lastSuccessfulLoad = time.Now()
+		if success == "" {
+			success = "Updated " + w.lastSuccessfulLoad.Format("15:04:05")
+		}
+		w.setStatus(success, false)
+		if apply != nil {
+			apply()
+		}
+		w.updateActionSensitivity()
+	})
+}
+
+func (w *mainWindow) showEC2Details() {
+	if w.ec2Detail == nil || w.ec2Detail.InstanceID != w.selectedEC2Instance || w.ec2ActionPending {
+		return
+	}
+	w.ec2ViewMode = ec2DetailMode
+	w.setDetail(formatEC2Detail(*w.ec2Detail), detailEC2)
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) loadEC2ConsoleOutput() {
+	detail := w.ec2Detail
+	if detail == nil || detail.InstanceID != w.selectedEC2Instance || w.ec2ActionPending || w.options.EC2 == nil {
+		return
+	}
+	instanceID := detail.InstanceID
+	w.ec2ActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Loading console output for " + instanceID + "…")
+	go func() {
+		output, err := w.options.EC2.ConsoleOutput(ctx, instanceID)
+		w.finishEC2Request(ctx, generation, err, "Loaded console output for "+instanceID, false, func() {
+			if w.currentPage != pageEC2Instances || w.selectedEC2Instance != instanceID {
+				return
+			}
+			w.ec2ViewMode = ec2ConsoleMode
+			w.setDetail(formatEC2ConsoleOutput(*detail, output), detailEC2Console)
+		})
+	}()
+}
+
+func (w *mainWindow) openEC2Session() {
+	detail := w.ec2Detail
+	if detail == nil || detail.InstanceID != w.selectedEC2Instance || normalizedEC2State(detail.State) != "running" ||
+		w.ec2ActionPending || w.options.EC2 == nil || !vteAvailable() {
+		return
+	}
+	instanceID := detail.InstanceID
+	displayName := ec2DisplayName(detail.EC2Instance)
+	w.ec2ActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Starting Session Manager for " + instanceID + "…")
+	go func() {
+		launch, err := w.options.EC2.PrepareSession(ctx, instanceID, detail.State)
+		w.finishEC2Request(ctx, generation, err, "Session Manager connected to "+displayName, false, func() {
+			if err := w.terminal.Spawn(launch.Executable, launch.Args); err != nil {
+				w.setStatus(err.Error(), true)
+				return
+			}
+			w.showingLogs = false
+			w.showingMetrics = false
+			w.showingTerminal = true
+			w.terminalDescription = "Session Manager for " + displayName + " (" + instanceID + ")"
+			w.terminalTitle.SetLabel("Session Manager — " + displayName + " — " + instanceID)
+			w.detailStack.SetVisibleChildName("terminal")
+		})
+	}()
+}
+
+func (w *mainWindow) confirmEC2Mutation(action string) {
+	detail := w.ec2Detail
+	if detail == nil || detail.InstanceID != w.selectedEC2Instance || w.ec2ActionPending || w.options.EC2 == nil ||
+		!ec2ActionAllowed(action, normalizedEC2State(detail.State)) {
+		return
+	}
+	name := ec2DisplayName(detail.EC2Instance)
+	messageType := gtk.MessageQuestion
+	secondary := fmt.Sprintf("The instance is currently %s.", valueOrDash(detail.State))
+	if action == "terminate" {
+		messageType = gtk.MessageWarning
+		secondary = "Termination cannot be undone. Attached storage may be deleted according to its delete-on-termination settings."
+	}
+	verb := strings.ToUpper(action[:1]) + action[1:]
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, messageType, gtk.ButtonsYesNo)
+	dialog.SetTitle(verb + " EC2 instance")
+	dialog.SetMarkup(fmt.Sprintf("%s <b>%s</b> (%s)?", verb, html.EscapeString(name), html.EscapeString(detail.InstanceID)))
+	dialog.SetObjectProperty("secondary-text", secondary)
+	dialog.SetDefaultResponse(int(gtk.ResponseNo))
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runEC2Mutation(action, detail.InstanceID, detail.State)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runEC2Mutation(action, instanceID, state string) {
+	if w.ec2ActionPending || w.options.EC2 == nil {
+		return
+	}
+	if w.ec2Detail != nil {
+		w.ec2ViewMode = ec2DetailMode
+		w.setDetail(formatEC2Detail(*w.ec2Detail), detailEC2)
+	}
+	verb := strings.ToUpper(action[:1]) + action[1:]
+	w.ec2ActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest(ec2ActionProgress(action) + " EC2 instance " + instanceID + "…")
+	go func() {
+		var err error
+		switch action {
+		case "start":
+			err = w.options.EC2.Start(ctx, instanceID, state)
+		case "stop":
+			err = w.options.EC2.Stop(ctx, instanceID, state)
+		case "reboot":
+			err = w.options.EC2.Reboot(ctx, instanceID, state)
+		case "terminate":
+			err = w.options.EC2.Terminate(ctx, instanceID, state)
+		default:
+			err = fmt.Errorf("unsupported EC2 action %q", action)
+		}
+		w.finishEC2Request(ctx, generation, err, verb+" requested for "+instanceID, false, func() {
+			w.refreshEC2(true)
+		})
+	}()
+}
+
+func ec2ActionProgress(action string) string {
+	switch action {
+	case "start":
+		return "Starting"
+	case "stop":
+		return "Stopping"
+	case "reboot":
+		return "Rebooting"
+	case "terminate":
+		return "Terminating"
+	default:
+		return "Updating"
+	}
+}
+
+func normalizedEC2State(state string) string {
+	return strings.ToLower(strings.TrimSpace(state))
+}
+
+func ec2CanTerminateState(state string) bool {
+	switch normalizedEC2State(state) {
+	case "pending", "running", "stopping", "stopped":
+		return true
+	default:
+		return false
+	}
+}
+
+func ec2ActionAllowed(action, state string) bool {
+	switch action {
+	case "start":
+		return state == "stopped"
+	case "stop", "reboot":
+		return state == "running"
+	case "terminate":
+		return ec2CanTerminateState(state)
+	default:
+		return false
+	}
 }
 
 func findEC2Instance(instances []model.EC2Instance, instanceID string) (model.EC2Instance, bool) {
@@ -224,6 +433,15 @@ func formatEC2InstanceSummary(instance model.EC2Instance) string {
 		valueOrDash(instance.Type), valueOrDash(instance.AZ), valueOrDash(instance.PrivateIP),
 		valueOrDash(instance.PublicIP), formatTime(instance.LaunchTime), valueOrDash(instance.AMI),
 		valueOrDash(instance.IAMRole))
+}
+
+func formatEC2ConsoleOutput(instance model.EC2InstanceDetail, output string) string {
+	output = sanitizeLogText(output)
+	if strings.TrimSpace(output) == "" {
+		output = "(no console output available)"
+	}
+	return fmt.Sprintf("EC2 SERIAL CONSOLE OUTPUT\n\nInstance  %s\nID        %s\nState     %s\n\n%s",
+		ec2DisplayName(instance.EC2Instance), instance.InstanceID, valueOrDash(instance.State), output)
 }
 
 func formatEC2Detail(detail model.EC2InstanceDetail) string {

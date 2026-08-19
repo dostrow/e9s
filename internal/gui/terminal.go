@@ -14,7 +14,7 @@ func (w *mainWindow) buildTerminalPane() gtk.Widgetter {
 	back := gtk.NewButtonWithLabel("Disconnect")
 	back.AddCSSClass("destructive-action")
 	back.ConnectClicked(w.closeTerminal)
-	w.terminalTitle = gtk.NewLabel("ECS Exec")
+	w.terminalTitle = gtk.NewLabel("Terminal session")
 	w.terminalTitle.SetXAlign(0)
 	w.terminalTitle.SetHExpand(true)
 	w.terminalTitle.AddCSSClass("breadcrumb")
@@ -131,6 +131,7 @@ func (w *mainWindow) startExec(task model.Task, container, command string) {
 			w.terminalTask = task
 			w.terminalContainer = container
 			w.terminalCommand = command
+			w.terminalDescription = "ECS Exec for " + shortID(task.TaskID) + " / " + container
 			w.terminalTitle.SetLabel(fmt.Sprintf("ECS Exec — %s / %s — %s", shortID(task.TaskID), container, command))
 			w.detailStack.SetVisibleChildName("terminal")
 		})
@@ -142,8 +143,10 @@ func (w *mainWindow) closeTerminal() {
 		return
 	}
 	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageQuestion, gtk.ButtonsYesNo)
-	dialog.SetTitle("Disconnect ECS Exec")
-	dialog.SetMarkup("Disconnect the ECS Exec session for <b>" + html.EscapeString(shortID(w.terminalTask.TaskID)) + "</b>?")
+	dialog.SetTitle("Disconnect terminal session")
+	description := valueOrDash(w.terminalDescription)
+	dialog.SetMarkup("Disconnect <b>" + html.EscapeString(description) + "</b>?")
+	dialog.SetDefaultResponse(int(gtk.ResponseNo))
 	dialog.SetDestroyWithParent(true)
 	dialog.ConnectResponse(func(response int) {
 		dialog.Destroy()
@@ -159,8 +162,13 @@ func (w *mainWindow) closeTerminalNow(updateStatus bool) {
 		w.terminal.Stop()
 	}
 	w.showingTerminal = false
+	description := w.terminalDescription
+	w.terminalDescription = ""
 	w.detailStack.SetVisibleChildName("detail")
 	if updateStatus {
-		w.setStatus("ECS Exec disconnected", false)
+		if description == "" {
+			description = "Terminal session"
+		}
+		w.setStatus(description+" disconnected", false)
 	}
 }
