@@ -39,6 +39,23 @@ func (a App) saveSSMPrefix() (App, tea.Cmd) {
 	return a, nil
 }
 
+func (a App) viewSSMParam() (App, tea.Cmd) {
+	parameter := a.ssmView.SelectedParam()
+	if parameter == nil {
+		return a, nil
+	}
+	ssmService := a.ssm
+	ctx := a.ctx
+	name := parameter.Name
+	return a, func() tea.Msg {
+		detail, err := ssmService.Detail(ctx, name)
+		if err != nil {
+			return errMsg{err}
+		}
+		return ssmValueReadyMsg{name: detail.Name, value: detail.Value}
+	}
+}
+
 func (a App) doSaveSSMPrefix(name string) (App, tea.Cmd) {
 	prefix := a.ssmView.PathPrefix()
 	a.cfg.AddSSMPrefix(name, prefix)

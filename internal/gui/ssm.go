@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
@@ -93,7 +95,12 @@ func (w *mainWindow) refreshSSM(foreground bool) {
 				return
 			}
 			if w.detailContent == detailSSM {
-				w.setDetail(formatSSMParameterSummary(parameter), detailSSM)
+				if w.ssmDetail != nil && w.ssmDetail.Name == parameter.Name && w.ssmDetail.Version == parameter.Version {
+					w.setDetail(formatSSMParameterDetail(*w.ssmDetail), detailSSM)
+				} else {
+					w.ssmDetail = nil
+					w.setDetail(formatSSMParameterSummary(parameter), detailSSM)
+				}
 			}
 		})
 	}()
@@ -124,9 +131,19 @@ func (w *mainWindow) selectSSMParameterRow() {
 	}
 	position := w.ssmTable.selection.Selected()
 	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredSSMParameters) {
+		if w.selectedSSMParameter != "" {
+			w.resetWorkspaceForBrowserChange()
+			w.selectedSSMParameter = ""
+			w.setBreadcrumb(ssmBreadcrumb(w.activeSSMPrefix, w.ssmPath, ""))
+			w.setDetail(ssmListSummary(w.ssmPath, len(w.allSSMParameters)), detailIntro)
+			w.updateActionSensitivity()
+		}
 		return
 	}
 	parameter := w.filteredSSMParameters[position]
+	if w.selectedSSMParameter != parameter.Name {
+		w.resetWorkspaceForBrowserChange()
+	}
 	w.selectedSSMParameter = parameter.Name
 	w.setBreadcrumb(ssmBreadcrumb(w.activeSSMPrefix, w.ssmPath, parameter.Name))
 	w.setDetail(formatSSMParameterSummary(parameter), detailSSM)
@@ -138,6 +155,7 @@ func (w *mainWindow) openSSMParameterAt(position uint) {
 		return
 	}
 	w.ssmTable.selection.SetSelected(position)
+	w.promptViewSSMParameter()
 }
 
 func filterSSMParameters(parameters []model.Parameter, query string) []model.Parameter {
@@ -196,6 +214,198 @@ func ssmListSummary(path string, count int) string {
 func formatSSMParameterSummary(parameter model.Parameter) string {
 	return fmt.Sprintf("SSM PARAMETER\n\nName       %s\nType       %s\nVersion    %d\nModified   %s\n\nValue\n%s",
 		parameter.Name, parameter.Type, parameter.Version, formatTime(parameter.LastModified), ssmListValue(parameter))
+}
+
+func formatSSMParameterDetail(parameter model.Parameter) string {
+	return fmt.Sprintf("SSM PARAMETER\n\nName       %s\nType       %s\nVersion    %d\nModified   %s\n\nValue\n%s",
+		parameter.Name, parameter.Type, parameter.Version, formatTime(parameter.LastModified), parameter.Value)
+}
+
+func (w *mainWindow) promptViewSSMParameter() {
+	parameter, found := findSSMParameter(w.allSSMParameters, w.selectedSSMParameter)
+	if !found || w.ssmActionPending || w.options.SSM == nil {
+		return
+	}
+	if parameter.Type != "SecureString" {
+		w.loadSSMParameterDetail(parameter.Name, func(detail *model.Parameter) {
+			w.setDetail(formatSSMParameterDetail(*detail), detailSSM)
+		})
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Reveal SecureString value")
+	dialog.SetMarkup("Reveal the decrypted value of <b>" + html.EscapeString(parameter.Name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "The plaintext value will remain visible in the Workspace Pane until you change context or dismiss it by selecting another parameter.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.loadSSMParameterDetail(parameter.Name, func(detail *model.Parameter) {
+				w.setDetail(formatSSMParameterDetail(*detail), detailSSM)
+			})
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) loadSSMParameterDetail(name string, apply func(*model.Parameter)) {
+	if name == "" || w.options.SSM == nil || w.ssmActionPending {
+		return
+	}
+	w.ssmActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Reading SSM parameter " + name + "…")
+	go func() {
+		detail, err := w.options.SSM.Detail(ctx, name)
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.ssmActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if w.currentPage != pageSSM || w.selectedSSMParameter != name {
+				return
+			}
+			w.ssmDetail = detail
+			apply(detail)
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			w.setStatus("Loaded SSM parameter "+name, false)
+		})
+	}()
+}
+
+func (w *mainWindow) editSelectedSSMParameter() {
+	parameter, found := findSSMParameter(w.allSSMParameters, w.selectedSSMParameter)
+	if !found || w.ssmActionPending || w.options.SSM == nil {
+		return
+	}
+	w.loadSSMParameterDetail(parameter.Name, w.showSSMValueEditor)
+}
+
+func (w *mainWindow) showSSMValueEditor(parameter *model.Parameter) {
+	if parameter == nil || parameter.Name != w.selectedSSMParameter {
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Edit SSM parameter", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(680, 420)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel(parameter.Name + " (" + parameter.Type + ")")
+	label.SetXAlign(0)
+	label.SetWrap(true)
+	content.Append(label)
+	if parameter.Type == "SecureString" {
+		warning := gtk.NewLabel("This editor contains the decrypted SecureString value.")
+		warning.SetXAlign(0)
+		warning.SetWrap(true)
+		warning.AddCSSClass("error")
+		content.Append(warning)
+	}
+	buffer := gtk.NewTextBuffer(nil)
+	buffer.SetText(parameter.Value)
+	view := gtk.NewTextViewWithBuffer(buffer)
+	view.SetEditable(true)
+	view.SetCursorVisible(true)
+	view.SetMonospace(true)
+	view.SetWrapMode(gtk.WrapWordChar)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	scroll.SetChild(view)
+	content.Append(scroll)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review update…", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		start, end := buffer.Bounds()
+		value := buffer.Text(start, end, true)
+		dialog.Destroy()
+		if value == parameter.Value {
+			w.setStatus("SSM parameter was not changed", false)
+			return
+		}
+		w.confirmSSMUpdate(parameter.Name, value)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) confirmSSMUpdate(name, value string) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Update SSM parameter")
+	dialog.SetMarkup("Overwrite <b>" + html.EscapeString(name) + "</b> with the edited value?")
+	dialog.SetObjectProperty("secondary-text", "Parameter Store will create a new version. The previous value may still be available through parameter history.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runSSMUpdate(name, value)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runSSMUpdate(name, value string) {
+	if name == "" || w.options.SSM == nil || w.ssmActionPending {
+		return
+	}
+	w.ssmActionPending = true
+	w.updateActionSensitivity()
+	path := w.ssmPath
+	ctx, generation := w.startRequest("Updating SSM parameter " + name + "…")
+	go func() {
+		err := w.options.SSM.Update(ctx, name, value)
+		var parameters []model.Parameter
+		var detail *model.Parameter
+		var refreshErr error
+		if err == nil {
+			parameters, refreshErr = w.options.SSM.List(ctx, path)
+			if refreshErr == nil {
+				detail, refreshErr = w.options.SSM.Detail(ctx, name)
+			}
+		}
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.ssmActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if refreshErr == nil {
+				w.allSSMParameters = parameters
+				w.applySSMFilter()
+				w.ssmDetail = detail
+				w.setDetail(formatSSMParameterDetail(*detail), detailSSM)
+			}
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			status := "Updated SSM parameter " + name
+			if refreshErr != nil {
+				status += " • refresh failed: " + refreshErr.Error()
+			}
+			w.setStatus(status, false)
+		})
+	}()
 }
 
 func (w *mainWindow) rebuildSSMPrefixRail() {

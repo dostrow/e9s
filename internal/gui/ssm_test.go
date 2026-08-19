@@ -35,6 +35,14 @@ func TestSSMSecureStringIsMaskedInBrowserAndSummary(t *testing.T) {
 	}
 }
 
+func TestSSMExplicitDetailContainsLoadedValue(t *testing.T) {
+	parameter := model.Parameter{Name: "/prod/token", Type: "SecureString", Value: "plaintext-secret", Version: 3}
+	got := formatSSMParameterDetail(parameter)
+	if !strings.Contains(got, parameter.Value) || !strings.Contains(got, parameter.Name) {
+		t.Fatalf("explicit detail omitted loaded parameter data: %q", got)
+	}
+}
+
 func TestSSMBreadcrumbUsesSavedPrefixName(t *testing.T) {
 	got := ssmBreadcrumb("Production", "/prod", "/prod/api")
 	for _, want := range []string{"Production", "/prod", "/prod/api"} {

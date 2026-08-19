@@ -92,6 +92,8 @@ type mainWindow struct {
 	selectedSSMParameter        string
 	ssmPath                     string
 	activeSSMPrefix             string
+	ssmDetail                   *model.Parameter
+	ssmActionPending            bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -139,6 +141,8 @@ type mainWindow struct {
 	ssmBrowsePathButton         *gtk.Button
 	ssmSavePrefixButton         *gtk.Button
 	ssmManagePrefixesButton     *gtk.Button
+	ssmViewValueButton          *gtk.Button
+	ssmEditButton               *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -390,6 +394,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ssmSavePrefixButton.ConnectClicked(w.promptSaveSSMPrefix)
 	w.ssmManagePrefixesButton = gtk.NewButtonWithLabel("Saved prefixes…")
 	w.ssmManagePrefixesButton.ConnectClicked(w.promptManageSSMPrefixes)
+	w.ssmViewValueButton = gtk.NewButtonWithLabel("View value")
+	w.ssmViewValueButton.ConnectClicked(w.promptViewSSMParameter)
+	w.ssmEditButton = gtk.NewButtonWithLabel("Edit…")
+	w.ssmEditButton.ConnectClicked(w.editSelectedSSMParameter)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -444,6 +452,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.ssmBrowsePathButton)
 	header.Append(w.ssmSavePrefixButton)
 	header.Append(w.ssmManagePrefixesButton)
+	header.Append(w.ssmViewValueButton)
+	header.Append(w.ssmEditButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1059,6 +1069,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.activeSavedLog = ""
 	w.alarmDetail = nil
 	w.alarmActionPending = false
+	w.ssmActionPending = false
+	w.ssmDetail = nil
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -2029,6 +2041,16 @@ func (w *mainWindow) updateActionSensitivity() {
 	hasSavedSSMPrefixes := w.options.Config != nil && len(w.options.Config.SSMPrefixes) > 0
 	w.ssmManagePrefixesButton.SetVisible(ssmPage && hasSavedSSMPrefixes)
 	w.ssmManagePrefixesButton.SetSensitive(ssmPage && hasSavedSSMPrefixes)
+	ssmSelected, ssmSelectedFound := findSSMParameter(w.allSSMParameters, w.selectedSSMParameter)
+	w.ssmViewValueButton.SetVisible(ssmPage && ssmSelectedFound)
+	w.ssmViewValueButton.SetSensitive(ssmPage && ssmSelectedFound && !w.ssmActionPending && w.options.SSM != nil)
+	if ssmSelected.Type == "SecureString" {
+		w.ssmViewValueButton.SetLabel("Reveal value…")
+	} else {
+		w.ssmViewValueButton.SetLabel("View value")
+	}
+	w.ssmEditButton.SetVisible(ssmPage && ssmSelectedFound)
+	w.ssmEditButton.SetSensitive(ssmPage && ssmSelectedFound && !w.ssmActionPending && w.options.SSM != nil)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

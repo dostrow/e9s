@@ -866,6 +866,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case ssmValueReadyMsg:
+		a.err = nil
+		a.flashMessage = fmt.Sprintf("%s = %s", msg.name, msg.value)
+		a.flashExpiry = time.Now().Add(10 * time.Second)
+		return a, nil
+
 	case ssmEditReadyMsg:
 		a.ssmEditName = msg.name
 		a.input = NewInput(InputSSMEditValue,
@@ -3011,11 +3017,7 @@ func (a App) drillDown() (App, tea.Cmd) {
 			return a, nil
 		}
 	case viewSSM:
-		if p := a.ssmView.SelectedParam(); p != nil {
-			a.flashMessage = fmt.Sprintf("%s = %s", p.Name, p.Value)
-			a.flashExpiry = time.Now().Add(10 * time.Second)
-			return a, nil
-		}
+		return a.viewSSMParam()
 	case viewSecrets:
 		if s := a.secretsView.SelectedSecret(); s != nil {
 			return a, a.fetchSecretValue(s.Name, s.Tags)

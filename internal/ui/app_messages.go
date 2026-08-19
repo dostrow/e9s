@@ -109,6 +109,10 @@ type metricsLoadedMsg struct {
 // --- SSM Messages ---
 
 type ssmParamsLoadedMsg struct{ params []model.Parameter }
+type ssmValueReadyMsg struct {
+	name  string
+	value string
+}
 type ssmEditReadyMsg struct {
 	name         string
 	currentValue string
