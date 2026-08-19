@@ -44,3 +44,12 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandedModuleHeadingAddsChevronSpacing(t *testing.T) {
+	if got := moduleHeadingMargin(false); got != 0 {
+		t.Fatalf("collapsed heading margin = %d, want 0", got)
+	}
+	if got := moduleHeadingMargin(true); got <= 0 {
+		t.Fatalf("expanded heading margin = %d, want positive spacing", got)
+	}
+}

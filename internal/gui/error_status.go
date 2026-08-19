@@ -36,6 +36,13 @@ func moduleForPage(page string) string {
 	}
 }
 
+func moduleHeadingMargin(expanded bool) int {
+	if expanded {
+		return 4
+	}
+	return 0
+}
+
 func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter) *gtk.Expander {
 	heading := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	heading.SetHExpand(true)
@@ -54,6 +61,11 @@ func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter
 	expander.SetExpanded(true)
 	expander.SetChild(child)
 	expander.AddCSSClass("module-heading")
+	updateHeadingMargin := func() {
+		heading.SetMarginStart(moduleHeadingMargin(expander.Expanded()))
+	}
+	expander.NotifyProperty("expanded", updateHeadingMargin)
+	updateHeadingMargin()
 	w.moduleErrorGlyphs[module] = glyph
 	return expander
 }
