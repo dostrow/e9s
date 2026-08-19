@@ -453,6 +453,11 @@ finding retrieval, scan validation, URI construction, and digest deletion with
 the TUI through `service.ECR`. The Module Rail exposes Repositories as its
 default destination; repository, image, and finding depth remains in the
 Browser Pane so the rail does not grow with transient registry content.
+Both frontends accept basic-scan `findings` and Amazon Inspector-backed enhanced
+`enhancedFindings`; an `ACTIVE` continuous scan is readable but cannot be
+manually restarted. Because `DescribeImages` omits enhanced scan status and
+severity counts, enhanced findings are retrieved on demand when an image is
+opened rather than by issuing one scan request per image in the repository.
 
 ### Phase 1: shared service
 

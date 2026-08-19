@@ -3069,7 +3069,7 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.ecrStartScanButton.SetVisible(ecrPage && ecrImageSelected)
 	w.ecrStartScanButton.SetSensitive(ecrImageReady && canStartECRScan(ecrImage))
 	if ecrImageSelected && !canStartECRScan(ecrImage) {
-		w.ecrStartScanButton.SetTooltipText("The image scan is already pending or in progress")
+		w.ecrStartScanButton.SetTooltipText("An image scan is already active, pending, or in progress")
 	} else {
 		w.ecrStartScanButton.SetTooltipText("")
 	}

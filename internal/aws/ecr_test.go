@@ -4,8 +4,39 @@ import (
 	"testing"
 	"time"
 
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/dostrow/e9s/internal/model"
 )
+
+func TestEnhancedECRFindingFromSDK(t *testing.T) {
+	title, severity := "CVE fallback title", "CRITICAL"
+	vulnerability, source, description := "CVE-2026-1234", "https://example.test/CVE-2026-1234", "important vulnerability"
+	packageName, version := "openssl", "3.1.0"
+	finding := enhancedECRFindingFromSDK(ecrtypes.EnhancedImageScanFinding{
+		Title:       &title,
+		Severity:    &severity,
+		Description: &description,
+		PackageVulnerabilityDetails: &ecrtypes.PackageVulnerabilityDetails{
+			VulnerabilityId: &vulnerability,
+			SourceUrl:       &source,
+			VulnerablePackages: []ecrtypes.VulnerablePackage{{
+				Name: &packageName, Version: &version,
+			}},
+		},
+	})
+	if finding.Name != vulnerability || finding.Severity != severity || finding.Package != packageName ||
+		finding.Version != version || finding.URI != source || finding.Description != description {
+		t.Fatalf("enhanced finding = %#v", finding)
+	}
+}
+
+func TestEnhancedECRFindingFallsBackToInspectorMetadata(t *testing.T) {
+	title, arn := "Inspector finding", "arn:aws:inspector2:us-east-2:123456789012:finding/one"
+	finding := enhancedECRFindingFromSDK(ecrtypes.EnhancedImageScanFinding{Title: &title, FindingArn: &arn})
+	if finding.Name != title || finding.URI != arn {
+		t.Fatalf("enhanced finding fallback = %#v", finding)
+	}
+}
 
 func TestSeverityOrder(t *testing.T) {
 	tests := []struct {

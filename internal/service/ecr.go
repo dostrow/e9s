@@ -86,8 +86,12 @@ func (s *ECR) StartScan(ctx context.Context, repository string, image model.ECRI
 	if repository == "" || strings.TrimSpace(image.Digest) == "" {
 		return fmt.Errorf("start ECR image scan: repository and image digest are required")
 	}
-	if image.ScanStatus == "IN_PROGRESS" || image.ScanStatus == "PENDING" {
-		return fmt.Errorf("start ECR image scan for %q: scan is already %s", repository, strings.ToLower(image.ScanStatus))
+	status := strings.ToUpper(strings.TrimSpace(image.ScanStatus))
+	if status == "ACTIVE" {
+		return fmt.Errorf("start ECR image scan for %q: enhanced continuous scanning is already active", repository)
+	}
+	if status == "IN_PROGRESS" || status == "PENDING" {
+		return fmt.Errorf("start ECR image scan for %q: scan is already %s", repository, strings.ToLower(status))
 	}
 	if err := s.api.StartECRScan(ctx, repository, image.Digest, image.Tags); err != nil {
 		return fmt.Errorf("start ECR image scan for %q: %w", repository, err)

@@ -50,7 +50,7 @@ func TestECRImageLabelFallsBackToDigest(t *testing.T) {
 }
 
 func TestCanStartECRScan(t *testing.T) {
-	for _, status := range []string{"PENDING", "IN_PROGRESS", "pending"} {
+	for _, status := range []string{"ACTIVE", "PENDING", "IN_PROGRESS", "pending"} {
 		if canStartECRScan(model.ECRImage{Digest: "sha256:one", ScanStatus: status}) {
 			t.Errorf("scan with status %q should be disabled", status)
 		}
@@ -60,5 +60,18 @@ func TestCanStartECRScan(t *testing.T) {
 	}
 	if canStartECRScan(model.ECRImage{}) {
 		t.Error("image without a digest should not permit a scan")
+	}
+}
+
+func TestMergeECRFindingSummary(t *testing.T) {
+	w := &mainWindow{allECRImages: []model.ECRImage{{Digest: "sha256:one"}}}
+	image := w.mergeECRFindingSummary(w.allECRImages[0], []model.ECRFinding{
+		{Severity: "CRITICAL"}, {Severity: "critical"}, {Severity: "HIGH"},
+	})
+	if image.ScanSeverity["CRITICAL"] != 2 || image.ScanSeverity["HIGH"] != 1 {
+		t.Fatalf("merged summary = %#v", image.ScanSeverity)
+	}
+	if w.allECRImages[0].ScanSeverity["CRITICAL"] != 2 {
+		t.Fatalf("cached summary = %#v", w.allECRImages[0].ScanSeverity)
 	}
 }

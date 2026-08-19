@@ -76,23 +76,10 @@ func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest s
 		}
 		if page.ImageScanFindings != nil {
 			for _, f := range page.ImageScanFindings.Findings {
-				finding := model.ECRFinding{
-					Name:        derefStrAws(f.Name),
-					Severity:    string(f.Severity),
-					Description: derefStrAws(f.Description),
-					URI:         derefStrAws(f.Uri),
-				}
-				for _, attr := range f.Attributes {
-					if attr.Key != nil {
-						switch *attr.Key {
-						case "package_name":
-							finding.Package = derefStrAws(attr.Value)
-						case "package_version":
-							finding.Version = derefStrAws(attr.Value)
-						}
-					}
-				}
-				findings = append(findings, finding)
+				findings = append(findings, basicECRFindingFromSDK(f))
+			}
+			for _, f := range page.ImageScanFindings.EnhancedFindings {
+				findings = append(findings, enhancedECRFindingFromSDK(f))
 			}
 		}
 	}
@@ -100,6 +87,60 @@ func (c *Client) GetECRScanFindings(ctx context.Context, repoName, imageDigest s
 	// Sort by severity
 	sortFindingsBySeverity(findings)
 	return findings, nil
+}
+
+func basicECRFindingFromSDK(f ecrtypes.ImageScanFinding) model.ECRFinding {
+	finding := model.ECRFinding{
+		Name:        derefStrAws(f.Name),
+		Severity:    string(f.Severity),
+		Description: derefStrAws(f.Description),
+		URI:         derefStrAws(f.Uri),
+	}
+	for _, attr := range f.Attributes {
+		if attr.Key == nil {
+			continue
+		}
+		switch *attr.Key {
+		case "package_name":
+			finding.Package = derefStrAws(attr.Value)
+		case "package_version":
+			finding.Version = derefStrAws(attr.Value)
+		}
+	}
+	return finding
+}
+
+func enhancedECRFindingFromSDK(f ecrtypes.EnhancedImageScanFinding) model.ECRFinding {
+	finding := model.ECRFinding{
+		Name:        derefStrAws(f.Title),
+		Severity:    derefStrAws(f.Severity),
+		Description: derefStrAws(f.Description),
+		URI:         derefStrAws(f.FindingArn),
+	}
+	details := f.PackageVulnerabilityDetails
+	if details == nil {
+		return finding
+	}
+	if vulnerabilityID := derefStrAws(details.VulnerabilityId); vulnerabilityID != "" {
+		finding.Name = vulnerabilityID
+	}
+	if finding.Severity == "" {
+		finding.Severity = derefStrAws(details.VendorSeverity)
+	}
+	if sourceURL := derefStrAws(details.SourceUrl); sourceURL != "" {
+		finding.URI = sourceURL
+	} else if len(details.ReferenceUrls) > 0 {
+		finding.URI = details.ReferenceUrls[0]
+	}
+	packages := make([]string, 0, len(details.VulnerablePackages))
+	versions := make([]string, 0, len(details.VulnerablePackages))
+	for _, vulnerable := range details.VulnerablePackages {
+		packages = append(packages, derefStrAws(vulnerable.Name))
+		versions = append(versions, derefStrAws(vulnerable.Version))
+	}
+	finding.Package = strings.Join(packages, ", ")
+	finding.Version = strings.Join(versions, ", ")
+	return finding
 }
 
 // StartECRScan initiates an on-demand scan for an image.

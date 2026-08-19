@@ -96,10 +96,6 @@ func (w *mainWindow) loadECRFindings(image model.ECRImage) {
 	if w.selectedECRRepository == "" || image.Digest == "" || w.options.ECR == nil {
 		return
 	}
-	if !strings.EqualFold(image.ScanStatus, "COMPLETE") {
-		w.setStatus("Scan findings are unavailable while the image scan status is "+valueOrDash(image.ScanStatus), true)
-		return
-	}
 	repository, digest := w.selectedECRRepository, image.Digest
 	w.resetWorkspaceForBrowserChange()
 	w.clearECRFindings()
@@ -121,10 +117,26 @@ func (w *mainWindow) loadECRFindings(image model.ECRImage) {
 				return
 			}
 			w.allECRFindings = findings
+			image = w.mergeECRFindingSummary(image, findings)
 			w.applyECRFindingFilter()
 			w.setDetail(formatECRImageWithFindingCount(repository, image, len(findings)), detailECRImage)
 		})
 	}()
+}
+
+func (w *mainWindow) mergeECRFindingSummary(image model.ECRImage, findings []model.ECRFinding) model.ECRImage {
+	counts := make(map[string]int32)
+	for _, finding := range findings {
+		counts[strings.ToUpper(finding.Severity)]++
+	}
+	image.ScanSeverity = counts
+	for index := range w.allECRImages {
+		if w.allECRImages[index].Digest == image.Digest {
+			w.allECRImages[index].ScanSeverity = counts
+			break
+		}
+	}
+	return image
 }
 
 func (w *mainWindow) clearECRRepositories() {
@@ -476,7 +488,7 @@ func canStartECRScan(image model.ECRImage) bool {
 		return false
 	}
 	switch strings.ToUpper(strings.TrimSpace(image.ScanStatus)) {
-	case "IN_PROGRESS", "PENDING":
+	case "ACTIVE", "IN_PROGRESS", "PENDING":
 		return false
 	default:
 		return true

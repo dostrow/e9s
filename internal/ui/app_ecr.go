@@ -48,10 +48,6 @@ func (a App) openECRFindings() (App, tea.Cmd) {
 	if img == nil {
 		return a, nil
 	}
-	if img.ScanStatus != "COMPLETE" {
-		a.err = fmt.Errorf("no scan results available (status: %s) — press 's' to start a scan", img.ScanStatus)
-		return a, nil
-	}
 	repoName := a.ecrImagesView.RepoName()
 	a.state = viewECRFindings
 	a.ecrFindingsView = views.NewECRFindings(repoName, img.Digest, img.Tags)

@@ -78,6 +78,9 @@ func TestECRMutationsValidationAndURI(t *testing.T) {
 	if err := svc.StartScan(context.Background(), "repo", model.ECRImage{Digest: "sha256:1", ScanStatus: "IN_PROGRESS"}); err == nil {
 		t.Fatal("in-progress scan was accepted")
 	}
+	if err := svc.StartScan(context.Background(), "repo", model.ECRImage{Digest: "sha256:1", ScanStatus: "ACTIVE"}); err == nil || !strings.Contains(err.Error(), "continuous") {
+		t.Fatalf("active continuous scan error = %v", err)
+	}
 	if err := svc.DeleteImage(context.Background(), " repo ", " sha256:1 "); err != nil || api.deleted != "sha256:1" {
 		t.Fatalf("DeleteImage() deleted %q error %v", api.deleted, err)
 	}
