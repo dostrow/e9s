@@ -64,11 +64,13 @@ The Module Rail starts collapsed. With no `defaults.default_mode`, the GUI opens
 a module picker; choosing a module expands only that module and opens its default
 sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
 CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
-Parameter Store, and **Secrets** for Secrets Manager. Use `Ctrl+P` to reopen the
+Parameter Store, **Secrets** for Secrets Manager, and **Functions** for Lambda.
+Use `Ctrl+P` to reopen the
 picker from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
-`ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, and `SM`/`secrets`. For example:
+`ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
+For example:
 
 ```yaml
 defaults:
@@ -116,9 +118,11 @@ service and per-container logs; CloudWatch Logs browsing, searches, saved
 destinations, and follow workflows; CloudWatch Alarm browsing and guarded
 operations; SSM Parameter Store browsing, saved prefixes, decrypted value
 inspection, and guarded multiline editing; Secrets Manager metadata browsing,
-saved filters, guarded JSON/plaintext reveal, editing, and cloning; service-wide and selected-task
-metrics; scaling and guarded ECS mutations; and ECS Exec in an embedded VTE
-terminal. The GTK frontend and Bubble Tea frontend both call the same UI-neutral
+saved filters, guarded JSON/plaintext reveal, editing, and cloning; Lambda
+browsing, saved searches, configuration/environment inspection, CloudWatch log
+workflows, and guarded ZIP editing; service-wide and selected-task metrics;
+scaling and guarded ECS mutations; and ECS Exec in an embedded VTE terminal.
+The GTK frontend and Bubble Tea frontend both call the same UI-neutral
 services in `internal/service`; GTK code does not call AWS SDK adapters directly.
 
 Service metrics use the standard `AWS/ECS` service dimensions. Selected-task
@@ -238,6 +242,21 @@ memory than a cached rebuild.
     mutation requires confirmation, editors wrap multiline content, pending
     operations disable contextual actions and pause refresh, Clone states that
     tags/policies are not copied, and Copy ARN never reads the value.
+39. Expand Lambda and open Functions. Search loaded metadata, create and delete a
+    saved search, confirm exact Module Rail highlighting, and verify external
+    `lambda_searches` changes are reloaded on explicit refresh.
+40. Select a function and confirm the Workspace loads current configuration.
+    View environment references, verify no secret value is fetched initially,
+    then confirm the warning gate before resolving a disposable SSM/Secrets
+    Manager reference.
+41. Follow and search the function log group in the shared log Workspace, then
+    use Browse logs to open its streams in CloudWatch Logs. Confirm the usual
+    empty-range fallback, wrapping, scrollback, highlights, and stream controls.
+42. Edit a disposable ZIP function containing text and binary files. Switch
+    between text files, cancel once to verify the unsaved-change warning, then
+    upload after the mutation confirmation. Confirm binary content remains
+    usable and the function configuration refreshes. Repeat with an image-based
+    function and confirm editing is unavailable with an explanation.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

@@ -241,3 +241,53 @@ contextual errors with the TUI through `service.Secrets`.
 The GUI intentionally uses embedded editors and confirmation gates instead of
 the TUI's external `$EDITOR` workflow. Both presentation layers execute the same
 shared value, update, and create operations.
+
+## Lambda delivery phases
+
+Lambda is implemented in the GTK frontend and shares function discovery,
+configuration reads, environment resolution, deployment download, and code
+updates with the TUI through `service.Lambda`.
+
+### Phase 1: shared service
+
+- Move function configuration into the UI-neutral model package.
+- Centralize substring filtering, deterministic ordering, detail lookup,
+  environment resolution, package-type checks, deployment downloads, archive
+  creation, updates, and contextual errors.
+- Migrate the TUI Lambda workflows away from direct AWS client calls.
+
+### Phase 2: module shell, browser, and saved searches
+
+- Add an alphabetically positioned, collapsible **Lambda** Module Rail entry
+  with a fixed **Functions** default item.
+- Render configured `lambda_searches` as dynamic **SAVED SEARCHES** items with
+  active highlighting, direct opening, save, deletion, and config reload.
+- Browse and filter loaded function metadata while immediately clearing stale
+  Browser and Workspace state and rejecting late responses.
+
+### Phase 3: configuration, environment, and logs
+
+- Fetch current configuration when a function is selected and refresh it while
+  preserving the active Workspace presentation.
+- Display environment references first; require an explicit warning before
+  resolving and rendering SSM or Secrets Manager values.
+- Reuse the shared CloudWatch workspace for function follow and search, and
+  provide direct navigation to the function's log-group streams.
+- Disable contextual operations and pause automatic refresh while a Lambda
+  request is pending.
+
+### Phase 4: embedded ZIP editor
+
+- Download ZIP deployments into an application-owned temporary directory and
+  expose UTF-8 text files through a Workspace-pane file selector and editor.
+- Preserve binary and oversized files unchanged in the deployment archive.
+- Protect unsaved changes, require explicit upload confirmation, reject path
+  traversal, clean temporary data on every exit path, and refresh configuration
+  after a successful `UpdateFunctionCode` request.
+- Treat container-image functions as read-only and explain why the ZIP editor
+  is unavailable.
+
+The GUI editor deliberately supports text files up to 2 MiB each; other package
+content is preserved but not rendered. The TUI continues to launch `$EDITOR`
+against the extracted directory, while both frontends use the same download,
+archive, and update service operations.

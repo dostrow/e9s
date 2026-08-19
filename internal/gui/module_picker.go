@@ -69,6 +69,10 @@ func (w *mainWindow) activateModule(value string) bool {
 	if !found {
 		return false
 	}
+	if w.showingEditor {
+		w.closeEditorThen(func() { w.activateModule(value) })
+		return true
+	}
 	for i := range w.moduleSections {
 		w.moduleSections[i].expander.SetExpanded(i == index)
 	}

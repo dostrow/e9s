@@ -61,7 +61,11 @@ func (w *mainWindow) rebuildSavedLogRail() {
 	w.cloudWatchModuleItems.Append(w.savedLogsLabel)
 	for _, path := range paths {
 		path := path
-		button := newModuleRailButton(path.Name, func() { w.openSavedLog(path) })
+		button := newModuleRailButton(path.Name, func() {
+			if !w.guardEditorNavigation(func() { w.openSavedLog(path) }) {
+				w.openSavedLog(path)
+			}
+		})
 		button.SetGroup(w.clustersNavButton)
 		button.SetTooltipText(savedLogTooltip(path))
 		w.cloudWatchModuleItems.Append(button)

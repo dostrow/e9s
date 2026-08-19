@@ -26,6 +26,9 @@ func (w *mainWindow) openSSMModule() {
 	if w.currentPage == pageSSM && w.activeSSMPrefix == "" && w.ssmPath == "/" {
 		return
 	}
+	if w.guardEditorNavigation(w.openSSMModule) {
+		return
+	}
 	w.loadSSMPath("/", "")
 }
 
@@ -430,7 +433,11 @@ func (w *mainWindow) rebuildSSMPrefixRail() {
 	w.ssmModuleItems.Append(w.savedSSMPrefixLabel)
 	for _, prefix := range prefixes {
 		prefix := prefix
-		button := newModuleRailButton(prefix.Name, func() { w.loadSSMPath(prefix.Prefix, prefix.Name) })
+		button := newModuleRailButton(prefix.Name, func() {
+			if !w.guardEditorNavigation(func() { w.loadSSMPath(prefix.Prefix, prefix.Name) }) {
+				w.loadSSMPath(prefix.Prefix, prefix.Name)
+			}
+		})
 		button.SetGroup(w.clustersNavButton)
 		button.SetTooltipText(prefix.Prefix)
 		w.ssmModuleItems.Append(button)

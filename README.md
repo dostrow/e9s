@@ -77,7 +77,7 @@ Browse S3 buckets (search by name), navigate object keys as a file browser with 
 
 ### Lambda
 
-Browse Lambda functions with runtime, state, memory, and timeout info. View environment variables with SSM/Secrets Manager resolution (same as ECS), tail CloudWatch logs, and search logs with the full CW Logs search flow.
+Browse Lambda functions with runtime, state, memory, and timeout info. View environment variables with SSM/Secrets Manager resolution (same as ECS), tail CloudWatch logs, and search logs with the full CW Logs search flow. ZIP deployments can be edited and uploaded with confirmation; container-image functions remain read-only.
 
 ### DynamoDB
 
@@ -181,7 +181,8 @@ go install github.com/dostrow/e9s@latest
 ### Experimental GTK 4 GUI
 
 The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
-for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, and Secrets Manager. It shares
+for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager,
+and Lambda. It shares
 connection, query, mutation, and log services with the TUI while remaining a
 separate, build-tagged executable.
 
@@ -393,6 +394,7 @@ e9s -m SQS -r eu-west-1
 | `l` | Tail function logs |
 | `s` | Search function logs |
 | `E` | View environment variables (from detail) |
+| `c` | Edit and upload ZIP function code (from detail) |
 | `W` | Save search |
 
 ### DynamoDB — Items
@@ -584,7 +586,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | SSM parameters | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter` |
 | Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue`, `secretsmanager:CreateSecret` |
 | S3 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging` |
-| Lambda | `lambda:ListFunctions`, `lambda:GetFunction` |
+| Lambda | `lambda:ListFunctions`, `lambda:GetFunction`, `lambda:UpdateFunctionCode` (code editing only) |
 | DynamoDB | `dynamodb:ListTables`, `dynamodb:DescribeTable`, `dynamodb:Scan`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:PutItem`, `dynamodb:ExecuteStatement` |
 | SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |

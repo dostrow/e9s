@@ -105,6 +105,9 @@ func (w *mainWindow) openTaskDefinitions() {
 	if w.currentPage == pageTaskDefinitions {
 		return
 	}
+	if w.guardEditorNavigation(w.openTaskDefinitions) {
+		return
+	}
 	w.loadTaskDefinitions()
 }
 
@@ -175,7 +178,7 @@ func (w *mainWindow) openTaskDefinitionAt(position uint) {
 		return
 	}
 	if w.showingEditor {
-		w.closeTaskDefinitionEditorThen(func() { w.openTaskDefinition(ref) })
+		w.closeEditorThen(func() { w.openTaskDefinition(ref) })
 		return
 	}
 	w.openTaskDefinition(ref)
@@ -402,6 +405,7 @@ func (w *mainWindow) openTaskDefinitionEditor() {
 	w.editorLoading = false
 	w.editorDirty = false
 	w.showingEditor = true
+	w.editorKind = editorKindTaskDefinition
 	w.detailStack.SetVisibleChildName("editor")
 	w.setStatus("Editing creates a new task-definition revision", false)
 }
@@ -460,6 +464,7 @@ func (w *mainWindow) registerTaskDefinition(document string) {
 			fmt.Sprintf("Registered %s:%d", definitionFamily(definition), definitionRevision(definition)), func() {
 				w.selectedTaskDefinition = definition
 				w.showingEditor = false
+				w.editorKind = ""
 				w.editorDirty = false
 				w.setBreadcrumb(fmt.Sprintf("ECS / Task definitions / %s:%d", definition.Family, definition.Revision))
 				w.showTaskDefinitionSummary()
@@ -518,6 +523,7 @@ func (w *mainWindow) closeTaskDefinitionEditorThen(after func()) {
 
 func (w *mainWindow) closeTaskDefinitionEditorNow() {
 	w.showingEditor = false
+	w.editorKind = ""
 	w.editorDirty = false
 	w.detailStack.SetVisibleChildName("task-definition")
 	w.setStatus("Editor closed", false)

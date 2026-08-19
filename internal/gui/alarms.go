@@ -19,6 +19,9 @@ func (w *mainWindow) openAlarmsModule(state string) {
 	if w.currentPage == pageAlarms && w.alarmStateFilter == state {
 		return
 	}
+	if w.guardEditorNavigation(func() { w.openAlarmsModule(state) }) {
+		return
+	}
 	w.loadAlarms(state)
 }
 

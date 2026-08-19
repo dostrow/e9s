@@ -428,6 +428,28 @@ binary bytes are never displayed or converted to strings, context changes clear
 loaded values, and pending operations disable contextual actions and pause
 refresh. Copy ARN remains a metadata-only operation.
 
+### Lambda module follow-up
+
+Lambda now uses `service.Lambda` in both frontends for stable discovery,
+configuration reads, environment resolution, package-type checks, deployment
+downloads, ZIP creation, and code updates. Function configuration is a
+UI-neutral model, and neither frontend duplicates AWS SDK query logic.
+
+The GTK frontend adds a collapsible Lambda module with a fixed Functions item
+and dynamic saved-search destinations. It provides local metadata filtering,
+current configuration reads, guarded secret resolution, and direct follow,
+search, and stream-browsing routes into the existing CloudWatch Logs workflow.
+Pending operations disable contextual controls, pause automatic refresh, and
+use generation guards to reject responses from abandoned contexts.
+
+ZIP functions can be edited in the Workspace pane through a per-file selector.
+Only UTF-8 text files up to 2 MiB are rendered; all other deployment content is
+retained unchanged when the directory is repackaged. Unsaved changes and uploads
+have separate confirmation gates, paths are validated before writes, temporary
+downloads are removed on every exit path, and image-based functions remain
+explicitly read-only. The TUI retains its external-editor presentation while
+sharing the same service operations.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

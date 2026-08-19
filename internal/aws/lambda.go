@@ -129,7 +129,11 @@ func (c *Client) DownloadLambdaCode(ctx context.Context, functionName string) (s
 	}
 
 	// Download the ZIP
-	resp, err := http.Get(*out.Code.Location)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, *out.Code.Location, nil)
+	if err != nil {
+		return "", fmt.Errorf("prepare code download: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download code: %w", err)
 	}

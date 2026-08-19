@@ -192,6 +192,7 @@ type mainWindow struct {
 	lambdaFollowLogsButton      *gtk.Button
 	lambdaBrowseLogsButton      *gtk.Button
 	lambdaSearchLogsButton      *gtk.Button
+	lambdaEditCodeButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -246,6 +247,17 @@ type mainWindow struct {
 	showingEditor               bool
 	editorDirty                 bool
 	editorLoading               bool
+	editorKind                  string
+	lambdaEditorBuffer          *gtk.TextBuffer
+	lambdaEditorFileSelector    *gtk.DropDown
+	lambdaEditorTitle           *gtk.Label
+	lambdaEditorUploadButton    *gtk.Button
+	lambdaEditorFiles           []lambdaEditableFile
+	lambdaEditorFileIndex       int
+	lambdaEditorDirectory       string
+	lambdaEditorFunction        string
+	lambdaEditorLoading         bool
+	lambdaEditorDirty           bool
 	terminal                    *vteTerminal
 	terminalTitle               *gtk.Label
 	terminalTask                model.Task
@@ -402,6 +414,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		if w.terminal != nil {
 			w.terminal.Stop()
 		}
+		w.discardLambdaEditor()
 	})
 	w.installActions(app)
 	w.installPrintableShortcuts(app)
@@ -495,6 +508,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.lambdaBrowseLogsButton.ConnectClicked(w.browseLambdaLogs)
 	w.lambdaSearchLogsButton = gtk.NewButtonWithLabel("Search logs")
 	w.lambdaSearchLogsButton.ConnectClicked(w.searchLambdaLogs)
+	w.lambdaEditCodeButton = gtk.NewButtonWithLabel("Edit code…")
+	w.lambdaEditCodeButton.ConnectClicked(w.openLambdaCodeEditor)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -567,6 +582,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.lambdaFollowLogsButton)
 	header.Append(w.lambdaBrowseLogsButton)
 	header.Append(w.lambdaSearchLogsButton)
+	header.Append(w.lambdaEditCodeButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -795,6 +811,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildMetricsPane(), "metrics")
 	w.detailStack.AddNamed(w.buildTaskDefinitionPane(), "task-definition")
 	w.detailStack.AddNamed(w.buildTaskDefinitionEditor(), "editor")
+	w.detailStack.AddNamed(w.buildLambdaCodeEditor(), "lambda-editor")
 	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
 	w.detailStack.SetVisibleChildName("detail")
 	w.workspaceBusySpinner = gtk.NewSpinner()
@@ -1229,6 +1246,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	}
 	w.showingEditor = false
 	w.editorDirty = false
+	w.editorKind = ""
+	w.discardLambdaEditor()
 	if w.detailToolbar != nil {
 		w.detailToolbar.SetVisible(false)
 	}
@@ -1263,8 +1282,7 @@ func (w *mainWindow) openClustersModule() {
 	if w.currentPage == pageClusters {
 		return
 	}
-	if w.showingEditor {
-		w.closeTaskDefinitionEditorThen(w.loadClusters)
+	if w.guardEditorNavigation(w.loadClusters) {
 		return
 	}
 	w.loadClusters()
@@ -1709,7 +1727,7 @@ func (w *mainWindow) goBack() {
 		return
 	}
 	if w.showingEditor {
-		w.closeTaskDefinitionEditor()
+		w.closeEditor()
 		return
 	}
 	if w.showingLogs {
@@ -1725,7 +1743,7 @@ func (w *mainWindow) goBack() {
 
 func (w *mainWindow) navigateBrowserBack() {
 	if w.showingEditor {
-		w.closeTaskDefinitionEditorThen(w.navigateBrowserBack)
+		w.closeEditorThen(w.navigateBrowserBack)
 		return
 	}
 	if w.currentPage == pageLogStreams {
@@ -2289,14 +2307,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.secretCopyARNButton.SetSensitive(secretsPage && secretSelected)
 	lambdaPage := w.currentPage == pageLambda
 	w.lambdaSearchButton.SetVisible(lambdaPage)
-	w.lambdaSearchButton.SetSensitive(lambdaPage && w.options.Lambda != nil)
+	w.lambdaSearchButton.SetSensitive(lambdaPage && !w.showingEditor && w.options.Lambda != nil)
 	w.lambdaSaveSearchButton.SetVisible(lambdaPage)
-	w.lambdaSaveSearchButton.SetSensitive(lambdaPage && w.options.Config != nil)
+	w.lambdaSaveSearchButton.SetSensitive(lambdaPage && !w.showingEditor && w.options.Config != nil)
 	hasSavedLambdaSearches := w.options.Config != nil && len(w.options.Config.LambdaSearches) > 0
 	w.lambdaManageSearchesButton.SetVisible(lambdaPage && hasSavedLambdaSearches)
-	w.lambdaManageSearchesButton.SetSensitive(lambdaPage && hasSavedLambdaSearches)
+	w.lambdaManageSearchesButton.SetSensitive(lambdaPage && !w.showingEditor && hasSavedLambdaSearches)
 	lambdaSelected := lambdaPage && w.selectedLambdaFunction != ""
-	lambdaReady := lambdaSelected && w.lambdaDetail != nil && w.lambdaDetail.Name == w.selectedLambdaFunction && !w.lambdaActionPending
+	lambdaReady := lambdaSelected && w.lambdaDetail != nil && w.lambdaDetail.Name == w.selectedLambdaFunction && !w.lambdaActionPending && !w.showingEditor
 	w.lambdaDetailsButton.SetVisible(lambdaSelected && w.lambdaViewMode == lambdaEnvironmentMode)
 	w.lambdaDetailsButton.SetSensitive(lambdaReady)
 	w.lambdaEnvironmentButton.SetVisible(lambdaSelected && w.lambdaViewMode != lambdaEnvironmentMode)
@@ -2311,6 +2329,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.lambdaBrowseLogsButton.SetSensitive(hasLambdaLogs)
 	w.lambdaSearchLogsButton.SetVisible(lambdaSelected)
 	w.lambdaSearchLogsButton.SetSensitive(hasLambdaLogs)
+	zipLambda := lambdaReady && !strings.EqualFold(w.lambdaDetail.PackageType, "Image")
+	w.lambdaEditCodeButton.SetVisible(lambdaSelected)
+	w.lambdaEditCodeButton.SetSensitive(zipLambda && w.options.Lambda != nil)
+	if lambdaReady && !zipLambda {
+		w.lambdaEditCodeButton.SetTooltipText("Container-image functions cannot be edited as ZIP deployments")
+	} else {
+		w.lambdaEditCodeButton.SetTooltipText("")
+	}
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

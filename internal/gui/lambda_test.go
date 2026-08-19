@@ -3,6 +3,8 @@
 package gui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -75,5 +77,45 @@ func TestFormatLambdaEnvironmentSortsAndControlsResolvedValues(t *testing.T) {
 	resolved := formatLambdaEnvironment("worker", environment, true)
 	if !strings.Contains(resolved, "plaintext") {
 		t.Fatalf("resolved environment missing resolved value: %q", resolved)
+	}
+}
+
+func TestScanLambdaEditableFilesSkipsBinaryAndSorts(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "z.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(directory, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "nested", "a.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "binary"), []byte{'a', 0, 'b'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := scanLambdaEditableFiles(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].Path != filepath.Join("nested", "a.txt") || files[1].Path != "z.go" {
+		t.Fatalf("scanLambdaEditableFiles() = %#v", files)
+	}
+}
+
+func TestWriteLambdaEditableFilesRejectsTraversal(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "handler.go")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLambdaEditableFiles(directory, []lambdaEditableFile{{Path: "handler.go", Content: "new"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "new" {
+		t.Fatalf("updated file = %q, %v", got, err)
+	}
+	if err := writeLambdaEditableFiles(directory, []lambdaEditableFile{{Path: "../escape", Content: "bad"}}); err == nil {
+		t.Fatal("writeLambdaEditableFiles accepted path traversal")
 	}
 }

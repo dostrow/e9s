@@ -31,6 +31,9 @@ func (w *mainWindow) openLambdaModule() {
 	if w.currentPage == pageLambda && w.activeSavedLambdaSearch == "" && w.lambdaSearchTerm == "" {
 		return
 	}
+	if w.guardEditorNavigation(w.openLambdaModule) {
+		return
+	}
 	w.loadLambdaFunctions("", "")
 }
 
@@ -431,7 +434,11 @@ func (w *mainWindow) rebuildLambdaSearchRail() {
 	w.lambdaModuleItems.Append(w.savedLambdaSearchesLabel)
 	for _, search := range searches {
 		search := search
-		button := newModuleRailButton(search.Name, func() { w.loadLambdaFunctions(search.Filter, search.Name) })
+		button := newModuleRailButton(search.Name, func() {
+			if !w.guardEditorNavigation(func() { w.loadLambdaFunctions(search.Filter, search.Name) }) {
+				w.loadLambdaFunctions(search.Filter, search.Name)
+			}
+		})
 		button.SetGroup(w.clustersNavButton)
 		button.SetTooltipText(search.Filter)
 		w.lambdaModuleItems.Append(button)

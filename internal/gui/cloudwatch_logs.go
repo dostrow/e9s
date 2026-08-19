@@ -26,6 +26,9 @@ func (w *mainWindow) openLogGroupsModule() {
 	if w.currentPage == pageLogGroups && w.activeSavedLog == "" {
 		return
 	}
+	if w.guardEditorNavigation(w.openLogGroupsModule) {
+		return
+	}
 	w.loadLogGroups()
 }
 

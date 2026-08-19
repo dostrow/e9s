@@ -27,6 +27,9 @@ func (w *mainWindow) openSecretsModule() {
 	if w.currentPage == pageSecrets && w.activeSavedSecretFilter == "" && w.secretNameFilter == "" {
 		return
 	}
+	if w.guardEditorNavigation(w.openSecretsModule) {
+		return
+	}
 	w.loadSecrets("", "")
 }
 
@@ -257,7 +260,11 @@ func (w *mainWindow) rebuildSecretFilterRail() {
 	w.secretsModuleItems.Append(w.savedSecretFiltersLabel)
 	for _, filter := range filters {
 		filter := filter
-		button := newModuleRailButton(filter.Name, func() { w.loadSecrets(filter.Filter, filter.Name) })
+		button := newModuleRailButton(filter.Name, func() {
+			if !w.guardEditorNavigation(func() { w.loadSecrets(filter.Filter, filter.Name) }) {
+				w.loadSecrets(filter.Filter, filter.Name)
+			}
+		})
 		button.SetGroup(w.clustersNavButton)
 		button.SetTooltipText(filter.Filter)
 		w.secretsModuleItems.Append(button)
