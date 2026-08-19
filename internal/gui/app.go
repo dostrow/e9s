@@ -129,6 +129,12 @@ type ECRService interface {
 	ImageURI(string, model.ECRImage) (string, error)
 }
 
+type RDSService interface {
+	List(context.Context, string) ([]model.RDSInstance, error)
+	Detail(context.Context, string) (*model.RDSInstanceDetail, error)
+	Metrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -142,6 +148,7 @@ type Options struct {
 	EBS             EBSService
 	LoadBalancing   LoadBalancingService
 	ECR             ECRService
+	RDS             RDSService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

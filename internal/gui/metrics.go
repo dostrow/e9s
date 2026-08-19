@@ -107,14 +107,27 @@ func (w *mainWindow) buildMetricsPane() gtk.Widgetter {
 	content.SetVExpand(true)
 	content.Append(metrics)
 	content.Append(w.metricsAlarmSection)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetHExpand(true)
+	scroll.SetVExpand(true)
+	scroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	scroll.SetChild(content)
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
 	pane.Append(toolbar)
-	pane.Append(content)
+	pane.Append(scroll)
 	return pane
 }
 
 func (w *mainWindow) openMetrics() {
+	if w.currentPage == pageRDSInstances {
+		if w.selectedRDSInstance == "" {
+			return
+		}
+		w.metricsKind = "rds"
+		w.loadMetrics(true)
+		return
+	}
 	if w.currentPage == pageEC2Instances {
 		if w.selectedEC2Instance == "" {
 			return
@@ -131,11 +144,70 @@ func (w *mainWindow) openMetrics() {
 }
 
 func (w *mainWindow) loadMetrics(foreground bool) {
+	if w.metricsKind == "rds" {
+		w.loadRDSMetrics(foreground)
+		return
+	}
 	if w.metricsKind == "ec2" {
 		w.loadEC2Metrics(foreground)
 		return
 	}
 	w.loadECSMetrics(foreground)
+}
+
+func (w *mainWindow) loadRDSMetrics(foreground bool) {
+	identifier := w.selectedRDSInstance
+	if identifier == "" || w.options.RDS == nil {
+		return
+	}
+	opening := !w.showingMetrics
+	ctx, generation := w.startRefreshRequest("Loading metrics for "+identifier+"…", foreground)
+	go func() {
+		snapshot, err := w.options.RDS.Metrics(ctx, identifier, w.metricsWindow())
+		w.finishRequestResult(ctx, generation, err, "Metrics updated for "+identifier, opening, foreground, func() {
+			if w.currentPage != pageRDSInstances || w.selectedRDSInstance != identifier {
+				return
+			}
+			w.showingMetrics = true
+			w.metricsKind = "rds"
+			w.metricsSnapshot = nil
+			w.metricsGenericSnapshot = snapshot
+			w.metricsTaskID = ""
+			w.renderRDSMetrics()
+			w.detailStack.SetVisibleChildName("metrics")
+		})
+	}()
+}
+
+func (w *mainWindow) renderRDSMetrics() {
+	snapshot := w.metricsGenericSnapshot
+	if snapshot == nil {
+		return
+	}
+	w.metricsTitle.SetLabel("DATABASE METRICS — " + strings.ToUpper(w.metricsRangeLabel()))
+	w.metricsScope.SetLabel("RDS instance " + w.selectedRDSInstance + " • standard CloudWatch metrics")
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(snapshot.EndTime), formatMetricPeriod(snapshot.Period)))
+	w.metricsScaleButton.SetVisible(false)
+	w.metricsScaleLabel.SetVisible(false)
+	w.metricsAlarmSection.SetVisible(false)
+	hasData := metricSnapshotHasData(snapshot)
+	w.metricsNotice.SetVisible(!hasData)
+	if !hasData {
+		w.metricsNotice.SetLabel("No standard RDS datapoints were returned for the selected period.")
+	}
+	w.setMetricCharts(snapshot, []metricChartSpec{
+		{title: "CPU UTILIZATION", unit: "%", minZero: true, maxHint: 100, ids: []string{"cpu", "cpu_max"}},
+		{title: "DATABASE CONNECTIONS", unit: "count", minZero: true, ids: []string{"connections"}},
+		{title: "AVAILABLE MEMORY", unit: "bytes", minZero: true, ids: []string{"free_memory"}},
+		{title: "FREE STORAGE", unit: "GiB", minZero: true, ids: []string{"free_storage"}},
+		{title: "READ / WRITE IOPS", unit: "iops", minZero: true, ids: []string{"read_iops", "write_iops"}},
+		{title: "READ / WRITE LATENCY", unit: "ms", minZero: true, ids: []string{"read_latency", "write_latency"}},
+		{title: "READ / WRITE THROUGHPUT", unit: "bytes/s", minZero: true, ids: []string{"read_throughput", "write_throughput"}},
+		{title: "NETWORK THROUGHPUT", unit: "bytes/s", minZero: true, ids: []string{"network_receive", "network_transmit"}},
+		{title: "DISK QUEUE DEPTH", unit: "count", minZero: true, ids: []string{"disk_queue"}},
+		{title: "BURST BALANCE", unit: "%", minZero: true, maxHint: 100, ids: []string{"burst_balance"}},
+		{title: "REPLICA LAG", unit: "seconds", minZero: true, ids: []string{"replica_lag"}},
+	})
 }
 
 func (w *mainWindow) loadECSMetrics(foreground bool) {
@@ -288,11 +360,27 @@ func (w *mainWindow) setMetricCharts(snapshot *model.MetricSnapshot, specs []met
 	}
 	w.metricsCharts = make([]*metricChart, 0, len(specs))
 	for _, spec := range specs {
+		if !metricSpecHasData(snapshot, spec.ids) {
+			continue
+		}
 		chart := newMetricChart(spec.title, spec.unit, spec.minZero, spec.maxHint)
 		chart.SetData(snapshot.StartTime, snapshot.EndTime, snapshot.Series, spec.ids...)
 		w.metricsCharts = append(w.metricsCharts, chart)
 		w.metricsChartsBox.Append(chart.area)
 	}
+}
+
+func metricSpecHasData(snapshot *model.MetricSnapshot, ids []string) bool {
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[id] = struct{}{}
+	}
+	for _, series := range snapshot.Series {
+		if _, ok := wanted[series.ID]; ok && len(series.Points) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *mainWindow) loadEC2Metrics(foreground bool) {
@@ -387,6 +475,10 @@ func formatMetricPeriod(period time.Duration) string {
 		return fmt.Sprintf("%dm", int(period/time.Minute))
 	}
 	return period.String()
+}
+
+func metricFraction(value float64) float64 {
+	return min(1, max(0, value/100))
 }
 
 func (w *mainWindow) confirmToggleScaleIn() {

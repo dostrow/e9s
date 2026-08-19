@@ -205,10 +205,18 @@ func fmtMetricValue(value float64, unit string) string {
 		return fmt.Sprintf("%.1f%%", value)
 	case "bytes":
 		return formatMetricBytes(value)
+	case "bytes/s":
+		return formatMetricBytes(value) + "/s"
+	case "GiB":
+		return fmt.Sprintf("%.1f GiB", value)
 	case "ms":
 		return fmt.Sprintf("%.1f ms", value)
+	case "seconds":
+		return fmt.Sprintf("%.1f s", value)
 	case "count":
 		return fmt.Sprintf("%.0f", value)
+	case "iops":
+		return fmt.Sprintf("%.1f IOPS", value)
 	default:
 		if math.Abs(value) >= 1000 {
 			return fmt.Sprintf("%.1fk", value/1000)

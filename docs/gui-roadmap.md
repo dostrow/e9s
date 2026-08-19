@@ -28,9 +28,24 @@ Implement and evaluate modules in this order:
 The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
 the next **compute and delivery** batch: together they exercise log-heavy jobs,
 interactive host sessions, nested resource browsers, and destructive actions.
-Reassess the data-oriented and local-tool modules after ECR rather than fixing
-their order now. The remaining candidates are RDS, S3, DynamoDB, SQS, Route53,
-and OpenTofu/Terraform.
+The next batch begins with RDS. Its standard CloudWatch monitoring is built on
+the shared time-series foundation first established for ECS and EC2. The
+remaining candidates after RDS are S3, DynamoDB, SQS, Route53, and
+OpenTofu/Terraform.
+
+## Shared metrics foundation
+
+- Preserve complete timestamped CloudWatch series instead of retaining only a
+  latest scalar sample.
+- Keep query construction, pagination, de-duplication, ordering, scaling, and
+  adaptive resolution UI-neutral.
+- Render the same data as theme-derived Cairo charts in the GUI and compact
+  terminal sparklines in the TUI.
+- Support 15-minute, 1-hour, 6-hour, 24-hour, and 7-day GUI ranges without
+  replacing or flashing unrelated Workspace Pane content.
+- ECS service/task, EC2 instance, and RDS instance dashboards share this path.
+  Enhanced RDS monitoring and Database Insights remain capability-dependent
+  follow-ups and are never enabled implicitly.
 
 Each module should be delivered in independently committed phases. A phase is
 complete only when its shared service behavior, GUI state transitions, stale

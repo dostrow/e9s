@@ -46,6 +46,7 @@ const (
 	pageECRRepositories   = "ecr-repositories"
 	pageECRImages         = "ecr-images"
 	pageECRFindings       = "ecr-findings"
+	pageRDSInstances      = "rds-instances"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -72,6 +73,7 @@ const (
 	detailECRRepository    = "ecr-repository"
 	detailECRImage         = "ecr-image"
 	detailECRFinding       = "ecr-finding"
+	detailRDS              = "rds-instance"
 )
 
 type mainWindow struct {
@@ -189,6 +191,10 @@ type mainWindow struct {
 	selectedECRFinding          string
 	ecrActionPending            bool
 	ecrScanCache                map[string]model.ECRScan
+	allRDSInstances             []model.RDSInstance
+	filteredRDSInstances        []model.RDSInstance
+	selectedRDSInstance         string
+	rdsDetail                   *model.RDSInstanceDetail
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -218,6 +224,7 @@ type mainWindow struct {
 	ecrRepositoryTable          *stringTable
 	ecrImageTable               *stringTable
 	ecrFindingTable             *stringTable
+	rdsTable                    *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -232,6 +239,7 @@ type mainWindow struct {
 	codeBuildModuleItems        *gtk.Box
 	ec2ModuleItems              *gtk.Box
 	ecrModuleItems              *gtk.Box
+	rdsModuleItems              *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -254,6 +262,7 @@ type mainWindow struct {
 	ec2SubnetsNavButton         *gtk.ToggleButton
 	ec2VolumesNavButton         *gtk.ToggleButton
 	ecrRepositoriesNavButton    *gtk.ToggleButton
+	rdsInstancesNavButton       *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -574,6 +583,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "SEVERITY", field: 0}, {title: "FINDING", field: 1, expand: true},
 		{title: "PACKAGE", field: 2, expand: true}, {title: "VERSION", field: 3},
 	})
+	w.rdsTable = newStringTable([]columnSpec{
+		{title: "IDENTIFIER", field: 0, expand: true}, {title: "ENGINE", field: 1},
+		{title: "CLASS", field: 2}, {title: "STATUS", field: 3}, {title: "ROLE", field: 4},
+		{title: "AZ", field: 5}, {title: "ENDPOINT", field: 6, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -597,6 +611,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrRepositoryTable.view.ConnectActivate(w.openECRRepositoryAt)
 	w.ecrImageTable.view.ConnectActivate(w.openECRImageAt)
 	w.ecrFindingTable.view.ConnectActivate(w.openECRFindingAt)
+	w.rdsTable.view.ConnectActivate(w.openRDSInstanceAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -619,6 +634,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrRepositoryTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRRepositoryRow() })
 	w.ecrImageTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRImageRow() })
 	w.ecrFindingTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRFindingRow() })
+	w.rdsTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSInstanceRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -898,6 +914,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.ecrModuleItems.AddCSSClass("module-subitems")
 	w.ecrModuleItems.Append(w.ecrRepositoriesNavButton)
 	ecrRepositories := w.newModuleExpander("ECR", moduleECR, w.ecrModuleItems)
+	w.rdsInstancesNavButton = newModuleRailButton("Instances", w.openRDSModule)
+	w.rdsInstancesNavButton.SetGroup(w.clustersNavButton)
+	w.rdsModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.rdsModuleItems.AddCSSClass("module-subitems")
+	w.rdsModuleItems.Append(w.rdsInstancesNavButton)
+	rdsInstances := w.newModuleExpander("RDS", moduleRDS, w.rdsModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -954,6 +976,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
 		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
+		{key: moduleRDS, name: "RDS", defaultItem: "Instances", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.loadRDSInstances},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1091,6 +1114,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	ecrFindingScroll.SetVExpand(true)
 	ecrFindingScroll.SetHExpand(true)
 	ecrFindingScroll.SetChild(w.ecrFindingTable.view)
+	rdsScroll := gtk.NewScrolledWindow()
+	rdsScroll.SetVExpand(true)
+	rdsScroll.SetHExpand(true)
+	rdsScroll.SetChild(w.rdsTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1124,6 +1151,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(ecrRepositoryScroll, pageECRRepositories)
 	w.resourceStack.AddNamed(ecrImageScroll, pageECRImages)
 	w.resourceStack.AddNamed(ecrFindingScroll, pageECRFindings)
+	w.resourceStack.AddNamed(rdsScroll, pageRDSInstances)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1609,6 +1637,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.codeBuildDetail = nil
 	w.codeBuildActionPending = false
 	w.ec2Detail = nil
+	w.rdsDetail = nil
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2129,6 +2158,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyECRFindingFilter()
 		return
 	}
+	if w.currentPage == pageRDSInstances {
+		w.applyRDSFilter()
+		return
+	}
 	if w.currentPage == pageLambda {
 		w.applyLambdaFilter()
 		return
@@ -2503,6 +2536,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	if w.showingMetrics {
+		w.loadMetrics(foreground)
+		return
+	}
 	cloudWatchPage := w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch
 	if foreground && cloudWatchPage && !w.reloadSavedLogConfig() {
 		return
@@ -2526,6 +2563,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageEC2Instances {
 		w.refreshEC2(foreground)
+		return
+	}
+	if w.currentPage == pageRDSInstances {
+		w.refreshRDS(foreground)
 		return
 	}
 	if w.currentPage == pageEC2LoadBalancers {
@@ -2580,10 +2621,6 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageTaskDefinitions {
 		w.refreshTaskDefinitions(foreground)
-		return
-	}
-	if w.showingMetrics {
-		w.loadMetrics(foreground)
 		return
 	}
 	if w.currentPage == pageStandaloneTasks && w.selectedCluster != "" {
@@ -2904,6 +2941,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		if w.ecrRepositoriesNavButton != nil {
 			w.ecrRepositoriesNavButton.SetActive(w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings)
 		}
+		if w.rdsInstancesNavButton != nil {
+			w.rdsInstancesNavButton.SetActive(w.currentPage == pageRDSInstances)
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -2914,8 +2954,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		w.loadMoreTasksButton.SetSensitive(w.taskNextToken != "")
 	}
 	ec2MetricsSelected := w.currentPage == pageEC2Instances && w.selectedEC2Instance != "" && w.ec2Detail != nil
-	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected)
-	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil))
+	rdsMetricsSelected := w.currentPage == pageRDSInstances && w.selectedRDSInstance != "" && w.rdsDetail != nil
+	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected)
+	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) || (rdsMetricsSelected && w.options.RDS != nil))
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

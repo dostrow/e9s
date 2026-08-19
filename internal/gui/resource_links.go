@@ -216,6 +216,8 @@ func (w *mainWindow) navigateResourceRef(ref model.ResourceRef) {
 		w.loadEC2TargetGroups(ref.ID)
 	case "ecs-task":
 		w.restoreECSTask(ref.ID)
+	case "rds-instance":
+		w.loadRDSInstancesAt(ref.ID)
 	default:
 		navigated = false
 		w.setStatus("Navigation is not implemented for "+ref.Kind, true)
@@ -273,6 +275,10 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 	case pageEC2TargetGroups:
 		if w.selectedEC2TargetGroup != "" {
 			return model.ResourceRef{Kind: "ec2-target-group", ID: w.selectedEC2TargetGroup}, true
+		}
+	case pageRDSInstances:
+		if w.selectedRDSInstance != "" {
+			return model.ResourceRef{Kind: "rds-instance", ID: w.selectedRDSInstance}, true
 		}
 	}
 	return model.ResourceRef{}, false

@@ -69,6 +69,7 @@ func main() {
 				EBS:             service.NewEBS(client),
 				LoadBalancing:   service.NewLoadBalancing(client),
 				ECR:             service.NewECR(client),
+				RDS:             service.NewRDS(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,
