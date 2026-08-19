@@ -2,10 +2,14 @@
 
 package gui
 
-import gtksource "libdb.so/gotk4-sourceview/pkg/gtksource/v4"
+/*
+#cgo pkg-config: gtksourceview-5
+#include "sourceview_bridge.h"
+*/
+import "C"
 
 func initializeSourceEditor() {
-	gtksource.Init()
+	C.e9s_source_init()
 }
 
 func sourceEditorAvailable() bool { return true }
