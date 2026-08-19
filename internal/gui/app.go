@@ -78,6 +78,14 @@ type LambdaService interface {
 	UpdateCode(context.Context, string, []byte) error
 }
 
+type CodeBuildService interface {
+	ListProjects(context.Context, string) ([]model.CodeBuildProject, error)
+	ListBuilds(context.Context, string, int) ([]model.CodeBuildBuild, error)
+	Detail(context.Context, string) (*model.CodeBuildDetail, error)
+	Start(context.Context, string, string) (*model.CodeBuildBuild, error)
+	Stop(context.Context, string, string) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -85,6 +93,7 @@ type Options struct {
 	SSM             SSMService
 	Secrets         SecretsService
 	Lambda          LambdaService
+	CodeBuild       CodeBuildService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

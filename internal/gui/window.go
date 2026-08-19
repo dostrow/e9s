@@ -21,20 +21,22 @@ import (
 const (
 	taskHistoryBatchSize = 50
 
-	pageClusters        = "clusters"
-	pageServices        = "services"
-	pageTasks           = "tasks"
-	pageStandaloneTasks = "standalone-tasks"
-	pageStoppedTasks    = "stopped-standalone-tasks"
-	pageTaskDefinitions = "task-definitions"
-	pageLogGroups       = "cloudwatch-log-groups"
-	pageLogStreams      = "cloudwatch-log-streams"
-	pageSavedLogSearch  = "cloudwatch-saved-search"
-	pageAlarms          = "cloudwatch-alarms"
-	pageSSM             = "ssm-parameters"
-	pageSecrets         = "secrets-manager"
-	pageLambda          = "lambda-functions"
-	pageModulePicker    = "module-picker"
+	pageClusters          = "clusters"
+	pageServices          = "services"
+	pageTasks             = "tasks"
+	pageStandaloneTasks   = "standalone-tasks"
+	pageStoppedTasks      = "stopped-standalone-tasks"
+	pageTaskDefinitions   = "task-definitions"
+	pageLogGroups         = "cloudwatch-log-groups"
+	pageLogStreams        = "cloudwatch-log-streams"
+	pageSavedLogSearch    = "cloudwatch-saved-search"
+	pageAlarms            = "cloudwatch-alarms"
+	pageSSM               = "ssm-parameters"
+	pageSecrets           = "secrets-manager"
+	pageLambda            = "lambda-functions"
+	pageCodeBuildProjects = "codebuild-projects"
+	pageCodeBuildBuilds   = "codebuild-builds"
+	pageModulePicker      = "module-picker"
 
 	detailIntro          = "intro"
 	detailClusterSummary = "cluster-summary"
@@ -115,6 +117,12 @@ type mainWindow struct {
 	lambdaEnvironmentResolved   bool
 	lambdaViewMode              string
 	lambdaActionPending         bool
+	allCodeBuildProjects        []model.CodeBuildProject
+	filteredCodeBuildProjects   []model.CodeBuildProject
+	allCodeBuildBuilds          []model.CodeBuildBuild
+	filteredCodeBuildBuilds     []model.CodeBuildBuild
+	selectedCodeBuildProject    string
+	selectedCodeBuild           string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -132,6 +140,8 @@ type mainWindow struct {
 	ssmTable                    *stringTable
 	secretTable                 *stringTable
 	lambdaTable                 *stringTable
+	codeBuildProjectTable       *stringTable
+	codeBuildBuildTable         *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -143,6 +153,7 @@ type mainWindow struct {
 	ssmModuleItems              *gtk.Box
 	secretsModuleItems          *gtk.Box
 	lambdaModuleItems           *gtk.Box
+	codeBuildModuleItems        *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -156,6 +167,7 @@ type mainWindow struct {
 	savedSecretFiltersLabel     *gtk.Label
 	savedSecretFilterButtons    []*gtk.ToggleButton
 	lambdaFunctionsNavButton    *gtk.ToggleButton
+	codeBuildProjectsNavButton  *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -390,6 +402,20 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "TIMEOUT", field: 4},
 		{title: "MODIFIED", field: 5},
 	})
+	w.codeBuildProjectTable = newStringTable([]columnSpec{
+		{title: "PROJECT", field: 0, expand: true},
+		{title: "SOURCE", field: 1},
+		{title: "DESCRIPTION", field: 2, expand: true},
+		{title: "MODIFIED", field: 3},
+	})
+	w.codeBuildBuildTable = newStringTable([]columnSpec{
+		{title: "#", field: 0},
+		{title: "STATUS", field: 1},
+		{title: "STARTED", field: 2},
+		{title: "DURATION", field: 3},
+		{title: "INITIATOR", field: 4, expand: true},
+		{title: "SOURCE VERSION", field: 5, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -401,12 +427,16 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ssmTable.view.ConnectActivate(w.openSSMParameterAt)
 	w.secretTable.view.ConnectActivate(w.openSecretAt)
 	w.lambdaTable.view.ConnectActivate(w.openLambdaFunctionAt)
+	w.codeBuildProjectTable.view.ConnectActivate(w.openCodeBuildProjectAt)
+	w.codeBuildBuildTable.view.ConnectActivate(w.openCodeBuildBuildAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
 	w.ssmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSSMParameterRow() })
 	w.secretTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSecretRow() })
 	w.lambdaTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLambdaFunctionRow() })
+	w.codeBuildProjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildProjectRow() })
+	w.codeBuildBuildTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCodeBuildBuildRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -603,8 +633,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	moduleItems.AddCSSClass("module-subitems")
 	moduleItems.Append(w.clustersNavButton)
 	moduleItems.Append(w.taskDefinitionsNavButton)
-	w.moduleErrorGlyphs = make(map[string]*gtk.Image, 4)
+	w.moduleErrorGlyphs = make(map[string]*gtk.Image, 8)
 	ecs := w.newModuleExpander("ECS", moduleECS, moduleItems)
+	w.codeBuildProjectsNavButton = newModuleRailButton("Projects", w.openCodeBuildModule)
+	w.codeBuildProjectsNavButton.SetGroup(w.clustersNavButton)
+	w.codeBuildModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.codeBuildModuleItems.AddCSSClass("module-subitems")
+	w.codeBuildModuleItems.Append(w.codeBuildProjectsNavButton)
+	codeBuild := w.newModuleExpander("CodeBuild", moduleCodeBuild, w.codeBuildModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -658,6 +694,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	comingSoon.AddCSSClass("muted")
 	sidebar.Append(modules)
 	w.moduleSections = []moduleRailSection{
+		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -747,6 +784,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	lambdaScroll.SetVExpand(true)
 	lambdaScroll.SetHExpand(true)
 	lambdaScroll.SetChild(w.lambdaTable.view)
+	codeBuildProjectScroll := gtk.NewScrolledWindow()
+	codeBuildProjectScroll.SetVExpand(true)
+	codeBuildProjectScroll.SetHExpand(true)
+	codeBuildProjectScroll.SetChild(w.codeBuildProjectTable.view)
+	codeBuildBuildScroll := gtk.NewScrolledWindow()
+	codeBuildBuildScroll.SetVExpand(true)
+	codeBuildBuildScroll.SetHExpand(true)
+	codeBuildBuildScroll.SetChild(w.codeBuildBuildTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -768,6 +813,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(ssmScroll, pageSSM)
 	w.resourceStack.AddNamed(secretScroll, pageSecrets)
 	w.resourceStack.AddNamed(lambdaScroll, pageLambda)
+	w.resourceStack.AddNamed(codeBuildProjectScroll, pageCodeBuildProjects)
+	w.resourceStack.AddNamed(codeBuildBuildScroll, pageCodeBuildBuilds)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1644,6 +1691,14 @@ func (w *mainWindow) applyFilter() {
 		w.applyLambdaFilter()
 		return
 	}
+	if w.currentPage == pageCodeBuildProjects {
+		w.applyCodeBuildProjectFilter()
+		return
+	}
+	if w.currentPage == pageCodeBuildBuilds {
+		w.applyCodeBuildBuildFilter()
+		return
+	}
 	if w.currentPage == pageSecrets {
 		w.applySecretFilter()
 		return
@@ -1746,6 +1801,29 @@ func (w *mainWindow) goBack() {
 func (w *mainWindow) navigateBrowserBack() {
 	if w.showingEditor {
 		w.closeEditorThen(w.navigateBrowserBack)
+		return
+	}
+	if w.currentPage == pageCodeBuildBuilds {
+		projectName := w.selectedCodeBuildProject
+		w.resetWorkspaceForBrowserChange()
+		w.clearCodeBuildBuilds()
+		w.currentPage = pageCodeBuildProjects
+		w.search.SetText("")
+		w.search.SetPlaceholderText("Filter projects…")
+		w.resourceStack.SetVisibleChildName(pageCodeBuildProjects)
+		w.backButton.SetSensitive(false)
+		w.selectedCodeBuildProject = projectName
+		if project, found := findCodeBuildProject(w.allCodeBuildProjects, projectName); found {
+			w.setBreadcrumb("CodeBuild / Projects / " + projectName)
+			w.setDetail(formatCodeBuildProject(project), detailIntro)
+		} else {
+			w.selectedCodeBuildProject = ""
+			w.setBreadcrumb("CodeBuild / Projects")
+			w.setDetail(codeBuildProjectListSummary(len(w.allCodeBuildProjects)), detailIntro)
+		}
+		w.applyCodeBuildProjectFilter()
+		w.updateActionSensitivity()
+		w.setStatus("Ready", false)
 		return
 	}
 	if w.currentPage == pageLogStreams {
@@ -1860,6 +1938,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 			return
 		}
 		w.refreshLambda(foreground)
+		return
+	}
+	if w.currentPage == pageCodeBuildProjects || w.currentPage == pageCodeBuildBuilds {
+		w.refreshCodeBuild(foreground)
 		return
 	}
 	if w.currentPage == pageSecrets {
@@ -2189,6 +2271,9 @@ func (w *mainWindow) updateActionSensitivity() {
 					w.savedLambdaSearchButtons[i].SetActive(w.currentPage == pageLambda && search.Name == w.activeSavedLambdaSearch)
 				}
 			}
+		}
+		if w.codeBuildProjectsNavButton != nil {
+			w.codeBuildProjectsNavButton.SetActive(w.currentPage == pageCodeBuildProjects || w.currentPage == pageCodeBuildBuilds)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

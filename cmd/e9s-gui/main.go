@@ -63,6 +63,7 @@ func main() {
 				SSM:             service.NewSSM(client),
 				Secrets:         service.NewSecrets(client),
 				Lambda:          service.NewLambda(client),
+				CodeBuild:       service.NewCodeBuild(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,
