@@ -356,6 +356,10 @@ CloudWatch log access with the TUI through `service.CodeBuild` and
 
 ## EC2 delivery phases
 
+EC2 is implemented in the GTK frontend and shares instance discovery, detail
+composition, console output, Session Manager preparation, and validated
+lifecycle operations with the TUI through `service.EC2`.
+
 ### Phase 1: shared service
 
 - Centralize instance discovery, filtering and ordering, detail composition,
@@ -378,6 +382,15 @@ CloudWatch log access with the TUI through `service.CodeBuild` and
   confirmations; make termination visually distinct and never the default.
 - Disable actions while pending and refresh selected instance state after
   successful mutations.
+
+### Phase 4: parity and evaluation
+
+- Compare the GUI with the complete TUI EC2 workflow, including filtering,
+  instance details, console output, Session Manager, and lifecycle validation.
+- Exercise rapid navigation, cancellation, terminal disconnect, long-running
+  actions, confirmation defaults, and Module Rail error/status handling.
+- Record intentional frontend differences and update the development guide and
+  PoC results.
 
 ## ECR delivery phases
 

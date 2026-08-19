@@ -493,6 +493,34 @@ The GUI embeds actions in contextual Header Bar controls while the TUI retains
 its keyboard-first detail screen. The presentation differs intentionally; query,
 mutation, cancellation, log fallback, and final-line behavior remain shared.
 
+### EC2 module follow-up
+
+EC2 now uses `service.EC2` in both frontends for deterministic instance
+discovery and filtering, composed instance details, serial console output,
+Session Manager preparation, lifecycle validation and mutations, caller-owned
+cancellation, and contextual errors. Instance, security-group, rule, and volume
+values are UI-neutral models; neither frontend duplicates AWS SDK workflow
+logic.
+
+The GTK frontend adds an alphabetically positioned, collapsible EC2 module with
+Instances as its default item. Selection loads metadata, networking, security
+groups and rules, EBS volumes, and tags into the Workspace. Context changes
+clear stale content immediately, generation guards reject abandoned responses,
+and refresh preserves a selected instance when it still exists.
+
+Serial console output is a bounded, non-live text workspace with normalized
+line endings. Eligible running instances can open Session Manager in the same
+embedded VTE used by ECS Exec, including terminal resizing and a shared guarded
+disconnect path. Start, stop, reboot, and terminate are state-aware contextual
+actions; every mutation requires explicit confirmation, termination is visually
+distinct and defaults to No, and pending work disables EC2 actions and refresh
+until the selected context is reloaded.
+
+The GUI exposes these operations through contextual Header Bar controls while
+the TUI retains its keyboard-first instance-detail screen. That presentation
+difference is intentional; discovery, detail composition, session preparation,
+validation, mutation, cancellation, and error behavior remain shared.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

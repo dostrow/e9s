@@ -77,11 +77,13 @@ a module picker; choosing a module expands only that module and opens its defaul
 sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
 CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
 Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda, and
-**Projects** for CodeBuild. Use `Ctrl+P` to reopen the picker from anywhere.
+**Projects** for CodeBuild, and **Instances** for EC2. Use `Ctrl+P` to reopen the
+picker from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
-`CB` and `CodeBuild` select the CodeBuild project browser.
+`CB` and `CodeBuild` select the CodeBuild project browser; `EC2` and `EC2i`
+select the EC2 instance browser.
 For example:
 
 ```yaml
@@ -134,8 +136,10 @@ saved filters, guarded JSON/plaintext reveal, editing, and cloning; Lambda
 browsing, saved searches, configuration/environment inspection, CloudWatch log
 workflows, and guarded ZIP editing; CodeBuild project/build browsing, phase and
 failure inspection, environment references, log viewing/search, and confirmed
-start/stop operations; service-wide and selected-task metrics; scaling and
-guarded ECS mutations; and ECS Exec in an embedded VTE terminal.
+start/stop operations; EC2 instance browsing, networking/security/storage/tag
+details, console output, Session Manager, and guarded lifecycle operations;
+service-wide and selected-task metrics; scaling and guarded ECS mutations; and
+ECS Exec in an embedded VTE terminal.
 The GTK frontend and Bubble Tea frontend both call the same UI-neutral
 services in `internal/service`; GTK code does not call AWS SDK adapters directly.
 
@@ -288,6 +292,19 @@ memory than a cached rebuild.
     operations require confirmation, all CodeBuild actions and refresh remain
     disabled while pending, errors use the shared dismissible error surface, and
     the affected build context reloads after success.
+47. Expand EC2 and open Instances. Filter by name, ID, IP, type, and state;
+    rapidly change selections and modules, and confirm Browser and Workspace
+    content clear immediately and late responses never replace the final choice.
+48. Select an instance and confirm metadata, networking, security-group rules,
+    EBS volumes, and tags render deterministically. Refresh and verify the
+    selected instance remains selected while it still exists.
+49. View serial console output, return to Details, and open Session Manager on a
+    disposable running SSM-managed instance. Confirm the embedded terminal
+    accepts input, resizes, and uses the shared disconnect confirmation.
+50. On disposable instances, exercise start, stop, and reboot, then inspect the
+    terminate confirmation without accepting it. Confirm invalid actions are
+    unavailable, termination defaults to No, pending operations disable all EC2
+    actions and refresh, and successful mutations reload the selected context.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.
