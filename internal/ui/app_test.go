@@ -152,6 +152,25 @@ func TestServiceDetailReturnsToTaskDetail(t *testing.T) {
 	}
 }
 
+func TestServiceDetailLinksCanReturnFromEC2Resource(t *testing.T) {
+	svc := &model.Service{
+		Name:         "api",
+		TargetGroups: []model.ResourceRef{{Kind: "ec2-target-group", ID: "tg-1"}},
+	}
+	app := App{state: viewServiceDetail, mode: modeECS, selectedService: svc, width: 100, height: 40}
+	links := app.currentEC2ResourceLinks()
+	if len(links) != 1 || links[0].ID != "tg-1" {
+		t.Fatalf("service links = %#v", links)
+	}
+
+	app.resourceHistory = []model.ResourceRef{{Kind: "ecs-service", ID: "api"}}
+	app.state = viewEC2TargetGroupDetail
+	restored, cmd := app.navigateEC2Resource(app.resourceHistory[0], false)
+	if cmd != nil || restored.state != viewServiceDetail || restored.mode != modeECS {
+		t.Fatalf("restored state=%v mode=%v cmd=%v", restored.state, restored.mode, cmd)
+	}
+}
+
 func TestEnvVarsRevealKeyRequestsConfirmation(t *testing.T) {
 	secret := e9saws.EnvVar{
 		Name:   "API_TOKEN",

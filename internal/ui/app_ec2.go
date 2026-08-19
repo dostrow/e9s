@@ -35,7 +35,9 @@ func (a App) newTaskDetail(task *model.Task) views.TaskDetailModel {
 	if task == nil {
 		return views.NewTaskDetail(nil)
 	}
-	return views.NewTaskDetail(task).SetResourceRefs(service.ECSTaskResourceRefs(*task, a.selectedService))
+	return views.NewTaskDetail(task).
+		SetServiceContext(a.selectedService).
+		SetResourceRefs(service.ECSTaskResourceRefs(*task, a.selectedService))
 }
 
 func (a App) openEC2SecurityGroups() (App, tea.Cmd) {
@@ -136,6 +138,11 @@ func (a App) openEC2ResourcePicker() (App, tea.Cmd) {
 
 func (a App) currentEC2ResourceLinks() []model.ResourceRef {
 	switch a.state {
+	case viewServiceDetail:
+		if a.selectedService == nil {
+			return nil
+		}
+		return service.ECSServiceResourceRefs(*a.selectedService)
 	case viewTaskDetail:
 		task := a.detailView.Task()
 		if task == nil {
@@ -273,6 +280,10 @@ func uniqueResourceRefs(refs []model.ResourceRef) []model.ResourceRef {
 
 func (a App) currentEC2ResourceRef() (model.ResourceRef, bool) {
 	switch a.state {
+	case viewServiceDetail:
+		if a.selectedService != nil {
+			return model.ResourceRef{Kind: "ecs-service", ID: a.selectedService.Name}, true
+		}
 	case viewTaskDetail:
 		if task := a.detailView.Task(); task != nil {
 			return model.ResourceRef{Kind: "ecs-task", ID: task.TaskARN, Name: task.TaskID}, true
@@ -325,6 +336,17 @@ func (a App) navigateEC2Resource(ref model.ResourceRef, pushOrigin bool) (App, t
 	a.loading = true
 	ctx := a.ctx
 	switch ref.Kind {
+	case "ecs-service":
+		if a.selectedService == nil || a.selectedService.Name != ref.ID {
+			a.loading = false
+			a.err = fmt.Errorf("ECS service %s is no longer available", ref.ID)
+			return a, nil
+		}
+		a.mode = modeECS
+		a.state = viewServiceDetail
+		a.serviceDetailView = views.NewServiceDetail(a.selectedService).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
 	case "ec2-instance":
 		a.state = viewEC2Detail
 		ec2Service := a.ec2

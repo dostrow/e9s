@@ -1858,7 +1858,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.switchEC2Resource()
 			}
 		}
-		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewTaskDetail || a.state == viewRDSDetail) {
+		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewServiceDetail || a.state == viewTaskDetail || a.state == viewRDSDetail) {
 			return a.openEC2ResourcePicker()
 		}
 		switch a.state {
@@ -2653,7 +2653,7 @@ func (a App) helpText() string {
 	case viewTaskDefDetail:
 		primary = "[tab] switch tab"
 	case viewServiceDetail:
-		primary = "[tab] switch tab"
+		primary = "[tab] switch tab  [o] linked resources"
 	case viewLogs:
 		primary = "[f] follow"
 	case viewTaskDefDiff, viewSecretValue:
@@ -2836,6 +2836,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewServiceDetail:
 		context = []kv{
 			{"tab", "Switch between Deployments and Events"},
+			{kb.OpenResource, "Open linked resource"},
 			{kb.StandaloneTasks, "Toggle standalone tasks"},
 			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.TaskDefDiff, "Task definition deployment diff"},

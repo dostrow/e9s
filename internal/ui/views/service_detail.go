@@ -81,6 +81,22 @@ func (m ServiceDetailModel) View() string {
 		fmt.Fprintf(&b, "  %-20s %s (%s ago)\n", "Created:", s.CreatedAt.Format("2006-01-02 15:04:05"), formatAge(s.CreatedAt))
 	}
 	b.WriteString("\n")
+	b.WriteString(theme.TitleStyle.Render("  Configured Resources"))
+	b.WriteString("\n\n")
+	if len(s.SecurityGroups) == 0 && len(s.TargetGroups) == 0 {
+		b.WriteString(theme.HelpStyle.Render("  No linked infrastructure"))
+		b.WriteString("\n")
+	}
+	for _, group := range s.SecurityGroups {
+		fmt.Fprintf(&b, "  %-20s %s\n", "Security Group:", group.ID)
+	}
+	for _, targetGroup := range s.TargetGroups {
+		fmt.Fprintf(&b, "  %-20s %s\n", "Target Group:", targetGroup.ID)
+	}
+	if len(s.SecurityGroups) > 0 || len(s.TargetGroups) > 0 {
+		b.WriteString("\n  [o] open linked resource\n")
+	}
+	b.WriteString("\n")
 
 	deployTab := theme.TitleStyle.Render("  [Deployments]  ")
 	eventTab := theme.HelpStyle.Render("  [Events]  ")

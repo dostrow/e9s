@@ -12,11 +12,13 @@ import (
 )
 
 type TaskDetailModel struct {
-	task      *model.Task
-	resources []model.ResourceRef
-	scroll    int
-	width     int
-	height    int
+	task                   *model.Task
+	resources              []model.ResourceRef
+	parentService          string
+	configuredTargetGroups []model.ResourceRef
+	scroll                 int
+	width                  int
+	height                 int
 }
 
 func NewTaskDetail(task *model.Task) TaskDetailModel {
@@ -85,6 +87,20 @@ func (m TaskDetailModel) lines() []string {
 		lines = append(lines, fmt.Sprintf("  %-20s %s", "EBS Volumes:", strings.Join(t.VolumeIDs, ", ")))
 	}
 	lines = append(lines, fmt.Sprintf("  %-20s %s", "Group:", t.Group))
+	if m.parentService != "" {
+		lines = append(lines, "", theme.TitleStyle.Render("  Service Context"), "")
+		lines = append(lines, fmt.Sprintf("  %-26s %s", "Parent Service:", m.parentService))
+		if len(m.configuredTargetGroups) == 0 {
+			lines = append(lines, fmt.Sprintf("  %-26s %s", "Configured Target Groups:", "none"))
+		}
+		for index, targetGroup := range m.configuredTargetGroups {
+			label := ""
+			if index == 0 {
+				label = "Configured Target Groups:"
+			}
+			lines = append(lines, fmt.Sprintf("  %-26s %s", label, targetGroup.ID))
+		}
+	}
 
 	if !t.StartedAt.IsZero() {
 		lines = append(lines, fmt.Sprintf("  %-20s %s (%s ago)", "Started:", t.StartedAt.Format("2006-01-02 15:04:05"), formatAge(t.StartedAt)))
@@ -169,5 +185,16 @@ func (m TaskDetailModel) Task() *model.Task { return m.task }
 
 func (m TaskDetailModel) SetResourceRefs(refs []model.ResourceRef) TaskDetailModel {
 	m.resources = append([]model.ResourceRef(nil), refs...)
+	return m
+}
+
+func (m TaskDetailModel) SetServiceContext(service *model.Service) TaskDetailModel {
+	if service == nil {
+		m.parentService = ""
+		m.configuredTargetGroups = nil
+		return m
+	}
+	m.parentService = service.Name
+	m.configuredTargetGroups = append([]model.ResourceRef(nil), service.TargetGroups...)
 	return m
 }
