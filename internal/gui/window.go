@@ -296,7 +296,9 @@ type mainWindow struct {
 	breadcrumb                  *gtk.DrawingArea
 	breadcrumbText              string
 	detailToolbar               *gtk.Box
-	detailLinks                 *gtk.FlowBox
+	detailLinks                 *gtk.MenuButton
+	detailView                  *gtk.TextView
+	detailResourceTags          []detailResourceTag
 	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
 	detailText                  string
@@ -1065,27 +1067,24 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailToolbar.AddCSSClass("log-toolbar")
 	w.detailToolbar.Append(w.detailParentButton)
 	w.detailToolbar.SetVisible(false)
-	detail := gtk.NewTextViewWithBuffer(w.detailBuffer)
-	detail.SetEditable(false)
-	detail.SetCursorVisible(false)
-	detail.SetMonospace(true)
-	detail.SetWrapMode(gtk.WrapWordChar)
-	detail.AddCSSClass("inspector")
+	w.detailView = gtk.NewTextViewWithBuffer(w.detailBuffer)
+	w.detailView.SetEditable(false)
+	w.detailView.SetCursorVisible(false)
+	w.detailView.SetMonospace(true)
+	w.detailView.SetWrapMode(gtk.WrapWordChar)
+	w.detailView.AddCSSClass("inspector")
+	w.installDetailLinkControllers()
 	detailScroll := gtk.NewScrolledWindow()
 	detailScroll.SetVExpand(true)
 	detailScroll.SetHExpand(true)
-	detailScroll.SetChild(detail)
+	detailScroll.SetChild(w.detailView)
 	detailPane := gtk.NewBox(gtk.OrientationVertical, 0)
 	detailPane.Append(w.detailToolbar)
-	w.detailLinks = gtk.NewFlowBox()
-	w.detailLinks.SetSelectionMode(gtk.SelectionNone)
-	w.detailLinks.SetMaxChildrenPerLine(8)
-	w.detailLinks.SetColumnSpacing(6)
-	w.detailLinks.SetRowSpacing(6)
+	w.detailLinks = gtk.NewMenuButton()
+	w.detailLinks.SetLabel("Linked resources")
 	w.detailLinks.SetMarginStart(8)
-	w.detailLinks.SetMarginEnd(8)
+	w.detailLinks.SetHAlign(gtk.AlignStart)
 	w.detailLinks.SetMarginTop(6)
-	w.detailLinks.SetMarginBottom(6)
 	w.detailLinks.SetVisible(false)
 	detailPane.Append(w.detailLinks)
 	detailPane.Append(detailScroll)
