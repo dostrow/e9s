@@ -360,6 +360,13 @@ EC2 is implemented in the GTK frontend and shares instance discovery, detail
 composition, console output, Session Manager preparation, and validated
 lifecycle operations with the TUI through `service.EC2`.
 
+The expansion now also includes security groups, VPCs, subnets, EBS volumes,
+application/network load balancers, target groups, listeners, and target
+health. Resource IDs in GUI details are inline links; a single compact linked-
+resource menu preserves keyboard and accessibility navigation without allowing
+the Workspace toolbar to grow with the number of relationships. The TUI uses
+`o` to open the equivalent linked-resource picker.
+
 ### Phase 1: shared service
 
 - Centralize instance discovery, filtering and ordering, detail composition,
@@ -391,6 +398,53 @@ lifecycle operations with the TUI through `service.EC2`.
   actions, confirmation defaults, and Module Rail error/status handling.
 - Record intentional frontend differences and update the development guide and
   PoC results.
+
+### Cross-resource follow-ups
+
+- ECS task details resolve and link their actual ENI/subnet, VPC, security
+  groups, EC2 container instance, ECS-managed EBS volumes, and the parent
+  service's target groups. EC2 enrichment is best-effort so a missing optional
+  `ec2:Describe*` permission does not make the ECS task browser unusable.
+- RDS details link VPC and security-group identifiers in the TUI. Apply the same
+  links when RDS reaches the GUI.
+- When shared Lambda and CodeBuild models retain their VPC configuration, expose
+  their subnet and security-group identifiers through this same shared
+  `ResourceRef` navigation path. Do not add frontend-only AWS lookups.
+
+## IAM context and policy simulation
+
+Do not label a resource detail section **Computed permissions**. AWS
+authorization is evaluated for a principal, action, resource, and request
+context; identity policies, resource policies, permissions boundaries,
+session policies, Organizations controls, conditions, and service-specific
+mechanisms can all affect the result. A resource alone therefore has no single
+complete permission set.
+
+Use this staged design when an IAM module is implemented:
+
+1. Add an **IAM context** section to applicable resource details. Show the
+   attached or acting principals already present in service metadata: EC2
+   instance-profile role, ECS task and execution roles, Lambda execution role,
+   CodeBuild service role, and ECS infrastructure role. Make role identifiers
+   linked IAM resources.
+2. In the IAM module, show role trust policy, attached managed policies, inline
+   policies, and permissions boundary as inspectable source documents. Show
+   resource policies separately on resource types that support them.
+3. Offer an explicit **Simulate access…** workflow. Require or infer a principal,
+   select a curated or user-entered action set, target the current resource ARN,
+   and request any missing condition context. Render allowed, implicit-deny, and
+   explicit-deny results with matched statements and missing context values.
+4. Mark every result as a simulation, not an authoritative statement of live
+   access. The IAM API evaluates supplied action/resource combinations and does
+   not automatically retrieve resource policies; resource-policy simulation is
+   limited, and Organizations or service-specific controls can make simulated
+   and live results differ. See the AWS
+   [`SimulatePrincipalPolicy` API](https://docs.aws.amazon.com/IAM/latest/APIReference/API_SimulatePrincipalPolicy.html)
+   and [policy simulator limitations](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_testing-policies.html).
+
+This keeps ordinary resource details useful without granting broad IAM policy-
+read permissions, while making deeper authorization diagnostics an explicit,
+auditable action.
 
 ## ECR delivery phases
 

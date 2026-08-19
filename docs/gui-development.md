@@ -138,6 +138,8 @@ workflows, and guarded ZIP editing; CodeBuild project/build browsing, phase and
 failure inspection, environment references, log viewing/search, and confirmed
 start/stop operations; EC2 instance browsing, networking/security/storage/tag
 details, console output, Session Manager, and guarded lifecycle operations;
+EC2 security-group, VPC, subnet, EBS-volume, ALB/NLB, and target-group browsing
+with inline cross-resource navigation; ECS-task infrastructure links;
 service-wide and selected-task metrics; scaling and guarded ECS mutations; and
 ECS Exec in an embedded VTE terminal.
 The GTK frontend and Bubble Tea frontend both call the same UI-neutral

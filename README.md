@@ -577,7 +577,7 @@ Your IAM identity needs permissions for whichever modules you use:
 
 | Module | API Calls |
 | --- | --- |
-| ECS browse | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` |
+| ECS browse | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:DescribeContainerInstances` (EC2-backed task links) |
 | ECS operations | `ecs:UpdateService`, `ecs:StopTask` |
 | ECS Exec | `ecs:ExecuteCommand`, `ssmmessages:*` |
 | Task definitions | `ecs:DescribeTaskDefinition` |
@@ -592,7 +592,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
 | RDS browse | `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `cloudwatch:GetMetricData` |
-| EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeVolumes`, `ec2:DescribeSecurityGroups`, `ec2:GetConsoleOutput` |
+| EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSecurityGroups`, `ec2:DescribeSecurityGroupRules`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeVolumes`, `ec2:GetConsoleOutput`, `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTargetHealth` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |
 | ECR browse | `ecr:DescribeRepositories`, `ecr:DescribeImages`, `ecr:DescribeImageScanFindings` |
