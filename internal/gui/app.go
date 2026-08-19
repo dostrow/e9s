@@ -69,12 +69,22 @@ type SecretsService interface {
 	Update(context.Context, string, string) error
 }
 
+type LambdaService interface {
+	List(context.Context, string) ([]model.LambdaFunction, error)
+	Detail(context.Context, string) (*model.LambdaFunction, error)
+	Environment(context.Context, string, bool) ([]model.EnvVar, error)
+	PackageType(context.Context, string) (string, error)
+	DownloadCode(context.Context, string) (string, error)
+	UpdateCode(context.Context, string, []byte) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
 	Alarms          AlarmService
 	SSM             SSMService
 	Secrets         SecretsService
+	Lambda          LambdaService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

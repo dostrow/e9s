@@ -33,6 +33,7 @@ const (
 	pageAlarms          = "cloudwatch-alarms"
 	pageSSM             = "ssm-parameters"
 	pageSecrets         = "secrets-manager"
+	pageLambda          = "lambda-functions"
 	pageModulePicker    = "module-picker"
 
 	detailIntro          = "intro"
@@ -46,6 +47,7 @@ const (
 	detailAlarm          = "alarm"
 	detailSSM            = "ssm-parameter"
 	detailSecret         = "secret"
+	detailLambda         = "lambda-function"
 )
 
 type mainWindow struct {
@@ -103,6 +105,11 @@ type mainWindow struct {
 	activeSavedSecretFilter     string
 	secretDetail                *model.SecretValue
 	secretActionPending         bool
+	allLambdaFunctions          []model.LambdaFunction
+	filteredLambdaFunctions     []model.LambdaFunction
+	selectedLambdaFunction      string
+	lambdaSearchTerm            string
+	activeSavedLambdaSearch     string
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -119,6 +126,7 @@ type mainWindow struct {
 	alarmTable                  *stringTable
 	ssmTable                    *stringTable
 	secretTable                 *stringTable
+	lambdaTable                 *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -129,6 +137,7 @@ type mainWindow struct {
 	cloudWatchModuleItems       *gtk.Box
 	ssmModuleItems              *gtk.Box
 	secretsModuleItems          *gtk.Box
+	lambdaModuleItems           *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -141,6 +150,9 @@ type mainWindow struct {
 	secretsNavButton            *gtk.ToggleButton
 	savedSecretFiltersLabel     *gtk.Label
 	savedSecretFilterButtons    []*gtk.ToggleButton
+	lambdaFunctionsNavButton    *gtk.ToggleButton
+	savedLambdaSearchesLabel    *gtk.Label
+	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
 	peekLogStreamButton         *gtk.Button
 	followLogStreamButton       *gtk.Button
@@ -166,6 +178,9 @@ type mainWindow struct {
 	secretEditButton            *gtk.Button
 	secretCloneButton           *gtk.Button
 	secretCopyARNButton         *gtk.Button
+	lambdaSearchButton          *gtk.Button
+	lambdaSaveSearchButton      *gtk.Button
+	lambdaManageSearchesButton  *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -342,6 +357,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "LAST CHANGED", field: 2},
 		{title: "LAST ACCESSED", field: 3},
 	})
+	w.lambdaTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true},
+		{title: "RUNTIME", field: 1},
+		{title: "STATE", field: 2},
+		{title: "MEMORY", field: 3},
+		{title: "TIMEOUT", field: 4},
+		{title: "MODIFIED", field: 5},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -352,11 +375,13 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.alarmTable.view.ConnectActivate(w.openAlarmAt)
 	w.ssmTable.view.ConnectActivate(w.openSSMParameterAt)
 	w.secretTable.view.ConnectActivate(w.openSecretAt)
+	w.lambdaTable.view.ConnectActivate(w.openLambdaFunctionAt)
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
 	w.ssmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSSMParameterRow() })
 	w.secretTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSecretRow() })
+	w.lambdaTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLambdaFunctionRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -441,6 +466,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.secretCloneButton.ConnectClicked(w.cloneSelectedSecret)
 	w.secretCopyARNButton = gtk.NewButtonWithLabel("Copy ARN")
 	w.secretCopyARNButton.ConnectClicked(w.copySelectedSecretARN)
+	w.lambdaSearchButton = gtk.NewButtonWithLabel("Function search…")
+	w.lambdaSearchButton.ConnectClicked(w.promptLambdaSearch)
+	w.lambdaSaveSearchButton = gtk.NewButtonWithLabel("Save search…")
+	w.lambdaSaveSearchButton.ConnectClicked(w.promptSaveLambdaSearch)
+	w.lambdaManageSearchesButton = gtk.NewButtonWithLabel("Saved searches…")
+	w.lambdaManageSearchesButton.ConnectClicked(w.promptManageLambdaSearches)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -504,6 +535,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.secretEditButton)
 	header.Append(w.secretCloneButton)
 	header.Append(w.secretCopyARNButton)
+	header.Append(w.lambdaSearchButton)
+	header.Append(w.lambdaSaveSearchButton)
+	header.Append(w.lambdaManageSearchesButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -564,6 +598,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.secretsModuleItems.Append(w.secretsNavButton)
 	w.rebuildSecretFilterRail()
 	secretsManager := w.newModuleExpander("Secrets Manager", moduleSecrets, w.secretsModuleItems)
+	w.lambdaFunctionsNavButton = newModuleRailButton("Functions", w.openLambdaModule)
+	w.lambdaFunctionsNavButton.SetGroup(w.clustersNavButton)
+	w.lambdaModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.lambdaModuleItems.AddCSSClass("module-subitems")
+	w.lambdaModuleItems.Append(w.lambdaFunctionsNavButton)
+	w.rebuildLambdaSearchRail()
+	lambdaFunctions := w.newModuleExpander("Lambda", moduleLambda, w.lambdaModuleItems)
 	comingSoon := gtk.NewLabel("More modules planned")
 	comingSoon.SetXAlign(0)
 	comingSoon.SetWrap(true)
@@ -575,6 +616,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
 		{key: moduleSSM, name: "SSM Parameter Store", defaultItem: "Parameters", aliases: []string{"ssm", "parameter store", "ssm parameter store"}, expander: ssmParameters, activate: func() { w.loadSSMPath("/", "") }},
 		{key: moduleSecrets, name: "Secrets Manager", defaultItem: "Secrets", aliases: []string{"sm", "secrets", "secrets manager", "secrets-manager"}, expander: secretsManager, activate: func() { w.loadSecrets("", "") }},
+		{key: moduleLambda, name: "Lambda", defaultItem: "Functions", aliases: []string{"lambda", "λ"}, expander: lambdaFunctions, activate: func() { w.loadLambdaFunctions("", "") }},
 	}
 	sortModuleRailSections(w.moduleSections)
 	for _, section := range w.moduleSections {
@@ -654,6 +696,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	secretScroll.SetVExpand(true)
 	secretScroll.SetHExpand(true)
 	secretScroll.SetChild(w.secretTable.view)
+	lambdaScroll := gtk.NewScrolledWindow()
+	lambdaScroll.SetVExpand(true)
+	lambdaScroll.SetHExpand(true)
+	lambdaScroll.SetChild(w.lambdaTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -674,6 +720,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(alarmScroll, pageAlarms)
 	w.resourceStack.AddNamed(ssmScroll, pageSSM)
 	w.resourceStack.AddNamed(secretScroll, pageSecrets)
+	w.resourceStack.AddNamed(lambdaScroll, pageLambda)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1539,6 +1586,10 @@ func (w *mainWindow) applyFilter() {
 	if w.currentPage == pageModulePicker {
 		return
 	}
+	if w.currentPage == pageLambda {
+		w.applyLambdaFilter()
+		return
+	}
 	if w.currentPage == pageSecrets {
 		w.applySecretFilter()
 		return
@@ -1742,6 +1793,13 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if path, found := w.activeSavedLogPath(); found {
 			w.openSavedLog(path)
 		}
+		return
+	}
+	if w.currentPage == pageLambda {
+		if foreground && !w.reloadLambdaSearchConfig() {
+			return
+		}
+		w.refreshLambda(foreground)
 		return
 	}
 	if w.currentPage == pageSecrets {
@@ -2064,6 +2122,14 @@ func (w *mainWindow) updateActionSensitivity() {
 				}
 			}
 		}
+		if w.lambdaFunctionsNavButton != nil {
+			w.lambdaFunctionsNavButton.SetActive(w.currentPage == pageLambda && w.activeSavedLambdaSearch == "")
+			for i, search := range w.options.ConfigLambdaSearches() {
+				if i < len(w.savedLambdaSearchButtons) {
+					w.savedLambdaSearchButtons[i].SetActive(w.currentPage == pageLambda && search.Name == w.activeSavedLambdaSearch)
+				}
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -2181,6 +2247,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.secretCopyARNButton.SetVisible(secretsPage && secretSelected)
 	w.secretCopyARNButton.SetSensitive(secretsPage && secretSelected)
+	lambdaPage := w.currentPage == pageLambda
+	w.lambdaSearchButton.SetVisible(lambdaPage)
+	w.lambdaSearchButton.SetSensitive(lambdaPage && w.options.Lambda != nil)
+	w.lambdaSaveSearchButton.SetVisible(lambdaPage)
+	w.lambdaSaveSearchButton.SetSensitive(lambdaPage && w.options.Config != nil)
+	hasSavedLambdaSearches := w.options.Config != nil && len(w.options.Config.LambdaSearches) > 0
+	w.lambdaManageSearchesButton.SetVisible(lambdaPage && hasSavedLambdaSearches)
+	w.lambdaManageSearchesButton.SetSensitive(lambdaPage && hasSavedLambdaSearches)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

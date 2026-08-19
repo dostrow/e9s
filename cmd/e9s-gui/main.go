@@ -62,6 +62,7 @@ func main() {
 				Alarms:          service.NewAlarms(client),
 				SSM:             service.NewSSM(client),
 				Secrets:         service.NewSecrets(client),
+				Lambda:          service.NewLambda(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,
