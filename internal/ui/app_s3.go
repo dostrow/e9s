@@ -1,14 +1,13 @@
 package ui
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -36,9 +35,10 @@ func (a App) openS3Buckets(filter string) (App, tea.Cmd) {
 	a.s3BucketsView = views.NewS3Buckets(filter)
 	a.s3BucketsView = a.s3BucketsView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	s3Service := a.s3
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		buckets, err := client.ListBuckets(context.Background(), filter)
+		buckets, err := s3Service.Buckets(ctx, filter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -52,9 +52,10 @@ func (a App) openS3Objects(bucket, prefix string) (App, tea.Cmd) {
 	a.s3ObjectsView = views.NewS3Objects(bucket, prefix)
 	a.s3ObjectsView = a.s3ObjectsView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	s3Service := a.s3
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		objects, err := client.ListObjects(context.Background(), bucket, prefix)
+		objects, err := s3Service.Objects(ctx, bucket, prefix)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -76,9 +77,10 @@ func (a App) searchS3Keys(prefix string) (App, tea.Cmd) {
 	a.s3ObjectsView = views.NewS3Objects(bucket, prefix)
 	a.s3ObjectsView = a.s3ObjectsView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	s3Service := a.s3
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		objects, err := client.SearchObjects(context.Background(), bucket, prefix)
+		objects, err := s3Service.Search(ctx, bucket, prefix)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -87,9 +89,10 @@ func (a App) searchS3Keys(prefix string) (App, tea.Cmd) {
 }
 
 func (a App) loadS3Detail(bucket, key string) tea.Cmd {
-	client := a.client
+	s3Service := a.s3
+	ctx := a.ctx
 	return func() tea.Msg {
-		detail, err := client.GetObjectDetail(context.Background(), bucket, key)
+		detail, err := s3Service.Detail(ctx, bucket, key)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -132,33 +135,23 @@ func (a App) doS3Download(destPath string) tea.Cmd {
 			return s3DownloadDoneMsg{err: fmt.Errorf("no path specified")}
 		}
 	}
-	client := a.client
+	s3Service := a.s3
+	ctx := a.ctx
 	bucket := a.s3DownloadBucket
 	key := a.s3DownloadKey
 	isPrefix := a.s3DownloadIsPrefix
 
 	return func() tea.Msg {
-		// Ensure parent directory exists
-		dir := destPath
-		if !isPrefix {
-			dir = filepath.Dir(destPath)
-		}
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return s3DownloadDoneMsg{err: fmt.Errorf("cannot create directory %s: %w", dir, err)}
-		}
-
-		if isPrefix {
-			count, err := client.DownloadPrefix(context.Background(), bucket, key, destPath)
-			if err != nil {
-				return s3DownloadDoneMsg{err: err}
-			}
-			return s3DownloadDoneMsg{message: fmt.Sprintf("Downloaded %d files to %s", count, destPath)}
-		}
-		err := client.DownloadObject(context.Background(), bucket, key, destPath)
+		result, err := s3Service.Download(ctx, model.S3DownloadRequest{
+			Bucket: bucket, Key: key, Destination: destPath, IsPrefix: isPrefix,
+		})
 		if err != nil {
 			return s3DownloadDoneMsg{err: err}
 		}
-		return s3DownloadDoneMsg{message: fmt.Sprintf("Downloaded to %s", destPath)}
+		if isPrefix {
+			return s3DownloadDoneMsg{message: fmt.Sprintf("Downloaded %d files to %s", result.Files, result.Destination)}
+		}
+		return s3DownloadDoneMsg{message: fmt.Sprintf("Downloaded to %s", result.Destination)}
 	}
 }
 

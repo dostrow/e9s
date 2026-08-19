@@ -7,13 +7,13 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type S3BucketsModel struct {
-	buckets     []aws.S3Bucket
+	buckets     []model.S3Bucket
 	searchTerm  string
 	cursor      int
 	filter      string
@@ -123,12 +123,12 @@ func (m S3BucketsModel) View() string {
 	return b.String()
 }
 
-func (m S3BucketsModel) filteredBuckets() []aws.S3Bucket {
+func (m S3BucketsModel) filteredBuckets() []model.S3Bucket {
 	if m.filter == "" {
 		return m.buckets
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.S3Bucket
+	var out []model.S3Bucket
 	for _, bkt := range m.buckets {
 		if strings.Contains(strings.ToLower(bkt.Name), lf) {
 			out = append(out, bkt)
@@ -137,7 +137,7 @@ func (m S3BucketsModel) filteredBuckets() []aws.S3Bucket {
 	return out
 }
 
-func (m S3BucketsModel) SetBuckets(buckets []aws.S3Bucket) S3BucketsModel {
+func (m S3BucketsModel) SetBuckets(buckets []model.S3Bucket) S3BucketsModel {
 	m.buckets = buckets
 	m.loaded = true
 	filtered := m.filteredBuckets()
@@ -147,7 +147,7 @@ func (m S3BucketsModel) SetBuckets(buckets []aws.S3Bucket) S3BucketsModel {
 	return m
 }
 
-func (m S3BucketsModel) SelectedBucket() *aws.S3Bucket {
+func (m S3BucketsModel) SelectedBucket() *model.S3Bucket {
 	filtered := m.filteredBuckets()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
@@ -156,8 +156,8 @@ func (m S3BucketsModel) SelectedBucket() *aws.S3Bucket {
 	return &bkt
 }
 
-func (m S3BucketsModel) SearchTerm() string  { return m.searchTerm }
-func (m S3BucketsModel) IsFiltering() bool    { return m.filtering }
+func (m S3BucketsModel) SearchTerm() string { return m.searchTerm }
+func (m S3BucketsModel) IsFiltering() bool  { return m.filtering }
 
 func (m S3BucketsModel) visibleRows() int {
 	overhead := 9

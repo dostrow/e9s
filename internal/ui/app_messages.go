@@ -154,11 +154,11 @@ type smCloneEditedMsg struct {
 
 // --- S3 Messages ---
 
-type s3BucketsLoadedMsg struct{ buckets []e9saws.S3Bucket }
-type s3ObjectsLoadedMsg struct{ objects []e9saws.S3Object }
+type s3BucketsLoadedMsg struct{ buckets []model.S3Bucket }
+type s3ObjectsLoadedMsg struct{ objects []model.S3Object }
 type s3DetailLoadedMsg struct {
 	bucket string
-	detail *e9saws.S3ObjectDetail
+	detail *model.S3ObjectDetail
 }
 type s3DownloadDoneMsg struct {
 	message string

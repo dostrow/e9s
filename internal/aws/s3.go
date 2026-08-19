@@ -9,29 +9,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type S3Bucket struct {
-	Name      string
-	CreatedAt time.Time
-}
-
-type S3Object struct {
-	Key          string
-	Size         int64
-	LastModified time.Time
-	IsPrefix     bool // true for "folder" prefixes
-}
-
-type S3ObjectDetail struct {
-	Key          string
-	Size         int64
-	LastModified time.Time
-	ContentType  string
-	ETag         string
-	StorageClass string
-	Tags         map[string]string
-}
+type S3Bucket = model.S3Bucket
+type S3Object = model.S3Object
+type S3ObjectDetail = model.S3ObjectDetail
 
 // ListBuckets returns all S3 buckets, optionally filtered by name substring.
 func (c *Client) ListBuckets(ctx context.Context, filter string) ([]S3Bucket, error) {
@@ -247,4 +230,3 @@ func derefInt64(p *int64) int64 {
 	}
 	return 0
 }
-

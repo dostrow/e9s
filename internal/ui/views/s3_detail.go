@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type S3DetailModel struct {
-	detail *aws.S3ObjectDetail
+	detail *model.S3ObjectDetail
 	bucket string
 	width  int
 	height int
 }
 
-func NewS3Detail(bucket string, detail *aws.S3ObjectDetail) S3DetailModel {
+func NewS3Detail(bucket string, detail *model.S3ObjectDetail) S3DetailModel {
 	return S3DetailModel{detail: detail, bucket: bucket}
 }
 
@@ -53,7 +53,7 @@ func (m S3DetailModel) View() string {
 	return b.String()
 }
 
-func (m S3DetailModel) Detail() *aws.S3ObjectDetail {
+func (m S3DetailModel) Detail() *model.S3ObjectDetail {
 	return m.detail
 }
 
