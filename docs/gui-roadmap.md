@@ -18,10 +18,19 @@ Implement and evaluate modules in this order:
    confirmation and careful handling of sensitive values.
 5. **Lambda** — reuse CloudWatch Logs, environment-variable inspection, secret
    resolution, and the embedded editor.
+6. **CodeBuild** — reuse the complete CloudWatch Logs workspace, environment
+   presentation, and pending-operation controls for build history and actions.
+7. **EC2** — reuse the embedded terminal for Session Manager while adding rich
+   infrastructure details and guarded lifecycle operations.
+8. **ECR** — add repository/image drill-down, vulnerability findings, scanning,
+   clipboard integration, and guarded deletion.
 
-Reassess the remaining modules after Lambda rather than fixing their order now.
-At that point the GUI will have exercised streaming data, operational state,
-configuration, secrets, and an executable compute resource.
+The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
+the next **compute and delivery** batch: together they exercise log-heavy jobs,
+interactive host sessions, nested resource browsers, and destructive actions.
+Reassess the data-oriented and local-tool modules after ECR rather than fixing
+their order now. The remaining candidates are RDS, S3, DynamoDB, SQS, Route53,
+and OpenTofu/Terraform.
 
 Each module should be delivered in independently committed phases. A phase is
 complete only when its shared service behavior, GUI state transitions, stale
@@ -299,3 +308,91 @@ and bracket highlighting, auto-indent, and undo/redo behavior. Basic GUI builds
 retain the plain `GtkTextView` fallback. LSP process management remains deferred;
 the shared document abstraction provides the path and language boundary needed
 for a later opt-in client without coupling it to Lambda or ECS workflows.
+
+## CodeBuild delivery phases
+
+### Phase 1: shared service
+
+- Move project, build summary, build detail, phase, environment, and log-source
+  values into the UI-neutral model package.
+- Centralize project filtering and ordering, newest-first build history, detail
+  lookup, start/stop validation, mutations, and contextual errors.
+- Migrate the TUI CodeBuild workflows away from direct AWS client calls and
+  detached background contexts.
+
+### Phase 2: module shell and browser
+
+- Add an alphabetically positioned, collapsible **CodeBuild** Module Rail entry
+  with **Projects** as its default sub-item.
+- Browse and filter projects, drill into a project's build history, and retain a
+  clear route back to the project browser.
+- Clear Browser and Workspace content immediately on every context change,
+  reject stale responses, and pause refresh while requests are pending.
+
+### Phase 3: details, logs, and guarded actions
+
+- Render build state, source, phases and failure contexts, environment, duration,
+  initiator, and log destination in the Workspace Pane.
+- Open completed builds at full available log history and follow in-progress
+  builds through the shared CloudWatch Logs workspace; support server-side log
+  search without duplicating the log viewer.
+- Start builds from project context and stop only in-progress builds. Require
+  explicit confirmation, disable pending actions, and refresh the affected
+  project/build context after a successful mutation.
+
+### Phase 4: parity and evaluation
+
+- Compare GUI behavior with the complete TUI CodeBuild workflow, including final
+  log delivery when a build changes from in-progress to terminal state.
+- Exercise rapid navigation, cancellation, build refresh, empty histories,
+  long-running actions, theme behavior, and Module Rail error/status handling.
+- Record intentional frontend differences and update the development guide and
+  PoC results.
+
+## EC2 delivery phases
+
+### Phase 1: shared service
+
+- Centralize instance discovery, filtering and ordering, detail composition,
+  console-output retrieval, Session Manager command construction, lifecycle
+  validation and mutations, and contextual errors.
+- Migrate the TUI EC2 workflows to the shared service.
+
+### Phase 2: module shell, browser, and details
+
+- Add a collapsible **EC2** Module Rail entry with **Instances** as its default.
+- Browse instances and render metadata, networking, security groups, EBS
+  volumes, and tags in the Workspace Pane.
+- Apply the common immediate-clear, cancellation-generation, and refresh rules.
+
+### Phase 3: sessions, console output, and lifecycle actions
+
+- Reuse the embedded VTE workspace for SSM sessions on eligible running
+  instances and expose serial console output as a non-live text workspace.
+- Add contextual start, stop, reboot, and terminate actions with explicit
+  confirmations; make termination visually distinct and never the default.
+- Disable actions while pending and refresh selected instance state after
+  successful mutations.
+
+## ECR delivery phases
+
+### Phase 1: shared service
+
+- Centralize repository and image discovery, deterministic ordering, scan
+  summaries/findings, scan and delete validation, mutations, and contextual
+  errors, then migrate the TUI to that service.
+
+### Phase 2: repositories, images, and findings
+
+- Add a collapsible **ECR** Module Rail entry with **Repositories** as its
+  default, then drill through repositories, images, and vulnerability findings.
+- Preserve severity ordering and clear stale nested content immediately while
+  navigation or refresh requests are pending.
+
+### Phase 3: image operations
+
+- Copy complete image URIs without additional AWS calls.
+- Start scans only when image state permits and refresh scan status while it is
+  active without replacing the user's current Workspace content.
+- Require explicit confirmation before digest deletion, disable pending actions,
+  and return to the refreshed image browser after success.
