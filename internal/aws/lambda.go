@@ -15,26 +15,13 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdaTypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type LambdaFunction struct {
-	Name         string
-	ARN          string
-	Runtime      string
-	Handler      string
-	Description  string
-	MemoryMB     int
-	TimeoutSec   int
-	CodeSize     int64
-	State        string // Active, Inactive, Pending, Failed
-	LastModified time.Time
-	LogGroup     string
-	EnvVars      []EnvVar
-	RawEnvVars   map[string]string // original key-value pairs
-}
+type LambdaFunction = model.LambdaFunction
 
-// ListLambdaFunctions returns Lambda functions, optionally filtered by name substring.
-func (c *Client) ListLambdaFunctions(ctx context.Context, filter string) ([]LambdaFunction, error) {
+// ListLambdaFunctions returns all Lambda function configurations.
+func (c *Client) ListLambdaFunctions(ctx context.Context) ([]model.LambdaFunction, error) {
 	var functions []LambdaFunction
 	paginator := lambda.NewListFunctionsPaginator(c.Lambda, &lambda.ListFunctionsInput{})
 
@@ -45,9 +32,6 @@ func (c *Client) ListLambdaFunctions(ctx context.Context, filter string) ([]Lamb
 		}
 		for _, f := range page.Functions {
 			fn := transformLambdaFunction(f)
-			if filter != "" && !containsLower(fn.Name, filter) && !containsLower(fn.Description, filter) {
-				continue
-			}
 			functions = append(functions, fn)
 		}
 	}
@@ -72,13 +56,14 @@ func transformLambdaFunction(f lambdaTypes.FunctionConfiguration) LambdaFunction
 
 func transformLambdaConfig(f lambdaTypes.FunctionConfiguration) LambdaFunction {
 	fn := LambdaFunction{
-		Name:     derefStrAws(f.FunctionName),
-		ARN:      derefStrAws(f.FunctionArn),
-		Runtime:  string(f.Runtime),
-		Handler:  derefStrAws(f.Handler),
+		Name:        derefStrAws(f.FunctionName),
+		ARN:         derefStrAws(f.FunctionArn),
+		Runtime:     string(f.Runtime),
+		Handler:     derefStrAws(f.Handler),
 		Description: derefStrAws(f.Description),
-		CodeSize: f.CodeSize,
-		State:    string(f.State),
+		CodeSize:    f.CodeSize,
+		State:       string(f.State),
+		PackageType: string(f.PackageType),
 	}
 	if f.MemorySize != nil {
 		fn.MemoryMB = int(*f.MemorySize)
@@ -272,8 +257,4 @@ func (c *Client) LambdaPackageType(ctx context.Context, functionName string) (st
 		return string(out.Configuration.PackageType), nil
 	}
 	return "Zip", nil
-}
-
-func containsLower(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

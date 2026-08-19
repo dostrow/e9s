@@ -101,6 +101,7 @@ type App struct {
 	alarms              *service.Alarms
 	ssm                 *service.SSM
 	secrets             *service.Secrets
+	lambda              *service.Lambda
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	cfg                 *config.Config
@@ -282,6 +283,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		alarms:       service.NewAlarms(client),
 		ssm:          service.NewSSM(client),
 		secrets:      service.NewSecrets(client),
+		lambda:       service.NewLambda(client),
 		ctx:          ctx,
 		cancel:       cancel,
 		cfg:          cfg,

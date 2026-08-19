@@ -225,7 +225,7 @@ type sqsSendReadyMsg struct {
 
 // --- Lambda Messages ---
 
-type lambdaFunctionsLoadedMsg struct{ functions []e9saws.LambdaFunction }
+type lambdaFunctionsLoadedMsg struct{ functions []model.LambdaFunction }
 type lambdaCodeReadyMsg struct {
 	functionName string
 	dir          string // temp directory with extracted code

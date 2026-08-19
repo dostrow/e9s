@@ -8,13 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type LambdaListModel struct {
-	functions   []aws.LambdaFunction
+	functions   []model.LambdaFunction
 	searchTerm  string
 	cursor      int
 	filter      string
@@ -145,12 +145,12 @@ func (m LambdaListModel) View() string {
 	return b.String()
 }
 
-func (m LambdaListModel) filteredFunctions() []aws.LambdaFunction {
+func (m LambdaListModel) filteredFunctions() []model.LambdaFunction {
 	if m.filter == "" {
 		return m.functions
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.LambdaFunction
+	var out []model.LambdaFunction
 	for _, fn := range m.functions {
 		if strings.Contains(strings.ToLower(fn.Name), lf) ||
 			strings.Contains(strings.ToLower(fn.Runtime), lf) ||
@@ -161,7 +161,7 @@ func (m LambdaListModel) filteredFunctions() []aws.LambdaFunction {
 	return out
 }
 
-func (m LambdaListModel) SetFunctions(functions []aws.LambdaFunction) LambdaListModel {
+func (m LambdaListModel) SetFunctions(functions []model.LambdaFunction) LambdaListModel {
 	m.functions = functions
 	m.loaded = true
 	filtered := m.filteredFunctions()
@@ -171,7 +171,7 @@ func (m LambdaListModel) SetFunctions(functions []aws.LambdaFunction) LambdaList
 	return m
 }
 
-func (m LambdaListModel) SelectedFunction() *aws.LambdaFunction {
+func (m LambdaListModel) SelectedFunction() *model.LambdaFunction {
 	filtered := m.filteredFunctions()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
@@ -180,8 +180,8 @@ func (m LambdaListModel) SelectedFunction() *aws.LambdaFunction {
 	return &fn
 }
 
-func (m LambdaListModel) SearchTerm() string  { return m.searchTerm }
-func (m LambdaListModel) IsFiltering() bool    { return m.filtering }
+func (m LambdaListModel) SearchTerm() string { return m.searchTerm }
+func (m LambdaListModel) IsFiltering() bool  { return m.filtering }
 
 func (m LambdaListModel) visibleRows() int {
 	overhead := 9
