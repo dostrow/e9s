@@ -218,6 +218,7 @@ type mainWindow struct {
 	s3ObjectSearch              string
 	s3ObjectSearchActive        bool
 	s3ObjectDetail              *model.S3ObjectDetail
+	s3DownloadPending           bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -348,6 +349,7 @@ type mainWindow struct {
 	s3SaveSearchButton          *gtk.Button
 	s3ManageSearchesButton      *gtk.Button
 	s3KeySearchButton           *gtk.Button
+	s3DownloadButton            *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -373,6 +375,8 @@ type mainWindow struct {
 	detailText                  string
 	detailStack                 *gtk.Stack
 	workspaceBusyBar            *gtk.Box
+	workspaceCancelButton       *gtk.Button
+	workspaceCancel             func()
 	workspaceBusySpinner        *gtk.Spinner
 	workspaceBusyLabel          *gtk.Label
 	workspaceBusy               bool
@@ -836,6 +840,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.s3ManageSearchesButton.ConnectClicked(w.promptManageS3Searches)
 	w.s3KeySearchButton = gtk.NewButtonWithLabel("Key prefix…")
 	w.s3KeySearchButton.ConnectClicked(w.promptS3KeySearch)
+	w.s3DownloadButton = gtk.NewButtonWithLabel("Download…")
+	w.s3DownloadButton.ConnectClicked(w.promptS3Download)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -926,6 +932,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.s3SaveSearchButton)
 	header.Append(w.s3ManageSearchesButton)
 	header.Append(w.s3KeySearchButton)
+	header.Append(w.s3DownloadButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1313,6 +1320,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.workspaceBusyBar.AddCSSClass("workspace-busy")
 	w.workspaceBusyBar.Append(w.workspaceBusySpinner)
 	w.workspaceBusyBar.Append(w.workspaceBusyLabel)
+	w.workspaceCancelButton = gtk.NewButtonWithLabel("Cancel")
+	w.workspaceCancelButton.SetVisible(false)
+	w.workspaceCancelButton.ConnectClicked(func() {
+		if w.workspaceCancel != nil {
+			w.workspaceCancel()
+		}
+	})
+	w.workspaceBusyBar.Append(w.workspaceCancelButton)
 	w.workspaceBusyBar.SetVisible(false)
 	workspace := gtk.NewBox(gtk.OrientationVertical, 0)
 	workspace.Append(w.workspaceBusyBar)
@@ -1604,12 +1619,25 @@ func (w *mainWindow) setWorkspaceBusy(label string, busy bool) {
 		w.workspaceBusy = false
 		w.workspaceBusySpinner.Stop()
 		w.workspaceBusyBar.SetVisible(false)
+		w.workspaceCancel = nil
+		if w.workspaceCancelButton != nil {
+			w.workspaceCancelButton.SetVisible(false)
+			w.workspaceCancelButton.SetSensitive(true)
+		}
 		return
 	}
 	w.workspaceBusy = true
 	w.workspaceBusyLabel.SetLabel(label)
 	w.workspaceBusySpinner.Start()
 	w.workspaceBusyBar.SetVisible(true)
+}
+
+func (w *mainWindow) setWorkspaceCancellation(cancel func()) {
+	w.workspaceCancel = cancel
+	if w.workspaceCancelButton != nil {
+		w.workspaceCancelButton.SetSensitive(cancel != nil)
+		w.workspaceCancelButton.SetVisible(cancel != nil)
+	}
 }
 
 func (w *mainWindow) setBreadcrumb(text string) {
@@ -1727,6 +1755,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.codeBuildActionPending = false
 	w.ec2Detail = nil
 	w.rdsDetail = nil
+	w.s3DownloadPending = false
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -3267,7 +3296,10 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.s3ManageSearchesButton.SetSensitive(s3Page && hasSavedS3Searches)
 	s3ObjectPage := w.currentPage == pageS3Objects
 	w.s3KeySearchButton.SetVisible(s3ObjectPage)
-	w.s3KeySearchButton.SetSensitive(s3ObjectPage && w.options.S3 != nil)
+	w.s3KeySearchButton.SetSensitive(s3ObjectPage && !w.s3DownloadPending && w.options.S3 != nil)
+	_, s3ObjectSelected := findS3Object(w.allS3Objects, w.selectedS3Object)
+	w.s3DownloadButton.SetVisible(s3ObjectPage && s3ObjectSelected)
+	w.s3DownloadButton.SetSensitive(s3ObjectPage && s3ObjectSelected && !w.s3DownloadPending && w.options.S3 != nil)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

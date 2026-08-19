@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -166,7 +167,7 @@ func (c *Client) GetObjectDetail(ctx context.Context, bucket, key string) (*S3Ob
 }
 
 // DownloadObject downloads a single S3 object to a local file path.
-func (c *Client) DownloadObject(ctx context.Context, bucket, key, destPath string) error {
+func (c *Client) DownloadObject(ctx context.Context, bucket, key, destPath string, progress func(int64)) error {
 	out, err := c.S3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
@@ -182,25 +183,49 @@ func (c *Client) DownloadObject(ctx context.Context, bucket, key, destPath strin
 		return err
 	}
 
-	f, err := os.Create(destPath)
+	f, err := os.CreateTemp(dir, "."+filepath.Base(destPath)+".e9s-*")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	temporary := f.Name()
+	complete := false
+	defer func() {
+		_ = f.Close()
+		if !complete {
+			_ = os.Remove(temporary)
+		}
+	}()
 
-	_, err = io.Copy(f, out.Body)
-	return err
+	writer := io.Writer(f)
+	if progress != nil {
+		writer = &s3ProgressWriter{writer: f, progress: progress}
+	}
+	if _, err = io.Copy(writer, out.Body); err != nil {
+		return err
+	}
+	if err = f.Chmod(0644); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(temporary, destPath); err != nil {
+		return err
+	}
+	complete = true
+	return nil
 }
 
 // DownloadPrefix recursively downloads all objects under a prefix to a local directory.
 // Returns the number of files downloaded.
-func (c *Client) DownloadPrefix(ctx context.Context, bucket, prefix, destDir string) (int, error) {
+func (c *Client) DownloadPrefix(ctx context.Context, bucket, prefix, destDir string, progress func(model.S3DownloadProgress)) (int, error) {
 	input := &s3.ListObjectsV2Input{
 		Bucket: &bucket,
 		Prefix: &prefix,
 	}
 
 	count := 0
+	var totalBytes int64
 	paginator := s3.NewListObjectsV2Paginator(c.S3, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -214,14 +239,48 @@ func (c *Client) DownloadPrefix(ctx context.Context, bucket, prefix, destDir str
 			if relPath == "" {
 				continue
 			}
-			localPath := filepath.Join(destDir, relPath)
-			if err := c.DownloadObject(ctx, bucket, key, localPath); err != nil {
+			localPath, err := s3PrefixDestination(destDir, relPath)
+			if err != nil {
+				return count, err
+			}
+			var fileBytes int64
+			if err := c.DownloadObject(ctx, bucket, key, localPath, func(bytes int64) {
+				fileBytes = bytes
+				if progress != nil {
+					progress(model.S3DownloadProgress{CurrentKey: key, FilesCompleted: count, BytesCompleted: totalBytes + bytes})
+				}
+			}); err != nil {
 				return count, err
 			}
 			count++
+			totalBytes += fileBytes
+			if progress != nil {
+				progress(model.S3DownloadProgress{CurrentKey: key, FilesCompleted: count, BytesCompleted: totalBytes})
+			}
 		}
 	}
 	return count, nil
+}
+
+func s3PrefixDestination(destination, relative string) (string, error) {
+	clean := filepath.Clean(relative)
+	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("unsafe S3 object key path %q", relative)
+	}
+	return filepath.Join(destination, clean), nil
+}
+
+type s3ProgressWriter struct {
+	writer   io.Writer
+	total    int64
+	progress func(int64)
+}
+
+func (w *s3ProgressWriter) Write(data []byte) (int, error) {
+	written, err := w.writer.Write(data)
+	w.total += int64(written)
+	w.progress(w.total)
+	return written, err
 }
 
 func derefInt64(p *int64) int64 {

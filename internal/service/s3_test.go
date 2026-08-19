@@ -36,12 +36,18 @@ func (f *fakeS3API) GetObjectDetail(_ context.Context, bucket, key string) (*mod
 	f.bucket, f.prefix = bucket, key
 	return f.detail, f.err
 }
-func (f *fakeS3API) DownloadObject(_ context.Context, bucket, key, destination string) error {
+func (f *fakeS3API) DownloadObject(_ context.Context, bucket, key, destination string, progress func(int64)) error {
 	f.downloadRequest = model.S3DownloadRequest{Bucket: bucket, Key: key, Destination: destination}
+	if progress != nil {
+		progress(42)
+	}
 	return f.err
 }
-func (f *fakeS3API) DownloadPrefix(_ context.Context, bucket, key, destination string) (int, error) {
+func (f *fakeS3API) DownloadPrefix(_ context.Context, bucket, key, destination string, progress func(model.S3DownloadProgress)) (int, error) {
 	f.downloadRequest = model.S3DownloadRequest{Bucket: bucket, Key: key, Destination: destination, IsPrefix: true}
+	if progress != nil {
+		progress(model.S3DownloadProgress{CurrentKey: key + "file", FilesCompleted: f.prefixCount, BytesCompleted: 84})
+	}
 	return f.prefixCount, f.err
 }
 
@@ -54,6 +60,20 @@ func TestS3BucketsFilterAndSort(t *testing.T) {
 	want := []model.S3Bucket{{Name: "api-backup"}, {Name: "API-data"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Buckets() = %#v, want %#v", got, want)
+	}
+}
+
+func TestS3DownloadReportsProgress(t *testing.T) {
+	api := &fakeS3API{prefixCount: 3}
+	var updates []model.S3DownloadProgress
+	_, err := NewS3(api).DownloadWithProgress(context.Background(), model.S3DownloadRequest{
+		Bucket: "bucket", Key: "path/", Destination: "/tmp/path", IsPrefix: true,
+	}, func(progress model.S3DownloadProgress) { updates = append(updates, progress) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates) != 1 || updates[0].FilesCompleted != 3 || updates[0].BytesCompleted != 84 {
+		t.Fatalf("progress = %#v", updates)
 	}
 }
 

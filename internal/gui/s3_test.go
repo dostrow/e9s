@@ -83,6 +83,16 @@ func TestFormatS3ObjectDetailSortsTags(t *testing.T) {
 	}
 }
 
+func TestFormatS3DownloadProgress(t *testing.T) {
+	request := model.S3DownloadRequest{Key: "reports/", IsPrefix: true}
+	got := formatS3DownloadProgress(request, model.S3DownloadProgress{
+		CurrentKey: "reports/2026/summary.csv", FilesCompleted: 3, BytesCompleted: 2 << 20,
+	})
+	if !containsAll(got, "reports", "2.0 MiB", "3 files", "summary.csv") {
+		t.Fatalf("formatS3DownloadProgress() = %q", got)
+	}
+}
+
 func containsAll(value string, parts ...string) bool {
 	for _, part := range parts {
 		if !strings.Contains(value, part) {

@@ -145,6 +145,7 @@ type S3Service interface {
 	Search(context.Context, string, string) ([]model.S3Object, error)
 	Detail(context.Context, string, string) (*model.S3ObjectDetail, error)
 	Download(context.Context, model.S3DownloadRequest) (model.S3DownloadResult, error)
+	DownloadWithProgress(context.Context, model.S3DownloadRequest, func(model.S3DownloadProgress)) (model.S3DownloadResult, error)
 }
 
 type Options struct {

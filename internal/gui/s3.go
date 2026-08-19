@@ -3,12 +3,17 @@
 package gui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"html"
 	"path"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
@@ -424,6 +429,104 @@ func (w *mainWindow) promptS3KeySearch() {
 		}
 	})
 	dialog.Present()
+}
+
+func (w *mainWindow) promptS3Download() {
+	object, found := findS3Object(w.allS3Objects, w.selectedS3Object)
+	if !found || w.currentPage != pageS3Objects || w.s3DownloadPending || w.options.S3 == nil {
+		return
+	}
+	action := gtk.FileChooserActionSave
+	title := "Download S3 object"
+	if object.IsPrefix {
+		action = gtk.FileChooserActionSelectFolder
+		title = "Download S3 folder into"
+	}
+	chooser := gtk.NewFileChooserNative(title, &w.window.Window, action, "Download", "Cancel")
+	chooser.SetModal(true)
+	if w.options.Config != nil {
+		folder := gio.NewFileForPath(w.options.Config.SaveDir())
+		_ = chooser.SetCurrentFolder(folder)
+	}
+	if !object.IsPrefix {
+		chooser.SetCurrentName(path.Base(object.Key))
+	}
+	chooser.ConnectResponse(func(response int) {
+		if response == int(gtk.ResponseAccept) {
+			file := chooser.File()
+			if file != nil && file.Path() != "" {
+				w.runS3Download(model.S3DownloadRequest{
+					Bucket: w.selectedS3Bucket, Key: object.Key, Destination: file.Path(), IsPrefix: object.IsPrefix,
+				})
+			}
+		}
+		chooser.Destroy()
+	})
+	chooser.Show()
+}
+
+func (w *mainWindow) runS3Download(request model.S3DownloadRequest) {
+	if w.options.S3 == nil || w.s3DownloadPending {
+		return
+	}
+	w.s3DownloadPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Starting S3 download…")
+	cancel := w.requestCancel
+	w.setWorkspaceCancellation(func() {
+		if cancel != nil {
+			cancel()
+		}
+		w.workspaceBusyLabel.SetLabel("Canceling S3 download…")
+		w.workspaceCancelButton.SetSensitive(false)
+	})
+	go func() {
+		result, err := w.options.S3.DownloadWithProgress(ctx, request, func(progress model.S3DownloadProgress) {
+			label := formatS3DownloadProgress(request, progress)
+			glib.IdleAdd(func() {
+				if generation == w.generation && ctx.Err() == nil && w.s3DownloadPending {
+					w.workspaceBusyLabel.SetLabel(label)
+				}
+			})
+		})
+		glib.IdleAdd(func() {
+			if generation != w.generation {
+				return
+			}
+			w.requestCancel = nil
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.s3DownloadPending = false
+			w.updateActionSensitivity()
+			switch {
+			case errors.Is(err, context.Canceled) || ctx.Err() != nil:
+				w.setStatus("S3 download canceled", false)
+			case err != nil:
+				w.setStatus(err.Error(), true)
+			default:
+				w.lastSuccessfulLoad = time.Now()
+				if request.IsPrefix {
+					w.setStatus(fmt.Sprintf("Downloaded %d files to %s", result.Files, result.Destination), false)
+				} else {
+					w.setStatus("Downloaded to "+result.Destination, false)
+				}
+			}
+		})
+	}()
+}
+
+func formatS3DownloadProgress(request model.S3DownloadRequest, progress model.S3DownloadProgress) string {
+	label := "Downloading " + s3ObjectDisplayName(request.Key, "")
+	if progress.BytesCompleted > 0 {
+		label += " • " + formatS3Bytes(progress.BytesCompleted)
+	}
+	if request.IsPrefix && progress.FilesCompleted > 0 {
+		label += fmt.Sprintf(" • %d files", progress.FilesCompleted)
+	}
+	if request.IsPrefix && progress.CurrentKey != "" {
+		label += " • " + progress.CurrentKey
+	}
+	return label
 }
 
 func (w *mainWindow) navigateS3Back() bool {

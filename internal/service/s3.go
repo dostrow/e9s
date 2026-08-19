@@ -15,8 +15,8 @@ type S3API interface {
 	ListObjects(context.Context, string, string) ([]model.S3Object, error)
 	SearchObjects(context.Context, string, string) ([]model.S3Object, error)
 	GetObjectDetail(context.Context, string, string) (*model.S3ObjectDetail, error)
-	DownloadObject(context.Context, string, string, string) error
-	DownloadPrefix(context.Context, string, string, string) (int, error)
+	DownloadObject(context.Context, string, string, string, func(int64)) error
+	DownloadPrefix(context.Context, string, string, string, func(model.S3DownloadProgress)) (int, error)
 }
 
 // S3 centralizes validation, ordering, filtering, and download routing.
@@ -84,6 +84,11 @@ func (s *S3) Detail(ctx context.Context, bucket, key string) (*model.S3ObjectDet
 }
 
 func (s *S3) Download(ctx context.Context, request model.S3DownloadRequest) (model.S3DownloadResult, error) {
+	return s.DownloadWithProgress(ctx, request, nil)
+}
+
+// DownloadWithProgress performs a download and reports cumulative byte/file progress.
+func (s *S3) DownloadWithProgress(ctx context.Context, request model.S3DownloadRequest, progress func(model.S3DownloadProgress)) (model.S3DownloadResult, error) {
 	request.Bucket = strings.TrimSpace(request.Bucket)
 	request.Destination = strings.TrimSpace(request.Destination)
 	if request.Bucket == "" || request.Key == "" || request.Destination == "" {
@@ -91,15 +96,24 @@ func (s *S3) Download(ctx context.Context, request model.S3DownloadRequest) (mod
 	}
 	result := model.S3DownloadResult{Destination: request.Destination, Files: 1}
 	if request.IsPrefix {
-		count, err := s.api.DownloadPrefix(ctx, request.Bucket, request.Key, request.Destination)
+		count, err := s.api.DownloadPrefix(ctx, request.Bucket, request.Key, request.Destination, progress)
 		if err != nil {
 			return model.S3DownloadResult{}, fmt.Errorf("download s3://%s/%s: %w", request.Bucket, request.Key, err)
 		}
 		result.Files = count
 		return result, nil
 	}
-	if err := s.api.DownloadObject(ctx, request.Bucket, request.Key, request.Destination); err != nil {
+	var bytesCompleted int64
+	if err := s.api.DownloadObject(ctx, request.Bucket, request.Key, request.Destination, func(bytes int64) {
+		bytesCompleted = bytes
+		if progress != nil {
+			progress(model.S3DownloadProgress{CurrentKey: request.Key, BytesCompleted: bytes})
+		}
+	}); err != nil {
 		return model.S3DownloadResult{}, fmt.Errorf("download s3://%s/%s: %w", request.Bucket, request.Key, err)
+	}
+	if progress != nil {
+		progress(model.S3DownloadProgress{CurrentKey: request.Key, FilesCompleted: 1, BytesCompleted: bytesCompleted})
 	}
 	return result, nil
 }

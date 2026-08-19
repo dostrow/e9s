@@ -40,3 +40,10 @@ type S3DownloadResult struct {
 	Destination string
 	Files       int
 }
+
+// S3DownloadProgress reports cumulative transfer progress.
+type S3DownloadProgress struct {
+	CurrentKey     string
+	FilesCompleted int
+	BytesCompleted int64
+}
