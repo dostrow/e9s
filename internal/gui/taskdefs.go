@@ -77,23 +77,18 @@ func (w *mainWindow) buildTaskDefinitionEditor() gtk.Widgetter {
 	toolbar.Append(validateButton)
 	toolbar.Append(registerButton)
 
-	w.editorBuffer = gtk.NewTextBuffer(nil)
-	w.editorBuffer.ConnectChanged(func() {
+	w.taskDefinitionSourceEditor = newSourceEditor(sourceDocument{Path: "task-definition.json", Language: "json"})
+	w.editorBuffer = w.taskDefinitionSourceEditor.Buffer()
+	w.taskDefinitionSourceEditor.ConnectChanged(func() {
 		if !w.editorLoading {
 			w.editorDirty = true
 		}
 	})
-	editor := gtk.NewTextViewWithBuffer(w.editorBuffer)
-	editor.SetEditable(true)
-	editor.SetCursorVisible(true)
-	editor.SetMonospace(true)
-	editor.SetWrapMode(gtk.WrapNone)
-	editor.AddCSSClass("inspector")
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetVExpand(true)
 	scroll.SetHExpand(true)
 	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
-	scroll.SetChild(editor)
+	scroll.SetChild(w.taskDefinitionSourceEditor.Widget())
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
 	pane.Append(toolbar)

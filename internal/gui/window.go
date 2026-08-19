@@ -244,11 +244,13 @@ type mainWindow struct {
 	taskDefinitionEnvContainer  string
 	taskDefinitionViewMode      string
 	editorBuffer                *gtk.TextBuffer
+	taskDefinitionSourceEditor  *sourceEditor
 	showingEditor               bool
 	editorDirty                 bool
 	editorLoading               bool
 	editorKind                  string
 	lambdaEditorBuffer          *gtk.TextBuffer
+	lambdaSourceEditor          *sourceEditor
 	lambdaEditorFileSelector    *gtk.DropDown
 	lambdaEditorTitle           *gtk.Label
 	lambdaEditorUploadButton    *gtk.Button

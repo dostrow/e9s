@@ -49,23 +49,18 @@ func (w *mainWindow) buildLambdaCodeEditor() gtk.Widgetter {
 	toolbar.Append(w.lambdaEditorFileSelector)
 	toolbar.Append(w.lambdaEditorUploadButton)
 
-	w.lambdaEditorBuffer = gtk.NewTextBuffer(nil)
-	w.lambdaEditorBuffer.ConnectChanged(func() {
+	w.lambdaSourceEditor = newSourceEditor(sourceDocument{})
+	w.lambdaEditorBuffer = w.lambdaSourceEditor.Buffer()
+	w.lambdaSourceEditor.ConnectChanged(func() {
 		if !w.lambdaEditorLoading {
 			w.lambdaEditorDirty = true
 		}
 	})
-	editor := gtk.NewTextViewWithBuffer(w.lambdaEditorBuffer)
-	editor.SetEditable(true)
-	editor.SetCursorVisible(true)
-	editor.SetMonospace(true)
-	editor.SetWrapMode(gtk.WrapNone)
-	editor.AddCSSClass("inspector")
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetVExpand(true)
 	scroll.SetHExpand(true)
 	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
-	scroll.SetChild(editor)
+	scroll.SetChild(w.lambdaSourceEditor.Widget())
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
 	pane.Append(toolbar)
@@ -178,6 +173,7 @@ func (w *mainWindow) startLambdaEditor(name, directory string, files []lambdaEdi
 	w.lambdaEditorFileSelector.SetModel(gtk.NewStringList(paths))
 	w.lambdaEditorFileSelector.SetSelected(0)
 	w.lambdaEditorFileIndex = 0
+	w.lambdaSourceEditor.SetDocument(sourceDocument{Path: files[0].Path})
 	w.lambdaEditorBuffer.SetText(files[0].Content)
 	w.lambdaEditorTitle.SetLabel("Lambda ZIP editor • " + name)
 	w.lambdaEditorLoading = false
@@ -200,6 +196,7 @@ func (w *mainWindow) switchLambdaEditorFile() {
 	w.saveCurrentLambdaEditorFile()
 	w.lambdaEditorLoading = true
 	w.lambdaEditorFileIndex = selected
+	w.lambdaSourceEditor.SetDocument(sourceDocument{Path: w.lambdaEditorFiles[selected].Path})
 	w.lambdaEditorBuffer.SetText(w.lambdaEditorFiles[selected].Content)
 	w.lambdaEditorLoading = false
 }

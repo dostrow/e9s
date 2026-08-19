@@ -18,3 +18,13 @@ func TestEditorColorDarkness(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceEditorForwardsDocumentChanges(t *testing.T) {
+	var got sourceDocument
+	editor := &sourceEditor{setDocument: func(document sourceDocument) { got = document }}
+	want := sourceDocument{Path: "handler.py", Language: "python3"}
+	editor.SetDocument(want)
+	if got != want {
+		t.Fatalf("SetDocument() forwarded %#v, want %#v", got, want)
+	}
+}
