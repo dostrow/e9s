@@ -25,6 +25,15 @@ func filterClusters(clusters []model.Cluster, query string) []model.Cluster {
 	return filtered
 }
 
+func findCluster(clusters []model.Cluster, name string) (model.Cluster, bool) {
+	for _, cluster := range clusters {
+		if cluster.Name == name {
+			return cluster, true
+		}
+	}
+	return model.Cluster{}, false
+}
+
 func filterServices(services []model.Service, query string) []model.Service {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -102,6 +111,16 @@ func clusterSummary(cluster string, serviceCount int) string {
 	return fmt.Sprintf("%s\n\n%d services\n\nSelect a service and press Enter for deployments, tasks, and recent events.", cluster, serviceCount)
 }
 
+func clusterListSummary(clusterCount int) string {
+	return fmt.Sprintf("ECS CLUSTERS\n\n%d clusters loaded\n\nSelect a cluster to inspect it. Double-click or press Enter to browse its services.", clusterCount)
+}
+
+func formatClusterDetail(cluster model.Cluster) string {
+	return fmt.Sprintf("CLUSTER\n\nName              %s\nStatus            %s\nActive services   %d\nRunning tasks     %d\nPending tasks     %d\nARN               %s\n\nDouble-click or press Enter to browse this cluster's services.",
+		cluster.Name, valueOrDash(cluster.Status), cluster.ActiveServices, cluster.RunningTasks,
+		cluster.PendingTasks, valueOrDash(cluster.ARN))
+}
+
 func standaloneTaskSummary(cluster string, tasks []model.Task) string {
 	if len(tasks) == 0 {
 		return "No active standalone ECS tasks found in " + cluster + "."
@@ -162,6 +181,20 @@ func formatServiceDetail(cluster string, svc model.Service, tasks []model.Task) 
 
 func formatServiceOverview(cluster string, svc model.Service) string {
 	return formatServiceDetailWithTasks(cluster, svc, nil, "", false)
+}
+
+func formatServiceTaskContext(cluster string, svc model.Service, tasks []model.Task, stopped, hasMore bool) string {
+	scope := "Active tasks"
+	if stopped {
+		scope = "Recently stopped tasks"
+	}
+	more := ""
+	if hasMore {
+		more = " • more available"
+	}
+	return fmt.Sprintf("SERVICE TASKS\n\n%s / %s\n\nStatus            %s\nHealth            %s\nDesired           %d\nRunning           %d\nPending           %d\nTask definition   %s\nScope             %s\nLoaded            %d%s\n\nSelect a task to inspect it.",
+		cluster, svc.Name, valueOrDash(svc.Status), valueOrDash(svc.HealthStatus), svc.DesiredCount,
+		svc.RunningCount, svc.PendingCount, valueOrDash(svc.TaskDefinition), scope, len(tasks), more)
 }
 
 func formatServiceStoppedTasksDetail(cluster string, svc model.Service, tasks []model.Task, hasMore bool) string {

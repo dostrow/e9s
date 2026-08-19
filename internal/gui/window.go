@@ -556,8 +556,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ec2VolumeTable.view.ConnectActivate(w.openEC2VolumeAt)
 	w.ec2LoadBalancerTable.view.ConnectActivate(w.openEC2LoadBalancerAt)
 	w.ec2TargetGroupTable.view.ConnectActivate(w.openEC2TargetGroupAt)
+	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
+	w.taskTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTaskRow(false) })
+	w.stoppedTaskTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTaskRow(true) })
 	w.logStreamTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogStreamRow() })
 	w.alarmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAlarmRow() })
 	w.ssmTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSSMParameterRow() })
@@ -1463,7 +1466,7 @@ func (w *mainWindow) updateDetailParentAction(content string) {
 			w.detailParentButton.SetLabel("Back to standalone summary")
 		}
 	} else {
-		w.detailParentButton.SetLabel("Back to service details")
+		w.detailParentButton.SetLabel("Back to service summary")
 	}
 }
 
@@ -1612,6 +1615,8 @@ func (w *mainWindow) loadClusters() {
 			w.applyClusterFilter()
 			if len(clusters) == 0 {
 				w.setDetail("No ECS clusters found in this region.", detailIntro)
+			} else {
+				w.setDetail(clusterListSummary(len(clusters)), detailIntro)
 			}
 			if w.options.DefaultCluster != "" {
 				name := w.options.DefaultCluster
@@ -1679,11 +1684,11 @@ func (w *mainWindow) loadServiceTaskScope(service model.Service, stopped bool) {
 	if stopped {
 		w.resourceStack.SetVisibleChildName(pageStoppedTasks)
 		w.applyTaskFilter()
-		w.renderServiceOverview(service)
+		w.renderServiceTaskSummary(service, "Loading recently stopped tasks…")
 	} else {
 		w.resourceStack.SetVisibleChildName(pageTasks)
 		w.applyTaskFilter()
-		w.renderServiceOverview(service)
+		w.renderServiceTaskSummary(service, "Loading active tasks…")
 	}
 
 	cluster := w.selectedCluster
@@ -1875,10 +1880,7 @@ func (w *mainWindow) serviceTaskBreadcrumb() string {
 }
 
 func (w *mainWindow) serviceTaskSummary(service model.Service) string {
-	if w.showingStoppedTasks {
-		return formatServiceStoppedTasksDetail(w.selectedCluster, service, w.allTasks, w.taskNextToken != "")
-	}
-	return formatServiceDetail(w.selectedCluster, service, w.allTasks)
+	return formatServiceTaskContext(w.selectedCluster, service, w.allTasks, w.showingStoppedTasks, w.taskNextToken != "")
 }
 
 func (w *mainWindow) openClusterAt(position uint) {
@@ -1886,6 +1888,31 @@ func (w *mainWindow) openClusterAt(position uint) {
 		return
 	}
 	w.loadServices(w.filteredClusters[position].Name)
+}
+
+func (w *mainWindow) selectClusterRow() {
+	if w.currentPage != pageClusters {
+		return
+	}
+	position := w.clusterTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredClusters) {
+		if w.selectedCluster != "" {
+			w.resetWorkspaceForBrowserChange()
+			w.selectedCluster = ""
+			w.setBreadcrumb("ECS / Clusters")
+			w.setDetail(clusterListSummary(len(w.allClusters)), detailIntro)
+			w.updateActionSensitivity()
+		}
+		return
+	}
+	cluster := w.filteredClusters[position]
+	if w.selectedCluster != cluster.Name {
+		w.resetWorkspaceForBrowserChange()
+	}
+	w.selectedCluster = cluster.Name
+	w.setBreadcrumb("ECS / Clusters / " + cluster.Name)
+	w.setDetail(formatClusterDetail(cluster), detailClusterSummary)
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) openServiceAt(position uint) {
@@ -1926,6 +1953,57 @@ func (w *mainWindow) openTaskAt(position uint) {
 
 func (w *mainWindow) openStoppedTaskAt(position uint) {
 	w.openTaskFromFiltered(position)
+}
+
+func (w *mainWindow) selectTaskRow(stopped bool) {
+	if w.currentPage != pageTasks && w.currentPage != pageStandaloneTasks {
+		return
+	}
+	if stopped != w.showingStoppedTasks {
+		return
+	}
+	table := w.taskTable
+	if stopped {
+		table = w.stoppedTaskTable
+	}
+	position := table.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredTasks) {
+		if w.selectedTask != "" {
+			w.resetWorkspaceForBrowserChange()
+			w.selectedTask = ""
+			w.setBreadcrumb(w.taskBrowserBreadcrumb())
+			w.renderTaskBrowserContext()
+			w.updateActionSensitivity()
+		}
+		return
+	}
+	task := w.filteredTasks[position]
+	if w.selectedTask != task.TaskARN {
+		w.resetWorkspaceForBrowserChange()
+	}
+	w.selectedTask = task.TaskARN
+	w.setBreadcrumb(w.taskBrowserBreadcrumb() + " / " + shortID(task.TaskID))
+	w.renderTaskDetail(task)
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) taskBrowserBreadcrumb() string {
+	if w.currentPage == pageStandaloneTasks {
+		return w.standaloneTaskBreadcrumb()
+	}
+	return w.serviceTaskBreadcrumb()
+}
+
+func (w *mainWindow) renderTaskBrowserContext() {
+	if w.currentPage == pageStandaloneTasks {
+		w.setDetail(w.standaloneTaskSummary(), detailClusterSummary)
+		return
+	}
+	if svc, found := findService(w.allServices, w.selectedService); found {
+		w.renderServiceTaskSummary(svc, "")
+		return
+	}
+	w.setDetail("The selected service is no longer available.", detailError)
 }
 
 func (w *mainWindow) openTaskFromFiltered(position uint) {
@@ -2152,17 +2230,30 @@ func (w *mainWindow) navigateBrowserBack() {
 		return
 	}
 	if w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks {
+		serviceName := w.selectedService
 		w.resetWorkspaceForBrowserChange()
 		w.clearTaskBrowser()
 		w.currentPage = pageServices
-		w.selectedService = ""
-		w.updateActionSensitivity()
+		w.selectedService = serviceName
 		w.search.SetText("")
 		w.search.SetPlaceholderText("Filter services…")
 		w.resourceStack.SetVisibleChildName(pageServices)
-		w.setBreadcrumb("ECS / " + w.selectedCluster)
-		w.setDetail(clusterSummary(w.selectedCluster, len(w.allServices)), detailClusterSummary)
 		w.applyServiceFilter()
+		if svc, found := findService(w.allServices, serviceName); found {
+			w.setBreadcrumb("ECS / " + w.selectedCluster + " / " + serviceName)
+			w.renderServiceOverview(svc)
+			for index, candidate := range w.filteredServices {
+				if candidate.Name == serviceName {
+					w.serviceTable.selection.SetSelected(uint(index))
+					break
+				}
+			}
+		} else {
+			w.selectedService = ""
+			w.setBreadcrumb("ECS / " + w.selectedCluster)
+			w.setDetail(clusterSummary(w.selectedCluster, len(w.allServices)), detailClusterSummary)
+		}
+		w.updateActionSensitivity()
 		w.setStatus("Ready", false)
 		return
 	}
@@ -2170,19 +2261,32 @@ func (w *mainWindow) navigateBrowserBack() {
 		return
 	}
 	w.resetWorkspaceForBrowserChange()
+	clusterName := w.selectedCluster
 	w.currentPage = pageClusters
-	w.selectedCluster = ""
+	w.selectedCluster = clusterName
 	w.selectedService = ""
 	w.selectedTask = ""
-	w.updateActionSensitivity()
 	w.allServices = nil
 	w.search.SetText("")
 	w.search.SetPlaceholderText("Filter clusters…")
 	w.resourceStack.SetVisibleChildName(pageClusters)
-	w.setBreadcrumb("ECS / Clusters")
 	w.backButton.SetSensitive(false)
-	w.setDetail("Select a cluster and press Enter to browse its services.", detailIntro)
 	w.applyClusterFilter()
+	if cluster, found := findCluster(w.allClusters, clusterName); found {
+		w.setBreadcrumb("ECS / Clusters / " + clusterName)
+		w.setDetail(formatClusterDetail(cluster), detailClusterSummary)
+		for index, candidate := range w.filteredClusters {
+			if candidate.Name == clusterName {
+				w.clusterTable.selection.SetSelected(uint(index))
+				break
+			}
+		}
+	} else {
+		w.selectedCluster = ""
+		w.setBreadcrumb("ECS / Clusters")
+		w.setDetail(clusterListSummary(len(w.allClusters)), detailIntro)
+	}
+	w.updateActionSensitivity()
 	w.setStatus("Ready", false)
 }
 
@@ -2453,14 +2557,27 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 }
 
 func (w *mainWindow) refreshClusters(foreground bool) {
+	selectedName := w.selectedCluster
 	ctx, generation := w.startRefreshRequest("Refreshing ECS clusters…", foreground)
 	go func() {
 		clusters, err := w.options.ECS.ListClusters(ctx)
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allClusters = clusters
 			w.applyClusterFilter()
-			if w.detailContent == detailIntro && len(clusters) == 0 {
+			if selectedName != "" {
+				if cluster, found := findCluster(clusters, selectedName); found {
+					w.selectedCluster = selectedName
+					w.setBreadcrumb("ECS / Clusters / " + selectedName)
+					w.setDetail(formatClusterDetail(cluster), detailClusterSummary)
+					return
+				}
+				w.selectedCluster = ""
+				w.setBreadcrumb("ECS / Clusters")
+			}
+			if len(clusters) == 0 {
 				w.setDetail("No ECS clusters found in this region.", detailIntro)
+			} else {
+				w.setDetail(clusterListSummary(len(clusters)), detailIntro)
 			}
 		})
 	}()

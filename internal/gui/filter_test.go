@@ -25,6 +25,17 @@ func TestFilterClusters(t *testing.T) {
 	}
 }
 
+func TestFormatClusterDetailSupportsInspectThenDescend(t *testing.T) {
+	got := formatClusterDetail(model.Cluster{
+		Name: "prod", ARN: "arn:cluster:prod", Status: "ACTIVE", ActiveServices: 4, RunningTasks: 9, PendingTasks: 1,
+	})
+	for _, want := range []string{"CLUSTER", "prod", "ACTIVE", "arn:cluster:prod", "Double-click"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatClusterDetail() missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestFilterServicesAcrossVisibleFields(t *testing.T) {
 	services := []model.Service{
 		{Name: "api", Status: "ACTIVE", HealthStatus: "healthy", TaskDefinition: "api:42", LaunchType: "FARGATE"},
@@ -167,6 +178,22 @@ func TestFormatServiceOverviewIncludesConfiguredResourcesWithoutUnloadedTasks(t 
 	}
 	if strings.Contains(got, "\nTASKS\n") {
 		t.Fatalf("formatServiceOverview() should not imply that tasks were loaded:\n%s", got)
+	}
+}
+
+func TestFormatServiceTaskContextIsCompact(t *testing.T) {
+	got := formatServiceTaskContext("prod", model.Service{
+		Name: "api", Status: "ACTIVE", HealthStatus: "healthy", DesiredCount: 3, RunningCount: 2, TaskDefinition: "api:7",
+	}, []model.Task{{TaskID: "one"}, {TaskID: "two"}}, false, true)
+	for _, want := range []string{"SERVICE TASKS", "prod / api", "Active tasks", "Loaded", "2 • more available", "Select a task"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatServiceTaskContext() missing %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"DEPLOYMENTS", "RECENT EVENTS", "CONFIGURED RESOURCES"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("formatServiceTaskContext() unexpectedly contains %q:\n%s", unwanted, got)
+		}
 	}
 }
 
