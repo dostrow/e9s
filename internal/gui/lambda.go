@@ -5,11 +5,19 @@ package gui
 import (
 	"fmt"
 	"html"
+	"slices"
 	"strings"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+)
+
+const (
+	lambdaDetailMode      = "detail"
+	lambdaEnvironmentMode = "environment"
 )
 
 func (o Options) ConfigLambdaSearches() []config.LambdaSearch {
@@ -74,6 +82,12 @@ func (w *mainWindow) refreshLambda(foreground bool) {
 	ctx, generation := w.startRefreshRequest("Refreshing Lambda functions…", foreground)
 	go func() {
 		functions, err := w.options.Lambda.List(ctx, search)
+		var detail *model.LambdaFunction
+		if err == nil && selected != "" {
+			if _, found := findLambdaFunction(functions, selected); found {
+				detail, err = w.options.Lambda.Detail(ctx, selected)
+			}
+		}
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allLambdaFunctions = functions
 			w.applyLambdaFilter()
@@ -91,9 +105,15 @@ func (w *mainWindow) refreshLambda(foreground bool) {
 				w.updateActionSensitivity()
 				return
 			}
-			if w.detailContent == detailLambda {
+			if detail != nil {
+				w.lambdaDetail = detail
+				function = *detail
+			}
+			if w.lambdaViewMode != lambdaEnvironmentMode {
+				w.lambdaViewMode = lambdaDetailMode
 				w.setDetail(formatLambdaSummary(function), detailLambda)
 			}
+			w.updateActionSensitivity()
 		})
 	}()
 }
@@ -127,6 +147,8 @@ func (w *mainWindow) selectLambdaFunctionRow() {
 		if w.selectedLambdaFunction != "" {
 			w.resetWorkspaceForBrowserChange()
 			w.selectedLambdaFunction = ""
+			w.lambdaDetail = nil
+			w.lambdaViewMode = ""
 			w.setBreadcrumb(lambdaBreadcrumb(w.activeSavedLambdaSearch, w.lambdaSearchTerm, ""))
 			w.setDetail(lambdaListSummary(w.lambdaSearchTerm, len(w.allLambdaFunctions)), detailIntro)
 			w.updateActionSensitivity()
@@ -139,14 +161,180 @@ func (w *mainWindow) selectLambdaFunctionRow() {
 	}
 	w.selectedLambdaFunction = function.Name
 	w.setBreadcrumb(lambdaBreadcrumb(w.activeSavedLambdaSearch, w.lambdaSearchTerm, function.Name))
-	w.setDetail(formatLambdaSummary(function), detailLambda)
+	w.lambdaViewMode = lambdaDetailMode
+	w.setDetail("Loading Lambda function "+function.Name+"…", detailLambda)
 	w.updateActionSensitivity()
+	w.loadLambdaDetail(function.Name)
 }
 
 func (w *mainWindow) openLambdaFunctionAt(position uint) {
 	if int(position) < len(w.filteredLambdaFunctions) {
-		w.lambdaTable.selection.SetSelected(position)
+		if w.lambdaTable.selection.Selected() == position {
+			w.loadLambdaDetail(w.filteredLambdaFunctions[position].Name)
+		} else {
+			w.lambdaTable.selection.SetSelected(position)
+		}
 	}
+}
+
+func (w *mainWindow) loadLambdaDetail(name string) {
+	if name == "" || w.options.Lambda == nil || w.lambdaActionPending {
+		return
+	}
+	w.lambdaActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Loading Lambda function " + name + "…")
+	go func() {
+		function, err := w.options.Lambda.Detail(ctx, name)
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.lambdaActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				w.setDetail("ERROR\n\n"+err.Error(), detailError)
+				return
+			}
+			if w.currentPage != pageLambda || w.selectedLambdaFunction != name {
+				return
+			}
+			w.lambdaDetail = function
+			w.lambdaViewMode = lambdaDetailMode
+			w.setDetail(formatLambdaSummary(*function), detailLambda)
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			w.setStatus("Loaded Lambda function "+name, false)
+		})
+	}()
+}
+
+func (w *mainWindow) showLambdaDetails() {
+	if w.lambdaDetail == nil || w.lambdaDetail.Name != w.selectedLambdaFunction {
+		return
+	}
+	w.lambdaViewMode = lambdaDetailMode
+	w.setDetail(formatLambdaSummary(*w.lambdaDetail), detailLambda)
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) openLambdaEnvironment() {
+	w.loadLambdaEnvironment(false)
+}
+
+func (w *mainWindow) loadLambdaEnvironment(resolveSecrets bool) {
+	name := w.selectedLambdaFunction
+	if name == "" || w.options.Lambda == nil || w.lambdaActionPending {
+		return
+	}
+	w.lambdaActionPending = true
+	w.updateActionSensitivity()
+	label := "Loading environment for " + name + "…"
+	if resolveSecrets {
+		label = "Resolving secret values for " + name + "…"
+	}
+	ctx, generation := w.startRequest(label)
+	go func() {
+		environment, err := w.options.Lambda.Environment(ctx, name, resolveSecrets)
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.lambdaActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if w.currentPage != pageLambda || w.selectedLambdaFunction != name {
+				return
+			}
+			w.lambdaEnvironment = environment
+			w.lambdaEnvironmentResolved = resolveSecrets
+			w.lambdaViewMode = lambdaEnvironmentMode
+			w.setDetail(formatLambdaEnvironment(name, environment, resolveSecrets), detailLambda)
+			w.updateActionSensitivity()
+			w.lastSuccessfulLoad = time.Now()
+			w.setStatus("Environment loaded for "+name, false)
+		})
+	}()
+}
+
+func formatLambdaEnvironment(name string, environment []model.EnvVar, resolved bool) string {
+	environment = append([]model.EnvVar(nil), environment...)
+	slices.SortFunc(environment, func(a, b model.EnvVar) int { return strings.Compare(a.Name, b.Name) })
+	var out strings.Builder
+	fmt.Fprintf(&out, "LAMBDA ENVIRONMENT\n\n%s\n", name)
+	if len(environment) == 0 {
+		out.WriteString("\nNo environment variables.")
+		return out.String()
+	}
+	for _, variable := range environment {
+		value := variable.Value
+		if variable.Source != "" && resolved {
+			value = variable.ResolvedValue
+		}
+		fmt.Fprintf(&out, "\n%s", variable.Name)
+		if variable.Source != "" {
+			fmt.Fprintf(&out, "  [%s]", variable.Source)
+		}
+		fmt.Fprintf(&out, "\n  %s\n", valueOrDash(value))
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+func (w *mainWindow) confirmRevealLambdaSecrets() {
+	if w.lambdaViewMode != lambdaEnvironmentMode || !environmentHasSecrets(w.lambdaEnvironment) {
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Reveal Lambda secret values")
+	dialog.SetMarkup("Resolve and display secret values referenced by <b>" + html.EscapeString(w.selectedLambdaFunction) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "Values fetched from SSM and Secrets Manager will be visible in the Workspace pane.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.loadLambdaEnvironment(true)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) selectedLambdaLogSource() (model.LogSource, string, bool) {
+	if w.lambdaDetail == nil || w.lambdaDetail.Name != w.selectedLambdaFunction || w.lambdaDetail.LogGroup == "" {
+		return model.LogSource{}, "", false
+	}
+	return model.LogSource{Group: w.lambdaDetail.LogGroup}, "λ " + w.lambdaDetail.Name, true
+}
+
+func (w *mainWindow) followLambdaLogs() {
+	source, title, ok := w.selectedLambdaLogSource()
+	if !ok || w.options.Logs == nil {
+		return
+	}
+	w.showLogFollow(source, title)
+}
+
+func (w *mainWindow) browseLambdaLogs() {
+	source, _, ok := w.selectedLambdaLogSource()
+	if !ok || w.options.Logs == nil {
+		return
+	}
+	w.loadLogStreams(source.Group)
+}
+
+func (w *mainWindow) searchLambdaLogs() {
+	source, _, ok := w.selectedLambdaLogSource()
+	if !ok || w.options.Logs == nil {
+		return
+	}
+	w.promptCloudWatchSearchForGroup(source.Group)
 }
 
 func filterLambdaFunctions(functions []model.LambdaFunction, query string) []model.LambdaFunction {

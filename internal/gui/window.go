@@ -110,6 +110,11 @@ type mainWindow struct {
 	selectedLambdaFunction      string
 	lambdaSearchTerm            string
 	activeSavedLambdaSearch     string
+	lambdaDetail                *model.LambdaFunction
+	lambdaEnvironment           []model.EnvVar
+	lambdaEnvironmentResolved   bool
+	lambdaViewMode              string
+	lambdaActionPending         bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -181,6 +186,12 @@ type mainWindow struct {
 	lambdaSearchButton          *gtk.Button
 	lambdaSaveSearchButton      *gtk.Button
 	lambdaManageSearchesButton  *gtk.Button
+	lambdaDetailsButton         *gtk.Button
+	lambdaEnvironmentButton     *gtk.Button
+	lambdaRevealSecretsButton   *gtk.Button
+	lambdaFollowLogsButton      *gtk.Button
+	lambdaBrowseLogsButton      *gtk.Button
+	lambdaSearchLogsButton      *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -472,6 +483,18 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.lambdaSaveSearchButton.ConnectClicked(w.promptSaveLambdaSearch)
 	w.lambdaManageSearchesButton = gtk.NewButtonWithLabel("Saved searches…")
 	w.lambdaManageSearchesButton.ConnectClicked(w.promptManageLambdaSearches)
+	w.lambdaDetailsButton = gtk.NewButtonWithLabel("Details")
+	w.lambdaDetailsButton.ConnectClicked(w.showLambdaDetails)
+	w.lambdaEnvironmentButton = gtk.NewButtonWithLabel("Environment")
+	w.lambdaEnvironmentButton.ConnectClicked(w.openLambdaEnvironment)
+	w.lambdaRevealSecretsButton = gtk.NewButtonWithLabel("Reveal secret values…")
+	w.lambdaRevealSecretsButton.ConnectClicked(w.confirmRevealLambdaSecrets)
+	w.lambdaFollowLogsButton = gtk.NewButtonWithLabel("Follow logs")
+	w.lambdaFollowLogsButton.ConnectClicked(w.followLambdaLogs)
+	w.lambdaBrowseLogsButton = gtk.NewButtonWithLabel("Browse logs")
+	w.lambdaBrowseLogsButton.ConnectClicked(w.browseLambdaLogs)
+	w.lambdaSearchLogsButton = gtk.NewButtonWithLabel("Search logs")
+	w.lambdaSearchLogsButton.ConnectClicked(w.searchLambdaLogs)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -538,6 +561,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.lambdaSearchButton)
 	header.Append(w.lambdaSaveSearchButton)
 	header.Append(w.lambdaManageSearchesButton)
+	header.Append(w.lambdaDetailsButton)
+	header.Append(w.lambdaEnvironmentButton)
+	header.Append(w.lambdaRevealSecretsButton)
+	header.Append(w.lambdaFollowLogsButton)
+	header.Append(w.lambdaBrowseLogsButton)
+	header.Append(w.lambdaSearchLogsButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1188,6 +1217,11 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.ssmDetail = nil
 	w.secretActionPending = false
 	w.secretDetail = nil
+	w.lambdaActionPending = false
+	w.lambdaDetail = nil
+	w.lambdaEnvironment = nil
+	w.lambdaEnvironmentResolved = false
+	w.lambdaViewMode = ""
 	w.showingLogs = false
 	w.showingMetrics = false
 	if w.showingTerminal {
@@ -1767,6 +1801,12 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	if w.currentPage == pageLambda && w.lambdaActionPending {
+		if foreground {
+			w.setStatus("A Lambda operation is still pending", false)
+		}
+		return
+	}
 	if w.showingTerminal {
 		if foreground {
 			w.setStatus("Disconnect ECS Exec before refreshing", false)
@@ -2255,6 +2295,22 @@ func (w *mainWindow) updateActionSensitivity() {
 	hasSavedLambdaSearches := w.options.Config != nil && len(w.options.Config.LambdaSearches) > 0
 	w.lambdaManageSearchesButton.SetVisible(lambdaPage && hasSavedLambdaSearches)
 	w.lambdaManageSearchesButton.SetSensitive(lambdaPage && hasSavedLambdaSearches)
+	lambdaSelected := lambdaPage && w.selectedLambdaFunction != ""
+	lambdaReady := lambdaSelected && w.lambdaDetail != nil && w.lambdaDetail.Name == w.selectedLambdaFunction && !w.lambdaActionPending
+	w.lambdaDetailsButton.SetVisible(lambdaSelected && w.lambdaViewMode == lambdaEnvironmentMode)
+	w.lambdaDetailsButton.SetSensitive(lambdaReady)
+	w.lambdaEnvironmentButton.SetVisible(lambdaSelected && w.lambdaViewMode != lambdaEnvironmentMode)
+	w.lambdaEnvironmentButton.SetSensitive(lambdaReady && w.options.Lambda != nil)
+	canRevealLambdaSecrets := lambdaReady && w.lambdaViewMode == lambdaEnvironmentMode && !w.lambdaEnvironmentResolved && environmentHasSecrets(w.lambdaEnvironment)
+	w.lambdaRevealSecretsButton.SetVisible(canRevealLambdaSecrets)
+	w.lambdaRevealSecretsButton.SetSensitive(canRevealLambdaSecrets)
+	hasLambdaLogs := lambdaReady && w.lambdaDetail.LogGroup != "" && w.options.Logs != nil
+	w.lambdaFollowLogsButton.SetVisible(lambdaSelected)
+	w.lambdaFollowLogsButton.SetSensitive(hasLambdaLogs)
+	w.lambdaBrowseLogsButton.SetVisible(lambdaSelected)
+	w.lambdaBrowseLogsButton.SetSensitive(hasLambdaLogs)
+	w.lambdaSearchLogsButton.SetVisible(lambdaSelected)
+	w.lambdaSearchLogsButton.SetSensitive(hasLambdaLogs)
 	w.scaleButton.SetVisible(serviceSelected)
 	w.scaleButton.SetSensitive(serviceSelected)
 	w.stopTaskButton.SetVisible(taskSelected && !taskStopped)

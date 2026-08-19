@@ -59,3 +59,21 @@ func TestFormatLambdaBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatLambdaEnvironmentSortsAndControlsResolvedValues(t *testing.T) {
+	environment := []model.EnvVar{
+		{Name: "TOKEN", Value: "arn:secret", ResolvedValue: "plaintext", Source: "secrets-manager"},
+		{Name: "MODE", Value: "production"},
+	}
+	masked := formatLambdaEnvironment("worker", environment, false)
+	if strings.Contains(masked, "plaintext") || !strings.Contains(masked, "arn:secret") {
+		t.Fatalf("unresolved environment exposed or omitted the wrong value: %q", masked)
+	}
+	if strings.Index(masked, "MODE") > strings.Index(masked, "TOKEN") {
+		t.Fatalf("environment is not sorted by name: %q", masked)
+	}
+	resolved := formatLambdaEnvironment("worker", environment, true)
+	if !strings.Contains(resolved, "plaintext") {
+		t.Fatalf("resolved environment missing resolved value: %q", resolved)
+	}
+}

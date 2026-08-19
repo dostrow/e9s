@@ -42,7 +42,11 @@ type cloudWatchSearch struct {
 }
 
 func (w *mainWindow) promptCloudWatchSearch() {
-	if w.options.Logs == nil || w.selectedLogGroup == "" {
+	w.promptCloudWatchSearchForGroup(w.selectedLogGroup)
+}
+
+func (w *mainWindow) promptCloudWatchSearchForGroup(group string) {
+	if w.options.Logs == nil || group == "" {
 		return
 	}
 
@@ -55,7 +59,7 @@ func (w *mainWindow) promptCloudWatchSearch() {
 	content.SetMarginStart(16)
 	content.SetMarginEnd(16)
 
-	defaultGroups := []string{w.selectedLogGroup}
+	defaultGroups := []string{group}
 	defaultStreams := []string(nil)
 	defaultHighlightRules := []model.LogHighlightRule(nil)
 	defaultHiddenStreams := []string(nil)
