@@ -56,6 +56,18 @@ Pixbuf module caches. Release AppImages, like Debian packages, must be built in
 the Ubuntu 24.04 baseline environment so their glibc requirement remains
 portable to all supported distributions.
 
+## Releases and Arch Linux
+
+Tag pushes retain the existing static TUI matrix and add native Ubuntu 24.04
+desktop jobs on `ubuntu-24.04` and `ubuntu-24.04-arm`. The jobs test the GUI,
+build both Debian packages and the AppImage, upload every artifact, and publish
+one sorted SHA-256 manifest with the GitHub release.
+
+`packaging/arch/PKGBUILD` is an AUR-ready split `-git` recipe. It produces
+`e9s-git` and `e9s-gui-git`; only the GUI package depends on `fontconfig`,
+`gtk4`, `gtksourceview5`, and `vte4`. A versioned AUR recipe can replace it once
+the first release containing the stable Linux artifact layout is tagged.
+
 ## Staged installation
 
 `make install-gui` installs the GUI and desktop assets. Packaging builds should

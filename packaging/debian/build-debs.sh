@@ -22,8 +22,16 @@ gui_root=$work_dir/e9s-gui
 mkdir -p "$output_dir" "$tui_root/DEBIAN" "$tui_root/usr/bin" "$tui_root/usr/share/licenses/e9s" "$gui_root/DEBIAN" "$gui_root/usr/bin"
 
 ldflags="-s -w -X main.version=$input_version"
-(cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "$tui_root/usr/bin/e9s" .)
-(cd "$repo_dir" && go build -trimpath -tags "gui vte sourceview" -ldflags "$ldflags" -o "$gui_root/usr/bin/e9s-gui" ./cmd/e9s-gui)
+if [ -n "${E9S_TUI_BINARY:-}" ]; then
+  install -m 0755 "$E9S_TUI_BINARY" "$tui_root/usr/bin/e9s"
+else
+  (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "$tui_root/usr/bin/e9s" .)
+fi
+if [ -n "${E9S_GUI_BINARY:-}" ]; then
+  install -m 0755 "$E9S_GUI_BINARY" "$gui_root/usr/bin/e9s-gui"
+else
+  (cd "$repo_dir" && go build -trimpath -tags "gui vte sourceview" -ldflags "$ldflags" -o "$gui_root/usr/bin/e9s-gui" ./cmd/e9s-gui)
+fi
 (cd "$repo_dir" && make install-gui-assets DESTDIR="$gui_root" PREFIX=/usr)
 install -m 0644 "$repo_dir/LICENSE" "$tui_root/usr/share/licenses/e9s/LICENSE"
 

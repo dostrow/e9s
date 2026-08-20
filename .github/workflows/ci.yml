@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -35,10 +35,34 @@ jobs:
         with:
           version: latest
 
+  gui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Install native GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig-dev libgtk-4-dev libgtksourceview-5-dev \
+            libvte-2.91-gtk4-dev pkg-config
+
+      - name: Test GUI adapters
+        run: go test -tags gui ./internal/gui
+
+      - name: Build full GUI
+        run: make build-gui
+
   auto-release:
-    needs: test
+    needs: [test, gui]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
