@@ -88,3 +88,32 @@ func TestDynamoItemsShareKeyIgnoresNonKeyFields(t *testing.T) {
 		t.Fatal("dynamoItemsShareKey() matched different keys")
 	}
 }
+
+func TestDiscoverDynamoItemColumnsPlacesKeysFirstThenSortsAttributes(t *testing.T) {
+	items := []model.DynamoItem{
+		{"SK": "two", "zeta": 1, "PK": "one"},
+		{"alpha": true, "PK": "three"},
+	}
+	got := discoverDynamoItemColumns(items, []string{"PK", "SK"})
+	want := []string{"PK", "SK", "alpha", "zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("discoverDynamoItemColumns() = %#v, want %#v", got, want)
+	}
+}
+
+func TestFormatDynamoBrowserCellUsesCompactScalarsAndDetailPlaceholder(t *testing.T) {
+	tests := []struct {
+		value any
+		want  string
+	}{
+		{value: "line one\nline two", want: `line one\nline two`},
+		{value: true, want: "true"},
+		{value: float64(42), want: "42"},
+		{value: map[string]any{"nested": strings.Repeat("x", 60)}, want: "[select for detail]"},
+	}
+	for _, test := range tests {
+		if got := formatDynamoBrowserCell(test.value); got != test.want {
+			t.Errorf("formatDynamoBrowserCell(%#v) = %q, want %q", test.value, got, test.want)
+		}
+	}
+}

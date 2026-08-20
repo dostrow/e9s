@@ -19,6 +19,8 @@ type stringTable struct {
 	model     *gtk.StringList
 	selection *gtk.SingleSelection
 	view      *gtk.ColumnView
+	columns   []*gtk.ColumnViewColumn
+	specs     []columnSpec
 	count     uint
 	rows      []string
 }
@@ -33,10 +35,41 @@ func newStringTable(columns []columnSpec) *stringTable {
 	view.SetShowRowSeparators(true)
 	view.SetSingleClickActivate(false)
 
-	for _, spec := range columns {
-		view.AppendColumn(textColumn(spec))
+	table := &stringTable{model: model, selection: selection, view: view}
+	table.setColumns(columns)
+	return table
+}
+
+// setColumns replaces the presentation schema without replacing the row model.
+// This is used by schemaless browsers such as DynamoDB, where columns are
+// discovered from the current result set and may expand when another page loads.
+func (t *stringTable) setColumns(specs []columnSpec) {
+	if columnSpecsEqual(t.specs, specs) {
+		return
 	}
-	return &stringTable{model: model, selection: selection, view: view}
+	for _, column := range t.columns {
+		t.view.RemoveColumn(column)
+	}
+	t.columns = t.columns[:0]
+	for _, spec := range specs {
+		column := textColumn(spec)
+		t.view.AppendColumn(column)
+		t.columns = append(t.columns, column)
+	}
+	t.specs = append(t.specs[:0], specs...)
+	t.view.QueueDraw()
+}
+
+func columnSpecsEqual(left, right []columnSpec) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *stringTable) replace(rows []string) {

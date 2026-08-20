@@ -216,10 +216,12 @@ func (w *mainWindow) clearDynamoItems() {
 	w.filteredDynamoItems = nil
 	w.selectedDynamoItem = -1
 	w.dynamoKeyNames = nil
+	w.dynamoItemColumns = nil
 	w.dynamoNextToken = ""
 	w.dynamoScannedCount = 0
 	if w.dynamoItemTable != nil {
 		w.dynamoItemTable.clear()
+		w.dynamoItemTable.setColumns(nil)
 	}
 }
 
@@ -422,10 +424,74 @@ func (w *mainWindow) applyDynamoItemFilter() {
 		row := compactDynamoItem(item)
 		if query == "" || strings.Contains(strings.ToLower(row), query) {
 			w.filteredDynamoItems = append(w.filteredDynamoItems, item)
-			rows = append(rows, row)
 		}
 	}
+	w.dynamoItemColumns = discoverDynamoItemColumns(w.allDynamoItems, w.dynamoKeyNames)
+	specs := make([]columnSpec, len(w.dynamoItemColumns))
+	for index, name := range w.dynamoItemColumns {
+		specs[index] = columnSpec{title: name, field: index, expand: true}
+	}
+	w.dynamoItemTable.setColumns(specs)
+	for _, item := range w.filteredDynamoItems {
+		cells := make([]string, len(w.dynamoItemColumns))
+		for index, name := range w.dynamoItemColumns {
+			cells[index] = formatDynamoBrowserCell(item[name])
+		}
+		rows = append(rows, strings.Join(cells, "\t"))
+	}
 	w.dynamoItemTable.replace(rows)
+}
+
+func discoverDynamoItemColumns(items []model.DynamoItem, keyNames []string) []string {
+	seen := make(map[string]bool)
+	remaining := make([]string, 0)
+	for _, item := range items {
+		for name := range item {
+			if !seen[name] {
+				seen[name] = true
+				remaining = append(remaining, name)
+			}
+		}
+	}
+	sort.Strings(remaining)
+	columns := make([]string, 0, len(remaining))
+	keys := make(map[string]bool, len(keyNames))
+	for _, name := range keyNames {
+		if seen[name] {
+			columns = append(columns, name)
+			keys[name] = true
+		}
+	}
+	for _, name := range remaining {
+		if !keys[name] {
+			columns = append(columns, name)
+		}
+	}
+	return columns
+}
+
+func formatDynamoBrowserCell(value any) string {
+	if value == nil {
+		return ""
+	}
+	var text string
+	switch typed := value.(type) {
+	case string:
+		text = strings.ReplaceAll(typed, "\r", "")
+		text = strings.ReplaceAll(text, "\n", "\\n")
+		text = strings.ReplaceAll(text, "\t", " ")
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			text = fmt.Sprintf("%v", typed)
+		} else {
+			text = string(data)
+		}
+	}
+	if len(text) > 50 {
+		return "[select for detail]"
+	}
+	return text
 }
 
 func (w *mainWindow) selectDynamoItemRow() {

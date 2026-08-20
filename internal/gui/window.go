@@ -235,6 +235,7 @@ type mainWindow struct {
 	filteredDynamoItems         []model.DynamoItem
 	selectedDynamoItem          int
 	dynamoKeyNames              []string
+	dynamoItemColumns           []string
 	dynamoNextToken             string
 	dynamoScannedCount          int
 	dynamoFilter                *model.DynamoFilter
@@ -716,9 +717,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.dynamoTable = newStringTable([]columnSpec{
 		{title: "TABLE", field: 0, expand: true},
 	})
-	w.dynamoItemTable = newStringTable([]columnSpec{
-		{title: "ITEM", field: 0, expand: true},
-	})
+	w.dynamoItemTable = newStringTable(nil)
 	w.sqsQueueTable = newStringTable([]columnSpec{
 		{title: "QUEUE", field: 0, expand: true}, {title: "URL", field: 1, expand: true},
 	})
