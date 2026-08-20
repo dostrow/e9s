@@ -46,13 +46,16 @@ const (
 	InputLogSearchGroupsSave
 	InputTofuDir
 	InputTofuSaveName
+	InputSQLPassword
+	InputSQLExport
+	InputSQLRename
 )
 
 type InputModel struct {
-	Active  bool
-	Action  InputAction
-	Label   string
-	input   textinput.Model
+	Active bool
+	Action InputAction
+	Label  string
+	input  textinput.Model
 }
 
 type InputResultMsg struct {
@@ -77,6 +80,13 @@ func NewInput(action InputAction, label, defaultValue string) InputModel {
 		Label:  label,
 		input:  ti,
 	}
+}
+
+func NewPasswordInput(action InputAction, label string) InputModel {
+	m := NewInput(action, label, "")
+	m.input.EchoMode = textinput.EchoPassword
+	m.input.EchoCharacter = '•'
+	return m
 }
 
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {

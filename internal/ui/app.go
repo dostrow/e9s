@@ -16,6 +16,7 @@ import (
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/refreshpolicy"
 	"github.com/dostrow/e9s/internal/service"
+	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/ui/theme"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -41,6 +42,7 @@ const (
 	modeCostExplorer
 	modeElastiCache
 	modeAPIGateway
+	modeSQLWorkbench
 )
 
 type viewState int
@@ -114,6 +116,8 @@ const (
 	viewElastiCacheDetail
 	viewAPIGateway
 	viewAPIGatewayDetail
+	viewSQLConnections
+	viewSQLWorkbench
 )
 
 type App struct {
@@ -229,6 +233,15 @@ type App struct {
 	apiGatewayKind             model.APIGatewayKind
 	apiGatewayResources        []model.APIGatewayAPI
 	selectedAPIGateway         *model.APIGatewayAPI
+	sqlExecutor                *sqlworkbench.Executor
+	sqlPasswords               *sqlPasswordCache
+	sqlProfiles                []config.SQLConnection
+	sqlConnectionsView         views.EC2ResourceListModel
+	sqlWorkbenchView           views.SQLWorkbenchModel
+	sqlStatePath               string
+	sqlPending                 bool
+	sqlPendingRun              sqlTUIRunMode
+	sqlPendingProfile          string
 	regionPicker               views.RegionPickerModel
 
 	// Navigation context
@@ -345,7 +358,7 @@ type App struct {
 
 func (a App) autoRefreshClass() refreshpolicy.Class {
 	switch a.state {
-	case viewLogs, viewLogSearch, viewDynamoItems, viewDynamoItemDetail, viewCostExplorer,
+	case viewLogs, viewLogSearch, viewDynamoItems, viewDynamoItemDetail, viewCostExplorer, viewSQLConnections, viewSQLWorkbench,
 		viewTofuResources, viewTofuStateDetail, viewTofuPlan, viewTofuPlanDetail:
 		return refreshpolicy.Manual
 	case viewMetrics:
@@ -402,6 +415,20 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		}(),
 		idleTimeout: idleTimeout,
 	}
+	passwords := newSQLPasswordCache()
+	sqlState, _ := sqlworkbench.LoadState("")
+	sqlStatePath, _ := sqlworkbench.DefaultStatePath()
+	for index := range sqlState.Tabs {
+		sqlState.Tabs[index].AllowWrites = false
+	}
+	app.sqlPasswords = passwords
+	app.sqlStatePath = sqlStatePath
+	app.sqlWorkbenchView = views.NewSQLWorkbench(sqlState.Tabs, sqlState.ActiveTabID)
+	app.sqlExecutor = sqlworkbench.NewExecutor(sqlworkbench.ExecutorOptions{
+		AuthProvider: client, DataAPI: client, Prompt: sqlPasswordPrompt(passwords),
+		PGPassFiles: cfg.SQL.PGPassFiles, AllowWrites: cfg.SQL.AllowWrites,
+		AWSProfile: cfg.Defaults.Profile, AWSRegion: client.Region(),
+	})
 
 	allModes := []struct {
 		mode    topMode
@@ -426,6 +453,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeCostExplorer, "COST", cfg.ModuleCostExplorer()},
 		{modeElastiCache, "CACHE", cfg.ModuleElastiCache()},
 		{modeAPIGateway, "APIGW", cfg.ModuleAPIGateway()},
+		{modeSQLWorkbench, "SQL", cfg.ModuleSQLWorkbench()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -479,6 +507,7 @@ func resolveDefaultMode(s string) *topMode {
 		"Cost Explorer": modeCostExplorer, "cost explorer": modeCostExplorer, "cost": modeCostExplorer, "CE": modeCostExplorer, "ce": modeCostExplorer,
 		"ElastiCache": modeElastiCache, "elasticache": modeElastiCache, "CACHE": modeElastiCache, "cache": modeElastiCache,
 		"API Gateway": modeAPIGateway, "api gateway": modeAPIGateway, "apigateway": modeAPIGateway, "APIGW": modeAPIGateway,
+		"SQL Workbench": modeSQLWorkbench, "sql workbench": modeSQLWorkbench, "sql": modeSQLWorkbench, "postgres": modeSQLWorkbench, "postgresql": modeSQLWorkbench,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -574,6 +603,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.elastiCacheDetailView = a.elastiCacheDetailView.SetSize(w, h)
 		a.apiGatewayView = a.apiGatewayView.SetSize(w, h)
 		a.apiGatewayDetailView = a.apiGatewayDetailView.SetSize(w, h)
+		a.sqlConnectionsView = a.sqlConnectionsView.SetSize(w, h)
+		a.sqlWorkbenchView = a.sqlWorkbenchView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -1575,6 +1606,28 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, a.refreshCurrentView()
 
+	case sqlExecutedMsg:
+		a.sqlPending = false
+		a.loading = false
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.sqlWorkbenchView.SetResultsFor(msg.tabID, msg.results)
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case sqlReconnectedMsg:
+		a.sqlPending = false
+		a.loading = false
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.flashMessage = "Connected to " + msg.profile
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+
 	case runTaskStartedMsg:
 		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() {
 			return a, nil
@@ -1662,6 +1715,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ConfirmCostRefresh:
 			a.loading = true
 			return a, a.loadCostExplorer(true)
+		case ConfirmSQLWrites:
+			a.sqlWorkbenchView.ToggleWrites()
+			a.saveSQLWorkbenchState()
+			return a, nil
 		}
 		return a, nil
 
@@ -1679,6 +1736,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case InputResultMsg:
 		if msg.Canceled {
+			if msg.Action == InputSQLPassword {
+				a.sqlPendingRun = sqlTUIRunNone
+				a.sqlPendingProfile = ""
+			}
 			return a, nil
 		}
 		switch msg.Action {
@@ -1767,6 +1828,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openSQSQueues(msg.Value)
 		case InputSQSSaveName:
 			return a.doSaveSQSQueue(msg.Value)
+		case InputSQLPassword:
+			profile := a.sqlPendingProfile
+			mode := a.sqlPendingRun
+			a.sqlPendingProfile = ""
+			a.sqlPendingRun = sqlTUIRunNone
+			if profile == "" || strings.TrimSpace(msg.Value) == "" {
+				a.err = fmt.Errorf("database password cannot be empty")
+				return a, nil
+			}
+			a.sqlPasswords.Set(profile, msg.Value)
+			if mode == sqlTUIRunNone {
+				return a.reconnectSQL()
+			}
+			return a.runSQL(mode)
+		case InputSQLExport:
+			return a.exportSQLResult(msg.Value)
+		case InputSQLRename:
+			a.sqlWorkbenchView.Rename(msg.Value)
+			a.saveSQLWorkbenchState()
+			return a, nil
 		}
 		return a, nil
 
@@ -1883,6 +1964,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			if a.sqlExecutor != nil {
+				a.sqlExecutor.SetPolicy(newCfg.SQL.AllowWrites, newCfg.SQL.PGPassFiles)
+			}
 			a.idleTimeout = time.Duration(newCfg.Defaults.IdleTimeout) * time.Second
 			a.configModTime = modTime
 			a.flashMessage = "Config reloaded (file changed)"
@@ -1930,6 +2014,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Reset idle timer on any keypress
 		a.lastActivity = time.Now()
+		if a.state == viewSQLWorkbench && a.sqlWorkbenchView.Editing() {
+			if msg.String() == "esc" {
+				a.sqlWorkbenchView.StopEditing()
+				a.saveSQLWorkbenchState()
+				return a, nil
+			}
+			var cmd tea.Cmd
+			a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
+			return a, cmd
+		}
 
 		// Toggle manual pause
 		if msg.String() == a.kb.PauseResume {
@@ -1959,6 +2053,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, theme.Keys.Quit):
 			if a.cancel != nil {
 				a.cancel()
+			}
+			a.saveSQLWorkbenchState()
+			if a.sqlExecutor != nil {
+				a.sqlExecutor.Close()
 			}
 			return a, tea.Quit
 		case key.Matches(msg, theme.Keys.Back):
@@ -2028,6 +2126,46 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.openAPIGateway(model.APIGatewayWebSocket)
 			case "4":
 				return a.openAPIGateway(model.APIGatewayDomain)
+			}
+		}
+		if a.mode == modeSQLWorkbench && !a.isFiltering() {
+			switch a.state {
+			case viewSQLConnections:
+				if k == "t" {
+					return a.showSQLWorkbench()
+				}
+			case viewSQLWorkbench:
+				switch k {
+				case "e":
+					return a, a.sqlWorkbenchView.BeginEditing()
+				case "r":
+					return a.runSQL(sqlTUIRunAll)
+				case "c":
+					return a.runSQL(sqlTUIRunCurrent)
+				case "R":
+					return a.reconnectSQL()
+				case "[":
+					a.sqlWorkbenchView.Switch(-1)
+					a.saveSQLWorkbenchState()
+					return a, nil
+				case "]":
+					a.sqlWorkbenchView.Switch(1)
+					a.saveSQLWorkbenchState()
+					return a, nil
+				case "n":
+					return a.openSQLConnections()
+				case "d":
+					return a.closeSQLTab()
+				case "t":
+					if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
+						a.input = NewInput(InputSQLRename, "SQL tab title (blank follows connection name)", tab.Title)
+					}
+					return a, nil
+				case "x":
+					return a.promptSQLExport()
+				case "w":
+					return a.toggleSQLWrites()
+				}
 			}
 		}
 		if a.mode == modeEC2 {
@@ -2546,6 +2684,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.apiGatewayView, cmd = a.apiGatewayView.Update(msg)
 	case viewAPIGatewayDetail:
 		a.apiGatewayDetailView, cmd = a.apiGatewayDetailView.Update(msg)
+	case viewSQLConnections:
+		a.sqlConnectionsView, cmd = a.sqlConnectionsView.Update(msg)
+	case viewSQLWorkbench:
+		a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2618,6 +2760,8 @@ func (a App) isFiltering() bool {
 		return a.elastiCacheView.IsFiltering()
 	case viewAPIGateway:
 		return a.apiGatewayView.IsFiltering()
+	case viewSQLConnections:
+		return a.sqlConnectionsView.IsFiltering()
 	}
 	return false
 }
@@ -2625,6 +2769,16 @@ func (a App) isFiltering() bool {
 // --- View ---
 
 func (a App) buildBreadcrumbs() []string {
+	if a.state == viewSQLConnections {
+		return []string{"SQL Workbench", "Connections"}
+	}
+	if a.state == viewSQLWorkbench {
+		crumbs := []string{"SQL Workbench"}
+		if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
+			crumbs = append(crumbs, tab.ProfileName)
+		}
+		return crumbs
+	}
 	if a.state == viewCostExplorer {
 		return []string{"Cost Explorer", a.costSubview}
 	}
@@ -2765,6 +2919,10 @@ func (a App) View() string {
 		content = a.apiGatewayView.View()
 	case viewAPIGatewayDetail:
 		content = a.apiGatewayDetailView.View()
+	case viewSQLConnections:
+		content = a.sqlConnectionsView.View()
+	case viewSQLWorkbench:
+		content = a.sqlWorkbenchView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -2963,6 +3121,10 @@ func (a App) helpText() string {
 		primary = "[enter] detail  [1/2/3/4] resource type"
 	case viewAPIGatewayDetail:
 		primary = "[j/k] scroll"
+	case viewSQLConnections:
+		primary = "[enter] new tab  [t] open tabs  [/] filter"
+	case viewSQLWorkbench:
+		primary = "[e] edit  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3391,6 +3553,15 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{{"enter", "View stages, routes, integrations, mappings, and metrics"}, {"1/2/3/4", "REST / HTTP / WebSocket APIs / custom domains"}, {"/", "Filter resources"}}
 	case viewAPIGatewayDetail:
 		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
+	case viewSQLConnections:
+		context = []kv{{"enter", "Open a new query tab for selected connection"}, {"t", "Return to open tabs"}, {"/", "Filter connections"}}
+	case viewSQLWorkbench:
+		context = []kv{
+			{"e", "Edit query (Esc returns to commands)"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
+			{"R", "Reconnect"}, {"[/]", "Previous/next tab"}, {"n", "Connection browser / new tab"},
+			{"t", "Rename tab"}, {"d", "Close tab"}, {"x", "Export latest result as CSV"}, {"w", "Toggle per-tab write break-glass"},
+			{"j/k", "Scroll result rows"},
+		}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -3569,6 +3740,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 		return a.openElastiCacheDetail()
 	case viewAPIGateway:
 		return a.openAPIGatewayDetail()
+	case viewSQLConnections:
+		return a.openSelectedSQLConnection()
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -3650,6 +3823,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openElastiCache(model.ElastiCacheReplicationGroup)
 	case modeAPIGateway:
 		return a.openAPIGateway(model.APIGatewayREST)
+	case modeSQLWorkbench:
+		return a.openSQLConnections()
 	}
 	return a, nil
 }
@@ -3701,6 +3876,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openElastiCache(model.ElastiCacheReplicationGroup)
 	case modeAPIGateway:
 		return a.openAPIGateway(model.APIGatewayREST)
+	case modeSQLWorkbench:
+		return a.openSQLConnections()
 	}
 	return a, nil
 }
@@ -3956,6 +4133,10 @@ func (a App) goBack() (App, tea.Cmd) {
 	case viewAPIGatewayDetail:
 		a.state = viewAPIGateway
 		return a, nil
+	case viewSQLConnections:
+		return a.showModePicker()
+	case viewSQLWorkbench:
+		return a.openSQLConnections()
 	case viewEC2Instances:
 		return a.showModePicker()
 	case viewEC2Detail:

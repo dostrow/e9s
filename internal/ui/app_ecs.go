@@ -1049,6 +1049,8 @@ func (a App) refreshCurrentView() tea.Cmd {
 			_, cmd := a.openAPIGatewayDetail()
 			return cmd
 		}
+	case viewSQLConnections, viewSQLWorkbench:
+		return nil
 	default:
 		return nil
 	}

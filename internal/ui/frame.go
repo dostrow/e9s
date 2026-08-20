@@ -179,6 +179,7 @@ func modeDisplayName(mode topMode) string {
 		modeCostExplorer: "Cost Explorer",
 		modeElastiCache:  "ElastiCache",
 		modeAPIGateway:   "API Gateway",
+		modeSQLWorkbench: "SQL Workbench",
 	}
 	if name, ok := names[mode]; ok {
 		return name
@@ -207,6 +208,7 @@ func modeShortName(mode topMode) string {
 		modeCostExplorer: "COST",
 		modeElastiCache:  "CACHE",
 		modeAPIGateway:   "APIGW",
+		modeSQLWorkbench: "SQL",
 	}
 	if name, ok := names[mode]; ok {
 		return name

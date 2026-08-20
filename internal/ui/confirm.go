@@ -38,6 +38,7 @@ const (
 	ConfirmTofuInit
 	ConfirmTofuApply
 	ConfirmCostRefresh
+	ConfirmSQLWrites
 )
 
 type ConfirmModel struct {

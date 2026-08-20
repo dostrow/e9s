@@ -44,6 +44,7 @@ func TestModeDisplayName(t *testing.T) {
 		{modeS3, "S3"},
 		{modeLambda, "Lambda"},
 		{modeDynamoDB, "DynamoDB"},
+		{modeSQLWorkbench, "SQL Workbench"},
 	}
 	for _, tt := range tests {
 		got := modeDisplayName(tt.mode)
@@ -100,6 +101,7 @@ func TestResolveDefaultMode(t *testing.T) {
 		{"DDB", ptr(modeDynamoDB)},
 		{"dynamodb", ptr(modeDynamoDB)},
 		{"Lambda", ptr(modeLambda)},
+		{"postgresql", ptr(modeSQLWorkbench)},
 		{"", nil},
 		{"nonexistent", nil},
 	}
