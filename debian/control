@@ -1,0 +1,28 @@
+Source: e9s
+Section: admin
+Priority: optional
+Maintainer: Daniel Ostrow <dostrow@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), golang-any (>= 2:1.24), pkg-config,
+ libfontconfig-dev, libgtk-4-dev (>= 4.14), libgtksourceview-5-dev,
+ libvte-2.91-gtk4-dev
+Standards-Version: 4.7.0
+Homepage: https://github.com/dostrow/e9s
+Vcs-Git: https://github.com/dostrow/e9s.git
+Vcs-Browser: https://github.com/dostrow/e9s
+Rules-Requires-Root: no
+
+Package: e9s
+Architecture: any
+Depends: ${misc:Depends}
+Description: terminal workspace for operating AWS resources
+ e9s is a keyboard-oriented terminal user interface for observing and
+ operating AWS resources across ECS, CloudWatch, EC2, RDS, and related
+ services.
+
+Package: e9s-gui
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: e9s
+Description: native GTK workspace for operating AWS resources
+ e9s-gui is the native GTK 4 frontend for e9s. It includes GtkSourceView and
+ VTE integration, desktop metadata, icons, and application-private fonts.

@@ -29,6 +29,19 @@ The release set is intentionally split:
 Flatpak, RPM, Nix, and Snap packaging remain follow-up targets. An Arch package
 recipe is included after release artifact names and URLs are stable.
 
+## Debian packages
+
+`make package-deb` produces separate TUI and GUI packages under `dist/`. The
+GUI runtime dependency list is generated from the linked binary by
+`dpkg-shlibdeps`; it is intentionally not a hand-maintained list. Release
+packages are built inside the Ubuntu 24.04 job so their symbol requirements do
+not accidentally inherit a newer developer workstation.
+
+The `debian/` directory also provides conventional debhelper metadata for
+distribution rebuilds. Required build packages on Ubuntu 24.04 are Go 1.24 or
+newer, `pkg-config`, `libfontconfig-dev`, `libgtk-4-dev`,
+`libgtksourceview-5-dev`, and `libvte-2.91-gtk4-dev`.
+
 ## Staged installation
 
 `make install-gui` installs the GUI and desktop assets. Packaging builds should

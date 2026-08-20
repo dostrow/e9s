@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 INSTALL ?= install
 
-.PHONY: build build-gui build-gui-basic install install-gui install-gui-assets clean test
+.PHONY: build build-gui build-gui-basic install install-gui install-gui-assets package-deb clean test
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) .
@@ -36,6 +36,9 @@ install-gui-assets:
 	$(INSTALL) -m644 assets/fonts/*.ttf $(DESTDIR)$(DATADIR)/e9s/fonts/
 	$(INSTALL) -m644 assets/fonts/licenses/* $(DESTDIR)$(DATADIR)/licenses/e9s/fonts/
 	$(INSTALL) -m644 assets/fonts/README.md $(DESTDIR)$(DATADIR)/e9s/fonts/README.md
+
+package-deb:
+	packaging/debian/build-debs.sh "$(VERSION)" "$(CURDIR)/dist"
 
 test:
 	go test ./...

@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) build build-gui
+
+override_dh_auto_install:
+	install -Dm755 e9s debian/e9s/usr/bin/e9s
+	$(MAKE) install-gui-assets DESTDIR=$(CURDIR)/debian/e9s-gui PREFIX=/usr
+	install -Dm755 e9s-gui debian/e9s-gui/usr/bin/e9s-gui
+
+override_dh_auto_test:
+	go test ./...
+	go test -tags gui ./internal/gui
