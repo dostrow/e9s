@@ -92,6 +92,7 @@ func rgbaHex(color gdk.RGBA) string {
 
 func semanticStyleCSS(palette semanticPalette) string {
 	return fmt.Sprintf(`
+.e9s-root, .e9s-root .inspector, .e9s-root .log-view { color: %s; }
 .e9s-table row:not(:selected) .table-cell { color: %s; }
 .e9s-table > header > button { color: %s; font-weight: 600; }
 .saved-log-modified, .semantic-warning { color: %s; }
@@ -100,7 +101,7 @@ func semanticStyleCSS(palette semanticPalette) string {
 .semantic-info { color: %s; }
 .semantic-muted { color: %s; }
 .semantic-success, .semantic-warning, .semantic-error, .semantic-info { font-weight: 600; }
-`, palette.foreground.String(), palette.accent.String(), palette.warning.String(), palette.error.String(), palette.success.String(),
+`, palette.foreground.String(), palette.foreground.String(), palette.accent.String(), palette.warning.String(), palette.error.String(), palette.success.String(),
 		palette.info.String(), palette.muted.String())
 }
 

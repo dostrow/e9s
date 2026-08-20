@@ -107,7 +107,7 @@ func newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
 		style := area.StyleContext()
 		clearDrawingSurface(cr)
 
-		foreground := style.Color()
+		foreground := semanticPaletteFromStyle(style).foreground
 		cr.SetSourceRGBA(
 			float64(foreground.Red()),
 			float64(foreground.Green()),

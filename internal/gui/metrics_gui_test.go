@@ -71,6 +71,9 @@ func TestSemanticStyleUsesDerivedPalette(t *testing.T) {
 	if !strings.Contains(css, ".e9s-table > header > button") || !strings.Contains(css, palette.accent.String()) {
 		t.Fatal("semantic CSS did not apply the theme accent to table headers")
 	}
+	if !strings.Contains(css, ".e9s-root") || !strings.Contains(css, ".e9s-root .inspector") {
+		t.Fatal("semantic CSS did not propagate the exported theme foreground through application text surfaces")
+	}
 }
 
 func TestMetricFractionClampsToProgressRange(t *testing.T) {

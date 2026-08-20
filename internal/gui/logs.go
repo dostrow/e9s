@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -765,29 +766,19 @@ func (w *mainWindow) ensureLogHighlightTags() {
 		}
 	}
 	styleContext := w.logView.StyleContext()
-	colorNames := map[model.LogHighlightStyle][]string{
-		model.LogHighlightInfo:    {"accent_color", "theme_selected_bg_color"},
-		model.LogHighlightSuccess: {"success_color"},
-		model.LogHighlightWarning: {"warning_color"},
-		model.LogHighlightError:   {"error_color"},
+	palette := semanticPaletteFromStyle(styleContext)
+	colors := map[model.LogHighlightStyle]gdk.RGBA{
+		model.LogHighlightInfo:    palette.info,
+		model.LogHighlightSuccess: palette.success,
+		model.LogHighlightWarning: palette.warning,
+		model.LogHighlightError:   palette.error,
 	}
-	for style, names := range colorNames {
-		color := styleContext.Color()
-		for _, name := range names {
-			if candidate, ok := styleContext.LookupColor(name); ok {
-				color = candidate
-				break
-			}
-		}
+	for style, color := range colors {
 		w.logHighlightTags[style].SetObjectProperty("foreground", color.String())
 	}
-	accent := styleContext.Color().Copy()
-	for _, name := range []string{"accent_bg_color", "theme_selected_bg_color", "accent_color"} {
-		if candidate, ok := styleContext.LookupColor(name); ok {
-			accent = candidate.Copy()
-			break
-		}
-	}
+	accentColor := themeColorOr(styleContext, palette.accent,
+		"accent_bg_color", "theme_selected_bg_color", "accent_color")
+	accent := accentColor.Copy()
 	accent.SetAlpha(0.28)
 	w.logHighlightTags[model.LogHighlightDefault].SetObjectProperty("background", accent.String())
 }

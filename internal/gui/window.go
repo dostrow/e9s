@@ -1551,6 +1551,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	footer.Append(identity)
 
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
+	root.AddCSSClass("e9s-root")
 	root.Append(header)
 	root.Append(mainSplit)
 	root.Append(footer)
@@ -1831,7 +1832,7 @@ func (w *mainWindow) newBreadcrumbArea() *gtk.DrawingArea {
 		style := area.StyleContext()
 		clearDrawingSurface(cr)
 
-		foreground := style.Color()
+		foreground := semanticPaletteFromStyle(style).foreground
 		cr.SetSourceRGBA(
 			float64(foreground.Red()),
 			float64(foreground.Green()),
