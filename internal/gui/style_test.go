@@ -30,3 +30,16 @@ func TestApplicationCSSDefinesEveryZoomLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestApplicationCSSDefinesSoftPaneSurfaces(t *testing.T) {
+	for _, fragment := range []string{
+		".pane-card",
+		"border-radius: 10px",
+		".pane-split > separator",
+		".pane-split > separator:hover",
+	} {
+		if !strings.Contains(styleCSS, fragment) {
+			t.Errorf("application CSS is missing %q", fragment)
+		}
+	}
+}

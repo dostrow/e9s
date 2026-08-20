@@ -17,8 +17,26 @@
 }
 
 .mode-sidebar {
-  border-right: 1px solid alpha(currentColor, 0.14);
   padding: 14px 10px;
+}
+
+/* Major application regions sit on softly separated surfaces. The small
+ * gutters are applied by the widget layout so the rounded corners remain
+ * visible even while GtkPaned resizes adjacent regions. */
+.pane-card {
+  border: 1px solid alpha(currentColor, 0.14);
+  border-radius: 10px;
+}
+
+.pane-split > separator {
+  min-width: 6px;
+  min-height: 6px;
+  opacity: 0.16;
+}
+
+.pane-split > separator:hover,
+.pane-split > separator:focus {
+  opacity: 0.5;
 }
 
 .section-title {

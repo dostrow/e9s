@@ -1615,6 +1615,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	resourcePane := gtk.NewBox(gtk.OrientationVertical, 8)
 	resourcePane.AddCSSClass("resource-pane")
+	preparePaneCard(&resourcePane.Widget)
 	resourcePane.Append(w.search)
 	resourcePane.Append(w.taskScopeBar)
 	resourcePane.Append(w.resourceStack)
@@ -1686,10 +1687,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.workspaceBusyBar.Append(w.workspaceCancelButton)
 	w.workspaceBusyBar.SetVisible(false)
 	workspace := gtk.NewBox(gtk.OrientationVertical, 0)
+	preparePaneCard(&workspace.Widget)
 	workspace.Append(w.workspaceBusyBar)
 	workspace.Append(w.detailStack)
 
 	contentSplit := gtk.NewPaned(gtk.OrientationHorizontal)
+	contentSplit.AddCSSClass("pane-split")
 	contentSplit.SetStartChild(resourcePane)
 	contentSplit.SetEndChild(workspace)
 	contentSplit.SetPosition(700)
@@ -1698,8 +1701,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.installPaneZoom(&resourcePane.Widget, &workspace.Widget)
 
 	w.terminalDockContainer = w.buildTerminalDock()
+	preparePaneCard(&w.terminalDockContainer.Widget)
 	w.terminalDockContainer.SetVisible(false)
 	w.terminalDockSplit = gtk.NewPaned(gtk.OrientationVertical)
+	w.terminalDockSplit.AddCSSClass("pane-split")
 	w.terminalDockSplit.SetStartChild(contentSplit)
 	w.terminalDockSplit.SetEndChild(w.terminalDockContainer)
 	w.terminalDockSplit.SetResizeStartChild(true)
@@ -1709,7 +1714,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.installZoomControllers(&w.terminalDockContainer.Widget, zoomTerminal)
 
 	mainSplit := gtk.NewPaned(gtk.OrientationHorizontal)
+	mainSplit.AddCSSClass("pane-split")
 	sidebarScroll := gtk.NewScrolledWindow()
+	preparePaneCard(&sidebarScroll.Widget)
 	sidebarScroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	sidebarScroll.SetChild(sidebar)
 	mainSplit.SetStartChild(sidebarScroll)
@@ -1749,6 +1756,15 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	root.Append(footer)
 	w.updateActionSensitivity()
 	return root
+}
+
+func preparePaneCard(widget *gtk.Widget) {
+	widget.AddCSSClass("pane-card")
+	widget.SetOverflow(gtk.OverflowHidden)
+	widget.SetMarginTop(6)
+	widget.SetMarginBottom(6)
+	widget.SetMarginStart(6)
+	widget.SetMarginEnd(6)
 }
 
 func newModuleRailButton(label string, activate func()) *gtk.ToggleButton {
