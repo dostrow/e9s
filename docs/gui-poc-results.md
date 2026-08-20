@@ -634,6 +634,27 @@ record safely. Delete requires destructive confirmation, submits the exact
 loaded record set, and is unavailable for protected apex NS and SOA records.
 All mutations pause refresh and reload authoritative record data after success.
 
+### OpenTofu/Terraform module follow-up
+
+OpenTofu/Terraform now uses a shared `service.Tofu` workflow in both frontends.
+Workspace paths are normalized and validated, `tofu`/`terraform` discovery is
+centralized, subprocesses honor caller cancellation, resource addresses are
+parsed once, and temporary saved plans are removed on failures or navigation.
+
+The GTK frontend adds an alphabetically positioned OpenTofu module with
+Workspaces as its default destination and configured workspaces as direct Module
+Rail sub-items. The workspace browser supports add/edit/open/delete management;
+state resources filter locally and load full state in the Workspace. Planning is
+a native snapshot view with a change table, summary counts, and untruncated
+attribute diffs.
+
+Init and apply require explicit review. Apply is only available for a non-empty
+saved plan and submits that exact artifact. Full builds stream operations through
+the theme-derived embedded terminal while refresh and conflicting actions pause;
+plain GTK builds use the same service with captured output. The TUI retains its
+keyboard and terminal handoff while adding the same init/apply confirmation
+boundary.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

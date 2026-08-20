@@ -40,8 +40,9 @@ Implement and evaluate modules in this order:
 The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
 the next **compute and delivery** batch: together they exercise log-heavy jobs,
 interactive host sessions, nested resource browsers, and destructive actions.
-The RDS, S3, DynamoDB, SQS, and Route53 work is complete.
-OpenTofu/Terraform remains in the data-and-workflow batch.
+The full ordered module expansion is complete, including the final
+OpenTofu/Terraform data-and-workflow module. Further work can now be prioritized
+as cross-module refinement rather than basic frontend coverage.
 
 ## Shared metrics foundation
 
@@ -720,4 +721,54 @@ as the default destination.
   builds.
 - Exercise filtering, navigation, refresh preservation, DNS testing, editor
   validation, confirmations, mutation reloads, errors, and theme switching
+  under Hyprland.
+
+## OpenTofu/Terraform delivery phases
+
+OpenTofu/Terraform is implemented in the GTK frontend and shares its validated,
+context-aware command workflow with the TUI. It automatically selects `tofu`
+when available and falls back to `terraform`.
+
+### Phase 1: shared workflow and TUI migration
+
+- Validate and normalize workspace paths, centralize binary discovery, resource
+  address parsing, state reads, init, saved-plan generation, and apply commands.
+- Make non-interactive operations caller-cancellable and preserve the exact
+  reviewed plan artifact until apply or navigation cleanup.
+- Migrate the TUI to the shared service and add explicit confirmations for init
+  and apply.
+
+### Phase 2: workspace and state browser
+
+- Add an alphabetically positioned, collapsible **OpenTofu** Module Rail entry
+  with **Workspaces** as its default item and saved workspaces as direct sub-items.
+- Add, edit, open, and remove saved workspace paths without touching their files.
+- Browse and locally filter parsed state resources by address, type, name, or
+  module, with stable Back navigation to the workspace list.
+
+### Phase 3: state and native plan presentation
+
+- Load complete `state show` output into the Workspace without replacing the
+  Browser's state-resource context.
+- Render a native, filterable planned-change table and attribute-level add,
+  remove, and before/after details without truncating the underlying values.
+- Treat plans as snapshots rather than rerunning them in the automatic refresh
+  loop.
+
+### Phase 4: guarded operations
+
+- Explain init's provider, module, backend, and lock-file effects before launch.
+- Apply only the exact reviewed saved plan from the plan view, after a destructive
+  confirmation that includes the plan summary.
+- Stream full-build init/apply output in the theme-derived embedded VTE terminal;
+  pause refresh, disable conflicting actions, expose cancellation, and refresh
+  state after successful completion. Preserve a captured-output fallback for
+  GUI builds without VTE.
+
+### Phase 5: parity and evaluation
+
+- Verify the TUI/service suite plus plain GTK, GtkSourceView, and full VTE GUI
+  builds, including cancellation and plan-artifact cleanup.
+- Exercise workspace management, filtering, state inspection, plan/no-change
+  output, failed init/apply, reviewed apply, Back navigation, and theme switching
   under Hyprland.

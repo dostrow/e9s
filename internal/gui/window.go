@@ -1329,10 +1329,6 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.lambdaModuleItems.Append(w.lambdaFunctionsNavButton)
 	w.rebuildLambdaSearchRail()
 	lambdaFunctions := w.newModuleExpander("Lambda", moduleLambda, w.lambdaModuleItems)
-	comingSoon := gtk.NewLabel("More modules planned")
-	comingSoon.SetXAlign(0)
-	comingSoon.SetWrap(true)
-	comingSoon.AddCSSClass("muted")
 	sidebar.Append(modules)
 	w.moduleSections = []moduleRailSection{
 		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
@@ -1355,7 +1351,6 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	for _, section := range w.moduleSections {
 		sidebar.Append(section.expander)
 	}
-	sidebar.Append(comingSoon)
 
 	w.search = gtk.NewSearchEntry()
 	w.search.SetPlaceholderText("Choose a module…")

@@ -79,14 +79,16 @@ CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
 Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda,
 **Projects** for CodeBuild, **Instances** for EC2, **Repositories** for ECR,
 **Clusters** for RDS, **Buckets** for S3, **Tables** for DynamoDB, **Queues**
-for SQS, and **Hosted zones** for Route53. Use `Ctrl+P` to reopen the picker
+for SQS, **Hosted zones** for Route53, and **Workspaces** for OpenTofu. Use
+`Ctrl+P` to reopen the picker
 from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
 `CB` and `CodeBuild` select the CodeBuild project browser; `EC2` and `EC2i`
 select the EC2 instance browser. `ECR`, `RDS`, `S3`, `DDB`/`DynamoDB`, `SQS`,
-and `R53`/`Route53` select their corresponding default browsers.
+`R53`/`Route53`, and `TF`/`Tofu`/`Terraform` select their corresponding default
+browsers.
 For example:
 
 ```yaml
@@ -388,6 +390,22 @@ memory than a cached rebuild.
     Confirm invalid TTL/value/alias combinations and identity changes are rejected,
     refresh pauses during mutations, and authoritative records reload afterward.
     Delete a disposable record and confirm NS/SOA deletion is unavailable.
+68. Expand OpenTofu and confirm Workspaces is its default item. Add valid and
+    invalid workspace paths, edit and remove saved entries, and confirm saved
+    workspaces appear as direct highlighted Module Rail sub-items without any
+    workspace files being changed.
+69. Open a workspace, filter its state by address, type, and module, and
+    double-click a resource to load complete state while the Browser remains in
+    place. Verify Back restores the selected workspace and automatic refresh does
+    not repeatedly execute local OpenTofu commands.
+70. Run Plan and verify the Workspace pending indicator, disabled controls,
+    native change table, full attribute diffs, no-change state, and plan snapshot
+    refresh behavior. Navigate away and confirm the temporary plan is removed.
+71. Confirm Init describes provider/module/backend and lock-file effects. Apply a
+    disposable reviewed plan and verify only that saved plan is used, output
+    streams in the embedded terminal, refresh pauses, cancellation works, and a
+    successful close returns to refreshed state. Repeat without the `vte` tag and
+    verify the captured-output fallback.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

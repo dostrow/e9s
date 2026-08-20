@@ -155,8 +155,8 @@ Manage infrastructure-as-code workspaces directly from e9s. Point at any directo
   - Summary header with counts: `+3 ~1 -1`
   - Drill into individual changes to see before->after attribute diffs with add/change/remove color coding
   - Changes sorted: deletes first, then replaces, updates, creates
-- **Apply** — runs `tofu apply` interactively (terminal handoff, same as ECS Exec)
-- **Init** — runs `tofu init` with `i`
+- **Apply** — explicitly confirms and applies the exact saved plan shown in the plan browser; direct TUI apply remains interactive
+- **Init** — confirms backend/provider/module effects before running `tofu init` with `i`
 - **Save Workspaces** — bookmark directories for quick access with `W`
 - Auto-detects `tofu` vs `terraform` in PATH
 
@@ -186,7 +186,8 @@ go install github.com/dostrow/e9s@latest
 
 The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
 for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager,
-Lambda, CodeBuild, EC2, ECR, RDS, S3, DynamoDB, SQS, and Route53. It shares
+Lambda, CodeBuild, EC2, ECR, RDS, S3, DynamoDB, SQS, Route53, and
+OpenTofu/Terraform. It shares
 connection, query, mutation, and log services with the TUI while remaining a
 separate, build-tagged executable.
 
@@ -197,7 +198,8 @@ GDK_BACKEND=wayland ./e9s-gui
 ```
 
 The full GUI build uses GtkSourceView 5 for highlighted source editors and GTK 4
-VTE for its embedded ECS Exec terminal. On Ubuntu or Debian, install
+VTE for embedded ECS Exec, Session Manager, and OpenTofu operation terminals.
+On Ubuntu or Debian, install
 `libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
 prerequisites; AWS's `session-manager-plugin` is required at runtime.
 
@@ -510,8 +512,8 @@ From the Clusters view, `Enter` drills into the selected cluster's member instan
 | --- | --- |
 | `Enter` | View resource state detail |
 | `p` | Run plan (parsed view) |
-| `a` | Run apply (interactive) |
-| `i` | Run init |
+| `a` | Confirm and run apply (interactive outside the plan view) |
+| `i` | Confirm and run init |
 | `W` | Save workspace |
 
 ### OpenTofu — Plan
@@ -519,7 +521,7 @@ From the Clusters view, `Enter` drills into the selected cluster's member instan
 | Key | Action |
 | --- | --- |
 | `Enter` | View change detail (before/after diff) |
-| `a` | Run apply (interactive) |
+| `a` | Confirm and apply the exact reviewed plan |
 
 ### All Pickers (saved items)
 
