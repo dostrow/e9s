@@ -41,4 +41,6 @@ make install-gui DESTDIR="$package_root" PREFIX=/usr
 The staged tree includes the executable, desktop entry, AppStream metadata,
 full-color and symbolic icons, raster fallback, and project license. Debian and
 AppImage builders consume this same layout so their desktop integration cannot
-silently diverge.
+silently diverge. It also installs the app-private font set under
+`$PREFIX/share/e9s/fonts`; e9s registers that directory only inside its own
+process and never modifies the system or user font configuration.

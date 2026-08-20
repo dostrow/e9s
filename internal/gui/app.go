@@ -234,10 +234,14 @@ func Run(options Options) error {
 			window.window.Present()
 			return
 		}
+		_, fontError := registerBundledFonts()
 		initializeSourceEditor()
 		installStyles()
 		window = newMainWindow(ctx, app, options)
 		installSemanticStyles(window)
+		if fontError != nil {
+			window.setStatus(fontError.Error(), true)
+		}
 		window.window.Present()
 		window.start()
 	})

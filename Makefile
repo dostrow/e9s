@@ -32,6 +32,10 @@ install-gui-assets:
 	$(INSTALL) -Dm644 assets/icons/io.github.dostrow.e9s-symbolic.svg $(DESTDIR)$(DATADIR)/icons/hicolor/symbolic/apps/io.github.dostrow.e9s-symbolic.svg
 	$(INSTALL) -Dm644 assets/icons/io.github.dostrow.e9s-48.png $(DESTDIR)$(DATADIR)/icons/hicolor/48x48/apps/io.github.dostrow.e9s.png
 	$(INSTALL) -Dm644 LICENSE $(DESTDIR)$(DATADIR)/licenses/e9s/LICENSE
+	$(INSTALL) -d $(DESTDIR)$(DATADIR)/e9s/fonts $(DESTDIR)$(DATADIR)/licenses/e9s/fonts
+	$(INSTALL) -m644 assets/fonts/*.ttf $(DESTDIR)$(DATADIR)/e9s/fonts/
+	$(INSTALL) -m644 assets/fonts/licenses/* $(DESTDIR)$(DATADIR)/licenses/e9s/fonts/
+	$(INSTALL) -m644 assets/fonts/README.md $(DESTDIR)$(DATADIR)/e9s/fonts/README.md
 
 test:
 	go test ./...
