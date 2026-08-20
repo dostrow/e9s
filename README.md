@@ -211,7 +211,8 @@ prerequisites; AWS's `session-manager-plugin` is required at runtime.
 
 See the [GUI development guide](docs/gui-development.md) for distro packages and
 the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
-decision.
+decision. Deferred Git provenance, OpenTofu ownership indexing, and configurable
+editor-mode designs are recorded in the [GUI expansion roadmap](docs/gui-roadmap.md#deferred-cross-cutting-architecture).
 
 ### Cross-compile
 

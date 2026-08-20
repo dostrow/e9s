@@ -775,3 +775,114 @@ when available and falls back to `terraform`.
 - Exercise workspace management, filtering, state inspection, plan/no-change
   output, failed init/apply, reviewed apply, Back navigation, and theme switching
   under Hyprland.
+
+## Deferred cross-cutting architecture
+
+The module expansion is complete, but three cross-cutting capabilities are
+intentionally documented before implementation so their safety boundaries do
+not emerge accidentally from frontend-specific code.
+
+### OpenTofu source freshness and plan provenance
+
+The objective is to warn or stop a plan or apply when its workspace is behind
+its Git upstream or differs from the inputs that produced the reviewed plan.
+e9s must not automatically run `git pull`: pull mutates the working tree, may
+merge or rebase, can prompt for credentials, and would invalidate an existing
+plan without producing a newly reviewed replacement.
+
+Implement this as a shared service used by both frontends:
+
+- Detect whether the canonical workspace is inside a Git worktree. Workspaces
+  outside Git skip this policy without error.
+- Inspect tracked changes and untracked Terraform source files, run an explicit
+  cancellable `git fetch`, and compare `HEAD` with the configured upstream as
+  current, ahead, behind, or diverged. Detached heads and branches without an
+  upstream are **unverifiable**, not current.
+- Support per-workspace policy levels `off`, `advisory`, and `required`, starting
+  with `advisory` as the default. Cache successful fetch results only for a
+  bounded freshness interval and always show when the last check occurred.
+- Attach a provenance manifest to every saved plan: canonical workspace path,
+  executable, Git root and `HEAD`, fetched upstream revision, tracked-worktree
+  state, and content digests for Terraform source, `.terraform.lock.hcl`,
+  `terraform.tfvars`, `*.auto.tfvars`, and their JSON variants. Hash relevant
+  `TF_VAR_*` and `TF_CLI_ARGS*` inputs without retaining their secret values.
+- Before Apply, compare the active workspace with that manifest. The normal
+  recovery from any mismatch is to discard the plan and run Plan again. Apply
+  must continue to submit only the exact saved plan artifact that was reviewed.
+- A required-policy failure may expose **Break glass**, but only after showing
+  every failed check, requiring an explicit confirmation and a short reason,
+  and marking the resulting plan/session as bypassed. It must never silently
+  fetch, merge, reset, or modify workspace files.
+
+The GUI should present this in the Workspace pending surface and plan summary.
+The TUI should use the same preflight result in a confirmation modal. Network,
+authentication, cancellation, and upstream-configuration failures remain
+distinguishable so users do not mistake an unavailable check for a clean repo.
+
+### IaC ownership index
+
+The supported claim is “this AWS resource is represented in current OpenTofu
+state,” not “some unapplied source file may eventually manage this resource.”
+Source-code inference would require evaluating modules, variables, provider
+aliases, conditionals, and `for_each`; it is both expensive and less authoritative
+than state for detecting likely drift.
+
+Build an opt-in shared ownership catalog with these constraints:
+
+- Pull state for saved workspaces in a bounded background queue or by explicit
+  refresh. Never run a state command on every Browser selection. Cache each
+  result with its workspace, state lineage/serial when available, refresh time,
+  and an expiry.
+- Treat complete state as sensitive. Parse it transiently, retain only provider
+  type, resource address, and normalized resource identities, and never place
+  raw state or attribute values in logs or the persistent config.
+- Prefer exact ARNs. Where AWS does not expose one, use resource-specific
+  account/region/ID compound keys. Name-only or otherwise ambiguous matches are
+  **possible matches**, never confirmed ownership.
+- Represent four outcomes: confirmed managed, possible match, not found in a
+  fresh complete index, and unknown because the index is stale, partial, or
+  unavailable. Unknown must never be rendered or enforced as unmanaged.
+- Add a theme-derived, clickable ownership annotation to resource details. It
+  should name the workspace and resource address and use existing cross-module
+  navigation/history to open that OpenTofu state entry. The TUI should expose
+  the same information and a keyboard navigation action where practical.
+- Begin mutation integration as advisory. A later optional strict policy may
+  require a fresh exact match plus Break glass before e9s mutates a managed
+  resource. Ambiguous or stale data may warn but must not block.
+
+Pilot exact identity adapters with EC2 instances, security groups, subnets, EBS
+volumes, load balancers and target groups, then ECS services, RDS resources, and
+S3 buckets. Measure remote-state latency, credential failures, cache memory,
+and false-match rates before expanding across every module.
+
+### Configurable GUI editor modes
+
+Editor modes apply only to the GTK built-in editor. The TUI already delegates
+editing to the user's terminal editor and should not emulate another modal
+editor internally.
+
+Deliver the GTK work in this order:
+
+1. Add a shared Plain-mode search bar using `GtkSourceSearchContext`: forward
+   and backward navigation, case and whole-word controls, regex validation,
+   replace current, replace all, highlighted matches, and occurrence counts.
+2. Add `plain` and `vim` configuration modes. Vim mode should use GtkSourceView
+   5's
+   [`GtkSourceVimIMContext`](https://gnome.pages.gitlab.gnome.org/gtksourceview/gtksourceview5/class.VimIMContext.html)
+   rather than an e9s keybinding reimplementation. Display its command bar and
+   command preview, route write/quit signals through the active module's guarded
+   Save and unsaved-change workflows, and test conflicts with application
+   shortcuts such as Escape, Ctrl+R, Ctrl+P, and Ctrl+S.
+3. Add an `external` mode backed by the GUI-only Terminal Dock/VTE. Launch a
+   configurable command such as `hx` or `nvim`; edit local files directly and
+   use private `0600` temporary files for remote/generated buffers. Reload the
+   buffer only after a successful editor exit, then retain the module's normal
+   Validate/Register/Upload/Save boundary.
+
+Do not promise a native Helix mode at this stage. Faithful Helix behavior is
+selection-first and depends on multiple simultaneous selections, which would
+require a custom cursor model, rendering, edit transactions, undo integration,
+registers, motions, and command system on top of GtkTextBuffer. External mode
+provides actual Helix semantics without turning e9s into an editor project. LSP
+integration remains an orthogonal future evaluation after these modes are
+stable.
