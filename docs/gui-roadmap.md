@@ -44,6 +44,23 @@ The full ordered module expansion is complete, including the final
 OpenTofu/Terraform data-and-workflow module. Further work can now be prioritized
 as cross-module refinement rather than basic frontend coverage.
 
+## Infrastructure and data expansion
+
+The next completed batch adds ElastiCache, API Gateway, and SQL Workbench to
+both frontends. ElastiCache covers replication groups, clusters, serverless
+caches, topology, configuration, and metrics. API Gateway covers REST, HTTP,
+WebSocket, and custom-domain resources with their stages, routes,
+integrations, mappings, and metrics.
+
+SQL Workbench uses a UI-neutral PostgreSQL execution layer. GTK presents
+connection-scoped tabs and a vertically split editor/results workspace; the
+TUI presents the same saved connections, restored tabs, inline editor, query
+execution, reconnection, and CSV export in terminal-native form. Authentication
+may come from ordered global and per-connection `.pgpass` files, an ephemeral
+prompt, RDS IAM, Secrets Manager, the RDS Data API, or an optional SSM tunnel.
+Only query text and tab metadata are persisted. Results, passwords, and tokens
+remain in memory, and write authorization is always relocked at process start.
+
 ## Cost Explorer
 
 Cost Explorer is a shared GUI/TUI module with lazy Overview, Breakdown,

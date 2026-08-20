@@ -559,6 +559,26 @@ integrations, access-log destinations, domain mappings, tags, and recent
 request, latency, and error metrics. In the TUI, use `1` through `4` to switch
 between the four resource scopes.
 
+### SQL Workbench
+
+SQL Workbench provides connection-scoped PostgreSQL query tabs in both the GTK
+and terminal frontends. Query text and tab names are restored after restart;
+results and credentials remain process-local. The GUI can run the selected
+text, the statement at the cursor, or the full tab. The TUI supports the latter
+two operations from its inline multiline editor. Both frontends can reconnect
+lost sessions and export the latest result to CSV.
+
+Connections support PostgreSQL password files, ephemeral password prompts,
+RDS IAM tokens, Secrets Manager, the RDS Data API, and optional SSM port
+forwarding. A per-connection `pgpass_file` is tried before the ordered global
+`sql.pgpass_files` list and the platform default. Files must be private (`0600`
+on Unix). Passwords and generated IAM tokens are never written to e9s config or
+tab state.
+
+Queries are read-only by default. Data-changing SQL requires both the global
+`sql.allow_writes` setting and a separately confirmed, per-tab break-glass
+control. The tab control always returns to locked when e9s starts.
+
 ## Configuration
 
 Config is stored at `~/.config/e9s/config.yaml` (XDG convention). Press `ctrl+e` to edit it in your `$EDITOR`, or it hot-reloads on file changes.
@@ -601,6 +621,7 @@ modules:
   cost_explorer: true
   elasticache: true
   api_gateway: true
+  sql_workbench: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -663,6 +684,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | Cost Explorer | `ce:GetCostAndUsage`, `ce:GetCostForecast`, `ce:GetAnomalies`; resource view also uses `ce:GetCostAndUsageWithResources` |
 | ElastiCache | `elasticache:DescribeReplicationGroups`, `elasticache:DescribeCacheClusters`, `elasticache:DescribeServerlessCaches`, `elasticache:ListTagsForResource`, `cloudwatch:GetMetricData` |
 | API Gateway | `apigateway:GET` for REST/HTTP/WebSocket APIs, stages, routes/resources, integrations, domains, and mappings; `cloudwatch:GetMetricData` |
+| SQL Workbench | Direct PostgreSQL uses no AWS API unless IAM (`rds-db:connect`), Secrets Manager (`secretsmanager:GetSecretValue`), or SSM tunneling (`ssm:StartSession`) is selected. Data API profiles use `rds-data:ExecuteStatement` plus secret access. |
 | EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSecurityGroups`, `ec2:DescribeSecurityGroupRules`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeVolumes`, `ec2:GetConsoleOutput`, `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTargetHealth` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |
