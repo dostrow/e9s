@@ -155,7 +155,7 @@ type DynamoDBService interface {
 	PartiQL(context.Context, string) ([]model.DynamoItem, error)
 	Item(context.Context, string, []string, model.DynamoItem) (*model.DynamoItem, error)
 	UpdateField(context.Context, model.DynamoFieldUpdate) error
-	PutItem(context.Context, string, model.DynamoItem) error
+	PutItem(context.Context, model.DynamoPutRequest) error
 }
 
 type Options struct {

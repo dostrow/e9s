@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -20,7 +21,7 @@ type DynamoDBAPI interface {
 	ExecutePartiQL(context.Context, string) ([]model.DynamoItem, error)
 	GetDynamoItem(context.Context, string, model.DynamoItem) (*model.DynamoItem, error)
 	UpdateDynamoField(context.Context, string, model.DynamoItem, string, any, string) error
-	PutDynamoItem(context.Context, string, model.DynamoItem) error
+	PutDynamoItem(context.Context, string, model.DynamoItem, []string) error
 }
 
 type DynamoDB struct{ api DynamoDBAPI }
@@ -134,13 +135,16 @@ func (s *DynamoDB) UpdateField(ctx context.Context, request model.DynamoFieldUpd
 	return nil
 }
 
-func (s *DynamoDB) PutItem(ctx context.Context, table string, item model.DynamoItem) error {
-	table = strings.TrimSpace(table)
-	if table == "" || len(item) == 0 {
+func (s *DynamoDB) PutItem(ctx context.Context, request model.DynamoPutRequest) error {
+	request.Table = strings.TrimSpace(request.Table)
+	if request.Table == "" || len(request.Item) == 0 {
 		return fmt.Errorf("write DynamoDB item: table and item are required")
 	}
-	if err := s.api.PutDynamoItem(ctx, table, item); err != nil {
-		return fmt.Errorf("write DynamoDB item to %q: %w", table, err)
+	if _, err := BuildDynamoKey(request.Item, request.KeyNames); err != nil {
+		return err
+	}
+	if err := s.api.PutDynamoItem(ctx, request.Table, request.Item, request.KeyNames); err != nil {
+		return fmt.Errorf("write DynamoDB item to %q: %w", request.Table, err)
 	}
 	return nil
 }
@@ -158,6 +162,20 @@ func BuildDynamoKey(item model.DynamoItem, keyNames []string) (model.DynamoItem,
 		key[name] = value
 	}
 	return key, nil
+}
+
+// DynamoItemsShareKey reports whether two items identify the same DynamoDB
+// record under the supplied table key schema.
+func DynamoItemsShareKey(left, right model.DynamoItem, keyNames []string) (bool, error) {
+	leftKey, err := BuildDynamoKey(left, keyNames)
+	if err != nil {
+		return false, err
+	}
+	rightKey, err := BuildDynamoKey(right, keyNames)
+	if err != nil {
+		return false, err
+	}
+	return reflect.DeepEqual(leftKey, rightKey), nil
 }
 
 func DynamoItemToJSON(item model.DynamoItem) string {

@@ -22,6 +22,7 @@ type fakeDynamoDBAPI struct {
 	scanToken    string
 	updatedKey   model.DynamoItem
 	putItem      model.DynamoItem
+	putKeyNames  []string
 }
 
 func (f *fakeDynamoDBAPI) ListDynamoTables(context.Context, string) ([]string, error) {
@@ -55,8 +56,9 @@ func (f *fakeDynamoDBAPI) UpdateDynamoField(_ context.Context, _ string, key mod
 	f.updatedKey = key
 	return f.err
 }
-func (f *fakeDynamoDBAPI) PutDynamoItem(_ context.Context, _ string, item model.DynamoItem) error {
+func (f *fakeDynamoDBAPI) PutDynamoItem(_ context.Context, _ string, item model.DynamoItem, keyNames []string) error {
 	f.putItem = item
+	f.putKeyNames = append([]string(nil), keyNames...)
 	return f.err
 }
 
@@ -117,5 +119,38 @@ func TestParseDynamoItemJSONPreservesNumbers(t *testing.T) {
 	}
 	if got := item["count"].(interface{ String() string }).String(); got != "12345678901234567890" {
 		t.Fatalf("count = %q", got)
+	}
+}
+
+func TestDynamoDBPutItemRequiresKeysAndPassesGuardSchema(t *testing.T) {
+	api := &fakeDynamoDBAPI{}
+	dynamo := NewDynamoDB(api)
+	request := model.DynamoPutRequest{
+		Table: "items", KeyNames: []string{"pk", "sk"},
+		Item: model.DynamoItem{"pk": "one", "sk": "two", "value": "copy"},
+	}
+	if err := dynamo.PutItem(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(api.putKeyNames, []string{"pk", "sk"}) {
+		t.Fatalf("put key names = %#v", api.putKeyNames)
+	}
+	delete(request.Item, "sk")
+	if err := dynamo.PutItem(context.Background(), request); err == nil {
+		t.Fatal("PutItem accepted an item missing its sort key")
+	}
+}
+
+func TestDynamoItemsShareKey(t *testing.T) {
+	left := model.DynamoItem{"pk": "one", "sk": "two", "value": "left"}
+	right := model.DynamoItem{"pk": "one", "sk": "two", "value": "right"}
+	same, err := DynamoItemsShareKey(left, right, []string{"pk", "sk"})
+	if err != nil || !same {
+		t.Fatalf("DynamoItemsShareKey() = %v, %v", same, err)
+	}
+	right["sk"] = "three"
+	same, err = DynamoItemsShareKey(left, right, []string{"pk", "sk"})
+	if err != nil || same {
+		t.Fatalf("DynamoItemsShareKey() after key change = %v, %v", same, err)
 	}
 }

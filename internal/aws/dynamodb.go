@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -276,39 +277,65 @@ func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, key Dy
 	if err != nil {
 		return err
 	}
+	originalAV, err := attributevalue.Marshal(originalValue)
+	if err != nil {
+		return fmt.Errorf("marshal original field value: %w", err)
+	}
 	keyItem, err := attributevalue.MarshalMap(key)
 	if err != nil {
 		return fmt.Errorf("marshal item key: %w", err)
 	}
 
 	expr := "SET #attr = :val"
+	condition := "#attr = :original"
 	input := &dynamodb.UpdateItemInput{
-		TableName:        &tableName,
-		Key:              keyItem,
-		UpdateExpression: &expr,
+		TableName:           &tableName,
+		Key:                 keyItem,
+		UpdateExpression:    &expr,
+		ConditionExpression: &condition,
 		ExpressionAttributeNames: map[string]string{
 			"#attr": attrName,
 		},
 		ExpressionAttributeValues: map[string]dbtypes.AttributeValue{
-			":val": av,
+			":val":      av,
+			":original": originalAV,
 		},
 	}
 
 	_, err = c.DynamoDB.UpdateItem(ctx, input)
+	if isDynamoConditionalFailure(err) {
+		return fmt.Errorf("field changed since it was loaded")
+	}
 	return err
 }
 
-// PutDynamoItem writes an item to a table (creates or replaces).
-func (c *Client) PutDynamoItem(ctx context.Context, tableName string, item DynamoItem) error {
+// PutDynamoItem creates an item only when its key does not already exist.
+func (c *Client) PutDynamoItem(ctx context.Context, tableName string, item DynamoItem, keyNames []string) error {
 	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
 		return fmt.Errorf("marshal item: %w", err)
 	}
+	if len(keyNames) == 0 {
+		return fmt.Errorf("build item condition: table key schema is unavailable")
+	}
+	condition := "attribute_not_exists(#key)"
 	_, err = c.DynamoDB.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: &tableName,
-		Item:      av,
+		TableName:           &tableName,
+		Item:                av,
+		ConditionExpression: &condition,
+		ExpressionAttributeNames: map[string]string{
+			"#key": keyNames[0],
+		},
 	})
+	if isDynamoConditionalFailure(err) {
+		return fmt.Errorf("an item with that key already exists")
+	}
 	return err
+}
+
+func isDynamoConditionalFailure(err error) bool {
+	var conditional *dbtypes.ConditionalCheckFailedException
+	return errors.As(err, &conditional)
 }
 
 // BuildKeyFromItem extracts the key attributes from an item given the key schema.

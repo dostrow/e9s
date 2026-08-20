@@ -49,3 +49,12 @@ type DynamoFieldUpdate struct {
 	OriginalValue any
 	NewValue      string
 }
+
+// DynamoPutRequest describes a guarded item creation. KeyNames are required so
+// the storage layer can reject an existing key instead of silently replacing
+// an item through DynamoDB's PutItem semantics.
+type DynamoPutRequest struct {
+	Table    string
+	KeyNames []string
+	Item     DynamoItem
+}

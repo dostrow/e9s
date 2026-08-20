@@ -14,6 +14,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 )
 
 func (o Options) ConfigDynamoTables() []config.DynamoTable {
@@ -448,6 +449,283 @@ func (w *mainWindow) openDynamoItemAt(position uint) {
 		return
 	}
 	w.dynamoItemTable.selection.SetSelected(position)
+}
+
+func (w *mainWindow) selectedDynamoItemValue() (model.DynamoItem, bool) {
+	if w.selectedDynamoItem < 0 || w.selectedDynamoItem >= len(w.filteredDynamoItems) {
+		return nil, false
+	}
+	return w.filteredDynamoItems[w.selectedDynamoItem], true
+}
+
+func (w *mainWindow) promptDynamoFieldEdit() {
+	item, found := w.selectedDynamoItemValue()
+	if !found || w.options.DynamoDB == nil || w.dynamoActionPending || w.selectedDynamoTable == "" {
+		return
+	}
+	attributes := editableDynamoAttributes(item, w.dynamoKeyNames)
+	if len(attributes) == 0 {
+		w.setStatus("This DynamoDB item has no editable non-key attributes", true)
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Edit DynamoDB field", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(680, 440)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel("Table " + w.selectedDynamoTable + " • key " + dynamoKeyDescription(item, w.dynamoKeyNames))
+	label.SetXAlign(0)
+	label.SetWrap(true)
+	content.Append(label)
+	selector := gtk.NewDropDownFromStrings(attributes)
+	content.Append(selector)
+	editor := newSourceEditor(sourceDocument{Path: "attribute.json"})
+	editor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetChild(editor.Widget())
+	content.Append(scroll)
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.SetWrap(true)
+	errorLabel.AddCSSClass("error")
+	content.Append(errorLabel)
+	loadAttribute := func() {
+		index := int(selector.Selected())
+		if index < 0 || index >= len(attributes) {
+			return
+		}
+		value := item[attributes[index]]
+		language := ""
+		if dynamoValueUsesJSON(value) {
+			language = "json"
+		}
+		editor.SetDocument(sourceDocument{Path: "attribute.json", Language: language})
+		editor.SetText(service.DynamoValueToEditableString(value))
+		errorLabel.SetLabel("")
+	}
+	selector.NotifyProperty("selected", loadAttribute)
+	loadAttribute()
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review update…", int(gtk.ResponseOK))
+	table := w.selectedDynamoTable
+	keyNames := append([]string(nil), w.dynamoKeyNames...)
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		index := int(selector.Selected())
+		if index < 0 || index >= len(attributes) {
+			return
+		}
+		attribute := attributes[index]
+		value := editor.Text()
+		if value == service.DynamoValueToEditableString(item[attribute]) {
+			errorLabel.SetLabel("The field value has not changed")
+			return
+		}
+		dialog.Destroy()
+		w.confirmDynamoFieldEdit(table, keyNames, item, attribute, value)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) confirmDynamoFieldEdit(table string, keyNames []string, item model.DynamoItem, attribute, value string) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Update DynamoDB item")
+	dialog.SetMarkup("Update <b>" + html.EscapeString(attribute) + "</b> on the selected item in <b>" + html.EscapeString(table) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "Key: "+dynamoKeyDescription(item, keyNames)+". Key attributes cannot be edited.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runDynamoFieldEdit(table, keyNames, item, attribute, value)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runDynamoFieldEdit(table string, keyNames []string, item model.DynamoItem, attribute, value string) {
+	if w.options.DynamoDB == nil || w.dynamoActionPending {
+		return
+	}
+	w.dynamoActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Updating DynamoDB field " + attribute + "…")
+	go func() {
+		err := w.options.DynamoDB.UpdateField(ctx, model.DynamoFieldUpdate{
+			Table: table, KeyNames: keyNames, Item: item, Attribute: attribute,
+			OriginalValue: item[attribute], NewValue: value,
+		})
+		var refreshed *model.DynamoItem
+		if err == nil {
+			refreshed, err = w.options.DynamoDB.Item(ctx, table, keyNames, item)
+		}
+		w.finishDynamoAction(ctx, generation, err, "Updated DynamoDB field "+attribute, func() {
+			w.replaceDynamoItem(item, *refreshed)
+		})
+	}()
+}
+
+func (w *mainWindow) promptDynamoClone() {
+	item, found := w.selectedDynamoItemValue()
+	if !found || w.options.DynamoDB == nil || w.dynamoActionPending || w.selectedDynamoTable == "" {
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Clone DynamoDB item", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(720, 500)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel("Edit the cloned item. At least one key attribute must change.")
+	label.SetXAlign(0)
+	label.SetWrap(true)
+	content.Append(label)
+	editor := newSourceEditor(sourceDocument{Path: "dynamodb-item.json", Language: "json"})
+	editor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	editor.SetText(service.DynamoItemToJSON(item))
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetChild(editor.Widget())
+	content.Append(scroll)
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.SetWrap(true)
+	errorLabel.AddCSSClass("error")
+	content.Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review clone…", int(gtk.ResponseOK))
+	table := w.selectedDynamoTable
+	keyNames := append([]string(nil), w.dynamoKeyNames...)
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		clone, err := service.ParseDynamoItemJSON(editor.Text())
+		if err != nil {
+			errorLabel.SetLabel(err.Error())
+			return
+		}
+		if _, err := service.BuildDynamoKey(clone, keyNames); err != nil {
+			errorLabel.SetLabel(err.Error())
+			return
+		}
+		if dynamoItemsShareKey(item, clone, keyNames) {
+			errorLabel.SetLabel("Change at least one key attribute before creating the clone")
+			return
+		}
+		dialog.Destroy()
+		w.confirmDynamoClone(table, keyNames, clone)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) confirmDynamoClone(table string, keyNames []string, item model.DynamoItem) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Create DynamoDB item")
+	dialog.SetMarkup("Create a new item in <b>" + html.EscapeString(table) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "Key: "+dynamoKeyDescription(item, keyNames)+". The write is conditional and will fail rather than replace an existing item.")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runDynamoClone(table, keyNames, item)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runDynamoClone(table string, keyNames []string, item model.DynamoItem) {
+	if w.options.DynamoDB == nil || w.dynamoActionPending {
+		return
+	}
+	w.dynamoActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Creating cloned DynamoDB item…")
+	go func() {
+		err := w.options.DynamoDB.PutItem(ctx, model.DynamoPutRequest{Table: table, KeyNames: keyNames, Item: item})
+		w.finishDynamoAction(ctx, generation, err, "Created cloned DynamoDB item", func() {
+			w.allDynamoItems = append(w.allDynamoItems, item)
+			w.applyDynamoItemFilter()
+			w.selectDynamoItemByKey(item)
+		})
+	}()
+}
+
+func (w *mainWindow) replaceDynamoItem(original, replacement model.DynamoItem) {
+	for index, candidate := range w.allDynamoItems {
+		if dynamoItemsShareKey(candidate, original, w.dynamoKeyNames) {
+			w.allDynamoItems[index] = replacement
+			break
+		}
+	}
+	w.applyDynamoItemFilter()
+	w.selectDynamoItemByKey(replacement)
+}
+
+func (w *mainWindow) selectDynamoItemByKey(item model.DynamoItem) {
+	for index, candidate := range w.filteredDynamoItems {
+		if dynamoItemsShareKey(candidate, item, w.dynamoKeyNames) {
+			w.selectedDynamoItem = index
+			w.dynamoItemTable.selection.SetSelected(uint(index))
+			w.setDetail(formatDynamoItem(candidate, w.dynamoKeyNames), detailDynamoItem)
+			return
+		}
+	}
+	w.selectedDynamoItem = -1
+	w.dynamoItemTable.selection.SetSelected(gtk.InvalidListPosition)
+	w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+}
+
+func editableDynamoAttributes(item model.DynamoItem, keyNames []string) []string {
+	keys := make(map[string]struct{}, len(keyNames))
+	for _, name := range keyNames {
+		keys[name] = struct{}{}
+	}
+	attributes := make([]string, 0, len(item))
+	for name := range item {
+		if _, key := keys[name]; !key {
+			attributes = append(attributes, name)
+		}
+	}
+	sort.Strings(attributes)
+	return attributes
+}
+
+func dynamoItemsShareKey(left, right model.DynamoItem, keyNames []string) bool {
+	same, err := service.DynamoItemsShareKey(left, right, keyNames)
+	return err == nil && same
+}
+
+func dynamoKeyDescription(item model.DynamoItem, keyNames []string) string {
+	parts := make([]string, 0, len(keyNames))
+	for _, name := range keyNames {
+		parts = append(parts, fmt.Sprintf("%s=%v", name, item[name]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func dynamoValueUsesJSON(value any) bool {
+	switch value.(type) {
+	case string:
+		return false
+	default:
+		return true
+	}
 }
 
 func (w *mainWindow) currentDynamoItemSummary() string {

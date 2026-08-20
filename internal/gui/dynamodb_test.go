@@ -68,3 +68,23 @@ func TestFindDynamoQuery(t *testing.T) {
 		t.Fatal("findDynamoQuery() unexpectedly found missing query")
 	}
 }
+
+func TestEditableDynamoAttributesExcludesKeysAndSorts(t *testing.T) {
+	item := model.DynamoItem{"z": 1, "pk": "one", "a": 2, "sk": "two"}
+	got := editableDynamoAttributes(item, []string{"pk", "sk"})
+	if !reflect.DeepEqual(got, []string{"a", "z"}) {
+		t.Fatalf("editableDynamoAttributes() = %#v", got)
+	}
+}
+
+func TestDynamoItemsShareKeyIgnoresNonKeyFields(t *testing.T) {
+	left := model.DynamoItem{"pk": "one", "value": "before"}
+	right := model.DynamoItem{"pk": "one", "value": "after"}
+	if !dynamoItemsShareKey(left, right, []string{"pk"}) {
+		t.Fatal("dynamoItemsShareKey() did not match equal keys")
+	}
+	right["pk"] = "two"
+	if dynamoItemsShareKey(left, right, []string{"pk"}) {
+		t.Fatal("dynamoItemsShareKey() matched different keys")
+	}
+}

@@ -2,6 +2,7 @@ package aws
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -23,6 +24,13 @@ func TestDynamoScanResultEncodesOpaquePageToken(t *testing.T) {
 	}
 	if number, ok := decoded["sequence"].(*dbtypes.AttributeValueMemberN); !ok || number.Value != "12345678901234567890" {
 		t.Fatalf("decoded token = %#v", decoded)
+	}
+}
+
+func TestIsDynamoConditionalFailureUnwrapsSDKError(t *testing.T) {
+	err := fmt.Errorf("operation failed: %w", &dbtypes.ConditionalCheckFailedException{})
+	if !isDynamoConditionalFailure(err) {
+		t.Fatal("isDynamoConditionalFailure() did not recognize wrapped conditional failure")
 	}
 }
 

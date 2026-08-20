@@ -383,6 +383,8 @@ type mainWindow struct {
 	dynamoPartiQLButton         *gtk.Button
 	dynamoSaveQueryButton       *gtk.Button
 	dynamoLoadMoreButton        *gtk.Button
+	dynamoEditButton            *gtk.Button
+	dynamoCloneButton           *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -899,6 +901,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.dynamoSaveQueryButton.ConnectClicked(w.promptSaveDynamoQuery)
 	w.dynamoLoadMoreButton = gtk.NewButtonWithLabel("Load more")
 	w.dynamoLoadMoreButton.ConnectClicked(w.loadMoreDynamoItems)
+	w.dynamoEditButton = gtk.NewButtonWithLabel("Edit field…")
+	w.dynamoEditButton.ConnectClicked(w.promptDynamoFieldEdit)
+	w.dynamoCloneButton = gtk.NewButtonWithLabel("Clone item…")
+	w.dynamoCloneButton.ConnectClicked(w.promptDynamoClone)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -996,6 +1002,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.dynamoPartiQLButton)
 	header.Append(w.dynamoSaveQueryButton)
 	header.Append(w.dynamoLoadMoreButton)
+	header.Append(w.dynamoEditButton)
+	header.Append(w.dynamoCloneButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -3438,6 +3446,12 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.dynamoSaveQueryButton.SetSensitive(dynamoItemsPage && w.dynamoPartiQL != "" && w.options.Config != nil && dynamoReady)
 	w.dynamoLoadMoreButton.SetVisible(dynamoItemsPage && w.dynamoNextToken != "")
 	w.dynamoLoadMoreButton.SetSensitive(dynamoItemsPage && w.dynamoNextToken != "" && dynamoReady)
+	_, dynamoItemSelected := w.selectedDynamoItemValue()
+	dynamoItemMutable := dynamoItemsPage && dynamoItemSelected && w.selectedDynamoTable != "" && len(w.dynamoKeyNames) > 0
+	w.dynamoEditButton.SetVisible(dynamoItemMutable)
+	w.dynamoEditButton.SetSensitive(dynamoItemMutable && dynamoReady)
+	w.dynamoCloneButton.SetVisible(dynamoItemMutable)
+	w.dynamoCloneButton.SetSensitive(dynamoItemMutable && dynamoReady)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

@@ -354,6 +354,7 @@ func (a App) cloneDynamoItem() (App, tea.Cmd) {
 	tmpFile.Close()
 
 	tableName := a.dynamoDetailView.TableName()
+	keyNames := a.dynamoDetailView.KeyNames()
 
 	editor := NewEditorCmd(tmpPath)
 	return a, tea.Exec(editor, func(err error) tea.Msg {
@@ -368,6 +369,13 @@ func (a App) cloneDynamoItem() (App, tea.Cmd) {
 		newItem, err := service.ParseDynamoItemJSON(string(data))
 		if err != nil {
 			return errMsg{err}
+		}
+		sameKey, err := service.DynamoItemsShareKey(*item, newItem, keyNames)
+		if err != nil {
+			return errMsg{err}
+		}
+		if sameKey {
+			return errMsg{fmt.Errorf("change at least one key attribute before creating the clone")}
 		}
 		return dynamoItemClonedMsg{
 			tableName: tableName,
@@ -385,7 +393,9 @@ func (a App) doDynamoClone() tea.Cmd {
 		if item == nil {
 			return errMsg{fmt.Errorf("no item to clone")}
 		}
-		err := dynamoService.PutItem(ctx, tableName, *item)
+		err := dynamoService.PutItem(ctx, model.DynamoPutRequest{
+			Table: tableName, KeyNames: a.dynamoDetailView.KeyNames(), Item: *item,
+		})
 		if err != nil {
 			return dynamoWriteDoneMsg{err: err}
 		}
