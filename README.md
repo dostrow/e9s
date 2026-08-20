@@ -617,6 +617,23 @@ cost_views:
     metric: UnblendedCost
     group_by: SERVICE
 
+# SQL Workbench connection metadata. Passwords and IAM tokens are never saved.
+sql:
+  allow_writes: false
+  pgpass_files:
+    - ~/.pgpass
+  connections:
+    - name: Production reporting
+      resource_kind: rds-cluster
+      resource_id: reporting-prod
+      host: reporting.cluster-example.us-east-2.rds.amazonaws.com
+      port: 5432
+      database: reporting
+      user: analyst
+      auth: pgpass # pgpass, iam, secrets-manager, password, or data-api
+      pgpass_file: ~/.pgpass-reporting # optional per-profile first choice
+      sslmode: verify-full
+
 exclude_services: []
 ```
 

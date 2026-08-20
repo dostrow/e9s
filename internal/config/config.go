@@ -46,6 +46,39 @@ type TofuDirEntry struct {
 	Dir  string `yaml:"dir"`
 }
 
+// SQLConnection describes a saved database target without storing credentials.
+// Passwords are resolved at connection time from an ephemeral prompt, .pgpass,
+// Secrets Manager, IAM authentication, or the RDS Data API.
+type SQLConnection struct {
+	Name         string     `yaml:"name"`
+	ResourceKind string     `yaml:"resource_kind,omitempty"` // rds-instance or rds-cluster
+	ResourceID   string     `yaml:"resource_id,omitempty"`
+	Host         string     `yaml:"host,omitempty"`
+	Port         int        `yaml:"port,omitempty"`
+	Database     string     `yaml:"database"`
+	User         string     `yaml:"user,omitempty"`
+	Auth         string     `yaml:"auth,omitempty"` // pgpass, iam, secrets-manager, password, or data-api
+	PGPassFile   string     `yaml:"pgpass_file,omitempty"`
+	SecretARN    string     `yaml:"secret_arn,omitempty"`
+	ResourceARN  string     `yaml:"resource_arn,omitempty"` // Data API cluster ARN
+	SSLMode      string     `yaml:"sslmode,omitempty"`
+	ConnectSecs  int        `yaml:"connect_timeout_seconds,omitempty"`
+	SSMTunnel    *SSMTunnel `yaml:"ssm_tunnel,omitempty"`
+}
+
+type SSMTunnel struct {
+	InstanceID string `yaml:"instance_id"`
+	RemoteHost string `yaml:"remote_host,omitempty"`
+	RemotePort int    `yaml:"remote_port,omitempty"`
+	LocalPort  int    `yaml:"local_port,omitempty"`
+}
+
+type SQLConfig struct {
+	AllowWrites bool            `yaml:"allow_writes,omitempty"`
+	PGPassFiles []string        `yaml:"pgpass_files,omitempty"`
+	Connections []SQLConnection `yaml:"connections,omitempty"`
+}
+
 // CostView is a reusable Cost Explorer query exposed beneath the module's
 // Saved Views section in both frontends.
 type CostView struct {
@@ -131,6 +164,7 @@ type Config struct {
 		CostExplorer *bool `yaml:"cost_explorer"`
 		ElastiCache  *bool `yaml:"elasticache"`
 		APIGateway   *bool `yaml:"api_gateway"`
+		SQLWorkbench *bool `yaml:"sql_workbench"`
 	} `yaml:"modules"`
 	KeyBindings     map[string]string `yaml:"keybindings"` // action → key override
 	ExcludeServices []string          `yaml:"exclude_services"`
@@ -144,6 +178,7 @@ type Config struct {
 	LogPaths        []LogPathEntry    `yaml:"log_paths"`
 	TofuDirs        []TofuDirEntry    `yaml:"tofu_dirs"`
 	CostViews       []CostView        `yaml:"cost_views,omitempty"`
+	SQL             SQLConfig         `yaml:"sql,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -285,6 +320,48 @@ func (c Config) Validate() error {
 		}
 		if view.Days < 0 {
 			return fmt.Errorf("cost_views[%d].days cannot be negative", index)
+		}
+	}
+	connectionNames := make(map[string]struct{}, len(c.SQL.Connections))
+	for index, connection := range c.SQL.Connections {
+		name := strings.TrimSpace(connection.Name)
+		if name == "" {
+			return fmt.Errorf("sql.connections[%d].name cannot be empty", index)
+		}
+		if _, exists := connectionNames[strings.ToLower(name)]; exists {
+			return fmt.Errorf("sql.connections[%d].name %q is duplicated", index, name)
+		}
+		connectionNames[strings.ToLower(name)] = struct{}{}
+		if strings.TrimSpace(connection.Database) == "" {
+			return fmt.Errorf("sql.connections[%d].database cannot be empty", index)
+		}
+		if connection.Port < 0 || connection.Port > 65535 {
+			return fmt.Errorf("sql.connections[%d].port must be between 1 and 65535", index)
+		}
+		auth := strings.ToLower(strings.TrimSpace(connection.Auth))
+		switch auth {
+		case "", "pgpass", "iam", "secrets-manager", "password", "data-api":
+		default:
+			return fmt.Errorf("sql.connections[%d].auth %q is unsupported", index, connection.Auth)
+		}
+		if auth == "secrets-manager" && strings.TrimSpace(connection.SecretARN) == "" {
+			return fmt.Errorf("sql.connections[%d].secret_arn is required for Secrets Manager authentication", index)
+		}
+		if auth == "data-api" && (strings.TrimSpace(connection.SecretARN) == "" || strings.TrimSpace(connection.ResourceARN) == "") {
+			return fmt.Errorf("sql.connections[%d] requires secret_arn and resource_arn for Data API authentication", index)
+		}
+		if connection.ConnectSecs < 0 {
+			return fmt.Errorf("sql.connections[%d].connect_timeout_seconds cannot be negative", index)
+		}
+		if connection.SSMTunnel != nil {
+			if strings.TrimSpace(connection.SSMTunnel.InstanceID) == "" {
+				return fmt.Errorf("sql.connections[%d].ssm_tunnel.instance_id cannot be empty", index)
+			}
+			for field, port := range map[string]int{"remote_port": connection.SSMTunnel.RemotePort, "local_port": connection.SSMTunnel.LocalPort} {
+				if port < 0 || port > 65535 {
+					return fmt.Errorf("sql.connections[%d].ssm_tunnel.%s must be between 1 and 65535", index, field)
+				}
+			}
 		}
 	}
 	return nil
@@ -520,6 +597,7 @@ func (c *Config) ModuleTofu() bool         { return boolDefault(c.Modules.Tofu, 
 func (c *Config) ModuleCostExplorer() bool { return boolDefault(c.Modules.CostExplorer, true) }
 func (c *Config) ModuleElastiCache() bool  { return boolDefault(c.Modules.ElastiCache, true) }
 func (c *Config) ModuleAPIGateway() bool   { return boolDefault(c.Modules.APIGateway, true) }
+func (c *Config) ModuleSQLWorkbench() bool { return boolDefault(c.Modules.SQLWorkbench, true) }
 func (c *Config) ModuleECS() bool          { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {
 	if c.Modules.CWLogs != nil {

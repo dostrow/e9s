@@ -35,6 +35,22 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestValidateSQLConnections(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SQL.Connections = []SQLConnection{{Name: "production", Database: "app", Auth: "secrets-manager"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected a Secrets Manager profile without secret_arn to fail")
+	}
+	cfg.SQL.Connections[0].SecretARN = "arn:aws:secretsmanager:us-east-2:123:secret:db"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid SQL connection, got %v", err)
+	}
+	cfg.SQL.Connections = append(cfg.SQL.Connections, cfg.SQL.Connections[0])
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected duplicate SQL profile names to fail")
+	}
+}
+
 func TestModuleDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 
