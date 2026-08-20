@@ -28,16 +28,17 @@ type semanticPalette struct {
 }
 
 func semanticPaletteFromStyle(style *gtk.StyleContext) semanticPalette {
-	foreground := *style.Color()
+	foreground := themeColorOr(style, *style.Color(),
+		"theme_text_color", "theme_fg_color", "window_fg_color", "view_fg_color")
 	background := themeColorOr(style, foreground, "theme_bg_color", "window_bg_color")
 	surface := themeColorOr(style, background,
 		"content_view_bg", "text_view_bg", "view_bg_color", "theme_base_color")
-	accent := themeColorOr(style, foreground,
+	success := themeColorOr(style, foreground, "success_color", "success_bg_color")
+	accent := themeColorOr(style, success,
 		"accent_color", "link_color")
-	success := themeColorOr(style, accent, "success_color", "success_bg_color")
 	warning := themeColorOr(style, accent, "warning_color", "warning_bg_color")
 	errorColor := themeColorOr(style, accent, "error_color", "error_bg_color")
-	info := themeColorOr(style, foreground, "link_color", "accent_color")
+	info := themeColorOr(style, accent, "link_color", "accent_color")
 	muted := themeColorOr(style, blendRGBA(foreground, background, 0.38),
 		"dim_label_fg_color", "insensitive_fg_color")
 	return semanticPalette{
@@ -91,13 +92,15 @@ func rgbaHex(color gdk.RGBA) string {
 
 func semanticStyleCSS(palette semanticPalette) string {
 	return fmt.Sprintf(`
+.e9s-table row:not(:selected) .table-cell { color: %s; }
+.e9s-table > header > button { color: %s; font-weight: 600; }
 .saved-log-modified, .semantic-warning { color: %s; }
 .error, .semantic-error { color: %s; }
 .semantic-success { color: %s; }
 .semantic-info { color: %s; }
 .semantic-muted { color: %s; }
 .semantic-success, .semantic-warning, .semantic-error, .semantic-info { font-weight: 600; }
-`, palette.warning.String(), palette.error.String(), palette.success.String(),
+`, palette.foreground.String(), palette.accent.String(), palette.warning.String(), palette.error.String(), palette.success.String(),
 		palette.info.String(), palette.muted.String())
 }
 
@@ -124,7 +127,7 @@ func installSemanticStyles(window *mainWindow) {
 
 func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	if w.detailHeadingTag != nil {
-		w.detailHeadingTag.SetObjectProperty("foreground", palette.foreground.String())
+		w.detailHeadingTag.SetObjectProperty("foreground", palette.accent.String())
 	}
 	if w.detailErrorTag != nil {
 		w.detailErrorTag.SetObjectProperty("foreground", palette.error.String())

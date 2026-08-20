@@ -31,6 +31,7 @@ func newStringTable(columns []columnSpec) *stringTable {
 	selection.SetAutoselect(false)
 	selection.SetCanUnselect(true)
 	view := gtk.NewColumnView(selection)
+	view.AddCSSClass("e9s-table")
 	view.SetShowColumnSeparators(true)
 	view.SetShowRowSeparators(true)
 	view.SetSingleClickActivate(false)

@@ -65,6 +65,12 @@ func TestSemanticStyleUsesDerivedPalette(t *testing.T) {
 	if !strings.Contains(css, palette.success.String()) || !strings.Contains(css, palette.error.String()) {
 		t.Fatal("semantic CSS did not use the supplied palette")
 	}
+	if !strings.Contains(css, ".e9s-table row:not(:selected) .table-cell") || !strings.Contains(css, palette.foreground.String()) {
+		t.Fatal("semantic CSS did not apply the theme foreground to table content")
+	}
+	if !strings.Contains(css, ".e9s-table > header > button") || !strings.Contains(css, palette.accent.String()) {
+		t.Fatal("semantic CSS did not apply the theme accent to table headers")
+	}
 }
 
 func TestMetricFractionClampsToProgressRange(t *testing.T) {
