@@ -250,6 +250,10 @@ type mainWindow struct {
 	allSQSMessages              []model.SQSMessage
 	filteredSQSMessages         []model.SQSMessage
 	selectedSQSMessage          string
+	sqsMessageQueue             model.SQSQueue
+	sqsMessageQueueStats        *model.SQSQueueStats
+	sqsMessagesParentURL        string
+	sqsMessagesParentSavedName  string
 	sqsActionPending            bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
@@ -406,6 +410,9 @@ type mainWindow struct {
 	dynamoCloneButton           *gtk.Button
 	sqsSaveQueueButton          *gtk.Button
 	sqsManageSavedButton        *gtk.Button
+	sqsPollButton               *gtk.Button
+	sqsClearButton              *gtk.Button
+	sqsDeadLetterButton         *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -745,6 +752,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
 	w.dynamoItemTable.view.ConnectActivate(w.openDynamoItemAt)
 	w.sqsQueueTable.view.ConnectActivate(w.openSQSQueueAt)
+	w.sqsMessageTable.view.ConnectActivate(w.openSQSMessageAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -774,6 +782,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
 	w.dynamoItemTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoItemRow() })
 	w.sqsQueueTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSQueueRow() })
+	w.sqsMessageTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSMessageRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -938,6 +947,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsSaveQueueButton.ConnectClicked(w.promptSaveSQSQueue)
 	w.sqsManageSavedButton = gtk.NewButtonWithLabel("Manage saved…")
 	w.sqsManageSavedButton.ConnectClicked(w.promptManageSQSQueues)
+	w.sqsPollButton = gtk.NewButtonWithLabel("Poll messages")
+	w.sqsPollButton.ConnectClicked(w.pollSQSMessages)
+	w.sqsClearButton = gtk.NewButtonWithLabel("Clear buffer")
+	w.sqsClearButton.ConnectClicked(w.clearSQSMessageBuffer)
+	w.sqsDeadLetterButton = gtk.NewButtonWithLabel("Open DLQ")
+	w.sqsDeadLetterButton.ConnectClicked(w.openSQSDeadLetterQueue)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1039,6 +1054,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.dynamoCloneButton)
 	header.Append(w.sqsSaveQueueButton)
 	header.Append(w.sqsManageSavedButton)
+	header.Append(w.sqsPollButton)
+	header.Append(w.sqsClearButton)
+	header.Append(w.sqsDeadLetterButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -2418,6 +2436,10 @@ func (w *mainWindow) applyFilter() {
 		w.applySQSQueueFilter()
 		return
 	}
+	if w.currentPage == pageSQSMessages {
+		w.applySQSMessageFilter()
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		w.applyS3BucketFilter()
 		return
@@ -2602,6 +2624,10 @@ func (w *mainWindow) navigateBrowserBack() {
 		return
 	}
 	if w.navigateS3Back() {
+		return
+	}
+	if w.currentPage == pageSQSMessages {
+		w.restoreSQSQueueBrowser()
 		return
 	}
 	if w.currentPage == pageDynamoItems {
@@ -2790,6 +2816,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageSQSQueues {
 		w.refreshSQSQueues(foreground)
+		return
+	}
+	if w.currentPage == pageSQSMessages {
+		w.refreshSQSMessages(foreground)
 		return
 	}
 	if w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings {
@@ -3531,6 +3561,18 @@ func (w *mainWindow) updateActionSensitivity() {
 	hasSavedSQSQueues := w.options.Config != nil && len(w.options.Config.SQSQueues) > 0
 	w.sqsManageSavedButton.SetVisible(sqsPage && hasSavedSQSQueues)
 	w.sqsManageSavedButton.SetSensitive(sqsPage && hasSavedSQSQueues && sqsReady)
+	w.sqsPollButton.SetVisible(w.currentPage == pageSQSMessages)
+	w.sqsPollButton.SetSensitive(w.currentPage == pageSQSMessages && sqsReady)
+	w.sqsClearButton.SetVisible(w.currentPage == pageSQSMessages && len(w.allSQSMessages) > 0)
+	w.sqsClearButton.SetSensitive(w.currentPage == pageSQSMessages && len(w.allSQSMessages) > 0 && sqsReady)
+	deadLetterAvailable := false
+	if w.currentPage == pageSQSQueues {
+		deadLetterAvailable = w.sqsQueueStats != nil && w.sqsQueueStats.DeadLetterTargetARN != ""
+	} else if w.currentPage == pageSQSMessages {
+		deadLetterAvailable = w.sqsMessageQueueStats != nil && w.sqsMessageQueueStats.DeadLetterTargetARN != ""
+	}
+	w.sqsDeadLetterButton.SetVisible(deadLetterAvailable)
+	w.sqsDeadLetterButton.SetSensitive(deadLetterAvailable && sqsReady)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

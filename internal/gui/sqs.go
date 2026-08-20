@@ -3,11 +3,14 @@
 package gui
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"sort"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
@@ -132,6 +135,10 @@ func (w *mainWindow) clearSQSMessages() {
 	w.allSQSMessages = nil
 	w.filteredSQSMessages = nil
 	w.selectedSQSMessage = ""
+	w.sqsMessageQueue = model.SQSQueue{}
+	w.sqsMessageQueueStats = nil
+	w.sqsMessagesParentURL = ""
+	w.sqsMessagesParentSavedName = ""
 	if w.sqsMessageTable != nil {
 		w.sqsMessageTable.clear()
 	}
@@ -183,7 +190,359 @@ func (w *mainWindow) openSQSQueueAt(position uint) {
 	if int(position) >= len(w.filteredSQSQueues) {
 		return
 	}
+	queue := w.filteredSQSQueues[position]
 	w.sqsQueueTable.selection.SetSelected(position)
+	w.loadSQSMessages(queue, queue.URL, w.activeSavedSQSQueue)
+}
+
+func (w *mainWindow) loadSQSMessages(queue model.SQSQueue, parentURL, parentSavedName string) {
+	if w.options.SQS == nil || queue.URL == "" || w.sqsActionPending {
+		return
+	}
+	w.resetWorkspaceForBrowserChange()
+	w.clearSQSMessages()
+	w.currentPage = pageSQSMessages
+	w.sqsMessageQueue = queue
+	w.selectedSQSQueue = queue.URL
+	w.sqsMessagesParentURL = parentURL
+	w.sqsMessagesParentSavedName = parentSavedName
+	w.search.SetPlaceholderText("Filter loaded messages…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageSQSMessages)
+	w.backButton.SetSensitive(true)
+	w.setBreadcrumb(sqsMessageBreadcrumb(parentSavedName, queue.Name, ""))
+	w.setDetail("Loading SQS queue configuration…", detailIntro)
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Loading SQS queue configuration…")
+	go func() {
+		stats, err := w.options.SQS.Queue(ctx, queue.URL)
+		w.finishRequest(ctx, generation, err, func() {
+			if w.currentPage != pageSQSMessages || w.sqsMessageQueue.URL != queue.URL {
+				return
+			}
+			w.sqsMessageQueueStats = stats
+			w.setDetail(sqsMessageListSummary(queue, 0), detailSQSQueue)
+			w.updateActionSensitivity()
+		})
+	}()
+}
+
+func (w *mainWindow) restoreSQSQueueBrowser() {
+	parentURL, parentSaved := w.sqsMessagesParentURL, w.sqsMessagesParentSavedName
+	w.resetWorkspaceForBrowserChange()
+	w.clearSQSMessages()
+	w.currentPage = pageSQSQueues
+	w.activeSavedSQSQueue = parentSaved
+	w.search.SetPlaceholderText("Filter queues…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageSQSQueues)
+	w.backButton.SetSensitive(false)
+	w.applySQSQueueFilter()
+	if queue, found := findSQSQueue(w.allSQSQueues, parentURL); found {
+		w.selectedSQSQueue = queue.URL
+		w.setBreadcrumb(sqsQueueBreadcrumb(parentSaved, queue.Name))
+		w.setDetail("Loading SQS queue configuration…", detailIntro)
+		if index := findSQSQueueIndex(w.filteredSQSQueues, queue.URL); index >= 0 {
+			w.sqsQueueTable.selection.SetSelected(uint(index))
+		} else {
+			w.loadSQSQueueDetail(queue)
+		}
+	} else {
+		w.selectedSQSQueue = ""
+		w.sqsQueueStats = nil
+		w.setBreadcrumb(sqsQueueBreadcrumb(parentSaved, ""))
+		w.setDetail(sqsQueueListSummary(len(w.allSQSQueues)), detailIntro)
+	}
+	w.updateActionSensitivity()
+	w.setStatus("Ready", false)
+}
+
+func (w *mainWindow) applySQSMessageFilter() {
+	w.filteredSQSMessages = filterSQSMessages(w.allSQSMessages, w.search.Text())
+	rows := make([]string, 0, len(w.filteredSQSMessages))
+	for _, message := range w.filteredSQSMessages {
+		rows = append(rows, message.MessageID+"\t"+sqsMessagePreview(message.Body))
+	}
+	w.sqsMessageTable.replace(rows)
+}
+
+func filterSQSMessages(messages []model.SQSMessage, query string) []model.SQSMessage {
+	query = strings.ToLower(strings.TrimSpace(query))
+	filtered := make([]model.SQSMessage, 0, len(messages))
+	for _, message := range messages {
+		if query == "" || strings.Contains(strings.ToLower(sqsMessageSearchText(message)), query) {
+			filtered = append(filtered, message)
+		}
+	}
+	return filtered
+}
+
+func sqsMessageSearchText(message model.SQSMessage) string {
+	parts := []string{message.MessageID, message.Body, message.MD5}
+	for name, value := range message.Attributes {
+		parts = append(parts, name, value)
+	}
+	for name, value := range message.UserAttributes {
+		parts = append(parts, name, value.DataType, value.StringValue, service.SQSMessageAttributeDisplay(value))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func sqsMessagePreview(body string) string {
+	preview := strings.Join(strings.Fields(body), " ")
+	runes := []rune(preview)
+	if len(runes) > 140 {
+		return string(runes[:137]) + "…"
+	}
+	return preview
+}
+
+func (w *mainWindow) selectSQSMessageRow() {
+	if w.currentPage != pageSQSMessages {
+		return
+	}
+	position := w.sqsMessageTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredSQSMessages) {
+		w.selectedSQSMessage = ""
+		w.setBreadcrumb(sqsMessageBreadcrumb(w.activeSavedSQSQueue, w.sqsMessageQueue.Name, ""))
+		w.setDetail(sqsMessageListSummary(w.sqsMessageQueue, len(w.allSQSMessages)), detailSQSQueue)
+		w.updateActionSensitivity()
+		return
+	}
+	message := w.filteredSQSMessages[position]
+	w.selectedSQSMessage = message.MessageID
+	w.setBreadcrumb(sqsMessageBreadcrumb(w.activeSavedSQSQueue, w.sqsMessageQueue.Name, shortSQSMessageID(message.MessageID)))
+	w.setDetail(formatSQSMessage(w.sqsMessageQueue, message), detailSQSMessage)
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) openSQSMessageAt(position uint) {
+	if int(position) < len(w.filteredSQSMessages) {
+		w.sqsMessageTable.selection.SetSelected(position)
+	}
+}
+
+func (w *mainWindow) pollSQSMessages() {
+	if w.currentPage != pageSQSMessages || w.options.SQS == nil || w.sqsActionPending || w.sqsMessageQueue.URL == "" {
+		return
+	}
+	w.sqsActionPending = true
+	w.updateActionSensitivity()
+	queue := w.sqsMessageQueue
+	ctx, generation := w.startRequest("Polling " + queue.Name + " for messages…")
+	w.setWorkspaceCancellation(func() {
+		if w.requestCancel != nil {
+			w.requestCancel()
+		}
+		w.sqsActionPending = false
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.updateActionSensitivity()
+		w.setStatus("SQS poll cancelled", false)
+	})
+	go func() {
+		messages, err := w.options.SQS.Messages(ctx, model.SQSReceiveRequest{QueueURL: queue.URL, MaxMessages: 10, WaitSeconds: 10})
+		w.finishSQSAction(ctx, generation, err, fmt.Sprintf("Received %d message(s) from %s", len(messages), queue.Name), func() {
+			w.allSQSMessages = mergeSQSMessages(w.allSQSMessages, messages)
+			w.applySQSMessageFilter()
+			w.selectedSQSMessage = ""
+			w.setBreadcrumb(sqsMessageBreadcrumb(w.activeSavedSQSQueue, queue.Name, ""))
+			w.setDetail(sqsMessageListSummary(queue, len(w.allSQSMessages)), detailSQSQueue)
+		})
+	}()
+}
+
+func mergeSQSMessages(existing, received []model.SQSMessage) []model.SQSMessage {
+	merged := append([]model.SQSMessage(nil), existing...)
+	positions := make(map[string]int, len(merged))
+	for index, message := range merged {
+		positions[message.MessageID] = index
+	}
+	for _, message := range received {
+		if index, found := positions[message.MessageID]; found {
+			merged[index] = message
+			continue
+		}
+		positions[message.MessageID] = len(merged)
+		merged = append(merged, message)
+	}
+	return merged
+}
+
+func (w *mainWindow) clearSQSMessageBuffer() {
+	if w.currentPage != pageSQSMessages || w.sqsActionPending {
+		return
+	}
+	w.allSQSMessages = nil
+	w.filteredSQSMessages = nil
+	w.selectedSQSMessage = ""
+	w.sqsMessageTable.clear()
+	w.setBreadcrumb(sqsMessageBreadcrumb(w.activeSavedSQSQueue, w.sqsMessageQueue.Name, ""))
+	w.setDetail(sqsMessageListSummary(w.sqsMessageQueue, 0), detailSQSQueue)
+	w.updateActionSensitivity()
+	w.setStatus("Cleared SQS message buffer", false)
+}
+
+func (w *mainWindow) openSQSDeadLetterQueue() {
+	stats := w.sqsQueueStats
+	queue := model.SQSQueue{}
+	parentURL, parentSaved := w.selectedSQSQueue, w.activeSavedSQSQueue
+	if w.currentPage == pageSQSMessages {
+		stats = w.sqsMessageQueueStats
+		queue = w.sqsMessageQueue
+		parentURL, parentSaved = w.sqsMessagesParentURL, w.sqsMessagesParentSavedName
+	} else {
+		queue, _ = findSQSQueue(w.allSQSQueues, w.selectedSQSQueue)
+	}
+	if stats == nil || stats.DeadLetterTargetARN == "" || w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	w.sqsActionPending = true
+	w.updateActionSensitivity()
+	name := service.QueueNameFromARN(stats.DeadLetterTargetARN)
+	ctx, generation := w.startRequest("Resolving dead-letter queue " + name + "…")
+	go func() {
+		url, err := w.options.SQS.ResolveQueueURL(ctx, name)
+		var detail *model.SQSQueueStats
+		if err == nil {
+			detail, err = w.options.SQS.Queue(ctx, url)
+		}
+		w.finishSQSAction(ctx, generation, err, "Opened dead-letter queue "+name, func() {
+			dlq := model.SQSQueue{Name: name, URL: url}
+			w.clearSQSMessages()
+			w.currentPage = pageSQSMessages
+			w.activeSavedSQSQueue = ""
+			w.sqsMessageQueue = dlq
+			w.sqsMessageQueueStats = detail
+			w.selectedSQSQueue = dlq.URL
+			w.sqsMessagesParentURL = parentURL
+			w.sqsMessagesParentSavedName = parentSaved
+			w.search.SetPlaceholderText("Filter loaded messages…")
+			w.search.SetText("")
+			w.resourceStack.SetVisibleChildName(pageSQSMessages)
+			w.backButton.SetSensitive(true)
+			w.setBreadcrumb(sqsMessageBreadcrumb("", dlq.Name, ""))
+			w.setDetail(sqsMessageListSummary(dlq, 0)+"\n\nOpened from "+queue.Name+".", detailSQSQueue)
+		})
+	}()
+}
+
+func (w *mainWindow) refreshSQSMessages(foreground bool) {
+	if w.options.SQS == nil || w.sqsActionPending || w.sqsMessageQueue.URL == "" {
+		return
+	}
+	queue, selected := w.sqsMessageQueue, w.selectedSQSMessage
+	ctx, generation := w.startRefreshRequest("Refreshing SQS queue configuration…", foreground)
+	go func() {
+		stats, err := w.options.SQS.Queue(ctx, queue.URL)
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+			w.sqsMessageQueueStats = stats
+			if message, found := findSQSMessage(w.allSQSMessages, selected); found {
+				w.setDetail(formatSQSMessage(queue, message), detailSQSMessage)
+			} else {
+				w.selectedSQSMessage = ""
+				w.setDetail(sqsMessageListSummary(queue, len(w.allSQSMessages)), detailSQSQueue)
+			}
+			w.updateActionSensitivity()
+		})
+	}()
+}
+
+func (w *mainWindow) finishSQSAction(ctx context.Context, generation uint64, err error, success string, apply func()) {
+	glib.IdleAdd(func() {
+		if ctx.Err() != nil || generation != w.generation {
+			return
+		}
+		w.requestCancel = nil
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.sqsActionPending = false
+		if err != nil {
+			w.updateActionSensitivity()
+			w.setStatus(err.Error(), true)
+			return
+		}
+		if apply != nil {
+			apply()
+		}
+		w.updateActionSensitivity()
+		w.setStatus(success, false)
+	})
+}
+
+func sqsMessageBreadcrumb(savedName, queueName, messageID string) string {
+	root := "Queues"
+	if savedName != "" {
+		root = savedName
+	}
+	result := "SQS / " + root + " / " + queueName + " / Messages"
+	if messageID != "" {
+		result += " / " + messageID
+	}
+	return result
+}
+
+func sqsMessageListSummary(queue model.SQSQueue, count int) string {
+	return fmt.Sprintf("SQS MESSAGES\n\nQueue            %s\nBuffered         %d\n\nPolling receives up to 10 messages and changes their visibility. No messages are received automatically.", queue.Name, count)
+}
+
+func formatSQSMessage(queue model.SQSQueue, message model.SQSMessage) string {
+	body := message.Body
+	var decoded any
+	if json.Unmarshal([]byte(body), &decoded) == nil {
+		if formatted, err := json.MarshalIndent(decoded, "", "  "); err == nil {
+			body = string(formatted)
+		}
+	}
+	result := fmt.Sprintf("SQS MESSAGE\n\nQueue       %s\nMessage ID  %s\nMD5         %s\n\nBODY\n%s", queue.Name, message.MessageID, valueOrDash(message.MD5), body)
+	if len(message.Attributes) > 0 {
+		result += "\n\nSYSTEM ATTRIBUTES"
+		for _, name := range sortedSQSAttributeNames(message.Attributes) {
+			result += fmt.Sprintf("\n%s  %s", name, message.Attributes[name])
+		}
+	}
+	if len(message.UserAttributes) > 0 {
+		result += "\n\nMESSAGE ATTRIBUTES"
+		for _, name := range sortedSQSUserAttributeNames(message.UserAttributes) {
+			attribute := message.UserAttributes[name]
+			result += fmt.Sprintf("\n%s (%s)  %s", name, attribute.DataType, service.SQSMessageAttributeDisplay(attribute))
+		}
+	}
+	return result
+}
+
+func sortedSQSAttributeNames(attributes map[string]string) []string {
+	names := make([]string, 0, len(attributes))
+	for name := range attributes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func sortedSQSUserAttributeNames(attributes map[string]model.SQSMessageAttribute) []string {
+	names := make([]string, 0, len(attributes))
+	for name := range attributes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func findSQSMessage(messages []model.SQSMessage, messageID string) (model.SQSMessage, bool) {
+	for _, message := range messages {
+		if message.MessageID == messageID {
+			return message, true
+		}
+	}
+	return model.SQSMessage{}, false
+}
+
+func shortSQSMessageID(messageID string) string {
+	if len(messageID) <= 12 {
+		return messageID
+	}
+	return messageID[:12] + "…"
 }
 
 func (w *mainWindow) loadSQSQueueDetail(queue model.SQSQueue) {

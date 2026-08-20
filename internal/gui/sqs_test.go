@@ -58,3 +58,53 @@ func TestFindSavedSQSQueue(t *testing.T) {
 		t.Fatal("findSavedSQSQueue() unexpectedly found missing queue")
 	}
 }
+
+func TestFilterSQSMessagesSearchesBodyAndAttributes(t *testing.T) {
+	messages := []model.SQSMessage{
+		{MessageID: "one", Body: `{"event":"created"}`},
+		{MessageID: "two", Body: "plain", UserAttributes: map[string]model.SQSMessageAttribute{
+			"Environment": {DataType: "String", StringValue: "Production"},
+		}},
+	}
+	if got := filterSQSMessages(messages, "CREATED"); !reflect.DeepEqual(got, messages[:1]) {
+		t.Fatalf("filterSQSMessages(body) = %#v", got)
+	}
+	if got := filterSQSMessages(messages, "production"); !reflect.DeepEqual(got, messages[1:]) {
+		t.Fatalf("filterSQSMessages(attribute) = %#v", got)
+	}
+}
+
+func TestMergeSQSMessagesReplacesReceiptAndAppendsNewMessages(t *testing.T) {
+	existing := []model.SQSMessage{{MessageID: "one", ReceiptHandle: "old", Body: "before"}}
+	received := []model.SQSMessage{
+		{MessageID: "one", ReceiptHandle: "new", Body: "after"},
+		{MessageID: "two", ReceiptHandle: "two", Body: "second"},
+	}
+	got := mergeSQSMessages(existing, received)
+	if len(got) != 2 || got[0].ReceiptHandle != "new" || got[0].Body != "after" || got[1].MessageID != "two" {
+		t.Fatalf("mergeSQSMessages() = %#v", got)
+	}
+}
+
+func TestFormatSQSMessagePrettyPrintsJSONAndHidesReceiptHandle(t *testing.T) {
+	message := model.SQSMessage{
+		MessageID: "message-1", ReceiptHandle: "secret-receipt", Body: `{"b":2,"a":1}`,
+		UserAttributes: map[string]model.SQSMessageAttribute{
+			"kind": {DataType: "String", StringValue: "event"},
+		},
+	}
+	got := formatSQSMessage(model.SQSQueue{Name: "events"}, message)
+	if !strings.Contains(got, "\n  \"a\": 1") || !strings.Contains(got, "kind (String)  event") {
+		t.Fatalf("formatSQSMessage() = %q", got)
+	}
+	if strings.Contains(got, message.ReceiptHandle) {
+		t.Fatalf("formatSQSMessage() exposed receipt handle: %q", got)
+	}
+}
+
+func TestSQSMessageBreadcrumb(t *testing.T) {
+	got := sqsMessageBreadcrumb("Production", "events", "abc…")
+	if got != "SQS / Production / events / Messages / abc…" {
+		t.Fatalf("sqsMessageBreadcrumb() = %q", got)
+	}
+}
