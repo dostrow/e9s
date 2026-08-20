@@ -1550,6 +1550,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doDeleteR53Record()
 		case ConfirmEC2Terminate:
 			return a, a.doTerminateEC2()
+		case ConfirmTofuInit:
+			return a.runTofuInit()
+		case ConfirmTofuApply:
+			return a.runTofuApply()
 		}
 		return a, nil
 
@@ -2214,16 +2218,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case a.kb.RunPlan:
 				return a.runTofuPlan()
 			case a.kb.RunApply:
-				return a.runTofuApply()
+				return a.confirmTofuApply()
 			case a.kb.RunInit:
-				return a.runTofuInit()
+				return a.confirmTofuInit()
 			case a.kb.Save:
 				return a.saveTofuDir()
 			}
 		case viewTofuPlan:
 			switch k {
 			case a.kb.RunApply:
-				return a.runTofuApply()
+				return a.confirmTofuApply()
 			}
 		case viewECRImages:
 			switch k {

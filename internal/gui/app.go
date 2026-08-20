@@ -184,6 +184,8 @@ type TofuService interface {
 	Plan(context.Context, string) (*tofu.PlanResult, string, error)
 	Init(context.Context, string) (string, error)
 	Apply(context.Context, string, string) (string, error)
+	InitCommand(string) (tofu.Command, error)
+	ApplyCommand(string, string) (tofu.Command, error)
 	CleanupPlan(string)
 }
 

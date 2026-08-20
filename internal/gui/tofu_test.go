@@ -76,3 +76,14 @@ func TestFormatTofuPlanChangeIncludesFullDiff(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatTofuOperationOutputKeepsCommandOutput(t *testing.T) {
+	t.Parallel()
+
+	text := formatTofuOperationOutput("INIT COMPLETED", config.TofuDirEntry{Name: "prod", Dir: "/infra/prod"}, "Provider installation complete")
+	for _, expected := range []string{"INIT COMPLETED", "prod", "/infra/prod", "Provider installation complete"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("formatTofuOperationOutput() missing %q in %q", expected, text)
+		}
+	}
+}

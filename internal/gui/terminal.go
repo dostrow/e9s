@@ -142,6 +142,10 @@ func (w *mainWindow) closeTerminal() {
 	if !w.showingTerminal {
 		return
 	}
+	if w.terminal != nil && !w.terminal.Running() {
+		w.closeTerminalNow(true)
+		return
+	}
 	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageQuestion, gtk.ButtonsYesNo)
 	dialog.SetTitle("Disconnect terminal session")
 	description := valueOrDash(w.terminalDescription)
@@ -158,6 +162,13 @@ func (w *mainWindow) closeTerminal() {
 }
 
 func (w *mainWindow) closeTerminalNow(updateStatus bool) {
+	tofuOperationPending := w.terminalOnClose != nil && w.tofuActionPending
+	if tofuOperationPending {
+		w.tofuTerminalGeneration++
+		w.tofuActionPending = false
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+	}
 	if w.terminal != nil {
 		w.terminal.Stop()
 	}
@@ -165,10 +176,18 @@ func (w *mainWindow) closeTerminalNow(updateStatus bool) {
 	description := w.terminalDescription
 	w.terminalDescription = ""
 	w.detailStack.SetVisibleChildName("detail")
+	onClose := w.terminalOnClose
+	w.terminalOnClose = nil
 	if updateStatus {
 		if description == "" {
 			description = "Terminal session"
 		}
 		w.setStatus(description+" disconnected", false)
+	}
+	if onClose != nil {
+		onClose()
+	}
+	if tofuOperationPending {
+		w.updateActionSensitivity()
 	}
 }

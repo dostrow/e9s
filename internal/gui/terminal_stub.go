@@ -36,6 +36,10 @@ func (terminal *vteTerminal) Spawn(string, []string) error {
 
 func (terminal *vteTerminal) Stop() {}
 
+func (terminal *vteTerminal) Running() bool { return false }
+
+func (terminal *vteTerminal) ExitStatus() int { return 0 }
+
 func (terminal *vteTerminal) SetFontScale(float64) {}
 
 func (terminal *vteTerminal) SetPalette(semanticPalette) {}

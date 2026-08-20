@@ -35,6 +35,8 @@ const (
 	ConfirmECRDelete
 	ConfirmRevealSecrets
 	ConfirmRegisterTaskDefinition
+	ConfirmTofuInit
+	ConfirmTofuApply
 )
 
 type ConfirmModel struct {

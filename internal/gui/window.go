@@ -397,6 +397,8 @@ type mainWindow struct {
 	tofuAddWorkspaceButton      *gtk.Button
 	tofuManageWorkspacesButton  *gtk.Button
 	tofuPlanButton              *gtk.Button
+	tofuInitButton              *gtk.Button
+	tofuApplyButton             *gtk.Button
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -587,6 +589,8 @@ type mainWindow struct {
 	lastError                   string
 	spinner                     *gtk.Spinner
 	lastSuccessfulLoad          time.Time
+	terminalOnClose             func()
+	tofuTerminalGeneration      uint64
 }
 
 type moduleRailSection struct {
@@ -1058,6 +1062,11 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.tofuManageWorkspacesButton.ConnectClicked(w.promptManageTofuWorkspaces)
 	w.tofuPlanButton = gtk.NewButtonWithLabel("Plan")
 	w.tofuPlanButton.ConnectClicked(w.runTofuPlan)
+	w.tofuInitButton = gtk.NewButtonWithLabel("Init…")
+	w.tofuInitButton.ConnectClicked(w.confirmTofuInit)
+	w.tofuApplyButton = gtk.NewButtonWithLabel("Apply plan…")
+	w.tofuApplyButton.AddCSSClass("destructive-action")
+	w.tofuApplyButton.ConnectClicked(w.confirmTofuApply)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1172,6 +1181,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.tofuAddWorkspaceButton)
 	header.Append(w.tofuManageWorkspacesButton)
 	header.Append(w.tofuPlanButton)
+	header.Append(w.tofuInitButton)
+	header.Append(w.tofuApplyButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -2079,7 +2090,6 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.sqsActionPending = false
 	w.route53ActionPending = false
 	w.tofuActionPending = false
-	w.discardTofuPlan()
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2095,8 +2105,11 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.metricsRenderedSnapshot = nil
 	w.metricsChartSpecs = nil
 	if w.showingTerminal {
+		w.terminalOnClose = nil
+		w.tofuTerminalGeneration++
 		w.closeTerminalNow(false)
 	}
+	w.discardTofuPlan()
 	w.showingEditor = false
 	w.editorDirty = false
 	w.editorKind = ""
@@ -3818,6 +3831,12 @@ func (w *mainWindow) updateActionSensitivity() {
 	tofuCanPlan := (w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan) && w.selectedTofuWorkspace != "" && w.options.Tofu != nil
 	w.tofuPlanButton.SetVisible(w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan)
 	w.tofuPlanButton.SetSensitive(tofuCanPlan && !w.tofuActionPending)
+	tofuCanInit := w.currentPage == pageTofuResources && w.selectedTofuWorkspace != "" && w.options.Tofu != nil
+	w.tofuInitButton.SetVisible(w.currentPage == pageTofuResources)
+	w.tofuInitButton.SetSensitive(tofuCanInit && !w.tofuActionPending)
+	tofuCanApply := w.currentPage == pageTofuPlan && w.tofuPlan != nil && len(w.tofuPlan.Changes) > 0 && w.tofuPlanFile != "" && w.options.Tofu != nil
+	w.tofuApplyButton.SetVisible(w.currentPage == pageTofuPlan && w.tofuPlan != nil && len(w.tofuPlan.Changes) > 0)
+	w.tofuApplyButton.SetSensitive(tofuCanApply && !w.tofuActionPending)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

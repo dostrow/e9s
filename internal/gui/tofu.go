@@ -264,6 +264,153 @@ func (w *mainWindow) runTofuPlan() {
 	}()
 }
 
+func (w *mainWindow) confirmTofuInit() {
+	workspace, found := w.currentTofuWorkspace()
+	if !found || w.options.Tofu == nil || w.tofuActionPending {
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageQuestion, gtk.ButtonsNone)
+	dialog.SetTitle("Initialize OpenTofu workspace")
+	dialog.SetMarkup("Run <b>init</b> in <b>" + html.EscapeString(workspace.Name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "This may download providers and modules, initialize the backend, and update the dependency lock file.")
+	dialog.SetDestroyWithParent(true)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Run init", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.runTofuInit(workspace)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runTofuInit(workspace config.TofuDirEntry) {
+	if vteAvailable() {
+		command, err := w.options.Tofu.InitCommand(workspace.Dir)
+		if err != nil {
+			w.setStatus(err.Error(), true)
+			return
+		}
+		w.startTofuTerminalCommand(workspace, "OpenTofu init", command, false)
+		return
+	}
+	w.tofuActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Initializing " + workspace.Name + "…")
+	go func() {
+		output, err := w.options.Tofu.Init(ctx, workspace.Dir)
+		w.finishTofuAction(ctx, generation, err, "Initialized "+workspace.Name, func() {
+			w.setDetail(formatTofuOperationOutput("INIT COMPLETED", workspace, output), detailTofuWorkspace)
+		})
+	}()
+}
+
+func (w *mainWindow) confirmTofuApply() {
+	workspace, found := w.currentTofuWorkspace()
+	if !found || w.options.Tofu == nil || w.tofuActionPending || w.tofuPlan == nil || w.tofuPlanFile == "" || len(w.tofuPlan.Changes) == 0 {
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Apply reviewed OpenTofu plan")
+	dialog.SetMarkup("Apply the reviewed plan to <b>" + html.EscapeString(workspace.Name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", tofu.FormatPlanSummary(w.tofuPlan)+". The exact saved plan shown in this window will be applied; no new plan will be generated.")
+	dialog.SetDestroyWithParent(true)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Apply plan", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.runTofuApply(workspace)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runTofuApply(workspace config.TofuDirEntry) {
+	planFile := w.tofuPlanFile
+	if vteAvailable() {
+		command, err := w.options.Tofu.ApplyCommand(workspace.Dir, planFile)
+		if err != nil {
+			w.setStatus(err.Error(), true)
+			return
+		}
+		w.startTofuTerminalCommand(workspace, "OpenTofu apply", command, true)
+		return
+	}
+	w.tofuActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Applying reviewed plan for " + workspace.Name + "…")
+	go func() {
+		output, err := w.options.Tofu.Apply(ctx, workspace.Dir, planFile)
+		w.finishTofuAction(ctx, generation, err, "Applied reviewed plan to "+workspace.Name, func() {
+			w.discardTofuPlan()
+			w.currentPage = pageTofuResources
+			w.search.SetPlaceholderText("Filter state resources…")
+			w.search.SetText("")
+			w.resourceStack.SetVisibleChildName(pageTofuResources)
+			w.setBreadcrumb(tofuResourceBreadcrumb(workspace.Name, ""))
+			w.setDetail(formatTofuOperationOutput("APPLY COMPLETED", workspace, output), detailTofuWorkspace)
+		})
+	}()
+}
+
+func (w *mainWindow) startTofuTerminalCommand(workspace config.TofuDirEntry, operation string, command tofu.Command, apply bool) {
+	if w.terminal == nil || w.tofuActionPending {
+		return
+	}
+	if err := w.terminal.Spawn(command.Executable, command.Args); err != nil {
+		w.setStatus(err.Error(), true)
+		return
+	}
+	w.tofuTerminalGeneration++
+	generation := w.tofuTerminalGeneration
+	w.tofuActionPending = true
+	w.spinner.Start()
+	w.setWorkspaceBusy(operation+" is running…", true)
+	w.setStatus(operation+" is running for "+workspace.Name+"…", false)
+	w.updateActionSensitivity()
+	w.showingLogs = false
+	w.showingMetrics = false
+	w.showingTerminal = true
+	w.terminalDescription = operation + " for " + workspace.Name
+	w.terminalTitle.SetLabel(operation + " — " + workspace.Name)
+	succeeded := false
+	w.terminalOnClose = func() {
+		if succeeded {
+			w.loadTofuResources(workspace)
+			return
+		}
+		w.updateActionSensitivity()
+	}
+	w.detailStack.SetVisibleChildName("terminal")
+	glib.TimeoutAdd(200, func() bool {
+		if generation != w.tofuTerminalGeneration || !w.showingTerminal {
+			return false
+		}
+		if w.terminal.Running() {
+			return true
+		}
+		status := w.terminal.ExitStatus()
+		w.tofuActionPending = false
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		succeeded = status == 0
+		if succeeded {
+			if apply {
+				w.discardTofuPlan()
+			}
+			w.terminalTitle.SetLabel(operation + " completed — " + workspace.Name)
+			w.setStatus(operation+" completed for "+workspace.Name+"; close the terminal to refresh state", false)
+		} else {
+			w.terminalTitle.SetLabel(operation + " failed — " + workspace.Name)
+			w.setStatus(fmt.Sprintf("%s failed for %s (status %d)", operation, workspace.Name, status), true)
+		}
+		w.updateActionSensitivity()
+		return false
+	})
+}
+
 func (w *mainWindow) selectTofuPlanChangeRow() {
 	if w.currentPage != pageTofuPlan || w.tofuPlan == nil {
 		return
@@ -670,6 +817,14 @@ func formatTofuPlanChange(change tofu.ResourceChange) string {
 		}
 	}
 	return builder.String()
+}
+
+func formatTofuOperationOutput(title string, workspace config.TofuDirEntry, output string) string {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		output = "Command completed without output."
+	}
+	return fmt.Sprintf("%s\n\nWorkspace  %s\nDirectory  %s\n\nOUTPUT\n%s", title, workspace.Name, workspace.Dir, output)
 }
 
 func tofuResourceBreadcrumb(workspace, resource string) string {

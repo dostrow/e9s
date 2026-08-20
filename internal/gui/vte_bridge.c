@@ -8,6 +8,9 @@
 typedef struct {
     GPid child_pid;
     guint64 generation;
+    gboolean spawning;
+    gboolean exited;
+    int exit_status;
 } E9sVteState;
 
 typedef struct {
@@ -34,21 +37,28 @@ static void e9s_vte_spawned(VteTerminal *terminal, GPid pid, GError *error, gpoi
         return;
     }
     if (error != NULL) {
-        gchar *message = g_strdup_printf("\r\nUnable to start Session Manager plugin: %s\r\n", error->message);
+        gchar *message = g_strdup_printf("\r\nUnable to start terminal command: %s\r\n", error->message);
         e9s_vte_feed_status(terminal, message);
         g_free(message);
         state->child_pid = 0;
+        state->spawning = FALSE;
+        state->exited = TRUE;
+        state->exit_status = -1;
         g_free(spawn);
         return;
     }
     state->child_pid = pid;
+    state->spawning = FALSE;
     g_free(spawn);
 }
 
 static void e9s_vte_child_exited(VteTerminal *terminal, int status, gpointer user_data) {
     E9sVteState *state = user_data;
     state->child_pid = 0;
-    gchar *message = g_strdup_printf("\r\nECS Exec session ended (status %d).\r\n", status);
+    state->spawning = FALSE;
+    state->exited = TRUE;
+    state->exit_status = status;
+    gchar *message = g_strdup_printf("\r\nCommand ended (status %d).\r\n", status);
     e9s_vte_feed_status(terminal, message);
     g_free(message);
 }
@@ -72,6 +82,9 @@ void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv) {
         state->child_pid = 0;
     }
     state->generation++;
+    state->spawning = TRUE;
+    state->exited = FALSE;
+    state->exit_status = 0;
     E9sVteSpawn *spawn = g_new0(E9sVteSpawn, 1);
     spawn->state = state;
     spawn->generation = state->generation;
@@ -96,11 +109,25 @@ void e9s_vte_terminal_stop(GtkWidget *widget) {
     E9sVteState *state = e9s_vte_state(widget);
     if (state != NULL) {
         state->generation++;
+        state->spawning = FALSE;
         if (state->child_pid != 0) {
             kill(state->child_pid, SIGHUP);
             state->child_pid = 0;
         }
     }
+}
+
+gboolean e9s_vte_terminal_running(GtkWidget *widget) {
+    E9sVteState *state = e9s_vte_state(widget);
+    return state != NULL && (state->spawning || state->child_pid != 0);
+}
+
+int e9s_vte_terminal_exit_status(GtkWidget *widget) {
+    E9sVteState *state = e9s_vte_state(widget);
+    if (state == NULL || !state->exited) {
+        return 0;
+    }
+    return state->exit_status;
 }
 
 void e9s_vte_terminal_reset(GtkWidget *widget) {

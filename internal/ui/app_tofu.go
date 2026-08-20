@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/tofu"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -128,6 +129,15 @@ func (a App) runTofuApply() (App, tea.Cmd) {
 	})
 }
 
+func (a App) confirmTofuApply() (App, tea.Cmd) {
+	message := fmt.Sprintf("Run apply in %s?", a.tofuDir)
+	if a.state == viewTofuPlan && a.tofuPlanFile != "" && a.tofuPlanView.Plan() != nil {
+		message = fmt.Sprintf("Apply this reviewed plan (%s)?", tofu.FormatPlanSummary(a.tofuPlanView.Plan()))
+	}
+	a.confirm = NewConfirm(ConfirmTofuApply, message)
+	return a, nil
+}
+
 func (a *App) cleanupTofuPlanFile() {
 	a.cleanupTofuPlanFileExcept("")
 }
@@ -153,6 +163,12 @@ func (a App) runTofuInit() (App, tea.Cmd) {
 		}
 		return tofuInitDoneMsg{"Init completed successfully"}
 	}
+}
+
+func (a App) confirmTofuInit() (App, tea.Cmd) {
+	a.confirm = NewConfirm(ConfirmTofuInit,
+		fmt.Sprintf("Run init in %s? This may update providers, modules, and the dependency lock file.", a.tofuDir))
+	return a, nil
 }
 
 func (a App) saveTofuDir() (App, tea.Cmd) {
