@@ -171,7 +171,7 @@ memory than a cached rebuild.
 ## Hyprland smoke checklist
 
 1. Run with `GDK_BACKEND=wayland` and confirm `hyprctl clients` reports
-   `xwayland: false` for `com.github.dostrow.e9s.gui`.
+   `xwayland: false` for `io.github.dostrow.e9s`.
 2. Exercise 960x720, 1280x800, and a normal tiled size.
 3. Repeat on monitors at scale 1.0 and a fractional scale such as 1.25.
 4. Check keyboard focus for `/`, `Enter`, `Escape`, `Ctrl+R`, `Ctrl+P`, and `?`.

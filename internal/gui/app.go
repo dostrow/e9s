@@ -15,7 +15,11 @@ import (
 	"github.com/dostrow/e9s/internal/tofu"
 )
 
-const applicationID = "com.github.dostrow.e9s.gui"
+// applicationID is the stable reverse-DNS identity shared by the GTK
+// application, desktop entry, icon, AppStream metadata, and portable bundles.
+// Keep user configuration under the existing e9s XDG directory; this identity
+// is for desktop integration rather than configuration storage.
+const applicationID = "io.github.dostrow.e9s"
 
 type ECSService interface {
 	ListClusters(context.Context) ([]model.Cluster, error)
