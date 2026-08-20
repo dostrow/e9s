@@ -53,6 +53,7 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 		`notebook.e9s-settings-notebook > header > tabs`,
 		`window dropdown > button`,
 		`window spinbutton > button`,
+		`popover > contents, tooltip`,
 		"background-color:",
 	} {
 		if !strings.Contains(css, fragment) {
@@ -61,6 +62,9 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 	}
 	if strings.Contains(css, "window button {") {
 		t.Fatal("built-in appearance must not restore borders on flat navigation buttons")
+	}
+	if strings.Contains(css, "%!") {
+		t.Fatalf("appearance CSS contains a formatting error:\n%s", css)
 	}
 }
 

@@ -194,7 +194,8 @@ window label, window image, window checkbutton, window switch,
 window notebook, window notebook tab, window popover,
 window entry, window searchentry, window text,
 window button, window dropdown { color: %s; }
-popover, tooltip { color: %s; background-color: %s; }
+popover { color: %s; background-color: transparent; }
+popover > contents, tooltip { color: %s; background-color: %s; }
 popover label, tooltip label { color: %s; }
 .e9s-root { color: %s; background-color: %s; }
 .e9s-root .toolbar, .e9s-root .status-bar { color: %s; background-color: %s; }
@@ -261,7 +262,7 @@ window switch > slider, .e9s-settings switch > slider {
 window columnview > header > button,
 window .e9s-table > header > button { color: %s; background-color: %s; }
 `, palette.foreground.String(), palette.background.String(), palette.foreground.String(),
-			palette.foreground.String(), palette.surface.String(), palette.foreground.String(),
+			palette.foreground.String(), palette.foreground.String(), palette.surface.String(), palette.foreground.String(),
 			palette.foreground.String(), palette.background.String(), palette.foreground.String(), palette.background.String(),
 			palette.foreground.String(), palette.surface.String(), palette.accent.String(),
 			palette.foreground.String(), palette.surface.String(),

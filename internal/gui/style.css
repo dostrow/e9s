@@ -161,6 +161,27 @@
   box-shadow: inset 0 -2px currentColor;
 }
 
+/* The editor menu is an application-owned popover. Keep its outer native
+ * surface transparent so only the rounded theme surface is visible. */
+popover.e9s-editor-context-menu {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+popover.e9s-editor-context-menu > contents {
+  padding: 2px;
+  border-radius: 8px;
+}
+
+popover.e9s-editor-context-menu button.editor-context-action {
+  min-width: 120px;
+  padding: 5px 12px;
+  border: 0;
+  box-shadow: none;
+}
+
 /* Some GTK themes implement a Material ripple by allocating a large circular
  * check node around a theme-private SVG. Keep e9s controls compact and use a
  * standard symbolic glyph while retaining the active theme's currentColor. */
