@@ -427,13 +427,11 @@ func (w *mainWindow) rebuildSSMPrefixRail() {
 	if len(prefixes) == 0 {
 		return
 	}
-	w.savedSSMPrefixLabel = gtk.NewLabel("SAVED PREFIXES")
-	w.savedSSMPrefixLabel.SetXAlign(0)
-	w.savedSSMPrefixLabel.AddCSSClass("section-title")
+	w.savedSSMPrefixLabel = newModuleRailSectionLabel("SAVED PREFIXES")
 	w.ssmModuleItems.Append(w.savedSSMPrefixLabel)
 	for _, prefix := range prefixes {
 		prefix := prefix
-		button := newModuleRailButton(prefix.Name, func() {
+		button := newSavedModuleRailButton(prefix.Name, func() {
 			if !w.guardEditorNavigation(func() { w.loadSSMPath(prefix.Prefix, prefix.Name) }) {
 				w.loadSSMPath(prefix.Prefix, prefix.Name)
 			}

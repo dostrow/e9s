@@ -67,11 +67,24 @@
 }
 
 .module-subitems {
-  margin-left: 10px;
+  /* Keep child navigation visually subordinate to the module heading. The
+   * heading includes its own chevron, so a shallow indent makes its children
+   * appear to start to the left of the heading text. */
+  margin-left: 30px;
 }
 
 .module-subitem {
   padding-left: 12px;
+}
+
+.module-saved-section {
+  /* Saved-section headings are peers of the module's built-in sub-items. */
+  margin-left: 14px;
+}
+
+.module-saved-item {
+  /* User-defined entries are children of the saved-section heading. */
+  padding-left: 28px;
 }
 
 .muted {

@@ -748,13 +748,11 @@ func (w *mainWindow) rebuildS3SearchRail() {
 	if len(searches) == 0 {
 		return
 	}
-	w.savedS3SearchesLabel = gtk.NewLabel("SAVED SEARCHES")
-	w.savedS3SearchesLabel.SetXAlign(0)
-	w.savedS3SearchesLabel.AddCSSClass("section-title")
+	w.savedS3SearchesLabel = newModuleRailSectionLabel("SAVED SEARCHES")
 	w.s3ModuleItems.Append(w.savedS3SearchesLabel)
 	for _, search := range searches {
 		search := search
-		button := newModuleRailButton(search.Name, func() {
+		button := newSavedModuleRailButton(search.Name, func() {
 			load := func() { w.loadS3Buckets(search.Filter, search.Name) }
 			if !w.guardEditorNavigation(load) {
 				load()

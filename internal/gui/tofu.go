@@ -776,11 +776,11 @@ func (w *mainWindow) rebuildTofuWorkspaceRail() {
 	if len(saved) == 0 {
 		return
 	}
-	w.savedTofuWorkspaceLabel = newDynamoRailLabel("SAVED WORKSPACES")
+	w.savedTofuWorkspaceLabel = newModuleRailSectionLabel("SAVED WORKSPACES")
 	w.tofuModuleItems.Append(w.savedTofuWorkspaceLabel)
 	for _, workspace := range saved {
 		workspace := workspace
-		button := newModuleRailButton(workspace.Name, func() { w.openSavedTofuWorkspace(workspace) })
+		button := newSavedModuleRailButton(workspace.Name, func() { w.openSavedTofuWorkspace(workspace) })
 		button.SetGroup(w.clustersNavButton)
 		button.SetTooltipText(workspace.Dir)
 		w.tofuModuleItems.Append(button)

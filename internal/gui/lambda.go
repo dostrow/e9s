@@ -428,13 +428,11 @@ func (w *mainWindow) rebuildLambdaSearchRail() {
 	if len(searches) == 0 {
 		return
 	}
-	w.savedLambdaSearchesLabel = gtk.NewLabel("SAVED SEARCHES")
-	w.savedLambdaSearchesLabel.SetXAlign(0)
-	w.savedLambdaSearchesLabel.AddCSSClass("section-title")
+	w.savedLambdaSearchesLabel = newModuleRailSectionLabel("SAVED SEARCHES")
 	w.lambdaModuleItems.Append(w.savedLambdaSearchesLabel)
 	for _, search := range searches {
 		search := search
-		button := newModuleRailButton(search.Name, func() {
+		button := newSavedModuleRailButton(search.Name, func() {
 			if !w.guardEditorNavigation(func() { w.loadLambdaFunctions(search.Filter, search.Name) }) {
 				w.loadLambdaFunctions(search.Filter, search.Name)
 			}

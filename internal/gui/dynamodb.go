@@ -842,11 +842,11 @@ func (w *mainWindow) rebuildDynamoRail() {
 	w.savedDynamoTablesLabel = nil
 	w.savedDynamoQueriesLabel = nil
 	if tables := w.options.ConfigDynamoTables(); len(tables) > 0 {
-		w.savedDynamoTablesLabel = newDynamoRailLabel("SAVED TABLES")
+		w.savedDynamoTablesLabel = newModuleRailSectionLabel("SAVED TABLES")
 		w.dynamoModuleItems.Append(w.savedDynamoTablesLabel)
 		for _, saved := range tables {
 			saved := saved
-			button := newModuleRailButton(saved.Name, func() { w.loadDynamoItems(saved.Table, saved.Name, "") })
+			button := newSavedModuleRailButton(saved.Name, func() { w.loadDynamoItems(saved.Table, saved.Name, "") })
 			button.SetGroup(w.clustersNavButton)
 			button.SetTooltipText(saved.Table)
 			w.dynamoModuleItems.Append(button)
@@ -854,24 +854,17 @@ func (w *mainWindow) rebuildDynamoRail() {
 		}
 	}
 	if queries := w.options.ConfigDynamoQueries(); len(queries) > 0 {
-		w.savedDynamoQueriesLabel = newDynamoRailLabel("SAVED QUERIES")
+		w.savedDynamoQueriesLabel = newModuleRailSectionLabel("SAVED QUERIES")
 		w.dynamoModuleItems.Append(w.savedDynamoQueriesLabel)
 		for _, saved := range queries {
 			saved := saved
-			button := newModuleRailButton(saved.Name, func() { w.loadDynamoPartiQL(saved.Statement, saved.Name) })
+			button := newSavedModuleRailButton(saved.Name, func() { w.loadDynamoPartiQL(saved.Statement, saved.Name) })
 			button.SetGroup(w.clustersNavButton)
 			button.SetTooltipText(saved.Statement)
 			w.dynamoModuleItems.Append(button)
 			w.savedDynamoQueryButtons = append(w.savedDynamoQueryButtons, button)
 		}
 	}
-}
-
-func newDynamoRailLabel(text string) *gtk.Label {
-	label := gtk.NewLabel(text)
-	label.SetXAlign(0)
-	label.AddCSSClass("section-title")
-	return label
 }
 
 func (w *mainWindow) loadDynamoPartiQL(statement, savedName string) {

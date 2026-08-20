@@ -751,11 +751,11 @@ func (w *mainWindow) rebuildSQSRail() {
 	if len(savedQueues) == 0 {
 		return
 	}
-	w.savedSQSQueuesLabel = newDynamoRailLabel("SAVED QUEUES")
+	w.savedSQSQueuesLabel = newModuleRailSectionLabel("SAVED QUEUES")
 	w.sqsModuleItems.Append(w.savedSQSQueuesLabel)
 	for _, saved := range savedQueues {
 		saved := saved
-		button := newModuleRailButton(saved.Name, func() { w.openSavedSQSQueue(saved) })
+		button := newSavedModuleRailButton(saved.Name, func() { w.openSavedSQSQueue(saved) })
 		button.SetGroup(w.clustersNavButton)
 		button.SetTooltipText(saved.URL)
 		w.sqsModuleItems.Append(button)

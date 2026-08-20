@@ -734,6 +734,13 @@ type moduleRailSection struct {
 	activate    func()
 }
 
+const (
+	moduleRailContentWidth       = 240
+	moduleRailInitialWidth       = 255
+	moduleRailBuiltInMaxChars    = 24
+	moduleRailSavedEntryMaxChars = 18
+)
+
 func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *mainWindow {
 	w := &mainWindow{
 		ctx:                ctx,
@@ -1412,7 +1419,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	sidebar := gtk.NewBox(gtk.OrientationVertical, 6)
 	sidebar.AddCSSClass("mode-sidebar")
-	sidebar.SetSizeRequest(175, -1)
+	sidebar.SetSizeRequest(moduleRailContentWidth, -1)
 	modules := gtk.NewLabel("MODULES")
 	modules.SetXAlign(0)
 	modules.AddCSSClass("section-title")
@@ -1552,13 +1559,11 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.costModuleItems.Append(w.costAnomaliesNavButton)
 	w.costModuleItems.Append(w.costResourcesNavButton)
 	if w.options.Config != nil && len(w.options.Config.CostViews) > 0 {
-		label := gtk.NewLabel("SAVED VIEWS")
-		label.SetXAlign(0)
-		label.AddCSSClass("section-title")
+		label := newModuleRailSectionLabel("SAVED VIEWS")
 		w.costModuleItems.Append(label)
 		for _, saved := range w.options.Config.CostViews {
 			view := saved
-			button := newModuleRailButton(view.Name, func() { w.openCostExplorerView(pageCostSavedView, view) })
+			button := newSavedModuleRailButton(view.Name, func() { w.openCostExplorerView(pageCostSavedView, view) })
 			button.SetGroup(w.clustersNavButton)
 			w.costModuleItems.Append(button)
 			w.costSavedNavButtons = append(w.costSavedNavButtons, button)
@@ -2042,7 +2047,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebarShell.Append(w.settingsNavButton)
 	mainSplit.SetStartChild(sidebarShell)
 	mainSplit.SetEndChild(w.terminalDockSplit)
-	mainSplit.SetPosition(190)
+	mainSplit.SetPosition(moduleRailInitialWidth)
 	mainSplit.SetResizeStartChild(false)
 	mainSplit.SetResizeEndChild(true)
 	mainSplit.SetShrinkStartChild(false)
@@ -2089,12 +2094,16 @@ func preparePaneCard(widget *gtk.Widget) {
 }
 
 func newModuleRailButton(label string, activate func()) *gtk.ToggleButton {
+	return newSizedModuleRailButton(label, moduleRailBuiltInMaxChars, activate)
+}
+
+func newSizedModuleRailButton(label string, maxChars int, activate func()) *gtk.ToggleButton {
 	text := gtk.NewLabel(label)
 	text.SetXAlign(0)
 	text.SetHAlign(gtk.AlignFill)
 	text.SetHExpand(true)
 	text.SetWidthChars(1)
-	text.SetMaxWidthChars(18)
+	text.SetMaxWidthChars(maxChars)
 	text.SetEllipsize(pango.EllipsizeEnd)
 	button := gtk.NewToggleButton()
 	button.SetChild(text)
@@ -2102,6 +2111,20 @@ func newModuleRailButton(label string, activate func()) *gtk.ToggleButton {
 	button.AddCSSClass("flat")
 	button.AddCSSClass("module-subitem")
 	button.ConnectClicked(activate)
+	return button
+}
+
+func newModuleRailSectionLabel(text string) *gtk.Label {
+	label := gtk.NewLabel(text)
+	label.SetXAlign(0)
+	label.AddCSSClass("section-title")
+	label.AddCSSClass("module-saved-section")
+	return label
+}
+
+func newSavedModuleRailButton(label string, activate func()) *gtk.ToggleButton {
+	button := newSizedModuleRailButton(label, moduleRailSavedEntryMaxChars, activate)
+	button.AddCSSClass("module-saved-item")
 	return button
 }
 

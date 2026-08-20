@@ -55,13 +55,11 @@ func (w *mainWindow) rebuildSavedLogRail() {
 	if len(paths) == 0 {
 		return
 	}
-	w.savedLogsLabel = gtk.NewLabel("SAVED SEARCHES")
-	w.savedLogsLabel.SetXAlign(0)
-	w.savedLogsLabel.AddCSSClass("section-title")
+	w.savedLogsLabel = newModuleRailSectionLabel("SAVED SEARCHES")
 	w.cloudWatchModuleItems.Append(w.savedLogsLabel)
 	for _, path := range paths {
 		path := path
-		button := newModuleRailButton(path.Name, func() {
+		button := newSavedModuleRailButton(path.Name, func() {
 			if !w.guardEditorNavigation(func() { w.openSavedLog(path) }) {
 				w.openSavedLog(path)
 			}

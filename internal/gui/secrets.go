@@ -254,13 +254,11 @@ func (w *mainWindow) rebuildSecretFilterRail() {
 	if len(filters) == 0 {
 		return
 	}
-	w.savedSecretFiltersLabel = gtk.NewLabel("SAVED FILTERS")
-	w.savedSecretFiltersLabel.SetXAlign(0)
-	w.savedSecretFiltersLabel.AddCSSClass("section-title")
+	w.savedSecretFiltersLabel = newModuleRailSectionLabel("SAVED FILTERS")
 	w.secretsModuleItems.Append(w.savedSecretFiltersLabel)
 	for _, filter := range filters {
 		filter := filter
-		button := newModuleRailButton(filter.Name, func() {
+		button := newSavedModuleRailButton(filter.Name, func() {
 			if !w.guardEditorNavigation(func() { w.loadSecrets(filter.Filter, filter.Name) }) {
 				w.loadSecrets(filter.Filter, filter.Name)
 			}
