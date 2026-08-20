@@ -21,6 +21,7 @@ var settingsModuleChoices = []settingsChoice{
 	{label: "CloudWatch Alarms", value: "CloudWatch Alarms"},
 	{label: "CloudWatch Logs", value: "CloudWatch Logs"},
 	{label: "CodeBuild", value: "CodeBuild"},
+	{label: "Cost Explorer", value: "Cost Explorer"},
 	{label: "DynamoDB", value: "DynamoDB"},
 	{label: "EC2", value: "EC2"},
 	{label: "ECR", value: "ECR"},
@@ -223,6 +224,7 @@ func (w *mainWindow) showSettings() {
 	awsPage.Append(settingsRow("Save directory", saveDirectory))
 	awsPage.Append(settingsRow("Pause at known session cost (USD; 0 disables)", costGuard))
 	awsPage.Append(settingsNote("Profile and region changes are saved immediately and take effect the next time e9s starts. Existing AWS clients are never replaced mid-request."))
+	awsPage.Append(settingsNote("Cost Explorer results are cached in memory for 24 hours or until e9s exits. Only the explicitly confirmed Force paid refresh action bypasses that cache."))
 	if w.options.RequestSnapshot != nil {
 		snapshot := w.options.RequestSnapshot()
 		awsPage.Append(settingsNote(fmt.Sprintf("This session: %d AWS API operations observed; at least $%.4f in directly attributable request charges. S3, SQS, DynamoDB capacity, data transfer, and free-tier effects are not estimated.", snapshot.Total, snapshot.EstimatedCostUSD)))

@@ -26,6 +26,7 @@ const (
 	moduleSQS              = "sqs"
 	moduleRoute53          = "route53"
 	moduleTofu             = "tofu"
+	moduleCostExplorer     = "cost-explorer"
 )
 
 func compactStatusMessage(message string) string {
@@ -69,6 +70,8 @@ func moduleForPage(page string) string {
 		return moduleRoute53
 	case pageTofuWorkspaces, pageTofuResources, pageTofuPlan:
 		return moduleTofu
+	case pageCostOverview, pageCostBreakdown, pageCostAnomalies, pageCostResources, pageCostSavedView:
+		return moduleCostExplorer
 	default:
 		return ""
 	}

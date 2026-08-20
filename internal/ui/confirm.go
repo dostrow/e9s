@@ -37,6 +37,7 @@ const (
 	ConfirmRegisterTaskDefinition
 	ConfirmTofuInit
 	ConfirmTofuApply
+	ConfirmCostRefresh
 )
 
 type ConfirmModel struct {

@@ -44,6 +44,22 @@ The full ordered module expansion is complete, including the final
 OpenTofu/Terraform data-and-workflow module. Further work can now be prioritized
 as cross-module refinement rather than basic frontend coverage.
 
+## Cost Explorer
+
+Cost Explorer is a shared GUI/TUI module with lazy Overview, Breakdown,
+Anomalies, and opt-in Resources views. Configured `cost_views` appear as saved
+sub-items. Query results live only in process memory, expire after 24 hours,
+and are discarded when e9s exits. Cache keys include the effective AWS
+session, billing view, date range, metric, grouping, filters, and resource/
+forecast options.
+
+The module never auto-refreshes. Ordinary navigation and Refresh reuse a valid
+cache entry. **Force paid refresh** is the only cache-bypass path and always
+requires confirmation that Cost Explorer charges $0.01 per paginated API
+request, including the minimum request count for the active view. The UI shows
+cache time, data-through time, and actual page count. Resource-level results
+are explicitly opt-in, limited to 14 days, and may lag aggregate data.
+
 ## Cost-conscious refresh policy
 
 Both frontends share conservative refresh classes instead of applying the

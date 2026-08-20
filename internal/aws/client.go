@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -37,6 +38,7 @@ type Client struct {
 	DynamoDB       *dynamodb.Client
 	SQS            *sqs.Client
 	CodeBuild      *codebuild.Client
+	CostExplorer   *costexplorer.Client
 	EC2            *ec2.Client
 	ELBV2          *elasticloadbalancingv2.Client
 	ECR            *ecr.Client
@@ -64,6 +66,8 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		return nil, err
 	}
 
+	ceConfig := cfg
+	ceConfig.Region = "us-east-1"
 	return &Client{
 		ECS:            ecs.NewFromConfig(cfg),
 		AppAutoScaling: applicationautoscaling.NewFromConfig(cfg),
@@ -76,6 +80,7 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		DynamoDB:       dynamodb.NewFromConfig(cfg),
 		SQS:            sqs.NewFromConfig(cfg),
 		CodeBuild:      codebuild.NewFromConfig(cfg),
+		CostExplorer:   costexplorer.NewFromConfig(ceConfig),
 		EC2:            ec2.NewFromConfig(cfg),
 		ELBV2:          elasticloadbalancingv2.NewFromConfig(cfg),
 		ECR:            ecr.NewFromConfig(cfg),
@@ -120,6 +125,9 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	c.DynamoDB = dynamodb.NewFromConfig(cfg)
 	c.SQS = sqs.NewFromConfig(cfg)
 	c.CodeBuild = codebuild.NewFromConfig(cfg)
+	ceConfig := cfg
+	ceConfig.Region = "us-east-1"
+	c.CostExplorer = costexplorer.NewFromConfig(ceConfig)
 	c.EC2 = ec2.NewFromConfig(cfg)
 	c.ELBV2 = elasticloadbalancingv2.NewFromConfig(cfg)
 	c.ECR = ecr.NewFromConfig(cfg)

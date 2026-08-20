@@ -66,7 +66,8 @@ func (w *mainWindow) autoRefreshClass() refreshpolicy.Class {
 		return refreshpolicy.Operational
 	case pageS3Buckets, pageS3Objects, pageSQSQueues, pageSQSMessages, pageSecrets, pageSSM:
 		return refreshpolicy.Metered
-	case pageDynamoItems, pageTofuWorkspaces, pageTofuResources, pageTofuPlan, pageSavedLogSearch:
+	case pageDynamoItems, pageTofuWorkspaces, pageTofuResources, pageTofuPlan, pageSavedLogSearch,
+		pageCostOverview, pageCostBreakdown, pageCostAnomalies, pageCostResources, pageCostSavedView:
 		return refreshpolicy.Manual
 	default:
 		return refreshpolicy.Inventory

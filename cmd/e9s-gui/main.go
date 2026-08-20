@@ -75,6 +75,7 @@ func main() {
 				SQS:             service.NewSQS(client),
 				Route53:         service.NewRoute53(client),
 				Tofu:            service.NewTofu(),
+				CostExplorer:    service.NewCostExplorer(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

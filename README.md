@@ -536,6 +536,14 @@ From the Clusters view, `Enter` drills into the selected cluster's member instan
 | --- | --- |
 | `d` | Delete selected saved entry |
 
+### Cost Explorer
+
+| Key | Action |
+| --- | --- |
+| `v` | Choose Overview, Breakdown, Anomalies, Resources, or a saved view |
+| `R` | Confirm and force a paid cache refresh |
+| `/` | Filter the current result rows |
+
 ## Configuration
 
 Config is stored at `~/.config/e9s/config.yaml` (XDG convention). Press `ctrl+e` to edit it in your `$EDITOR`, or it hot-reloads on file changes.
@@ -546,6 +554,10 @@ defaults:
   region: us-east-2
   profile: ""
   refresh_interval: 5
+  # Pause automatic polling after inactivity; 0 disables the idle pause.
+  idle_timeout: 300
+  # Pause automatic polling at this conservative known session cost; 0 disables.
+  cost_guard_usd: 1
   default_mode: ""        # start in this mode (e.g. "ECS", "CWL", "SQS")
   save_dir: ~/Downloads   # default directory for file saves
 
@@ -571,6 +583,7 @@ modules:
   rds: true
   route53: true
   tofu: true
+  cost_explorer: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -581,6 +594,11 @@ log_paths: []
 dynamo_tables: []
 dynamo_queries: []
 sqs_queues: []
+cost_views:
+  - name: Service spend — 30 days
+    days: 30
+    metric: UnblendedCost
+    group_by: SERVICE
 
 exclude_services: []
 ```
@@ -608,6 +626,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
 | RDS browse | `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `cloudwatch:GetMetricData` |
+| Cost Explorer | `ce:GetCostAndUsage`, `ce:GetCostForecast`, `ce:GetAnomalies`; resource view also uses `ce:GetCostAndUsageWithResources` |
 | EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSecurityGroups`, `ec2:DescribeSecurityGroupRules`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeVolumes`, `ec2:GetConsoleOutput`, `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTargetHealth` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |

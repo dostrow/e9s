@@ -38,6 +38,7 @@ const (
 	modeTofu
 	modeRoute53
 	modeRDS
+	modeCostExplorer
 )
 
 type viewState int
@@ -106,6 +107,7 @@ const (
 	viewRDSClusters
 	viewRDSInstances
 	viewRDSDetail
+	viewCostExplorer
 )
 
 type App struct {
@@ -128,6 +130,7 @@ type App struct {
 	sqs                        *service.SQS
 	route53                    *service.Route53
 	tofu                       *service.Tofu
+	costExplorer               *service.CostExplorer
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -200,6 +203,14 @@ type App struct {
 	rdsInstancesView           views.RDSInstancesModel
 	rdsClustersView            views.RDSClustersModel
 	rdsDetailView              views.RDSDetailModel
+	costView                   views.EC2ResourceListModel
+	costReport                 model.CostReport
+	costAnomalyReport          model.CostAnomalyReport
+	costCacheStatus            model.CostCacheStatus
+	costQuery                  model.CostQuery
+	costSubview                string
+	costResources              bool
+	costForecast               bool
 	regionPicker               views.RegionPickerModel
 
 	// Navigation context
@@ -316,7 +327,7 @@ type App struct {
 
 func (a App) autoRefreshClass() refreshpolicy.Class {
 	switch a.state {
-	case viewLogs, viewLogSearch, viewDynamoItems, viewDynamoItemDetail,
+	case viewLogs, viewLogSearch, viewDynamoItems, viewDynamoItemDetail, viewCostExplorer,
 		viewTofuResources, viewTofuStateDetail, viewTofuPlan, viewTofuPlanDetail:
 		return refreshpolicy.Manual
 	case viewMetrics:
@@ -356,6 +367,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		sqs:           service.NewSQS(client),
 		route53:       service.NewRoute53(client),
 		tofu:          service.NewTofu(),
+		costExplorer:  service.NewCostExplorer(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,
@@ -391,6 +403,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeTofu, "TF", cfg.ModuleTofu()},
 		{modeRoute53, "R53", cfg.ModuleRoute53()},
 		{modeRDS, "RDS", cfg.ModuleRDS()},
+		{modeCostExplorer, "COST", cfg.ModuleCostExplorer()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -441,6 +454,7 @@ func resolveDefaultMode(s string) *topMode {
 		"Tofu": modeTofu, "tofu": modeTofu, "TF": modeTofu, "tf": modeTofu, "terraform": modeTofu, "opentofu": modeTofu,
 		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
 		"RDS": modeRDS, "rds": modeRDS,
+		"Cost Explorer": modeCostExplorer, "cost explorer": modeCostExplorer, "cost": modeCostExplorer, "CE": modeCostExplorer, "ce": modeCostExplorer,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -531,6 +545,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.rdsInstancesView = a.rdsInstancesView.SetSize(w, h)
 		a.rdsClustersView = a.rdsClustersView.SetSize(w, h)
 		a.rdsDetailView = a.rdsDetailView.SetSize(w, h)
+		a.costView = a.costView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -1414,6 +1429,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = false
 		return a, nil
 
+	case costReportLoadedMsg:
+		a = a.setCostReport(msg.report, msg.status)
+		return a, nil
+
+	case costAnomaliesLoadedMsg:
+		a = a.setCostAnomalies(msg.report, msg.status)
+		return a, nil
+
 	// --- Route53 messages ---
 	case r53ZonesLoadedMsg:
 		a.r53ZonesView = a.r53ZonesView.SetZones(msg.zones)
@@ -1570,6 +1593,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.runTofuInit()
 		case ConfirmTofuApply:
 			return a.runTofuApply()
+		case ConfirmCostRefresh:
+			a.loading = true
+			return a, a.loadCostExplorer(true)
 		}
 		return a, nil
 
@@ -1770,6 +1796,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Index >= 0 && msg.Index < len(a.resourceLinks) {
 				return a.navigateEC2Resource(a.resourceLinks[msg.Index], true)
 			}
+		case PickerCostView:
+			return a.selectCostView(msg.Index)
 		}
 		return a, nil
 
@@ -2298,6 +2326,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case a.kb.TermInstance:
 				return a.terminateEC2Instance()
 			}
+		case viewCostExplorer:
+			switch k {
+			case "v":
+				return a.promptCostView()
+			case "R":
+				return a.confirmCostRefresh()
+			}
 		}
 
 		return a.delegateToActiveView(msg)
@@ -2413,6 +2448,8 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.ec2ResourceListView, cmd = a.ec2ResourceListView.Update(msg)
 	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail, viewEC2LoadBalancerDetail, viewEC2TargetGroupDetail:
 		a.ec2ResourceDetailView, cmd = a.ec2ResourceDetailView.Update(msg)
+	case viewCostExplorer:
+		a.costView, cmd = a.costView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2479,6 +2516,8 @@ func (a App) isFiltering() bool {
 		return a.rdsInstancesView.IsFiltering()
 	case viewRDSClusters:
 		return a.rdsClustersView.IsFiltering()
+	case viewCostExplorer:
+		return a.costView.IsFiltering()
 	}
 	return false
 }
@@ -2486,6 +2525,9 @@ func (a App) isFiltering() bool {
 // --- View ---
 
 func (a App) buildBreadcrumbs() []string {
+	if a.state == viewCostExplorer {
+		return []string{"Cost Explorer", a.costSubview}
+	}
 	if a.state == viewTaskDefs || a.state == viewTaskDefDetail {
 		crumbs := []string{"Task Definitions"}
 		if a.selectedTaskDef != "" {
@@ -2613,6 +2655,8 @@ func (a App) View() string {
 		content = a.rdsClustersView.View()
 	case viewRDSDetail:
 		content = a.rdsDetailView.View()
+	case viewCostExplorer:
+		content = a.costView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -2801,6 +2845,8 @@ func (a App) helpText() string {
 		primary = "[enter] member instances  [tab] all instances"
 	case viewRDSDetail:
 		primary = "[o] linked resources"
+	case viewCostExplorer:
+		primary = "[v] views  [R] force paid refresh  [/] filter"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3215,6 +3261,12 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewCostExplorer:
+		context = []kv{
+			{"v", "Select overview, breakdown, anomalies, resources, or a saved view"},
+			{"R", "Force paid refresh (confirmation required)"},
+			{"/", "Filter current rows"},
+		}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -3464,14 +3516,13 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openR53Zones()
 	case modeRDS:
 		return a.openRDSClusters()
+	case modeCostExplorer:
+		return a.openCostExplorer("overview", nil)
 	}
 	return a, nil
 }
 
 func (a App) switchMode(mode topMode) (App, tea.Cmd) {
-	if mode == a.mode {
-		return a, nil
-	}
 	a.err = nil
 	a.errorDetails = ErrorDetailsModel{}
 	a.mode = mode
@@ -3512,6 +3563,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openR53Zones()
 	case modeRDS:
 		return a.openRDSClusters()
+	case modeCostExplorer:
+		return a.openCostExplorer("overview", nil)
 	}
 	return a, nil
 }
@@ -3755,6 +3808,8 @@ func (a App) goBack() (App, tea.Cmd) {
 	case viewRDSDetail:
 		a.state = viewRDSInstances
 		return a, nil
+	case viewCostExplorer:
+		return a.showModePicker()
 	case viewEC2Instances:
 		return a.showModePicker()
 	case viewEC2Detail:

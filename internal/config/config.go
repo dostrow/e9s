@@ -46,6 +46,17 @@ type TofuDirEntry struct {
 	Dir  string `yaml:"dir"`
 }
 
+// CostView is a reusable Cost Explorer query exposed beneath the module's
+// Saved Views section in both frontends.
+type CostView struct {
+	Name          string `yaml:"name"`
+	Days          int    `yaml:"days,omitempty"`
+	Metric        string `yaml:"metric,omitempty"`
+	GroupBy       string `yaml:"group_by,omitempty"`
+	ServiceFilter string `yaml:"service_filter,omitempty"`
+	BillingView   string `yaml:"billing_view,omitempty"`
+}
+
 type DynamoTable struct {
 	Name  string `yaml:"name"`
 	Table string `yaml:"table"`
@@ -84,7 +95,7 @@ type Config struct {
 		RefreshInterval int     `yaml:"refresh_interval"`
 		IdleTimeout     int     `yaml:"idle_timeout"`   // seconds of inactivity before pausing refresh (0 = never, default 300)
 		CostGuardUSD    float64 `yaml:"cost_guard_usd"` // pause automatic AWS polling at this known session cost (0 = disabled)
-		DefaultMode     string  `yaml:"default_mode"`   // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
+		DefaultMode     string  `yaml:"default_mode"`   // module name/alias, or "" for picker
 		SaveDirectory   string  `yaml:"save_directory"` // default directory for file save dialogs
 	} `yaml:"defaults"`
 	Display struct {
@@ -101,22 +112,23 @@ type Config struct {
 		} `yaml:"appearance,omitempty"`
 	} `yaml:"gui,omitempty"`
 	Modules struct {
-		ECS        *bool `yaml:"ecs"`
-		CloudWatch *bool `yaml:"cloudwatch"` // legacy: maps to CWLogs
-		CWLogs     *bool `yaml:"cloudwatch_logs"`
-		CWAlarms   *bool `yaml:"cloudwatch_alarms"`
-		SSM        *bool `yaml:"ssm"`
-		SM         *bool `yaml:"sm"`
-		S3         *bool `yaml:"s3"`
-		Lambda     *bool `yaml:"lambda"`
-		DynamoDB   *bool `yaml:"dynamodb"`
-		SQS        *bool `yaml:"sqs"`
-		CodeBuild  *bool `yaml:"codebuild"`
-		EC2        *bool `yaml:"ec2_instances"`
-		ECR        *bool `yaml:"ecr"`
-		RDS        *bool `yaml:"rds"`
-		Route53    *bool `yaml:"route53"`
-		Tofu       *bool `yaml:"tofu"`
+		ECS          *bool `yaml:"ecs"`
+		CloudWatch   *bool `yaml:"cloudwatch"` // legacy: maps to CWLogs
+		CWLogs       *bool `yaml:"cloudwatch_logs"`
+		CWAlarms     *bool `yaml:"cloudwatch_alarms"`
+		SSM          *bool `yaml:"ssm"`
+		SM           *bool `yaml:"sm"`
+		S3           *bool `yaml:"s3"`
+		Lambda       *bool `yaml:"lambda"`
+		DynamoDB     *bool `yaml:"dynamodb"`
+		SQS          *bool `yaml:"sqs"`
+		CodeBuild    *bool `yaml:"codebuild"`
+		EC2          *bool `yaml:"ec2_instances"`
+		ECR          *bool `yaml:"ecr"`
+		RDS          *bool `yaml:"rds"`
+		Route53      *bool `yaml:"route53"`
+		Tofu         *bool `yaml:"tofu"`
+		CostExplorer *bool `yaml:"cost_explorer"`
 	} `yaml:"modules"`
 	KeyBindings     map[string]string `yaml:"keybindings"` // action → key override
 	ExcludeServices []string          `yaml:"exclude_services"`
@@ -129,6 +141,7 @@ type Config struct {
 	SQSQueues       []SQSQueueEntry   `yaml:"sqs_queues"`
 	LogPaths        []LogPathEntry    `yaml:"log_paths"`
 	TofuDirs        []TofuDirEntry    `yaml:"tofu_dirs"`
+	CostViews       []CostView        `yaml:"cost_views,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -263,6 +276,14 @@ func (c Config) Validate() error {
 	}
 	if c.Display.MaxEvents < 0 || c.Display.MaxLogLines < 0 {
 		return fmt.Errorf("display limits cannot be negative")
+	}
+	for index, view := range c.CostViews {
+		if strings.TrimSpace(view.Name) == "" {
+			return fmt.Errorf("cost_views[%d].name cannot be empty", index)
+		}
+		if view.Days < 0 {
+			return fmt.Errorf("cost_views[%d].days cannot be negative", index)
+		}
 	}
 	return nil
 }
@@ -484,17 +505,18 @@ func boolDefault(b *bool, def bool) bool {
 	return *b
 }
 
-func (c *Config) ModuleS3() bool        { return boolDefault(c.Modules.S3, true) }
-func (c *Config) ModuleLambda() bool    { return boolDefault(c.Modules.Lambda, true) }
-func (c *Config) ModuleDynamoDB() bool  { return boolDefault(c.Modules.DynamoDB, true) }
-func (c *Config) ModuleSQS() bool       { return boolDefault(c.Modules.SQS, true) }
-func (c *Config) ModuleCodeBuild() bool { return boolDefault(c.Modules.CodeBuild, true) }
-func (c *Config) ModuleEC2() bool       { return boolDefault(c.Modules.EC2, true) }
-func (c *Config) ModuleECR() bool       { return boolDefault(c.Modules.ECR, true) }
-func (c *Config) ModuleRDS() bool       { return boolDefault(c.Modules.RDS, true) }
-func (c *Config) ModuleRoute53() bool   { return boolDefault(c.Modules.Route53, true) }
-func (c *Config) ModuleTofu() bool      { return boolDefault(c.Modules.Tofu, true) }
-func (c *Config) ModuleECS() bool       { return boolDefault(c.Modules.ECS, true) }
+func (c *Config) ModuleS3() bool           { return boolDefault(c.Modules.S3, true) }
+func (c *Config) ModuleLambda() bool       { return boolDefault(c.Modules.Lambda, true) }
+func (c *Config) ModuleDynamoDB() bool     { return boolDefault(c.Modules.DynamoDB, true) }
+func (c *Config) ModuleSQS() bool          { return boolDefault(c.Modules.SQS, true) }
+func (c *Config) ModuleCodeBuild() bool    { return boolDefault(c.Modules.CodeBuild, true) }
+func (c *Config) ModuleEC2() bool          { return boolDefault(c.Modules.EC2, true) }
+func (c *Config) ModuleECR() bool          { return boolDefault(c.Modules.ECR, true) }
+func (c *Config) ModuleRDS() bool          { return boolDefault(c.Modules.RDS, true) }
+func (c *Config) ModuleRoute53() bool      { return boolDefault(c.Modules.Route53, true) }
+func (c *Config) ModuleTofu() bool         { return boolDefault(c.Modules.Tofu, true) }
+func (c *Config) ModuleCostExplorer() bool { return boolDefault(c.Modules.CostExplorer, true) }
+func (c *Config) ModuleECS() bool          { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {
 	if c.Modules.CWLogs != nil {
 		return *c.Modules.CWLogs

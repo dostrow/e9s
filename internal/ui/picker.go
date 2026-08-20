@@ -31,6 +31,7 @@ const (
 	PickerSetAlarmState
 	PickerTofuDir
 	PickerResourceLink
+	PickerCostView
 )
 
 type PickerModel struct {

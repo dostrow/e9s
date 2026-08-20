@@ -312,6 +312,16 @@ type rdsInstancesLoadedMsg struct{ instances []e9saws.RDSInstance }
 type rdsDetailLoadedMsg struct{ detail *e9saws.RDSInstanceDetail }
 type rdsClustersLoadedMsg struct{ clusters []model.RDSCluster }
 
+type costReportLoadedMsg struct {
+	report model.CostReport
+	status model.CostCacheStatus
+}
+
+type costAnomaliesLoadedMsg struct {
+	report model.CostAnomalyReport
+	status model.CostCacheStatus
+}
+
 // --- Shared Messages ---
 
 type regionSwitchedMsg struct{}

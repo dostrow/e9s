@@ -62,6 +62,21 @@ func TestModuleDefaults(t *testing.T) {
 	if !cfg.ModuleDynamoDB() {
 		t.Error("ModuleDynamoDB should default to true")
 	}
+	if !cfg.ModuleCostExplorer() {
+		t.Error("ModuleCostExplorer should default to true")
+	}
+}
+
+func TestCostViewValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CostViews = []CostView{{Name: "", Days: 30}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected empty Cost Explorer saved-view name to fail validation")
+	}
+	cfg.CostViews = []CostView{{Name: "services", Days: -1}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected negative Cost Explorer saved-view days to fail validation")
+	}
 }
 
 func TestModuleDisable(t *testing.T) {

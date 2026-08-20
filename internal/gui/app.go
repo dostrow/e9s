@@ -196,6 +196,11 @@ type TofuService interface {
 	CleanupPlan(string)
 }
 
+type CostExplorerService interface {
+	Report(context.Context, model.CostQuery, bool, bool, bool) (model.CostReport, model.CostCacheStatus, error)
+	Anomalies(context.Context, time.Time, time.Time, bool) (model.CostAnomalyReport, model.CostCacheStatus, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -215,6 +220,7 @@ type Options struct {
 	SQS             SQSService
 	Route53         Route53Service
 	Tofu            TofuService
+	CostExplorer    CostExplorerService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

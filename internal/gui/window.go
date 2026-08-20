@@ -64,6 +64,11 @@ const (
 	pageTofuPlan          = "tofu-plan"
 	pageModulePicker      = "module-picker"
 	pageSettings          = "settings"
+	pageCostOverview      = "cost-overview"
+	pageCostBreakdown     = "cost-breakdown"
+	pageCostAnomalies     = "cost-anomalies"
+	pageCostResources     = "cost-resources"
+	pageCostSavedView     = "cost-saved-view"
 
 	detailIntro            = "intro"
 	detailClusterSummary   = "cluster-summary"
@@ -102,6 +107,8 @@ const (
 	detailTofuWorkspace    = "tofu-workspace"
 	detailTofuResource     = "tofu-resource"
 	detailTofuPlan         = "tofu-plan"
+	detailCost             = "cost"
+	detailCostAnomaly      = "cost-anomaly"
 )
 
 type mainWindow struct {
@@ -334,6 +341,8 @@ type mainWindow struct {
 	tofuWorkspaceTable          *stringTable
 	tofuResourceTable           *stringTable
 	tofuPlanTable               *stringTable
+	costGroupTable              *stringTable
+	costAnomalyTable            *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -354,6 +363,7 @@ type mainWindow struct {
 	sqsModuleItems              *gtk.Box
 	route53ModuleItems          *gtk.Box
 	tofuModuleItems             *gtk.Box
+	costModuleItems             *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -391,6 +401,12 @@ type mainWindow struct {
 	savedSQSQueueButtons        []*gtk.ToggleButton
 	route53ZonesNavButton       *gtk.ToggleButton
 	tofuWorkspacesNavButton     *gtk.ToggleButton
+	costOverviewNavButton       *gtk.ToggleButton
+	costBreakdownNavButton      *gtk.ToggleButton
+	costAnomaliesNavButton      *gtk.ToggleButton
+	costResourcesNavButton      *gtk.ToggleButton
+	costSavedNavButtons         []*gtk.ToggleButton
+	costSavedViews              []config.CostView
 	savedTofuWorkspaceLabel     *gtk.Label
 	savedTofuWorkspaceButtons   []*gtk.ToggleButton
 	route53TestDNSButton        *gtk.Button
@@ -403,6 +419,7 @@ type mainWindow struct {
 	tofuPlanButton              *gtk.Button
 	tofuInitButton              *gtk.Button
 	tofuApplyButton             *gtk.Button
+	costForceRefreshButton      *gtk.Button
 	terminalDockButton          *gtk.ToggleButton
 	refreshPauseButton          *gtk.ToggleButton
 	mainContentStack            *gtk.Stack
@@ -574,6 +591,17 @@ type mainWindow struct {
 	tofuEditorReturnPage        string
 	tofuEditorLoading           bool
 	tofuEditorDirty             bool
+	costReport                  model.CostReport
+	costAnomalyReport           model.CostAnomalyReport
+	filteredCostGroups          []model.CostGroup
+	filteredCostAnomalies       []model.CostAnomaly
+	costCacheStatus             model.CostCacheStatus
+	costQuery                   model.CostQuery
+	costCurrentResources        bool
+	costCurrentForecast         bool
+	costCurrentSavedView        string
+	costRequestPending          bool
+	costRequestGeneration       uint64
 	terminal                    *vteTerminal
 	terminalTitle               *gtk.Label
 	terminalTask                model.Task
@@ -839,6 +867,13 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.tofuPlanTable = newStringTable([]columnSpec{
 		{title: "ACTION", field: 0}, {title: "RESOURCE", field: 1, expand: true}, {title: "CHANGES", field: 2},
 	})
+	w.costGroupTable = newStringTable([]columnSpec{
+		{title: "GROUP", field: 0, expand: true}, {title: "COST", field: 1}, {title: "SHARE", field: 2},
+	})
+	w.costAnomalyTable = newStringTable([]columnSpec{
+		{title: "SERVICE", field: 0, expand: true}, {title: "IMPACT", field: 1}, {title: "ACTUAL", field: 2},
+		{title: "EXPECTED", field: 3}, {title: "START", field: 4}, {title: "END", field: 5},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -875,6 +910,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.tofuWorkspaceTable.view.ConnectActivate(w.openTofuWorkspaceAt)
 	w.tofuResourceTable.view.ConnectActivate(w.openTofuResourceAt)
 	w.tofuPlanTable.view.ConnectActivate(w.openTofuPlanChangeAt)
+	w.costGroupTable.view.ConnectActivate(w.openCostGroupAt)
+	w.costAnomalyTable.view.ConnectActivate(w.openCostAnomalyAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -910,6 +947,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.tofuWorkspaceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuWorkspaceRow() })
 	w.tofuResourceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuResourceRow() })
 	w.tofuPlanTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuPlanChangeRow() })
+	w.costGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCostGroupRow() })
+	w.costAnomalyTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectCostAnomalyRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -1139,6 +1178,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.tofuApplyButton = gtk.NewButtonWithLabel("Apply plan…")
 	w.tofuApplyButton.AddCSSClass("destructive-action")
 	w.tofuApplyButton.ConnectClicked(w.confirmTofuApply)
+	w.costForceRefreshButton = gtk.NewButtonWithLabel("Force paid refresh…")
+	w.costForceRefreshButton.AddCSSClass("destructive-action")
+	w.costForceRefreshButton.SetTooltipText("Bypass the 24-hour in-memory cache; Cost Explorer API requests are billed per page")
+	w.costForceRefreshButton.ConnectClicked(w.confirmForceCostRefresh)
 	w.terminalDockButton = gtk.NewToggleButtonWithLabel("Terminal")
 	w.terminalDockButton.SetTooltipText("Toggle the local terminal dock (Ctrl+` or F12)")
 	w.terminalDockButton.ConnectToggled(func() {
@@ -1261,6 +1304,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.tofuPlanButton)
 	header.Append(w.tofuInitButton)
 	header.Append(w.tofuApplyButton)
+	header.Append(w.costForceRefreshButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1362,6 +1406,35 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.tofuModuleItems.Append(w.tofuWorkspacesNavButton)
 	w.rebuildTofuWorkspaceRail()
 	tofuWorkspaces := w.newModuleExpander("OpenTofu", moduleTofu, w.tofuModuleItems)
+	w.costOverviewNavButton = newModuleRailButton("Overview", func() { w.openCostExplorerView(pageCostOverview, config.CostView{}) })
+	w.costOverviewNavButton.SetGroup(w.clustersNavButton)
+	w.costBreakdownNavButton = newModuleRailButton("Breakdown", func() { w.openCostExplorerView(pageCostBreakdown, config.CostView{}) })
+	w.costBreakdownNavButton.SetGroup(w.clustersNavButton)
+	w.costAnomaliesNavButton = newModuleRailButton("Anomalies", func() { w.openCostExplorerView(pageCostAnomalies, config.CostView{}) })
+	w.costAnomaliesNavButton.SetGroup(w.clustersNavButton)
+	w.costResourcesNavButton = newModuleRailButton("Resources (14 days)", func() { w.openCostExplorerView(pageCostResources, config.CostView{}) })
+	w.costResourcesNavButton.SetGroup(w.clustersNavButton)
+	w.costModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.costModuleItems.AddCSSClass("module-subitems")
+	w.costModuleItems.Append(w.costOverviewNavButton)
+	w.costModuleItems.Append(w.costBreakdownNavButton)
+	w.costModuleItems.Append(w.costAnomaliesNavButton)
+	w.costModuleItems.Append(w.costResourcesNavButton)
+	if w.options.Config != nil && len(w.options.Config.CostViews) > 0 {
+		label := gtk.NewLabel("SAVED VIEWS")
+		label.SetXAlign(0)
+		label.AddCSSClass("section-title")
+		w.costModuleItems.Append(label)
+		for _, saved := range w.options.Config.CostViews {
+			view := saved
+			button := newModuleRailButton(view.Name, func() { w.openCostExplorerView(pageCostSavedView, view) })
+			button.SetGroup(w.clustersNavButton)
+			w.costModuleItems.Append(button)
+			w.costSavedNavButtons = append(w.costSavedNavButtons, button)
+			w.costSavedViews = append(w.costSavedViews, view)
+		}
+	}
+	costExplorer := w.newModuleExpander("Cost Explorer", moduleCostExplorer, w.costModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1420,6 +1493,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleSQS, name: "SQS", defaultItem: "Queues", aliases: []string{"sqs", "queue", "queues"}, expander: sqsQueues, activate: w.openSQSModule},
 		{key: moduleRoute53, name: "Route53", defaultItem: "Hosted zones", aliases: []string{"route53", "r53", "dns", "hosted zones"}, expander: route53Zones, activate: w.openRoute53Module},
 		{key: moduleTofu, name: "OpenTofu", defaultItem: "Workspaces", aliases: []string{"tofu", "opentofu", "terraform", "tf", "infrastructure"}, expander: tofuWorkspaces, activate: w.openTofuModule},
+		{key: moduleCostExplorer, name: "Cost Explorer", defaultItem: "Overview", aliases: []string{"cost", "ce", "billing", "cost explorer"}, expander: costExplorer, activate: func() { w.openCostExplorerView(pageCostOverview, config.CostView{}) }},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1616,6 +1690,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	tofuPlanScroll.SetVExpand(true)
 	tofuPlanScroll.SetHExpand(true)
 	tofuPlanScroll.SetChild(w.tofuPlanTable.view)
+	costGroupScroll := gtk.NewScrolledWindow()
+	costGroupScroll.SetVExpand(true)
+	costGroupScroll.SetHExpand(true)
+	costGroupScroll.SetChild(w.costGroupTable.view)
+	costAnomalyScroll := gtk.NewScrolledWindow()
+	costAnomalyScroll.SetVExpand(true)
+	costAnomalyScroll.SetHExpand(true)
+	costAnomalyScroll.SetChild(w.costAnomalyTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1662,6 +1744,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(tofuWorkspaceScroll, pageTofuWorkspaces)
 	w.resourceStack.AddNamed(tofuResourceScroll, pageTofuResources)
 	w.resourceStack.AddNamed(tofuPlanScroll, pageTofuPlan)
+	w.resourceStack.AddNamed(costGroupScroll, pageCostOverview)
+	w.resourceStack.AddNamed(costAnomalyScroll, pageCostAnomalies)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -2741,6 +2825,10 @@ func (w *mainWindow) applyFilter() {
 	if w.currentPage == pageModulePicker {
 		return
 	}
+	if w.currentPage == pageCostOverview || w.currentPage == pageCostBreakdown || w.currentPage == pageCostAnomalies || w.currentPage == pageCostResources || w.currentPage == pageCostSavedView {
+		w.applyCostFilter()
+		return
+	}
 	if w.currentPage == pageSQSQueues {
 		w.applySQSQueueFilter()
 		return
@@ -3160,6 +3248,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		}
 		return
 	}
+	if w.currentPage == pageCostOverview || w.currentPage == pageCostBreakdown || w.currentPage == pageCostAnomalies || w.currentPage == pageCostResources || w.currentPage == pageCostSavedView {
+		w.loadCurrentCostView(false)
+		return
+	}
 	if w.currentPage == pageSQSQueues {
 		w.refreshSQSQueues(foreground)
 		return
@@ -3563,6 +3655,11 @@ func (w *mainWindow) setStatus(message string, isError bool) {
 }
 
 func (w *mainWindow) updateActionSensitivity() {
+	costPage := w.currentPage == pageCostOverview || w.currentPage == pageCostBreakdown || w.currentPage == pageCostAnomalies || w.currentPage == pageCostResources || w.currentPage == pageCostSavedView
+	if w.costForceRefreshButton != nil {
+		w.costForceRefreshButton.SetVisible(costPage)
+		w.costForceRefreshButton.SetSensitive(costPage && !w.costRequestPending && w.options.CostExplorer != nil)
+	}
 	serviceSelected := w.currentPage == pageTasks && w.selectedCluster != "" && w.selectedService != ""
 	standalonePage := w.currentPage == pageStandaloneTasks && w.selectedCluster != ""
 	taskSelected := (serviceSelected || standalonePage) && w.selectedTask != ""
@@ -3682,6 +3779,17 @@ func (w *mainWindow) updateActionSensitivity() {
 			for i, workspace := range sortedTofuWorkspaces(w.options.ConfigTofuDirs()) {
 				if i < len(w.savedTofuWorkspaceButtons) {
 					w.savedTofuWorkspaceButtons[i].SetActive(tofuPage && w.currentPage != pageTofuWorkspaces && workspace.Name == w.activeSavedTofuWorkspace)
+				}
+			}
+		}
+		if w.costOverviewNavButton != nil {
+			w.costOverviewNavButton.SetActive(w.currentPage == pageCostOverview)
+			w.costBreakdownNavButton.SetActive(w.currentPage == pageCostBreakdown)
+			w.costAnomaliesNavButton.SetActive(w.currentPage == pageCostAnomalies)
+			w.costResourcesNavButton.SetActive(w.currentPage == pageCostResources)
+			for i, view := range w.costSavedViews {
+				if i < len(w.costSavedNavButtons) {
+					w.costSavedNavButtons[i].SetActive(w.currentPage == pageCostSavedView && view.Name == w.costCurrentSavedView)
 				}
 			}
 		}

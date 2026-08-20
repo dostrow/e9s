@@ -1033,6 +1033,8 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshRDSClusters()
 	case viewRDSDetail:
 		return a.refreshRDSDetail()
+	case viewCostExplorer:
+		return a.loadCostExplorer(false)
 	default:
 		return nil
 	}
