@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -410,6 +411,7 @@ func (w *mainWindow) loadS3ObjectDetail(bucket, key string) {
 			}
 			w.s3ObjectDetail = detail
 			w.setDetail(formatS3ObjectDetail(bucket, detail), detailS3Object)
+			w.applyS3ArchiveStatusStyle(detail)
 		})
 	}()
 }
@@ -670,6 +672,9 @@ func formatS3ObjectDetail(bucket string, detail *model.S3ObjectDetail) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "S3 OBJECT\n\nURI            s3://%s/%s\nKey            %s\nSize           %s\nContent type   %s\nETag           %s\nStorage class  %s\nLast modified  %s",
 		bucket, detail.Key, detail.Key, formatS3Bytes(detail.Size), valueOrDash(detail.ContentType), valueOrDash(detail.ETag), valueOrDash(detail.StorageClass), formatTime(detail.LastModified))
+	if accessTier := s3IntelligentTieringAccessTier(detail); accessTier != "" {
+		fmt.Fprintf(&builder, "\nAccess tier    %s", accessTier)
+	}
 	if len(detail.Tags) > 0 {
 		keys := make([]string, 0, len(detail.Tags))
 		for key := range detail.Tags {
@@ -682,6 +687,29 @@ func formatS3ObjectDetail(bucket string, detail *model.S3ObjectDetail) string {
 		}
 	}
 	return builder.String()
+}
+
+func s3IntelligentTieringAccessTier(detail *model.S3ObjectDetail) string {
+	if detail == nil || detail.StorageClass != "INTELLIGENT_TIERING" {
+		return ""
+	}
+	if detail.ArchiveStatus != "" {
+		return detail.ArchiveStatus
+	}
+	return "Active tier (exact tier requires S3 Inventory)"
+}
+
+func (w *mainWindow) applyS3ArchiveStatusStyle(detail *model.S3ObjectDetail) {
+	if detail == nil || w.detailErrorTag == nil || !model.IsS3ArchiveAccessStatus(detail.ArchiveStatus) {
+		return
+	}
+	byteOffset := strings.Index(w.detailText, detail.ArchiveStatus)
+	if byteOffset < 0 {
+		return
+	}
+	start := utf8.RuneCountInString(w.detailText[:byteOffset])
+	end := start + utf8.RuneCountInString(detail.ArchiveStatus)
+	w.detailBuffer.ApplyTag(w.detailErrorTag, w.detailBuffer.IterAtOffset(start), w.detailBuffer.IterAtOffset(end))
 }
 
 func formatS3Bytes(size int64) string {

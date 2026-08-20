@@ -147,10 +147,11 @@ func (c *Client) GetObjectDetail(ctx context.Context, bucket, key string) (*S3Ob
 	}
 
 	detail := &S3ObjectDetail{
-		Key:          key,
-		ContentType:  derefStrAws(head.ContentType),
-		ETag:         derefStrAws(head.ETag),
-		StorageClass: normalizeS3StorageClass(head.StorageClass),
+		Key:           key,
+		ContentType:   derefStrAws(head.ContentType),
+		ETag:          derefStrAws(head.ETag),
+		StorageClass:  normalizeS3StorageClass(head.StorageClass),
+		ArchiveStatus: string(head.ArchiveStatus),
 	}
 	if head.ContentLength != nil {
 		detail.Size = *head.ContentLength

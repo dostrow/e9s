@@ -83,6 +83,23 @@ func TestFormatS3ObjectDetailSortsTags(t *testing.T) {
 	}
 }
 
+func TestFormatS3ObjectDetailReportsIntelligentTieringAccess(t *testing.T) {
+	archived := &model.S3ObjectDetail{
+		StorageClass: "INTELLIGENT_TIERING", ArchiveStatus: model.S3DeepArchiveAccessStatus,
+	}
+	if got := formatS3ObjectDetail("archive", archived); !containsAll(got, "Access tier", model.S3DeepArchiveAccessStatus) {
+		t.Fatalf("archived Intelligent-Tiering detail = %q", got)
+	}
+	active := &model.S3ObjectDetail{StorageClass: "INTELLIGENT_TIERING"}
+	if got := formatS3ObjectDetail("archive", active); !containsAll(got, "Access tier", "exact tier requires S3 Inventory") {
+		t.Fatalf("active Intelligent-Tiering detail = %q", got)
+	}
+	standard := &model.S3ObjectDetail{StorageClass: "STANDARD"}
+	if got := formatS3ObjectDetail("archive", standard); strings.Contains(got, "Access tier") {
+		t.Fatalf("standard object unexpectedly has access tier: %q", got)
+	}
+}
+
 func TestFormatS3DownloadProgress(t *testing.T) {
 	request := model.S3DownloadRequest{Key: "reports/", IsPrefix: true}
 	got := formatS3DownloadProgress(request, model.S3DownloadProgress{

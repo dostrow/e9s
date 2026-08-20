@@ -126,6 +126,9 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	if w.detailHeadingTag != nil {
 		w.detailHeadingTag.SetObjectProperty("foreground", palette.foreground.String())
 	}
+	if w.detailErrorTag != nil {
+		w.detailErrorTag.SetObjectProperty("foreground", palette.error.String())
+	}
 	for _, resourceTag := range w.detailResourceTags {
 		resourceTag.tag.SetObjectProperty("foreground", palette.info.String())
 	}

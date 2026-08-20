@@ -370,6 +370,7 @@ type mainWindow struct {
 	detailView                  *gtk.TextView
 	detailResourceTags          []detailResourceTag
 	detailHeadingTag            *gtk.TextTag
+	detailErrorTag              *gtk.TextTag
 	detailParentButton          *gtk.Button
 	detailBuffer                *gtk.TextBuffer
 	detailText                  string
@@ -1273,6 +1274,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailHeadingTag = gtk.NewTextTag("detail-heading")
 	w.detailHeadingTag.SetObjectProperty("weight", int(pango.WeightBold))
 	w.detailBuffer.TagTable().Add(w.detailHeadingTag)
+	w.detailErrorTag = gtk.NewTextTag("detail-error")
+	w.detailErrorTag.SetObjectProperty("weight", int(pango.WeightBold))
+	w.detailBuffer.TagTable().Add(w.detailErrorTag)
 	w.detailParentButton = gtk.NewButtonWithLabel("Back to service details")
 	w.detailParentButton.ConnectClicked(w.showParentDetails)
 	w.detailToolbar = gtk.NewBox(gtk.OrientationHorizontal, 8)

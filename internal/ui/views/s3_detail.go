@@ -36,6 +36,15 @@ func (m S3DetailModel) View() string {
 	fmt.Fprintf(&b, "  %-18s %s\n", "Content Type:", d.ContentType)
 	fmt.Fprintf(&b, "  %-18s %s\n", "ETag:", d.ETag)
 	fmt.Fprintf(&b, "  %-18s %s\n", "Storage Class:", d.StorageClass)
+	if d.StorageClass == "INTELLIGENT_TIERING" {
+		accessTier := d.ArchiveStatus
+		if accessTier == "" {
+			accessTier = "Active tier (exact tier requires S3 Inventory)"
+		} else if model.IsS3ArchiveAccessStatus(accessTier) {
+			accessTier = theme.ErrorStyle.Render(accessTier)
+		}
+		fmt.Fprintf(&b, "  %-18s %s\n", "Access Tier:", accessTier)
+	}
 	if !d.LastModified.IsZero() {
 		fmt.Fprintf(&b, "  %-18s %s (%s ago)\n", "Last Modified:", d.LastModified.Format("2006-01-02 15:04:05"), formatAge(d.LastModified))
 	}
