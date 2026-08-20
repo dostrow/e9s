@@ -65,6 +65,9 @@ func TestModuleDefaults(t *testing.T) {
 	if !cfg.ModuleCostExplorer() {
 		t.Error("ModuleCostExplorer should default to true")
 	}
+	if !cfg.ModuleElastiCache() {
+		t.Error("ModuleElastiCache should default to true")
+	}
 }
 
 func TestCostViewValidation(t *testing.T) {

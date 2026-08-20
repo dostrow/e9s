@@ -164,6 +164,14 @@ func (w *mainWindow) openMetrics() {
 		w.loadMetrics(true)
 		return
 	}
+	if w.currentPage == pageElastiCache {
+		if w.selectedElastiCache == "" || w.elastiCacheDetail == nil {
+			return
+		}
+		w.metricsKind = "elasticache"
+		w.loadMetrics(true)
+		return
+	}
 	if w.currentPage == pageEC2Instances {
 		if w.selectedEC2Instance == "" {
 			return
@@ -180,6 +188,10 @@ func (w *mainWindow) openMetrics() {
 }
 
 func (w *mainWindow) loadMetrics(foreground bool) {
+	if w.metricsKind == "elasticache" {
+		w.loadElastiCacheMetrics(foreground)
+		return
+	}
 	if w.metricsKind == "rds-cluster" {
 		w.loadRDSClusterMetrics(foreground)
 		return
@@ -193,6 +205,57 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 		return
 	}
 	w.loadECSMetrics(foreground)
+}
+
+func (w *mainWindow) loadElastiCacheMetrics(foreground bool) {
+	if w.options.ElastiCache == nil || w.elastiCacheDetail == nil {
+		return
+	}
+	resource := *w.elastiCacheDetail
+	opening := !w.showingMetrics
+	ctx, generation := w.startRefreshRequest("Loading metrics for ElastiCache "+resource.ID+"…", foreground)
+	go func() {
+		snapshot, err := w.options.ElastiCache.Metrics(ctx, resource, w.metricsWindow())
+		w.finishRequestResult(ctx, generation, err, "Metrics updated for ElastiCache "+resource.ID, opening, foreground, func() {
+			if w.currentPage != pageElastiCache || w.selectedElastiCache != resource.ID {
+				return
+			}
+			w.showingMetrics = true
+			w.metricsKind = "elasticache"
+			w.metricsSnapshot = nil
+			w.metricsGenericSnapshot = snapshot
+			w.metricsTaskID = ""
+			w.renderElastiCacheMetrics(resource)
+			w.detailStack.SetVisibleChildName("metrics")
+		})
+	}()
+}
+
+func (w *mainWindow) renderElastiCacheMetrics(resource model.ElastiCacheResource) {
+	snapshot := w.metricsGenericSnapshot
+	if snapshot == nil {
+		return
+	}
+	w.metricsTitle.SetLabel("ELASTICACHE METRICS — " + strings.ToUpper(w.metricsRangeLabel()))
+	w.metricsScope.SetLabel("ElastiCache " + strings.ReplaceAll(string(resource.Kind), "-", " ") + " " + resource.ID)
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(snapshot.EndTime), formatMetricPeriod(snapshot.Period)))
+	w.metricsScaleButton.SetVisible(false)
+	w.metricsScaleLabel.SetVisible(false)
+	w.metricsAlarmSection.SetVisible(false)
+	w.metricsNotice.SetVisible(!metricSnapshotHasData(snapshot))
+	if !metricSnapshotHasData(snapshot) {
+		w.metricsNotice.SetLabel("No ElastiCache datapoints were returned for the selected period.")
+	}
+	specs := []metricChartSpec{
+		{title: "CPU UTILIZATION", unit: "%", minZero: true, maxHint: 100, ids: []string{"cpu", "engine_cpu", "ecpu"}},
+		{title: "MEMORY AND CACHE STORAGE", unit: "bytes", minZero: true, ids: []string{"memory", "storage"}},
+		{title: "CONNECTIONS", unit: "count", minZero: true, ids: []string{"connections"}},
+		{title: "CACHE HITS / MISSES", unit: "count", minZero: true, ids: []string{"hits", "misses"}},
+		{title: "EVICTIONS", unit: "count", minZero: true, ids: []string{"evictions"}},
+		{title: "NETWORK THROUGHPUT", unit: "bytes/s", minZero: true, ids: []string{"network_in", "network_out"}},
+		{title: "REPLICATION LAG", unit: "seconds", minZero: true, ids: []string{"replication_lag"}},
+	}
+	w.setMetricCharts(snapshot, specs)
 }
 
 func (w *mainWindow) loadRDSClusterMetrics(foreground bool) {

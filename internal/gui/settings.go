@@ -22,6 +22,7 @@ var settingsModuleChoices = []settingsChoice{
 	{label: "CloudWatch Logs", value: "CloudWatch Logs"},
 	{label: "CodeBuild", value: "CodeBuild"},
 	{label: "Cost Explorer", value: "Cost Explorer"},
+	{label: "ElastiCache", value: "ElastiCache"},
 	{label: "DynamoDB", value: "DynamoDB"},
 	{label: "EC2", value: "EC2"},
 	{label: "ECR", value: "ECR"},

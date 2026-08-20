@@ -51,6 +51,7 @@ const (
 	pageECRFindings       = "ecr-findings"
 	pageRDSInstances      = "rds-instances"
 	pageRDSClusters       = "rds-clusters"
+	pageElastiCache       = "elasticache"
 	pageS3Buckets         = "s3-buckets"
 	pageS3Objects         = "s3-objects"
 	pageDynamoTables      = "dynamodb-tables"
@@ -96,6 +97,7 @@ const (
 	detailECRFinding       = "ecr-finding"
 	detailRDS              = "rds-instance"
 	detailRDSCluster       = "rds-cluster"
+	detailElastiCache      = "elasticache"
 	detailS3Bucket         = "s3-bucket"
 	detailS3Object         = "s3-object"
 	detailDynamoTable      = "dynamodb-table"
@@ -127,270 +129,288 @@ type mainWindow struct {
 	terminalZoom  int
 	zoomTarget    paneZoomTarget
 
-	currentPage                 string
-	detailContent               string
-	selectedCluster             string
-	selectedService             string
-	selectedTask                string
-	allClusters                 []model.Cluster
-	filteredClusters            []model.Cluster
-	allServices                 []model.Service
-	filteredServices            []model.Service
-	allTasks                    []model.Task
-	filteredTasks               []model.Task
-	allTaskDefinitions          []model.TaskDefRef
-	filteredTaskDefinitions     []model.TaskDefRef
-	allLogGroups                []model.LogGroup
-	filteredLogGroups           []model.LogGroup
-	selectedLogGroup            string
-	allLogStreams               []model.LogStream
-	filteredLogStreams          []model.LogStream
-	selectedLogStream           string
-	allAlarms                   []model.Alarm
-	filteredAlarms              []model.Alarm
-	selectedAlarm               string
-	alarmStateFilter            string
-	alarmDetail                 *model.AlarmDetail
-	alarmActionPending          bool
-	alarmUTCTime                bool
-	allSSMParameters            []model.Parameter
-	filteredSSMParameters       []model.Parameter
-	selectedSSMParameter        string
-	ssmPath                     string
-	activeSSMPrefix             string
-	ssmDetail                   *model.Parameter
-	ssmActionPending            bool
-	allSecrets                  []model.Secret
-	filteredSecrets             []model.Secret
-	selectedSecret              string
-	secretNameFilter            string
-	activeSavedSecretFilter     string
-	secretDetail                *model.SecretValue
-	secretActionPending         bool
-	allLambdaFunctions          []model.LambdaFunction
-	filteredLambdaFunctions     []model.LambdaFunction
-	selectedLambdaFunction      string
-	lambdaSearchTerm            string
-	activeSavedLambdaSearch     string
-	lambdaDetail                *model.LambdaFunction
-	lambdaEnvironment           []model.EnvVar
-	lambdaEnvironmentResolved   bool
-	lambdaViewMode              string
-	lambdaActionPending         bool
-	allCodeBuildProjects        []model.CodeBuildProject
-	filteredCodeBuildProjects   []model.CodeBuildProject
-	allCodeBuildBuilds          []model.CodeBuildBuild
-	filteredCodeBuildBuilds     []model.CodeBuildBuild
-	selectedCodeBuildProject    string
-	selectedCodeBuild           string
-	codeBuildDetail             *model.CodeBuildDetail
-	codeBuildActionPending      bool
-	allEC2Instances             []model.EC2Instance
-	filteredEC2Instances        []model.EC2Instance
-	selectedEC2Instance         string
-	ec2Detail                   *model.EC2InstanceDetail
-	ec2ViewMode                 string
-	ec2ActionPending            bool
-	allEC2SecurityGroups        []model.EC2SecurityGroup
-	filteredEC2SecurityGroups   []model.EC2SecurityGroup
-	selectedEC2SecurityGroup    string
-	ec2SecurityGroupDetail      *model.EC2SecurityGroup
-	allEC2VPCs                  []model.EC2VPC
-	filteredEC2VPCs             []model.EC2VPC
-	selectedEC2VPC              string
-	ec2VPCDetail                *model.EC2VPC
-	allEC2Subnets               []model.EC2Subnet
-	filteredEC2Subnets          []model.EC2Subnet
-	selectedEC2Subnet           string
-	ec2SubnetVPCFilter          string
-	ec2SubnetDetail             *model.EC2Subnet
-	allEC2Volumes               []model.EC2Volume
-	filteredEC2Volumes          []model.EC2Volume
-	selectedEC2Volume           string
-	ec2VolumeDetail             *model.EC2Volume
-	allEC2LoadBalancers         []model.EC2LoadBalancer
-	filteredEC2LoadBalancers    []model.EC2LoadBalancer
-	selectedEC2LoadBalancer     string
-	ec2LoadBalancerDetail       *model.EC2LoadBalancer
-	allEC2TargetGroups          []model.EC2TargetGroup
-	filteredEC2TargetGroups     []model.EC2TargetGroup
-	selectedEC2TargetGroup      string
-	ec2TargetGroupDetail        *model.EC2TargetGroup
-	allECRRepositories          []model.ECRRepo
-	filteredECRRepositories     []model.ECRRepo
-	selectedECRRepository       string
-	allECRImages                []model.ECRImage
-	filteredECRImages           []model.ECRImage
-	selectedECRImage            string
-	allECRFindings              []model.ECRFinding
-	filteredECRFindings         []model.ECRFinding
-	selectedECRFinding          string
-	ecrActionPending            bool
-	ecrScanCache                map[string]model.ECRScan
-	allRDSInstances             []model.RDSInstance
-	filteredRDSInstances        []model.RDSInstance
-	selectedRDSInstance         string
-	rdsDetail                   *model.RDSInstanceDetail
-	allRDSClusters              []model.RDSCluster
-	filteredRDSClusters         []model.RDSCluster
-	selectedRDSCluster          string
-	rdsClusterDetail            *model.RDSCluster
-	rdsClusterContext           string
-	allS3Buckets                []model.S3Bucket
-	filteredS3Buckets           []model.S3Bucket
-	selectedS3Bucket            string
-	s3BucketFilter              string
-	activeSavedS3Search         string
-	allS3Objects                []model.S3Object
-	filteredS3Objects           []model.S3Object
-	selectedS3Object            string
-	s3Prefix                    string
-	s3ObjectSearch              string
-	s3ObjectSearchActive        bool
-	s3ObjectDetail              *model.S3ObjectDetail
-	s3DownloadPending           bool
-	allDynamoTables             []string
-	filteredDynamoTables        []string
-	selectedDynamoTable         string
-	dynamoTableDetail           *model.DynamoTable
-	allDynamoItems              []model.DynamoItem
-	filteredDynamoItems         []model.DynamoItem
-	selectedDynamoItem          int
-	dynamoKeyNames              []string
-	dynamoItemColumns           []string
-	dynamoNextToken             string
-	dynamoScannedCount          int
-	dynamoFilter                *model.DynamoFilter
-	dynamoPartiQL               string
-	activeSavedDynamoTable      string
-	activeSavedDynamoQuery      string
-	dynamoActionPending         bool
-	allSQSQueues                []model.SQSQueue
-	filteredSQSQueues           []model.SQSQueue
-	selectedSQSQueue            string
-	sqsQueueStats               *model.SQSQueueStats
-	activeSavedSQSQueue         string
-	allSQSMessages              []model.SQSMessage
-	filteredSQSMessages         []model.SQSMessage
-	selectedSQSMessage          string
-	sqsMessageQueue             model.SQSQueue
-	sqsMessageQueueStats        *model.SQSQueueStats
-	sqsMessagesParentURL        string
-	sqsMessagesParentSavedName  string
-	sqsActionPending            bool
-	allRoute53Zones             []model.Route53Zone
-	filteredRoute53Zones        []model.Route53Zone
-	selectedRoute53Zone         string
-	allRoute53Records           []model.Route53Record
-	filteredRoute53Records      []model.Route53Record
-	selectedRoute53Record       string
-	route53ZoneContext          *model.Route53Zone
-	route53DNSAnswer            *model.Route53DNSAnswer
-	route53ActionPending        bool
-	allTofuWorkspaces           []config.TofuDirEntry
-	filteredTofuWorkspaces      []config.TofuDirEntry
-	selectedTofuWorkspace       string
-	activeSavedTofuWorkspace    string
-	tofuWorkspaceInfo           *tofu.Workspace
-	allTofuResources            []tofu.Resource
-	filteredTofuResources       []tofu.Resource
-	selectedTofuResource        string
-	tofuPlan                    *tofu.PlanResult
-	tofuPlanFile                string
-	selectedTofuPlanChange      string
-	tofuActionPending           bool
-	selectedTaskDefinition      *model.TaskDefSummary
-	standaloneReturnPage        string
-	standaloneReturnService     string
-	standaloneReturnStopped     bool
-	showingStoppedTasks         bool
-	taskNextToken               string
-	clusterTable                *stringTable
-	serviceTable                *stringTable
-	taskTable                   *stringTable
-	stoppedTaskTable            *stringTable
-	taskDefinitionTable         *stringTable
-	logGroupTable               *stringTable
-	logStreamTable              *stringTable
-	alarmTable                  *stringTable
-	ssmTable                    *stringTable
-	secretTable                 *stringTable
-	lambdaTable                 *stringTable
-	codeBuildProjectTable       *stringTable
-	codeBuildBuildTable         *stringTable
-	ec2Table                    *stringTable
-	ec2SecurityGroupTable       *stringTable
-	ec2VPCTable                 *stringTable
-	ec2SubnetTable              *stringTable
-	ec2VolumeTable              *stringTable
-	ec2LoadBalancerTable        *stringTable
-	ec2TargetGroupTable         *stringTable
-	ecrRepositoryTable          *stringTable
-	ecrImageTable               *stringTable
-	ecrFindingTable             *stringTable
-	rdsTable                    *stringTable
-	rdsClusterTable             *stringTable
-	s3BucketTable               *stringTable
-	s3ObjectTable               *stringTable
-	dynamoTable                 *stringTable
-	dynamoItemTable             *stringTable
-	sqsQueueTable               *stringTable
-	sqsMessageTable             *stringTable
-	route53ZoneTable            *stringTable
-	route53RecordTable          *stringTable
-	tofuWorkspaceTable          *stringTable
-	tofuResourceTable           *stringTable
-	tofuPlanTable               *stringTable
-	costGroupTable              *stringTable
-	costAnomalyTable            *stringTable
-	costChart                   *costChart
-	costSummaryBuffer           *gtk.TextBuffer
-	costSummaryScroll           *gtk.ScrolledWindow
-	resourceStack               *gtk.Stack
-	search                      *gtk.SearchEntry
-	backButton                  *gtk.Button
-	headerBar                   *gtk.Box
-	clustersNavButton           *gtk.ToggleButton
-	taskDefinitionsNavButton    *gtk.ToggleButton
-	logGroupsNavButton          *gtk.ToggleButton
-	cloudWatchModuleItems       *gtk.Box
-	ssmModuleItems              *gtk.Box
-	secretsModuleItems          *gtk.Box
-	lambdaModuleItems           *gtk.Box
-	codeBuildModuleItems        *gtk.Box
-	ec2ModuleItems              *gtk.Box
-	ecrModuleItems              *gtk.Box
-	rdsModuleItems              *gtk.Box
-	s3ModuleItems               *gtk.Box
-	dynamoModuleItems           *gtk.Box
-	sqsModuleItems              *gtk.Box
-	route53ModuleItems          *gtk.Box
-	tofuModuleItems             *gtk.Box
-	costModuleItems             *gtk.Box
-	moduleErrorGlyphs           map[string]*gtk.Image
-	moduleSections              []moduleRailSection
-	modulePickerOpen            bool
-	alarmNavButtons             map[string]*gtk.ToggleButton
-	savedLogsLabel              *gtk.Label
-	savedLogNavButtons          []*gtk.ToggleButton
-	ssmParametersNavButton      *gtk.ToggleButton
-	savedSSMPrefixLabel         *gtk.Label
-	savedSSMPrefixButtons       []*gtk.ToggleButton
-	secretsNavButton            *gtk.ToggleButton
-	savedSecretFiltersLabel     *gtk.Label
-	savedSecretFilterButtons    []*gtk.ToggleButton
-	lambdaFunctionsNavButton    *gtk.ToggleButton
-	codeBuildProjectsNavButton  *gtk.ToggleButton
-	ec2InstancesNavButton       *gtk.ToggleButton
-	ec2LoadBalancersNavButton   *gtk.ToggleButton
-	ec2TargetGroupsNavButton    *gtk.ToggleButton
-	ec2SecurityGroupsNavButton  *gtk.ToggleButton
-	ec2VPCsNavButton            *gtk.ToggleButton
-	ec2SubnetsNavButton         *gtk.ToggleButton
-	ec2VolumesNavButton         *gtk.ToggleButton
-	ecrRepositoriesNavButton    *gtk.ToggleButton
-	rdsInstancesNavButton       *gtk.ToggleButton
-	rdsClustersNavButton        *gtk.ToggleButton
+	currentPage               string
+	detailContent             string
+	selectedCluster           string
+	selectedService           string
+	selectedTask              string
+	allClusters               []model.Cluster
+	filteredClusters          []model.Cluster
+	allServices               []model.Service
+	filteredServices          []model.Service
+	allTasks                  []model.Task
+	filteredTasks             []model.Task
+	allTaskDefinitions        []model.TaskDefRef
+	filteredTaskDefinitions   []model.TaskDefRef
+	allLogGroups              []model.LogGroup
+	filteredLogGroups         []model.LogGroup
+	selectedLogGroup          string
+	allLogStreams             []model.LogStream
+	filteredLogStreams        []model.LogStream
+	selectedLogStream         string
+	allAlarms                 []model.Alarm
+	filteredAlarms            []model.Alarm
+	selectedAlarm             string
+	alarmStateFilter          string
+	alarmDetail               *model.AlarmDetail
+	alarmActionPending        bool
+	alarmUTCTime              bool
+	allSSMParameters          []model.Parameter
+	filteredSSMParameters     []model.Parameter
+	selectedSSMParameter      string
+	ssmPath                   string
+	activeSSMPrefix           string
+	ssmDetail                 *model.Parameter
+	ssmActionPending          bool
+	allSecrets                []model.Secret
+	filteredSecrets           []model.Secret
+	selectedSecret            string
+	secretNameFilter          string
+	activeSavedSecretFilter   string
+	secretDetail              *model.SecretValue
+	secretActionPending       bool
+	allLambdaFunctions        []model.LambdaFunction
+	filteredLambdaFunctions   []model.LambdaFunction
+	selectedLambdaFunction    string
+	lambdaSearchTerm          string
+	activeSavedLambdaSearch   string
+	lambdaDetail              *model.LambdaFunction
+	lambdaEnvironment         []model.EnvVar
+	lambdaEnvironmentResolved bool
+	lambdaViewMode            string
+	lambdaActionPending       bool
+	allCodeBuildProjects      []model.CodeBuildProject
+	filteredCodeBuildProjects []model.CodeBuildProject
+	allCodeBuildBuilds        []model.CodeBuildBuild
+	filteredCodeBuildBuilds   []model.CodeBuildBuild
+	selectedCodeBuildProject  string
+	selectedCodeBuild         string
+	codeBuildDetail           *model.CodeBuildDetail
+	codeBuildActionPending    bool
+	allEC2Instances           []model.EC2Instance
+	filteredEC2Instances      []model.EC2Instance
+	selectedEC2Instance       string
+	ec2Detail                 *model.EC2InstanceDetail
+	ec2ViewMode               string
+	ec2ActionPending          bool
+	allEC2SecurityGroups      []model.EC2SecurityGroup
+	filteredEC2SecurityGroups []model.EC2SecurityGroup
+	selectedEC2SecurityGroup  string
+	ec2SecurityGroupDetail    *model.EC2SecurityGroup
+	allEC2VPCs                []model.EC2VPC
+	filteredEC2VPCs           []model.EC2VPC
+	selectedEC2VPC            string
+	ec2VPCDetail              *model.EC2VPC
+	allEC2Subnets             []model.EC2Subnet
+	filteredEC2Subnets        []model.EC2Subnet
+	selectedEC2Subnet         string
+	ec2SubnetVPCFilter        string
+	ec2SubnetDetail           *model.EC2Subnet
+	allEC2Volumes             []model.EC2Volume
+	filteredEC2Volumes        []model.EC2Volume
+	selectedEC2Volume         string
+	ec2VolumeDetail           *model.EC2Volume
+	allEC2LoadBalancers       []model.EC2LoadBalancer
+	filteredEC2LoadBalancers  []model.EC2LoadBalancer
+	selectedEC2LoadBalancer   string
+	ec2LoadBalancerDetail     *model.EC2LoadBalancer
+	allEC2TargetGroups        []model.EC2TargetGroup
+	filteredEC2TargetGroups   []model.EC2TargetGroup
+	selectedEC2TargetGroup    string
+	ec2TargetGroupDetail      *model.EC2TargetGroup
+	allECRRepositories        []model.ECRRepo
+	filteredECRRepositories   []model.ECRRepo
+	selectedECRRepository     string
+	allECRImages              []model.ECRImage
+	filteredECRImages         []model.ECRImage
+	selectedECRImage          string
+	allECRFindings            []model.ECRFinding
+	filteredECRFindings       []model.ECRFinding
+	selectedECRFinding        string
+	ecrActionPending          bool
+	ecrScanCache              map[string]model.ECRScan
+	allRDSInstances           []model.RDSInstance
+	filteredRDSInstances      []model.RDSInstance
+	selectedRDSInstance       string
+	rdsDetail                 *model.RDSInstanceDetail
+	allRDSClusters            []model.RDSCluster
+	filteredRDSClusters       []model.RDSCluster
+	selectedRDSCluster        string
+	rdsClusterDetail          *model.RDSCluster
+	rdsClusterContext         string
+
+	allElastiCache      []model.ElastiCacheResource
+	filteredElastiCache []model.ElastiCacheResource
+	selectedElastiCache string
+	elastiCacheKind     model.ElastiCacheKind
+	elastiCacheDetail   *model.ElastiCacheResource
+
+	allS3Buckets               []model.S3Bucket
+	filteredS3Buckets          []model.S3Bucket
+	selectedS3Bucket           string
+	s3BucketFilter             string
+	activeSavedS3Search        string
+	allS3Objects               []model.S3Object
+	filteredS3Objects          []model.S3Object
+	selectedS3Object           string
+	s3Prefix                   string
+	s3ObjectSearch             string
+	s3ObjectSearchActive       bool
+	s3ObjectDetail             *model.S3ObjectDetail
+	s3DownloadPending          bool
+	allDynamoTables            []string
+	filteredDynamoTables       []string
+	selectedDynamoTable        string
+	dynamoTableDetail          *model.DynamoTable
+	allDynamoItems             []model.DynamoItem
+	filteredDynamoItems        []model.DynamoItem
+	selectedDynamoItem         int
+	dynamoKeyNames             []string
+	dynamoItemColumns          []string
+	dynamoNextToken            string
+	dynamoScannedCount         int
+	dynamoFilter               *model.DynamoFilter
+	dynamoPartiQL              string
+	activeSavedDynamoTable     string
+	activeSavedDynamoQuery     string
+	dynamoActionPending        bool
+	allSQSQueues               []model.SQSQueue
+	filteredSQSQueues          []model.SQSQueue
+	selectedSQSQueue           string
+	sqsQueueStats              *model.SQSQueueStats
+	activeSavedSQSQueue        string
+	allSQSMessages             []model.SQSMessage
+	filteredSQSMessages        []model.SQSMessage
+	selectedSQSMessage         string
+	sqsMessageQueue            model.SQSQueue
+	sqsMessageQueueStats       *model.SQSQueueStats
+	sqsMessagesParentURL       string
+	sqsMessagesParentSavedName string
+	sqsActionPending           bool
+	allRoute53Zones            []model.Route53Zone
+	filteredRoute53Zones       []model.Route53Zone
+	selectedRoute53Zone        string
+	allRoute53Records          []model.Route53Record
+	filteredRoute53Records     []model.Route53Record
+	selectedRoute53Record      string
+	route53ZoneContext         *model.Route53Zone
+	route53DNSAnswer           *model.Route53DNSAnswer
+	route53ActionPending       bool
+	allTofuWorkspaces          []config.TofuDirEntry
+	filteredTofuWorkspaces     []config.TofuDirEntry
+	selectedTofuWorkspace      string
+	activeSavedTofuWorkspace   string
+	tofuWorkspaceInfo          *tofu.Workspace
+	allTofuResources           []tofu.Resource
+	filteredTofuResources      []tofu.Resource
+	selectedTofuResource       string
+	tofuPlan                   *tofu.PlanResult
+	tofuPlanFile               string
+	selectedTofuPlanChange     string
+	tofuActionPending          bool
+	selectedTaskDefinition     *model.TaskDefSummary
+	standaloneReturnPage       string
+	standaloneReturnService    string
+	standaloneReturnStopped    bool
+	showingStoppedTasks        bool
+	taskNextToken              string
+	clusterTable               *stringTable
+	serviceTable               *stringTable
+	taskTable                  *stringTable
+	stoppedTaskTable           *stringTable
+	taskDefinitionTable        *stringTable
+	logGroupTable              *stringTable
+	logStreamTable             *stringTable
+	alarmTable                 *stringTable
+	ssmTable                   *stringTable
+	secretTable                *stringTable
+	lambdaTable                *stringTable
+	codeBuildProjectTable      *stringTable
+	codeBuildBuildTable        *stringTable
+	ec2Table                   *stringTable
+	ec2SecurityGroupTable      *stringTable
+	ec2VPCTable                *stringTable
+	ec2SubnetTable             *stringTable
+	ec2VolumeTable             *stringTable
+	ec2LoadBalancerTable       *stringTable
+	ec2TargetGroupTable        *stringTable
+	ecrRepositoryTable         *stringTable
+	ecrImageTable              *stringTable
+	ecrFindingTable            *stringTable
+	rdsTable                   *stringTable
+	rdsClusterTable            *stringTable
+
+	elastiCacheTable *stringTable
+
+	s3BucketTable            *stringTable
+	s3ObjectTable            *stringTable
+	dynamoTable              *stringTable
+	dynamoItemTable          *stringTable
+	sqsQueueTable            *stringTable
+	sqsMessageTable          *stringTable
+	route53ZoneTable         *stringTable
+	route53RecordTable       *stringTable
+	tofuWorkspaceTable       *stringTable
+	tofuResourceTable        *stringTable
+	tofuPlanTable            *stringTable
+	costGroupTable           *stringTable
+	costAnomalyTable         *stringTable
+	costChart                *costChart
+	costSummaryBuffer        *gtk.TextBuffer
+	costSummaryScroll        *gtk.ScrolledWindow
+	resourceStack            *gtk.Stack
+	search                   *gtk.SearchEntry
+	backButton               *gtk.Button
+	headerBar                *gtk.Box
+	clustersNavButton        *gtk.ToggleButton
+	taskDefinitionsNavButton *gtk.ToggleButton
+	logGroupsNavButton       *gtk.ToggleButton
+	cloudWatchModuleItems    *gtk.Box
+	ssmModuleItems           *gtk.Box
+	secretsModuleItems       *gtk.Box
+	lambdaModuleItems        *gtk.Box
+	codeBuildModuleItems     *gtk.Box
+	ec2ModuleItems           *gtk.Box
+	ecrModuleItems           *gtk.Box
+	rdsModuleItems           *gtk.Box
+
+	elastiCacheModuleItems *gtk.Box
+
+	s3ModuleItems              *gtk.Box
+	dynamoModuleItems          *gtk.Box
+	sqsModuleItems             *gtk.Box
+	route53ModuleItems         *gtk.Box
+	tofuModuleItems            *gtk.Box
+	costModuleItems            *gtk.Box
+	moduleErrorGlyphs          map[string]*gtk.Image
+	moduleSections             []moduleRailSection
+	modulePickerOpen           bool
+	alarmNavButtons            map[string]*gtk.ToggleButton
+	savedLogsLabel             *gtk.Label
+	savedLogNavButtons         []*gtk.ToggleButton
+	ssmParametersNavButton     *gtk.ToggleButton
+	savedSSMPrefixLabel        *gtk.Label
+	savedSSMPrefixButtons      []*gtk.ToggleButton
+	secretsNavButton           *gtk.ToggleButton
+	savedSecretFiltersLabel    *gtk.Label
+	savedSecretFilterButtons   []*gtk.ToggleButton
+	lambdaFunctionsNavButton   *gtk.ToggleButton
+	codeBuildProjectsNavButton *gtk.ToggleButton
+	ec2InstancesNavButton      *gtk.ToggleButton
+	ec2LoadBalancersNavButton  *gtk.ToggleButton
+	ec2TargetGroupsNavButton   *gtk.ToggleButton
+	ec2SecurityGroupsNavButton *gtk.ToggleButton
+	ec2VPCsNavButton           *gtk.ToggleButton
+	ec2SubnetsNavButton        *gtk.ToggleButton
+	ec2VolumesNavButton        *gtk.ToggleButton
+	ecrRepositoriesNavButton   *gtk.ToggleButton
+	rdsInstancesNavButton      *gtk.ToggleButton
+	rdsClustersNavButton       *gtk.ToggleButton
+
+	elastiCacheReplicationNavButton *gtk.ToggleButton
+	elastiCacheClustersNavButton    *gtk.ToggleButton
+	elastiCacheServerlessNavButton  *gtk.ToggleButton
+
 	s3BucketsNavButton          *gtk.ToggleButton
 	savedS3SearchesLabel        *gtk.Label
 	savedS3SearchButtons        []*gtk.ToggleButton
@@ -837,6 +857,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "STATUS", field: 2}, {title: "MEMBERS", field: 3}, {title: "WRITER", field: 4},
 		{title: "ENDPOINT", field: 5, expand: true},
 	})
+	w.elastiCacheTable = newStringTable([]columnSpec{
+		{title: "IDENTIFIER", field: 0, expand: true}, {title: "ENGINE", field: 1},
+		{title: "STATUS", field: 2}, {title: "TYPE", field: 3}, {title: "NODES", field: 4},
+		{title: "ENDPOINT", field: 5, expand: true},
+	})
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
 	})
@@ -903,6 +928,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrFindingTable.view.ConnectActivate(w.openECRFindingAt)
 	w.rdsTable.view.ConnectActivate(w.openRDSInstanceAt)
 	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
+	w.elastiCacheTable.view.ConnectActivate(w.openElastiCacheAt)
 	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
 	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
 	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
@@ -940,6 +966,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.ecrFindingTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectECRFindingRow() })
 	w.rdsTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSInstanceRow() })
 	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
+	w.elastiCacheTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectElastiCacheRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
@@ -1376,6 +1403,18 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.rdsModuleItems.Append(w.rdsClustersNavButton)
 	w.rdsModuleItems.Append(w.rdsInstancesNavButton)
 	rdsInstances := w.newModuleExpander("RDS", moduleRDS, w.rdsModuleItems)
+	w.elastiCacheReplicationNavButton = newModuleRailButton("Replication Groups", func() { w.openElastiCacheModule(model.ElastiCacheReplicationGroup) })
+	w.elastiCacheReplicationNavButton.SetGroup(w.clustersNavButton)
+	w.elastiCacheClustersNavButton = newModuleRailButton("Cache Clusters", func() { w.openElastiCacheModule(model.ElastiCacheCluster) })
+	w.elastiCacheClustersNavButton.SetGroup(w.clustersNavButton)
+	w.elastiCacheServerlessNavButton = newModuleRailButton("Serverless Caches", func() { w.openElastiCacheModule(model.ElastiCacheServerless) })
+	w.elastiCacheServerlessNavButton.SetGroup(w.clustersNavButton)
+	w.elastiCacheModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.elastiCacheModuleItems.AddCSSClass("module-subitems")
+	w.elastiCacheModuleItems.Append(w.elastiCacheReplicationNavButton)
+	w.elastiCacheModuleItems.Append(w.elastiCacheClustersNavButton)
+	w.elastiCacheModuleItems.Append(w.elastiCacheServerlessNavButton)
+	elastiCache := w.newModuleExpander("ElastiCache", moduleElastiCache, w.elastiCacheModuleItems)
 	w.s3BucketsNavButton = newModuleRailButton("Buckets", w.openS3Module)
 	w.s3BucketsNavButton.SetGroup(w.clustersNavButton)
 	w.s3ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1492,6 +1531,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
 		{key: moduleRDS, name: "RDS", defaultItem: "Clusters", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.openRDSClustersModule},
+		{key: moduleElastiCache, name: "ElastiCache", defaultItem: "Replication Groups", aliases: []string{"elasticache", "redis", "valkey", "memcached", "cache"}, expander: elastiCache, activate: func() { w.openElastiCacheModule(model.ElastiCacheReplicationGroup) }},
 		{key: moduleS3, name: "S3", defaultItem: "Buckets", aliases: []string{"s3", "object storage", "buckets"}, expander: s3Buckets, activate: w.openS3Module},
 		{key: moduleDynamoDB, name: "DynamoDB", defaultItem: "Tables", aliases: []string{"dynamodb", "ddb", "tables"}, expander: dynamoDB, activate: w.openDynamoDBModule},
 		{key: moduleSQS, name: "SQS", defaultItem: "Queues", aliases: []string{"sqs", "queue", "queues"}, expander: sqsQueues, activate: w.openSQSModule},
@@ -1650,6 +1690,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	rdsClusterScroll.SetVExpand(true)
 	rdsClusterScroll.SetHExpand(true)
 	rdsClusterScroll.SetChild(w.rdsClusterTable.view)
+	elastiCacheScroll := gtk.NewScrolledWindow()
+	elastiCacheScroll.SetVExpand(true)
+	elastiCacheScroll.SetHExpand(true)
+	elastiCacheScroll.SetChild(w.elastiCacheTable.view)
 	s3BucketScroll := gtk.NewScrolledWindow()
 	s3BucketScroll.SetVExpand(true)
 	s3BucketScroll.SetHExpand(true)
@@ -1737,6 +1781,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(ecrFindingScroll, pageECRFindings)
 	w.resourceStack.AddNamed(rdsScroll, pageRDSInstances)
 	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
+	w.resourceStack.AddNamed(elastiCacheScroll, pageElastiCache)
 	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
 	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
 	w.resourceStack.AddNamed(dynamoTableScroll, pageDynamoTables)
@@ -2899,6 +2944,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyRDSClusterFilter()
 		return
 	}
+	if w.currentPage == pageElastiCache {
+		w.applyElastiCacheFilter()
+		return
+	}
 	if w.currentPage == pageLambda {
 		w.applyLambdaFilter()
 		return
@@ -3367,6 +3416,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		w.refreshRDSClusters(foreground)
 		return
 	}
+	if w.currentPage == pageElastiCache {
+		w.refreshElastiCache(foreground)
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		if foreground && !w.reloadS3SearchConfig() {
 			return
@@ -3745,6 +3798,11 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.rdsInstancesNavButton.SetActive(w.currentPage == pageRDSInstances)
 			w.rdsClustersNavButton.SetActive(w.currentPage == pageRDSClusters)
 		}
+		if w.elastiCacheReplicationNavButton != nil {
+			w.elastiCacheReplicationNavButton.SetActive(w.currentPage == pageElastiCache && w.elastiCacheKind == model.ElastiCacheReplicationGroup)
+			w.elastiCacheClustersNavButton.SetActive(w.currentPage == pageElastiCache && w.elastiCacheKind == model.ElastiCacheCluster)
+			w.elastiCacheServerlessNavButton.SetActive(w.currentPage == pageElastiCache && w.elastiCacheKind == model.ElastiCacheServerless)
+		}
 		if w.s3BucketsNavButton != nil {
 			w.s3BucketsNavButton.SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && w.activeSavedS3Search == "")
 			for i, search := range w.options.ConfigS3Searches() {
@@ -3811,8 +3869,10 @@ func (w *mainWindow) updateActionSensitivity() {
 	ec2MetricsSelected := w.currentPage == pageEC2Instances && w.selectedEC2Instance != "" && w.ec2Detail != nil
 	rdsMetricsSelected := w.currentPage == pageRDSInstances && w.selectedRDSInstance != "" && w.rdsDetail != nil
 	rdsClusterMetricsSelected := w.currentPage == pageRDSClusters && w.selectedRDSCluster != "" && w.rdsClusterDetail != nil
-	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected)
-	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) || ((rdsMetricsSelected || rdsClusterMetricsSelected) && w.options.RDS != nil))
+	elastiCacheMetricsSelected := w.currentPage == pageElastiCache && w.selectedElastiCache != "" && w.elastiCacheDetail != nil
+	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected || elastiCacheMetricsSelected)
+	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) ||
+		((rdsMetricsSelected || rdsClusterMetricsSelected) && w.options.RDS != nil) || (elastiCacheMetricsSelected && w.options.ElastiCache != nil))
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

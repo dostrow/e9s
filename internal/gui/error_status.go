@@ -27,6 +27,7 @@ const (
 	moduleRoute53          = "route53"
 	moduleTofu             = "tofu"
 	moduleCostExplorer     = "cost-explorer"
+	moduleElastiCache      = "elasticache"
 )
 
 func compactStatusMessage(message string) string {
@@ -60,6 +61,8 @@ func moduleForPage(page string) string {
 		return moduleECR
 	case pageRDSInstances, pageRDSClusters:
 		return moduleRDS
+	case pageElastiCache:
+		return moduleElastiCache
 	case pageS3Buckets, pageS3Objects:
 		return moduleS3
 	case pageDynamoTables, pageDynamoItems:

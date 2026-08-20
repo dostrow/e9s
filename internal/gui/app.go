@@ -147,6 +147,12 @@ type RDSService interface {
 	ClusterMetrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
 }
 
+type ElastiCacheService interface {
+	List(context.Context, model.ElastiCacheKind, string) ([]model.ElastiCacheResource, error)
+	Detail(context.Context, model.ElastiCacheKind, string) (*model.ElastiCacheResource, error)
+	Metrics(context.Context, model.ElastiCacheResource, time.Duration) (*model.MetricSnapshot, error)
+}
+
 type S3Service interface {
 	Buckets(context.Context, string) ([]model.S3Bucket, error)
 	Objects(context.Context, string, string) ([]model.S3Object, error)
@@ -217,6 +223,7 @@ type Options struct {
 	LoadBalancing   LoadBalancingService
 	ECR             ECRService
 	RDS             RDSService
+	ElastiCache     ElastiCacheService
 	S3              S3Service
 	DynamoDB        DynamoDBService
 	SQS             SQSService

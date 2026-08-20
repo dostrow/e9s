@@ -39,6 +39,7 @@ const (
 	modeRoute53
 	modeRDS
 	modeCostExplorer
+	modeElastiCache
 )
 
 type viewState int
@@ -108,6 +109,8 @@ const (
 	viewRDSInstances
 	viewRDSDetail
 	viewCostExplorer
+	viewElastiCache
+	viewElastiCacheDetail
 )
 
 type App struct {
@@ -131,6 +134,7 @@ type App struct {
 	route53                    *service.Route53
 	tofu                       *service.Tofu
 	costExplorer               *service.CostExplorer
+	elastiCache                *service.ElastiCache
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -211,6 +215,11 @@ type App struct {
 	costSubview                string
 	costResources              bool
 	costForecast               bool
+	elastiCacheView            views.EC2ResourceListModel
+	elastiCacheDetailView      views.EC2ResourceDetailModel
+	elastiCacheKind            model.ElastiCacheKind
+	elastiCacheResources       []model.ElastiCacheResource
+	selectedElastiCache        *model.ElastiCacheResource
 	regionPicker               views.RegionPickerModel
 
 	// Navigation context
@@ -368,6 +377,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		route53:       service.NewRoute53(client),
 		tofu:          service.NewTofu(),
 		costExplorer:  service.NewCostExplorer(client),
+		elastiCache:   service.NewElastiCache(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,
@@ -404,6 +414,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeRoute53, "R53", cfg.ModuleRoute53()},
 		{modeRDS, "RDS", cfg.ModuleRDS()},
 		{modeCostExplorer, "COST", cfg.ModuleCostExplorer()},
+		{modeElastiCache, "CACHE", cfg.ModuleElastiCache()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -455,6 +466,7 @@ func resolveDefaultMode(s string) *topMode {
 		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
 		"RDS": modeRDS, "rds": modeRDS,
 		"Cost Explorer": modeCostExplorer, "cost explorer": modeCostExplorer, "cost": modeCostExplorer, "CE": modeCostExplorer, "ce": modeCostExplorer,
+		"ElastiCache": modeElastiCache, "elasticache": modeElastiCache, "CACHE": modeElastiCache, "cache": modeElastiCache,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -546,6 +558,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.rdsClustersView = a.rdsClustersView.SetSize(w, h)
 		a.rdsDetailView = a.rdsDetailView.SetSize(w, h)
 		a.costView = a.costView.SetSize(w, h)
+		a.elastiCacheView = a.elastiCacheView.SetSize(w, h)
+		a.elastiCacheDetailView = a.elastiCacheDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -1429,6 +1443,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = false
 		return a, nil
 
+	case elastiCacheLoadedMsg:
+		if a.mode != modeElastiCache || a.elastiCacheKind != msg.kind {
+			return a, nil
+		}
+		a.elastiCacheResources = msg.resources
+		a.elastiCacheView = a.elastiCacheView.SetRows(elastiCacheTUIRows(msg.resources))
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case elastiCacheDetailLoadedMsg:
+		if msg.resource != nil {
+			a.selectedElastiCache = msg.resource
+			a.elastiCacheDetailView = views.NewEC2ResourceDetail(formatTUIElastiCache(*msg.resource, msg.metrics)).SetSize(a.width-3, a.height-6)
+			a.state = viewElastiCacheDetail
+		}
+		a.loading = false
+		return a, nil
+
 	case costReportLoadedMsg:
 		a = a.setCostReport(msg.report, msg.status)
 		return a, nil
@@ -1942,6 +1975,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Context-specific keys (configurable via keybindings)
 		k := msg.String()
+		if a.mode == modeElastiCache && a.state == viewElastiCache && !a.isFiltering() {
+			switch k {
+			case "1":
+				return a.openElastiCache(model.ElastiCacheReplicationGroup)
+			case "2":
+				return a.openElastiCache(model.ElastiCacheCluster)
+			case "3":
+				return a.openElastiCache(model.ElastiCacheServerless)
+			}
+		}
 		if a.mode == modeEC2 {
 			if k == a.kb.EC2Resource {
 				return a.switchEC2Resource()
@@ -2450,6 +2493,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.ec2ResourceDetailView, cmd = a.ec2ResourceDetailView.Update(msg)
 	case viewCostExplorer:
 		a.costView, cmd = a.costView.Update(msg)
+	case viewElastiCache:
+		a.elastiCacheView, cmd = a.elastiCacheView.Update(msg)
+	case viewElastiCacheDetail:
+		a.elastiCacheDetailView, cmd = a.elastiCacheDetailView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2518,6 +2565,8 @@ func (a App) isFiltering() bool {
 		return a.rdsClustersView.IsFiltering()
 	case viewCostExplorer:
 		return a.costView.IsFiltering()
+	case viewElastiCache:
+		return a.elastiCacheView.IsFiltering()
 	}
 	return false
 }
@@ -2657,6 +2706,10 @@ func (a App) View() string {
 		content = a.rdsDetailView.View()
 	case viewCostExplorer:
 		content = a.costView.View()
+	case viewElastiCache:
+		content = a.elastiCacheView.View()
+	case viewElastiCacheDetail:
+		content = a.elastiCacheDetailView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -2847,6 +2900,10 @@ func (a App) helpText() string {
 		primary = "[o] linked resources"
 	case viewCostExplorer:
 		primary = "[v] views  [R] force paid refresh  [/] filter"
+	case viewElastiCache:
+		primary = "[enter] detail  [1/2/3] resource type"
+	case viewElastiCacheDetail:
+		primary = "[j/k] scroll"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3267,6 +3324,10 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"R", "Force paid refresh (confirmation required)"},
 			{"/", "Filter current rows"},
 		}
+	case viewElastiCache:
+		context = []kv{{"enter", "View cache details and current metrics"}, {"1/2/3", "Replication groups / cache clusters / serverless caches"}, {"/", "Filter resources"}}
+	case viewElastiCacheDetail:
+		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -3441,6 +3502,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 		if cluster := a.rdsClustersView.SelectedCluster(); cluster != nil {
 			return a.openRDSInstancesForCluster(cluster.Identifier)
 		}
+	case viewElastiCache:
+		return a.openElastiCacheDetail()
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -3518,6 +3581,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openRDSClusters()
 	case modeCostExplorer:
 		return a.openCostExplorer("overview", nil)
+	case modeElastiCache:
+		return a.openElastiCache(model.ElastiCacheReplicationGroup)
 	}
 	return a, nil
 }
@@ -3565,6 +3630,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openRDSClusters()
 	case modeCostExplorer:
 		return a.openCostExplorer("overview", nil)
+	case modeElastiCache:
+		return a.openElastiCache(model.ElastiCacheReplicationGroup)
 	}
 	return a, nil
 }
@@ -3810,6 +3877,11 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	case viewCostExplorer:
 		return a.showModePicker()
+	case viewElastiCache:
+		return a.showModePicker()
+	case viewElastiCacheDetail:
+		a.state = viewElastiCache
+		return a, nil
 	case viewEC2Instances:
 		return a.showModePicker()
 	case viewEC2Detail:

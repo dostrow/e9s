@@ -312,6 +312,15 @@ type rdsInstancesLoadedMsg struct{ instances []e9saws.RDSInstance }
 type rdsDetailLoadedMsg struct{ detail *e9saws.RDSInstanceDetail }
 type rdsClustersLoadedMsg struct{ clusters []model.RDSCluster }
 
+type elastiCacheLoadedMsg struct {
+	kind      model.ElastiCacheKind
+	resources []model.ElastiCacheResource
+}
+type elastiCacheDetailLoadedMsg struct {
+	resource *model.ElastiCacheResource
+	metrics  *model.MetricSnapshot
+}
+
 type costReportLoadedMsg struct {
 	report model.CostReport
 	status model.CostCacheStatus

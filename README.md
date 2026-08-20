@@ -544,6 +544,13 @@ From the Clusters view, `Enter` drills into the selected cluster's member instan
 | `R` | Confirm and force a paid cache refresh |
 | `/` | Filter the current result rows |
 
+### ElastiCache
+
+The ElastiCache module browses replication groups, cache clusters, and
+serverless caches. Select a resource to inspect topology, endpoints,
+encryption and network configuration, tags, and recent CloudWatch metrics.
+In the TUI, use `1`, `2`, and `3` to switch resource types.
+
 ## Configuration
 
 Config is stored at `~/.config/e9s/config.yaml` (XDG convention). Press `ctrl+e` to edit it in your `$EDITOR`, or it hot-reloads on file changes.
@@ -584,6 +591,7 @@ modules:
   route53: true
   tofu: true
   cost_explorer: true
+  elasticache: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -627,6 +635,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
 | RDS browse | `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `cloudwatch:GetMetricData` |
 | Cost Explorer | `ce:GetCostAndUsage`, `ce:GetCostForecast`, `ce:GetAnomalies`; resource view also uses `ce:GetCostAndUsageWithResources` |
+| ElastiCache | `elasticache:DescribeReplicationGroups`, `elasticache:DescribeCacheClusters`, `elasticache:DescribeServerlessCaches`, `elasticache:ListTagsForResource`, `cloudwatch:GetMetricData` |
 | EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSecurityGroups`, `ec2:DescribeSecurityGroupRules`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeVolumes`, `ec2:GetConsoleOutput`, `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTargetHealth` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |

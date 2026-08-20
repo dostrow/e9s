@@ -177,6 +177,7 @@ func modeDisplayName(mode topMode) string {
 		modeRoute53:      "Route53",
 		modeRDS:          "RDS",
 		modeCostExplorer: "Cost Explorer",
+		modeElastiCache:  "ElastiCache",
 	}
 	if name, ok := names[mode]; ok {
 		return name
@@ -203,6 +204,7 @@ func modeShortName(mode topMode) string {
 		modeRoute53:      "R53",
 		modeRDS:          "RDS",
 		modeCostExplorer: "COST",
+		modeElastiCache:  "CACHE",
 	}
 	if name, ok := names[mode]; ok {
 		return name

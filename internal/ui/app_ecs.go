@@ -1035,6 +1035,13 @@ func (a App) refreshCurrentView() tea.Cmd {
 		return a.refreshRDSDetail()
 	case viewCostExplorer:
 		return a.loadCostExplorer(false)
+	case viewElastiCache:
+		return a.loadElastiCache(a.elastiCacheKind)
+	case viewElastiCacheDetail:
+		if a.selectedElastiCache != nil {
+			_, cmd := a.openElastiCacheDetail()
+			return cmd
+		}
 	default:
 		return nil
 	}

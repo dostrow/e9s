@@ -129,6 +129,7 @@ type Config struct {
 		Route53      *bool `yaml:"route53"`
 		Tofu         *bool `yaml:"tofu"`
 		CostExplorer *bool `yaml:"cost_explorer"`
+		ElastiCache  *bool `yaml:"elasticache"`
 	} `yaml:"modules"`
 	KeyBindings     map[string]string `yaml:"keybindings"` // action → key override
 	ExcludeServices []string          `yaml:"exclude_services"`
@@ -516,6 +517,7 @@ func (c *Config) ModuleRDS() bool          { return boolDefault(c.Modules.RDS, t
 func (c *Config) ModuleRoute53() bool      { return boolDefault(c.Modules.Route53, true) }
 func (c *Config) ModuleTofu() bool         { return boolDefault(c.Modules.Tofu, true) }
 func (c *Config) ModuleCostExplorer() bool { return boolDefault(c.Modules.CostExplorer, true) }
+func (c *Config) ModuleElastiCache() bool  { return boolDefault(c.Modules.ElastiCache, true) }
 func (c *Config) ModuleECS() bool          { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {
 	if c.Modules.CWLogs != nil {

@@ -70,6 +70,7 @@ func main() {
 				LoadBalancing:   service.NewLoadBalancing(client),
 				ECR:             service.NewECR(client),
 				RDS:             service.NewRDS(client),
+				ElastiCache:     service.NewElastiCache(client),
 				S3:              service.NewS3(client),
 				DynamoDB:        service.NewDynamoDB(client),
 				SQS:             service.NewSQS(client),
