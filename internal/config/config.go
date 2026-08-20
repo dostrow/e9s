@@ -78,13 +78,14 @@ type SSMPrefix struct {
 
 type Config struct {
 	Defaults struct {
-		Cluster         string `yaml:"cluster"`
-		Region          string `yaml:"region"`
-		Profile         string `yaml:"profile"`
-		RefreshInterval int    `yaml:"refresh_interval"`
-		IdleTimeout     int    `yaml:"idle_timeout"`   // seconds of inactivity before pausing refresh (0 = never, default 300)
-		DefaultMode     string `yaml:"default_mode"`   // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
-		SaveDirectory   string `yaml:"save_directory"` // default directory for file save dialogs
+		Cluster         string  `yaml:"cluster"`
+		Region          string  `yaml:"region"`
+		Profile         string  `yaml:"profile"`
+		RefreshInterval int     `yaml:"refresh_interval"`
+		IdleTimeout     int     `yaml:"idle_timeout"`   // seconds of inactivity before pausing refresh (0 = never, default 300)
+		CostGuardUSD    float64 `yaml:"cost_guard_usd"` // pause automatic AWS polling at this known session cost (0 = disabled)
+		DefaultMode     string  `yaml:"default_mode"`   // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
+		SaveDirectory   string  `yaml:"save_directory"` // default directory for file save dialogs
 	} `yaml:"defaults"`
 	Display struct {
 		TimestampFormat string `yaml:"timestamp_format"` // "relative" or "absolute"
@@ -134,6 +135,8 @@ type Config struct {
 func DefaultConfig() Config {
 	c := Config{}
 	c.Defaults.RefreshInterval = 5
+	c.Defaults.IdleTimeout = 300
+	c.Defaults.CostGuardUSD = 1
 	c.Display.TimestampFormat = "relative"
 	c.Display.MaxEvents = 50
 	c.Display.MaxLogLines = 1000
@@ -254,6 +257,9 @@ func (c Config) Validate() error {
 	}
 	if c.Defaults.IdleTimeout < 0 {
 		return fmt.Errorf("defaults.idle_timeout cannot be negative")
+	}
+	if c.Defaults.CostGuardUSD < 0 {
+		return fmt.Errorf("defaults.cost_guard_usd cannot be negative")
 	}
 	if c.Display.MaxEvents < 0 || c.Display.MaxLogLines < 0 {
 		return fmt.Errorf("display limits cannot be negative")

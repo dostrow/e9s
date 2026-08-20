@@ -44,6 +44,36 @@ The full ordered module expansion is complete, including the final
 OpenTofu/Terraform data-and-workflow module. Further work can now be prioritized
 as cross-module refinement rather than basic frontend coverage.
 
+## Cost-conscious refresh policy
+
+Both frontends share conservative refresh classes instead of applying the
+configured base interval indiscriminately:
+
+- operational ECS and CodeBuild views may use the base interval, with a
+  five-second floor;
+- ordinary inventory views use at least 30 seconds;
+- request-metered S3, SQS, Secrets Manager, and Parameter Store views use at
+  least 60 seconds;
+- CloudWatch metric dashboards use at least 60 seconds; and
+- DynamoDB item scans, saved log searches, OpenTofu workspaces, editors, and
+  terminals refresh only in response to an explicit user action.
+
+Automatic requests are coalesced so a slow response cannot be overlapped by
+the next tick. The GUI pauses polling while inactive, while Settings is open,
+or after the configured inactivity timeout; explicit log following observes
+the same inactivity and window-visibility gate. Terminal and Settings input do
+not count as AWS-view activity. A visible GUI control can pause automatic
+polling without disabling manual Refresh.
+
+The AWS client records service/operation request counts for the process
+lifetime. Settings reports the observed count and only estimates charges whose
+request price is sufficiently direct; regional S3 pricing, SQS free-tier
+effects, DynamoDB capacity, and transfer charges are deliberately not guessed.
+`defaults.cost_guard_usd` pauses automatic polling once this conservative known
+session estimate reaches its configured threshold. It defaults to one dollar;
+zero disables it. `defaults.idle_timeout` defaults to 300 seconds, while an
+explicit zero continues to mean never pause for inactivity.
+
 ## Shared metrics foundation
 
 - Preserve complete timestamped CloudWatch series instead of retaining only a

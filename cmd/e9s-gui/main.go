@@ -81,6 +81,7 @@ func main() {
 				Profile:         status,
 				Region:          client.Region(),
 				RefreshInterval: refresh,
+				RequestSnapshot: client.RequestSnapshot,
 			})
 		},
 	}

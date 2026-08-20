@@ -334,6 +334,7 @@ func (w *mainWindow) pollSQSMessages() {
 		if w.requestCancel != nil {
 			w.requestCancel()
 		}
+		w.requestPending = false
 		w.sqsActionPending = false
 		w.spinner.Stop()
 		w.setWorkspaceBusy("", false)

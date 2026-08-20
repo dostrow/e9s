@@ -297,6 +297,18 @@ func (w *mainWindow) startLogFollowWithFallback(source model.LogSource, allowFal
 func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source model.LogSource, startTime int64, allowFallback bool) {
 	next := startTime
 	for {
+		if !w.backgroundPollingAllowed(time.Now()) {
+			timer := time.NewTimer(logPollInterval)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return
+			case <-timer.C:
+				continue
+			}
+		}
 		fallbackLimit := 0
 		queryStart := next
 		if allowFallback {

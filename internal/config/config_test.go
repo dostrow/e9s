@@ -18,6 +18,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Defaults.RefreshInterval != 5 {
 		t.Errorf("RefreshInterval = %d, want 5", cfg.Defaults.RefreshInterval)
 	}
+	if cfg.Defaults.IdleTimeout != 300 {
+		t.Errorf("IdleTimeout = %d, want 300", cfg.Defaults.IdleTimeout)
+	}
+	if cfg.Defaults.CostGuardUSD != 1 {
+		t.Errorf("CostGuardUSD = %v, want 1", cfg.Defaults.CostGuardUSD)
+	}
 	if cfg.Display.TimestampFormat != "relative" {
 		t.Errorf("TimestampFormat = %q, want %q", cfg.Display.TimestampFormat, "relative")
 	}

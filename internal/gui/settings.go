@@ -214,11 +214,19 @@ func (w *mainWindow) showSettings() {
 	cluster.SetText(cfg.Defaults.Cluster)
 	saveDirectory := gtk.NewEntry()
 	saveDirectory.SetText(cfg.Defaults.SaveDirectory)
+	costGuard := gtk.NewSpinButtonWithRange(0, 1000, 0.10)
+	costGuard.SetDigits(2)
+	costGuard.SetValue(cfg.Defaults.CostGuardUSD)
 	awsPage.Append(settingsRow("AWS profile", profile))
 	awsPage.Append(settingsRow("AWS region", region))
 	awsPage.Append(settingsRow("Default ECS cluster", cluster))
 	awsPage.Append(settingsRow("Save directory", saveDirectory))
+	awsPage.Append(settingsRow("Pause at known session cost (USD; 0 disables)", costGuard))
 	awsPage.Append(settingsNote("Profile and region changes are saved immediately and take effect the next time e9s starts. Existing AWS clients are never replaced mid-request."))
+	if w.options.RequestSnapshot != nil {
+		snapshot := w.options.RequestSnapshot()
+		awsPage.Append(settingsNote(fmt.Sprintf("This session: %d AWS API operations observed; at least $%.4f in directly attributable request charges. S3, SQS, DynamoDB capacity, data transfer, and free-tier effects are not estimated.", snapshot.Total, snapshot.EstimatedCostUSD)))
+	}
 	notebook.AppendPage(awsPage, gtk.NewLabel("AWS"))
 
 	logsPage := settingsPage()
@@ -314,6 +322,7 @@ func (w *mainWindow) showSettings() {
 		updated.Defaults.Region = strings.TrimSpace(region.Text())
 		updated.Defaults.Cluster = strings.TrimSpace(cluster.Text())
 		updated.Defaults.SaveDirectory = strings.TrimSpace(saveDirectory.Text())
+		updated.Defaults.CostGuardUSD = costGuard.Value()
 		updated.Display.MaxEvents = maxEvents.ValueAsInt()
 		updated.Display.MaxLogLines = maxLogLines.ValueAsInt()
 		updated.GUI.TerminalShell = strings.TrimSpace(terminalShell.Text())
@@ -371,6 +380,7 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	}
 	w.options.RefreshInterval = updated.Defaults.RefreshInterval
 	w.options.DefaultCluster = updated.Defaults.Cluster
+	w.idleTimeoutSeconds.Store(int64(updated.Defaults.IdleTimeout))
 	w.applyAppearanceConfig(&updated)
 }
 

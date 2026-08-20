@@ -10,6 +10,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/tofu"
@@ -220,6 +221,7 @@ type Options struct {
 	Profile         string
 	Region          string
 	RefreshInterval int
+	RequestSnapshot func() e9saws.RequestSnapshot
 }
 
 // Run starts the experimental GTK application.

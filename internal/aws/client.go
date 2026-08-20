@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/smithy-go/middleware"
 )
 
 type Client struct {
@@ -43,6 +44,7 @@ type Client struct {
 	Route53        *route53.Client
 	cfg            awscfg.Config
 	region         string
+	requests       *requestObserver
 }
 
 func NewClient(ctx context.Context, region, profile string) (*Client, error) {
@@ -55,6 +57,8 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		opts = append(opts, config.WithSharedConfigProfile(profile))
 	}
 
+	requests := newRequestObserver()
+	opts = append(opts, config.WithAPIOptions([]func(*middleware.Stack) error{requests.middleware}))
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -79,6 +83,7 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		Route53:        route53.NewFromConfig(cfg),
 		cfg:            cfg,
 		region:         cfg.Region,
+		requests:       requests,
 	}, nil
 }
 
@@ -86,9 +91,20 @@ func (c *Client) Region() string {
 	return c.region
 }
 
+func (c *Client) RequestSnapshot() RequestSnapshot {
+	if c == nil || c.requests == nil {
+		return RequestSnapshot{}
+	}
+	return c.requests.snapshot()
+}
+
 // SwitchRegion creates new service clients for a different region.
 func (c *Client) SwitchRegion(ctx context.Context, region string) error {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	opts := []func(*config.LoadOptions) error{config.WithRegion(region)}
+	if c.requests != nil {
+		opts = append(opts, config.WithAPIOptions([]func(*middleware.Stack) error{c.requests.middleware}))
+	}
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return err
 	}

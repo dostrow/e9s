@@ -14,6 +14,7 @@ import (
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/refreshpolicy"
 	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
 	"github.com/dostrow/e9s/internal/ui/views"
@@ -313,12 +314,27 @@ type App struct {
 	height        int
 }
 
+func (a App) autoRefreshClass() refreshpolicy.Class {
+	switch a.state {
+	case viewLogs, viewLogSearch, viewDynamoItems, viewDynamoItemDetail,
+		viewTofuResources, viewTofuStateDetail, viewTofuPlan, viewTofuPlanDetail:
+		return refreshpolicy.Manual
+	case viewMetrics:
+		return refreshpolicy.Metrics
+	case viewS3Buckets, viewS3Objects, viewS3Detail, viewSQSQueues, viewSQSDetail,
+		viewSQSMessages, viewSQSMessageDetail, viewSecrets, viewSecretValue, viewSSM:
+		return refreshpolicy.Metered
+	case viewClusters, viewServices, viewTasks, viewTaskDetail, viewServiceDetail,
+		viewStandaloneTasks, viewCBProjects, viewCBBuilds, viewCBBuildDetail:
+		return refreshpolicy.Operational
+	default:
+		return refreshpolicy.Inventory
+	}
+}
+
 func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
 	ctx, cancel := context.WithCancel(context.Background())
-	idleTimeout := 5 * time.Minute
-	if cfg.Defaults.IdleTimeout > 0 {
-		idleTimeout = time.Duration(cfg.Defaults.IdleTimeout) * time.Second
-	}
+	idleTimeout := time.Duration(cfg.Defaults.IdleTimeout) * time.Second
 
 	app := App{
 		client:        client,
@@ -1773,6 +1789,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			a.idleTimeout = time.Duration(newCfg.Defaults.IdleTimeout) * time.Second
 			a.configModTime = modTime
 			a.flashMessage = "Config reloaded (file changed)"
 			a.flashExpiry = time.Now().Add(3 * time.Second)
@@ -1789,14 +1806,29 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			a.idleTimeout = time.Duration(newCfg.Defaults.IdleTimeout) * time.Second
 			a.configModTime = modTime
 			a.flashMessage = "Config reloaded"
 			a.flashExpiry = time.Now().Add(3 * time.Second)
+		}
+		if a.cfg.Defaults.CostGuardUSD > 0 {
+			snapshot := a.client.RequestSnapshot()
+			if snapshot.EstimatedCostUSD >= a.cfg.Defaults.CostGuardUSD {
+				a.paused = true
+				a.manualPause = true
+				a.flashMessage = fmt.Sprintf("Polling paused: known session cost $%.2f reached guard $%.2f; manual refresh remains available", snapshot.EstimatedCostUSD, a.cfg.Defaults.CostGuardUSD)
+				a.flashExpiry = time.Now().Add(8 * time.Second)
+				return a, a.tick()
+			}
 		}
 		// Pause refresh when idle or manually paused
 		if a.paused || (a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout) {
 			a.paused = true
 			return a, a.tick() // keep ticking for flash/config but skip refresh
+		}
+		base := time.Duration(a.refreshSec) * time.Second
+		if !refreshpolicy.Due(a.lastRefresh, time.Now(), base, a.autoRefreshClass()) {
+			return a, a.tick()
 		}
 		return a, tea.Batch(a.refreshCurrentView(), a.tick())
 

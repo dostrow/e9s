@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
@@ -403,6 +404,7 @@ type mainWindow struct {
 	tofuInitButton              *gtk.Button
 	tofuApplyButton             *gtk.Button
 	terminalDockButton          *gtk.ToggleButton
+	refreshPauseButton          *gtk.ToggleButton
 	mainContentStack            *gtk.Stack
 	settingsHost                *gtk.Box
 	settingsNavButton           *gtk.ToggleButton
@@ -618,6 +620,13 @@ type mainWindow struct {
 	lastError                   string
 	spinner                     *gtk.Spinner
 	lastSuccessfulLoad          time.Time
+	lastAutomaticRefresh        time.Time
+	lastAWSActivity             atomic.Int64
+	idleTimeoutSeconds          atomic.Int64
+	manualRefreshPaused         atomic.Bool
+	windowActive                atomic.Bool
+	requestPending              bool
+	autoRefreshBlock            string
 	terminalOnClose             func()
 	tofuTerminalGeneration      uint64
 }
@@ -639,6 +648,11 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		detailContent:      detailIntro,
 		selectedDynamoItem: -1,
 	}
+	w.lastAWSActivity.Store(time.Now().UnixNano())
+	if options.Config != nil {
+		w.idleTimeoutSeconds.Store(int64(options.Config.Defaults.IdleTimeout))
+	}
+	w.windowActive.Store(true)
 
 	w.clusterTable = newStringTable([]columnSpec{
 		{title: "CLUSTER", field: 0, expand: true},
@@ -902,6 +916,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.window.SetIconName(applicationID)
 	w.window.SetDefaultSize(1380, 820)
 	w.window.SetChild(w.buildLayout())
+	w.window.NotifyProperty("is-active", func() {
+		active := w.window.IsActive()
+		w.windowActive.Store(active)
+		if active {
+			w.noteAWSActivity()
+		}
+		w.scheduleRefresh()
+	})
 	w.window.ConnectDestroy(func() {
 		if w.options.Tofu != nil {
 			w.options.Tofu.CleanupPlan(w.tofuPlanFile)
@@ -933,6 +955,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
 	refresh.ConnectClicked(w.refresh)
+	w.refreshPauseButton = gtk.NewToggleButtonWithLabel("Pause refresh")
+	w.refreshPauseButton.SetTooltipText("Pause automatic AWS polling; manual Refresh remains available")
+	w.refreshPauseButton.ConnectToggled(func() {
+		paused := w.refreshPauseButton.Active()
+		w.manualRefreshPaused.Store(paused)
+		if paused {
+			w.refreshPauseButton.SetLabel("Resume refresh")
+			w.setStatus("Automatic AWS refresh paused", false)
+			return
+		}
+		w.refreshPauseButton.SetLabel("Pause refresh")
+		w.noteAWSActivity()
+		w.setStatus("Automatic AWS refresh resumed", false)
+		w.refreshCurrent(true)
+	})
 	w.logsButton = gtk.NewButtonWithLabel("Service logs")
 	w.logsButton.SetSensitive(false)
 	w.logsButton.ConnectClicked(w.openServiceLogs)
@@ -1228,6 +1265,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
 	header.Append(w.terminalDockButton)
+	header.Append(w.refreshPauseButton)
 	header.Append(refresh)
 
 	sidebar := gtk.NewBox(gtk.OrientationVertical, 6)
@@ -1718,6 +1756,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	contentSplit.SetResizeStartChild(true)
 	contentSplit.SetResizeEndChild(true)
 	w.installPaneZoom(&resourcePane.Widget, &workspace.Widget)
+	w.installAWSActivityControllers(&resourcePane.Widget, &workspace.Widget)
 	w.settingsHost = gtk.NewBox(gtk.OrientationVertical, 0)
 	w.settingsHost.AddCSSClass("settings-host")
 	w.settingsHost.SetHExpand(true)
@@ -1879,6 +1918,7 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 	keys := gtk.NewEventControllerKey()
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		w.noteAWSActivity()
 		if keyval == gdk.KEY_Escape && w.showingMetrics && w.metricsFocusedTitle != "" {
 			w.restoreMetricCharts()
 			return true
@@ -1966,6 +2006,7 @@ func (w *mainWindow) startRefreshRequest(label string, foreground bool) (context
 	ctx, cancel := context.WithCancel(w.ctx)
 	w.requestCancel = cancel
 	w.generation++
+	w.requestPending = true
 	if foreground {
 		w.spinner.Start()
 		w.setStatus(label, false)
@@ -1991,6 +2032,7 @@ func (w *mainWindow) finishRequestResult(ctx context.Context, generation uint64,
 		if ctx.Err() != nil || generation != w.generation {
 			return
 		}
+		w.requestPending = false
 		if !foreground && w.showingLogs {
 			return
 		}
@@ -2144,6 +2186,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 		w.requestCancel = nil
 		w.generation++
 	}
+	w.requestPending = false
 	w.spinner.Stop()
 	w.setWorkspaceBusy("", false)
 	if w.logCancel != nil {
@@ -3102,6 +3145,7 @@ func (w *mainWindow) navigateBrowserBack() {
 }
 
 func (w *mainWindow) refresh() {
+	w.noteAWSActivity()
 	w.refreshCurrent(true)
 }
 
@@ -3491,31 +3535,6 @@ func (w *mainWindow) refreshServices(foreground bool) {
 			}
 		})
 	}()
-}
-
-func (w *mainWindow) scheduleRefresh() {
-	glib.IdleAdd(func() {
-		if w.ctx.Err() == nil && !w.workspaceBusy {
-			w.refreshCurrent(false)
-		}
-	})
-}
-
-func (w *mainWindow) autoRefresh() {
-	for {
-		interval := w.options.RefreshInterval
-		if interval <= 0 {
-			interval = 5
-		}
-		timer := time.NewTimer(time.Duration(interval) * time.Second)
-		select {
-		case <-w.ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-			w.scheduleRefresh()
-		}
-	}
 }
 
 func (w *mainWindow) setStatus(message string, isError bool) {
