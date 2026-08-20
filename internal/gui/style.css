@@ -52,7 +52,7 @@
 
 /* GtkExpander reserves and paints a theme-owned arrow before its label. e9s
  * paints a palette-aware chevron in the label widget instead. */
-.module-heading > title > expander {
+.module-heading > box > title > expander {
   min-width: 0;
   min-height: 0;
   opacity: 0;

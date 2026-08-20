@@ -378,7 +378,7 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
 }
 .e9s-root scrollbar slider:hover,
 .e9s-root scrollbar slider:active { background-color: %s; }
-.e9s-root expander.module-heading > title > expander {
+.e9s-root .module-heading > box > title > expander {
   min-width: 0; min-height: 0; opacity: 0;
 }
 `, palette.foreground.String(), palette.background.String(), palette.muted.String(),
