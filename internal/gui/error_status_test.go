@@ -139,7 +139,14 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 }
 
 func TestNativeModuleChevronIsHidden(t *testing.T) {
-	if !strings.Contains(styleCSS, ".module-heading > box > title > expander") || !strings.Contains(styleCSS, "opacity: 0") {
-		t.Fatal("native GtkExpander arrow must stay hidden behind the palette-aware module chevron")
+	for _, fragment := range []string{
+		".module-heading > box > title > expander",
+		"min-width: 0",
+		"padding: 0",
+		"-gtk-icon-source: none",
+	} {
+		if !strings.Contains(styleCSS, fragment) {
+			t.Fatalf("native GtkExpander arrow allocation is not fully collapsed; missing %q", fragment)
+		}
 	}
 }

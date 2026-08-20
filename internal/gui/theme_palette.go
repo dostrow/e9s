@@ -379,7 +379,10 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
 .e9s-root scrollbar slider:hover,
 .e9s-root scrollbar slider:active { background-color: %s; }
 .e9s-root .module-heading > box > title > expander {
-  min-width: 0; min-height: 0; opacity: 0;
+  min-width: 0; min-height: 0;
+  margin: 0; padding: 0; border: 0;
+  opacity: 0;
+  -gtk-icon-source: none;
 }
 `, palette.foreground.String(), palette.background.String(), palette.muted.String(),
 			palette.accent.String(), palette.accent.String(),
