@@ -108,3 +108,11 @@ func TestSQSMessageBreadcrumb(t *testing.T) {
 		t.Fatalf("sqsMessageBreadcrumb() = %q", got)
 	}
 }
+
+func TestWithoutSQSMessageRemovesOnlySelectedMessage(t *testing.T) {
+	messages := []model.SQSMessage{{MessageID: "one"}, {MessageID: "two"}, {MessageID: "three"}}
+	got := withoutSQSMessage(messages, "two")
+	if !reflect.DeepEqual(got, []model.SQSMessage{{MessageID: "one"}, {MessageID: "three"}}) {
+		t.Fatalf("withoutSQSMessage() = %#v", got)
+	}
+}

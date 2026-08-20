@@ -470,6 +470,177 @@ func (w *mainWindow) finishSQSAction(ctx context.Context, generation uint64, err
 	})
 }
 
+func (w *mainWindow) currentSQSQueueForAction() (model.SQSQueue, *model.SQSQueueStats, bool) {
+	if w.currentPage == pageSQSMessages && w.sqsMessageQueue.URL != "" {
+		return w.sqsMessageQueue, w.sqsMessageQueueStats, true
+	}
+	if w.currentPage == pageSQSQueues {
+		queue, found := findSQSQueue(w.allSQSQueues, w.selectedSQSQueue)
+		return queue, w.sqsQueueStats, found
+	}
+	return model.SQSQueue{}, nil, false
+}
+
+func (w *mainWindow) selectedSQSMessageValue() (model.SQSMessage, bool) {
+	if w.currentPage != pageSQSMessages || w.selectedSQSMessage == "" {
+		return model.SQSMessage{}, false
+	}
+	return findSQSMessage(w.allSQSMessages, w.selectedSQSMessage)
+}
+
+func (w *mainWindow) promptSQSSendMessage() {
+	queue, stats, found := w.currentSQSQueueForAction()
+	if !found || w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	isFIFO := stats != nil && stats.IsFIFO
+	w.promptSQSSendTemplate(queue, service.BuildSQSSendTemplate(isFIFO), "Send SQS message")
+}
+
+func (w *mainWindow) promptSQSCloneMessage() {
+	queue, _, queueFound := w.currentSQSQueueForAction()
+	message, messageFound := w.selectedSQSMessageValue()
+	if !queueFound || !messageFound || w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	w.promptSQSSendTemplate(queue, service.BuildSQSSendTemplateFromMessage(message), "Clone SQS message")
+}
+
+func (w *mainWindow) promptSQSSendTemplate(queue model.SQSQueue, initial, title string) {
+	dialog := gtk.NewDialogWithFlags(title, &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(760, 560)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel("Edit the portable JSON send document for " + queue.Name + ". Binary attribute values use base64.")
+	label.SetXAlign(0)
+	label.SetWrap(true)
+	content.Append(label)
+	editor := newSourceEditor(sourceDocument{Path: "sqs-message.json", Language: "json"})
+	editor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	editor.SetText(initial)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetChild(editor.Widget())
+	content.Append(scroll)
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.SetWrap(true)
+	errorLabel.AddCSSClass("error")
+	content.Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review send…", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		template, err := service.ParseSQSSendTemplate(editor.Text())
+		if err == nil {
+			err = service.ValidateSQSSendTemplate(queue.URL, *template)
+		}
+		if err != nil {
+			errorLabel.SetLabel(err.Error())
+			return
+		}
+		dialog.Destroy()
+		w.confirmSQSSendMessage(queue, *template)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) confirmSQSSendMessage(queue model.SQSQueue, template model.SQSSendTemplate) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Send SQS message")
+	dialog.SetMarkup("Send a message to <b>" + html.EscapeString(queue.Name) + "</b>?")
+	secondary := fmt.Sprintf("Body: %d bytes • Attributes: %d", len([]byte(template.Body)), len(template.Attributes))
+	if template.GroupID != "" {
+		secondary += " • Group: " + template.GroupID
+	}
+	if template.DelaySeconds > 0 {
+		secondary += fmt.Sprintf(" • Delay: %ds", template.DelaySeconds)
+	}
+	dialog.SetObjectProperty("secondary-text", secondary)
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.runSQSSendMessage(queue, template)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runSQSSendMessage(queue model.SQSQueue, template model.SQSSendTemplate) {
+	if w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	w.sqsActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Sending message to " + queue.Name + "…")
+	go func() {
+		messageID, err := w.options.SQS.SendMessage(ctx, model.SQSSendRequest{QueueURL: queue.URL, Template: template})
+		w.finishSQSAction(ctx, generation, err, "Sent SQS message "+shortSQSMessageID(messageID), nil)
+	}()
+}
+
+func (w *mainWindow) confirmDeleteSQSMessage() {
+	queue, _, queueFound := w.currentSQSQueueForAction()
+	message, messageFound := w.selectedSQSMessageValue()
+	if !queueFound || !messageFound || w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Delete SQS message")
+	dialog.SetMarkup("Permanently delete message <b>" + html.EscapeString(shortSQSMessageID(message.MessageID)) + "</b> from <b>" + html.EscapeString(queue.Name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", sqsMessagePreview(message.Body))
+	dialog.SetDestroyWithParent(true)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Delete", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.runDeleteSQSMessage(queue, message)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runDeleteSQSMessage(queue model.SQSQueue, message model.SQSMessage) {
+	if w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	w.sqsActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Deleting SQS message " + shortSQSMessageID(message.MessageID) + "…")
+	go func() {
+		err := w.options.SQS.DeleteMessage(ctx, queue.URL, message.ReceiptHandle)
+		w.finishSQSAction(ctx, generation, err, "Deleted SQS message "+shortSQSMessageID(message.MessageID), func() {
+			w.allSQSMessages = withoutSQSMessage(w.allSQSMessages, message.MessageID)
+			w.selectedSQSMessage = ""
+			w.applySQSMessageFilter()
+			w.setBreadcrumb(sqsMessageBreadcrumb(w.activeSavedSQSQueue, queue.Name, ""))
+			w.setDetail(sqsMessageListSummary(queue, len(w.allSQSMessages)), detailSQSQueue)
+		})
+	}()
+}
+
+func withoutSQSMessage(messages []model.SQSMessage, messageID string) []model.SQSMessage {
+	result := make([]model.SQSMessage, 0, len(messages))
+	for _, message := range messages {
+		if message.MessageID != messageID {
+			result = append(result, message)
+		}
+	}
+	return result
+}
+
 func sqsMessageBreadcrumb(savedName, queueName, messageID string) string {
 	root := "Queues"
 	if savedName != "" {

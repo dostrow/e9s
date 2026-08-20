@@ -413,6 +413,9 @@ type mainWindow struct {
 	sqsPollButton               *gtk.Button
 	sqsClearButton              *gtk.Button
 	sqsDeadLetterButton         *gtk.Button
+	sqsSendButton               *gtk.Button
+	sqsCloneButton              *gtk.Button
+	sqsDeleteButton             *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -953,6 +956,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsClearButton.ConnectClicked(w.clearSQSMessageBuffer)
 	w.sqsDeadLetterButton = gtk.NewButtonWithLabel("Open DLQ")
 	w.sqsDeadLetterButton.ConnectClicked(w.openSQSDeadLetterQueue)
+	w.sqsSendButton = gtk.NewButtonWithLabel("Send message…")
+	w.sqsSendButton.ConnectClicked(w.promptSQSSendMessage)
+	w.sqsCloneButton = gtk.NewButtonWithLabel("Clone & send…")
+	w.sqsCloneButton.ConnectClicked(w.promptSQSCloneMessage)
+	w.sqsDeleteButton = gtk.NewButtonWithLabel("Delete message…")
+	w.sqsDeleteButton.AddCSSClass("destructive-action")
+	w.sqsDeleteButton.ConnectClicked(w.confirmDeleteSQSMessage)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1057,6 +1067,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.sqsPollButton)
 	header.Append(w.sqsClearButton)
 	header.Append(w.sqsDeadLetterButton)
+	header.Append(w.sqsSendButton)
+	header.Append(w.sqsCloneButton)
+	header.Append(w.sqsDeleteButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -3573,6 +3586,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	}
 	w.sqsDeadLetterButton.SetVisible(deadLetterAvailable)
 	w.sqsDeadLetterButton.SetSensitive(deadLetterAvailable && sqsReady)
+	_, _, sqsQueueActionReady := w.currentSQSQueueForAction()
+	w.sqsSendButton.SetVisible(sqsPage && sqsQueueActionReady)
+	w.sqsSendButton.SetSensitive(sqsPage && sqsQueueActionReady && sqsReady)
+	_, sqsMessageSelected := w.selectedSQSMessageValue()
+	w.sqsCloneButton.SetVisible(w.currentPage == pageSQSMessages && sqsMessageSelected)
+	w.sqsCloneButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
+	w.sqsDeleteButton.SetVisible(w.currentPage == pageSQSMessages && sqsMessageSelected)
+	w.sqsDeleteButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""
