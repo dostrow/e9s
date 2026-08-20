@@ -78,14 +78,15 @@ sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
 CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
 Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda,
 **Projects** for CodeBuild, **Instances** for EC2, **Repositories** for ECR,
-**Clusters** for RDS, **Buckets** for S3, **Tables** for DynamoDB, and **Queues**
-for SQS. Use `Ctrl+P` to reopen the picker from anywhere.
+**Clusters** for RDS, **Buckets** for S3, **Tables** for DynamoDB, **Queues**
+for SQS, and **Hosted zones** for Route53. Use `Ctrl+P` to reopen the picker
+from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
 `CB` and `CodeBuild` select the CodeBuild project browser; `EC2` and `EC2i`
-select the EC2 instance browser. `ECR`, `RDS`, `S3`, `DDB`/`DynamoDB`, and `SQS`
-select their corresponding default browsers.
+select the EC2 instance browser. `ECR`, `RDS`, `S3`, `DDB`/`DynamoDB`, `SQS`,
+and `R53`/`Route53` select their corresponding default browsers.
 For example:
 
 ```yaml
@@ -376,6 +377,17 @@ memory than a cached rebuild.
     disposable standard and FIFO queue, send and clone text, JSON, and binary-
     attribute messages, confirming invalid FIFO group IDs and base64 are rejected.
     Delete a received message and verify its receipt handle is never rendered.
+65. Expand Route53 and confirm Hosted zones is its default item. Filter public
+    and private zones by name, comment, and ID; rapidly change selection during
+    refresh and verify stale zone details never replace the current Workspace.
+66. Double-click a zone, filter record sets by name, value, alias, routing policy,
+    and set identifier, and verify Back restores the selected zone. Select simple,
+    alias, and routed records and confirm all values and routing metadata display.
+    Run Test DNS and verify pending state, disabled controls, and the inline answer.
+67. In a disposable zone, create and edit records through the JSON review flow.
+    Confirm invalid TTL/value/alias combinations and identity changes are rejected,
+    refresh pauses during mutations, and authoritative records reload afterward.
+    Delete a disposable record and confirm NS/SOA deletion is unavailable.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

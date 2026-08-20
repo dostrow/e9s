@@ -40,8 +40,8 @@ Implement and evaluate modules in this order:
 The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
 the next **compute and delivery** batch: together they exercise log-heavy jobs,
 interactive host sessions, nested resource browsers, and destructive actions.
-The RDS, S3, DynamoDB, and SQS work is complete. Route53 and
-OpenTofu/Terraform remain in the data-and-workflow batch.
+The RDS, S3, DynamoDB, SQS, and Route53 work is complete.
+OpenTofu/Terraform remains in the data-and-workflow batch.
 
 ## Shared metrics foundation
 
@@ -671,3 +671,53 @@ destination and configured queues as dynamic saved sub-items.
   under Hyprland.
 - Keep frontend differences presentational: GTK uses contextual Header Bar
   actions and embedded editors, while the TUI retains its picker/key workflow.
+
+## Route53 delivery phases
+
+Route53 is implemented in the GTK frontend and shares hosted-zone discovery,
+record-set listing, DNS tests, portable JSON editing, validation, and mutations
+with the TUI through `service.Route53`. The Module Rail exposes **Hosted zones**
+as the default destination.
+
+### Phase 1: shared service and TUI migration
+
+- Move hosted-zone, record-set, DNS-answer, and edit-document values into the
+  UI-neutral model package.
+- Centralize sorting, contextual errors, validation, routing-policy round trips,
+  and apex NS/SOA protection in the shared service.
+- Migrate the TUI to caller-owned context and the same portable JSON document
+  used by the GUI.
+
+### Phase 2: hosted-zone browser
+
+- Add an alphabetically positioned, collapsible **Route53** Module Rail entry
+  with **Hosted zones** as its default item.
+- Browse and locally filter public and private zones by name, comment, or ID.
+- Preserve selection across refreshes and reject stale responses.
+
+### Phase 3: record sets and DNS tests
+
+- Drill into a zone's complete record-set list, with filtering across names,
+  types, values, aliases, routing policies, and set identifiers.
+- Render TTL, alias, health-check, and routing metadata without flattening the
+  record representation required by Route53 mutations.
+- Run `TestDNSAnswer` as a pending Workspace operation and render its response
+  inline with the selected record.
+
+### Phase 4: guarded mutations
+
+- Create and edit records in the theme-aware embedded JSON editor with a review
+  confirmation before submission.
+- Keep name, type, and set identifier immutable during an edit because Route53
+  UPSERT would otherwise create a second record rather than rename the first.
+- Require destructive confirmation for deletion and submit the exact loaded
+  record set. Hide deletion for protected NS and SOA records.
+- Pause refresh and disable conflicting controls for every pending action.
+
+### Phase 5: parity and evaluation
+
+- Verify the TUI/service suite plus plain GTK, GtkSourceView, and full VTE GUI
+  builds.
+- Exercise filtering, navigation, refresh preservation, DNS testing, editor
+  validation, confirmations, mutation reloads, errors, and theme switching
+  under Hyprland.

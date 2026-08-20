@@ -614,6 +614,26 @@ use a theme-aware JSON editor with FIFO, delay, datatype, and base64 validation,
 then require confirmation. Delete is explicitly destructive and removes the
 acknowledged message from only the local buffer after AWS succeeds.
 
+### Route53 module follow-up
+
+Route53 now uses `service.Route53` in both frontends for sorted hosted-zone and
+record discovery, DNS tests, validation, and contextual mutations. Record-set
+models retain alias health evaluation and weighted, latency, failover,
+geolocation, multivalue, identifier, and health-check fields so an edit does not
+discard routing configuration.
+
+The GTK frontend adds an alphabetically positioned Route53 module with Hosted
+zones as its default destination. Zone and record browsers filter locally,
+preserve stable identities across refreshes, and clear stale Workspace content
+on navigation. DNS tests run as pending Workspace operations and render the
+Route53 response beside the selected record.
+
+Create and edit use the theme-aware JSON editor followed by an explicit review.
+Record identity is immutable during edits because an UPSERT cannot rename a
+record safely. Delete requires destructive confirmation, submits the exact
+loaded record set, and is unavailable for protected apex NS and SOA records.
+All mutations pause refresh and reload authoritative record data after success.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default
