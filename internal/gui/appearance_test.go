@@ -39,14 +39,21 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 		`.e9s-root .inspector`,
 		`font-family: "JetBrainsMono Nerd Font"`,
 		`window checkbutton > check`,
+		`-gtk-icon-source: -gtk-icontheme("object-select-symbolic")`,
 		`window switch > slider`,
 		`window searchentry > text`,
 		`window columnview > header > button`,
+		`.e9s-settings .e9s-dialog-surface`,
+		`window button:not(.flat)`,
+		`.e9s-root button.module-subitem`,
 		"background-color:",
 	} {
 		if !strings.Contains(css, fragment) {
 			t.Errorf("appearance CSS is missing %q:\n%s", fragment, css)
 		}
+	}
+	if strings.Contains(css, "window button {") {
+		t.Fatal("built-in appearance must not restore borders on flat navigation buttons")
 	}
 }
 

@@ -199,26 +199,35 @@ popover label, tooltip label { color: %s; }
 window entry, window searchentry, window searchentry > text,
 window textview, window listview, window columnview,
 window dropdown, window popover { color: %s; background-color: %s; }
-window button { color: %s; background-color: %s; border-color: %s; }
-window button:hover { background-color: %s; }
-window button:checked, window button:active { background-color: alpha(%s, 0.38); }
+window button:not(.flat) { color: %s; background-color: %s; border-color: %s; }
+window button:not(.flat):hover { background-color: %s; }
+window button:not(.flat):checked, window button:not(.flat):active { background-color: alpha(%s, 0.38); }
 window notebook > header { color: %s; background-color: %s; border-color: %s; }
 window notebook > header tab { color: %s; background-color: %s; }
 window notebook > header tab:checked { color: %s; border-color: %s; }
-window checkbutton > check {
+window checkbutton > check,
+.e9s-settings checkbutton > check {
   min-width: 14px; min-height: 14px;
+  margin: 0; padding: 0;
   color: %s; background-color: %s;
   border: 1px solid %s; border-radius: 3px;
+  background-image: none; box-shadow: none;
+  -gtk-icon-source: none;
 }
-window checkbutton > check:checked { color: %s; background-color: %s; border-color: %s; }
-window checkbutton:disabled > check { opacity: 0.55; }
-window switch {
+window checkbutton > check:checked,
+.e9s-settings checkbutton > check:checked {
+  color: %s; background-color: %s; border-color: %s;
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+window checkbutton:disabled > check,
+.e9s-settings checkbutton:disabled > check { opacity: 0.55; }
+window switch, .e9s-settings switch {
   min-width: 38px; min-height: 20px;
   color: %s; background-color: %s;
   border: 1px solid %s; border-radius: 999px;
 }
-window switch:checked { background-color: %s; border-color: %s; }
-window switch > slider {
+window switch:checked, .e9s-settings switch:checked { background-color: %s; border-color: %s; }
+window switch > slider, .e9s-settings switch > slider {
   min-width: 16px; min-height: 16px;
   background-color: %s; border-radius: 999px;
 }
@@ -237,6 +246,40 @@ window .e9s-table > header > button { color: %s; background-color: %s; }
 			palette.background.String(), palette.accent.String(), palette.accent.String(),
 			palette.foreground.String(), palette.surface.String(), palette.muted.String(), palette.accent.String(), palette.accent.String(),
 			palette.foreground.String(), palette.accent.String(), buttonBackground.String())
+		fmt.Fprintf(&css, `
+window.dialog,
+window.dialog > box.dialog-vbox,
+window.dialog .dialog-action-area,
+.e9s-settings,
+.e9s-settings .e9s-dialog-surface,
+.e9s-settings notebook,
+.e9s-settings notebook > stack,
+.e9s-settings .dialog-action-area {
+  color: %s;
+  background-color: %s;
+}
+window button.flat {
+  color: %s;
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+window button.flat:hover { background-color: alpha(%s, 0.12); }
+window button.flat:checked, window button.flat:active { background-color: alpha(%s, 0.28); }
+.e9s-root button.module-subitem {
+  color: %s;
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.e9s-root button.module-subitem:checked {
+  color: %s;
+  background-color: alpha(%s, 0.28);
+  border-color: transparent;
+}
+`, palette.foreground.String(), palette.background.String(),
+			palette.foreground.String(), palette.foreground.String(), palette.accent.String(),
+			palette.foreground.String(), palette.accent.String(), palette.accent.String())
 	}
 	if cfg == nil {
 		return css.String()

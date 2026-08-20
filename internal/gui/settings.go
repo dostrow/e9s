@@ -98,9 +98,11 @@ func (w *mainWindow) showSettings() {
 
 	dialog := gtk.NewDialogWithFlags("e9s Settings", &w.window.Window, gtk.DialogModal)
 	w.settingsDialog = dialog
+	dialog.AddCSSClass("e9s-settings")
 	dialog.SetDestroyWithParent(true)
 	dialog.SetDefaultSize(760, 600)
 	content := dialog.ContentArea()
+	content.AddCSSClass("e9s-dialog-surface")
 	content.SetSpacing(8)
 	notebook := gtk.NewNotebook()
 	notebook.SetHExpand(true)
@@ -369,9 +371,11 @@ func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte,
 	}
 
 	review := gtk.NewDialogWithFlags("Review configuration changes", &w.window.Window, gtk.DialogModal)
+	review.AddCSSClass("e9s-settings")
 	review.SetDestroyWithParent(true)
 	review.SetDefaultSize(760, 480)
 	content := review.ContentArea()
+	content.AddCSSClass("e9s-dialog-surface")
 	content.SetSpacing(8)
 	content.SetMarginTop(12)
 	content.SetMarginBottom(12)
