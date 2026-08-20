@@ -232,6 +232,7 @@ type mainWindow struct {
 	selectedDynamoItem          int
 	dynamoKeyNames              []string
 	dynamoNextToken             string
+	dynamoScannedCount          int
 	dynamoFilter                *model.DynamoFilter
 	dynamoPartiQL               string
 	activeSavedDynamoTable      string
@@ -376,6 +377,12 @@ type mainWindow struct {
 	s3ManageSearchesButton      *gtk.Button
 	s3KeySearchButton           *gtk.Button
 	s3DownloadButton            *gtk.Button
+	dynamoSaveTableButton       *gtk.Button
+	dynamoManageSavedButton     *gtk.Button
+	dynamoFilterButton          *gtk.Button
+	dynamoPartiQLButton         *gtk.Button
+	dynamoSaveQueryButton       *gtk.Button
+	dynamoLoadMoreButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -880,6 +887,18 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.s3KeySearchButton.ConnectClicked(w.promptS3KeySearch)
 	w.s3DownloadButton = gtk.NewButtonWithLabel("Download…")
 	w.s3DownloadButton.ConnectClicked(w.promptS3Download)
+	w.dynamoSaveTableButton = gtk.NewButtonWithLabel("Save table…")
+	w.dynamoSaveTableButton.ConnectClicked(w.promptSaveDynamoTable)
+	w.dynamoManageSavedButton = gtk.NewButtonWithLabel("Manage saved…")
+	w.dynamoManageSavedButton.ConnectClicked(w.promptManageDynamoSaved)
+	w.dynamoFilterButton = gtk.NewButtonWithLabel("Filter…")
+	w.dynamoFilterButton.ConnectClicked(w.promptDynamoFilter)
+	w.dynamoPartiQLButton = gtk.NewButtonWithLabel("PartiQL…")
+	w.dynamoPartiQLButton.ConnectClicked(w.promptDynamoPartiQL)
+	w.dynamoSaveQueryButton = gtk.NewButtonWithLabel("Save query…")
+	w.dynamoSaveQueryButton.ConnectClicked(w.promptSaveDynamoQuery)
+	w.dynamoLoadMoreButton = gtk.NewButtonWithLabel("Load more")
+	w.dynamoLoadMoreButton.ConnectClicked(w.loadMoreDynamoItems)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -971,6 +990,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.s3ManageSearchesButton)
 	header.Append(w.s3KeySearchButton)
 	header.Append(w.s3DownloadButton)
+	header.Append(w.dynamoSaveTableButton)
+	header.Append(w.dynamoManageSavedButton)
+	header.Append(w.dynamoFilterButton)
+	header.Append(w.dynamoPartiQLButton)
+	header.Append(w.dynamoSaveQueryButton)
+	header.Append(w.dynamoLoadMoreButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -3397,6 +3422,22 @@ func (w *mainWindow) updateActionSensitivity() {
 	_, s3ObjectSelected := findS3Object(w.allS3Objects, w.selectedS3Object)
 	w.s3DownloadButton.SetVisible(s3ObjectPage && s3ObjectSelected)
 	w.s3DownloadButton.SetSensitive(s3ObjectPage && s3ObjectSelected && !w.s3DownloadPending && w.options.S3 != nil)
+	dynamoTablePage := w.currentPage == pageDynamoTables
+	dynamoItemsPage := w.currentPage == pageDynamoItems
+	dynamoReady := w.options.DynamoDB != nil && !w.dynamoActionPending
+	w.dynamoSaveTableButton.SetVisible(dynamoTablePage && w.selectedDynamoTable != "")
+	w.dynamoSaveTableButton.SetSensitive(dynamoTablePage && w.selectedDynamoTable != "" && w.options.Config != nil && dynamoReady)
+	hasSavedDynamo := w.options.Config != nil && (len(w.options.Config.DynamoTables) > 0 || len(w.options.Config.DynamoQueries) > 0)
+	w.dynamoManageSavedButton.SetVisible((dynamoTablePage || dynamoItemsPage) && hasSavedDynamo)
+	w.dynamoManageSavedButton.SetSensitive(hasSavedDynamo && dynamoReady)
+	w.dynamoFilterButton.SetVisible(dynamoItemsPage && w.selectedDynamoTable != "")
+	w.dynamoFilterButton.SetSensitive(dynamoItemsPage && w.selectedDynamoTable != "" && dynamoReady)
+	w.dynamoPartiQLButton.SetVisible(dynamoItemsPage)
+	w.dynamoPartiQLButton.SetSensitive(dynamoItemsPage && dynamoReady)
+	w.dynamoSaveQueryButton.SetVisible(dynamoItemsPage && w.dynamoPartiQL != "")
+	w.dynamoSaveQueryButton.SetSensitive(dynamoItemsPage && w.dynamoPartiQL != "" && w.options.Config != nil && dynamoReady)
+	w.dynamoLoadMoreButton.SetVisible(dynamoItemsPage && w.dynamoNextToken != "")
+	w.dynamoLoadMoreButton.SetSensitive(dynamoItemsPage && w.dynamoNextToken != "" && dynamoReady)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

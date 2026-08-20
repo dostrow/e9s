@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -45,5 +46,25 @@ func TestCompactDynamoItemIsDeterministic(t *testing.T) {
 	item := model.DynamoItem{"z": 2, "a": 1}
 	if got := compactDynamoItem(item); got != `{"a":1,"z":2}` {
 		t.Fatalf("compactDynamoItem() = %q", got)
+	}
+}
+
+func TestDynamoItemListSummaryReportsCumulativeScanAndPagination(t *testing.T) {
+	got := dynamoItemListSummary("events", 73, 150, true)
+	for _, want := range []string{"Loaded   73", "Scanned  150", "More items are available"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("dynamoItemListSummary() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestFindDynamoQuery(t *testing.T) {
+	queries := []config.DynamoQuery{{Name: "recent", Statement: "SELECT * FROM events"}}
+	query, found := findDynamoQuery(queries, "recent")
+	if !found || query.Statement != "SELECT * FROM events" {
+		t.Fatalf("findDynamoQuery() = %#v, %v", query, found)
+	}
+	if _, found := findDynamoQuery(queries, "missing"); found {
+		t.Fatal("findDynamoQuery() unexpectedly found missing query")
 	}
 }

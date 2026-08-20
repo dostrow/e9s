@@ -3,11 +3,14 @@
 package gui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"sort"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
@@ -199,8 +202,9 @@ func (w *mainWindow) loadDynamoItems(table, savedTable, queryName string) {
 			w.dynamoKeyNames = dynamoKeyNames(detail)
 			w.allDynamoItems = page.Items
 			w.dynamoNextToken = page.NextToken
+			w.dynamoScannedCount = page.ScannedCount
 			w.applyDynamoItemFilter()
-			w.setDetail(dynamoItemListSummary(table, len(page.Items), page.ScannedCount, page.NextToken != ""), detailIntro)
+			w.setDetail(w.currentDynamoItemSummary(), detailIntro)
 			w.updateActionSensitivity()
 		})
 	}()
@@ -212,6 +216,7 @@ func (w *mainWindow) clearDynamoItems() {
 	w.selectedDynamoItem = -1
 	w.dynamoKeyNames = nil
 	w.dynamoNextToken = ""
+	w.dynamoScannedCount = 0
 	if w.dynamoItemTable != nil {
 		w.dynamoItemTable.clear()
 	}
@@ -241,12 +246,171 @@ func (w *mainWindow) refreshDynamoItems(foreground bool) {
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
 			w.allDynamoItems = page.Items
 			w.dynamoNextToken = page.NextToken
+			w.dynamoScannedCount = page.ScannedCount
 			w.selectedDynamoItem = -1
 			w.applyDynamoItemFilter()
-			w.setDetail(dynamoItemListSummary(table, len(page.Items), page.ScannedCount, page.NextToken != ""), detailIntro)
+			w.setDetail(w.currentDynamoItemSummary(), detailIntro)
 			w.updateActionSensitivity()
 		})
 	}()
+}
+
+func (w *mainWindow) loadMoreDynamoItems() {
+	if w.options.DynamoDB == nil || w.currentPage != pageDynamoItems || w.selectedDynamoTable == "" || w.dynamoNextToken == "" || w.dynamoActionPending {
+		return
+	}
+	w.dynamoActionPending = true
+	w.updateActionSensitivity()
+	token := w.dynamoNextToken
+	request := model.DynamoScanRequest{Table: w.selectedDynamoTable, Limit: 50, NextToken: token, Filter: w.dynamoFilter}
+	ctx, generation := w.startRequest("Loading more DynamoDB items…")
+	go func() {
+		page, err := w.options.DynamoDB.Scan(ctx, request)
+		w.finishDynamoAction(ctx, generation, err, "Loaded more DynamoDB items", func() {
+			w.allDynamoItems = append(w.allDynamoItems, page.Items...)
+			w.dynamoNextToken = page.NextToken
+			w.dynamoScannedCount += page.ScannedCount
+			w.applyDynamoItemFilter()
+			w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+		})
+	}()
+}
+
+func (w *mainWindow) promptDynamoFilter() {
+	if w.currentPage != pageDynamoItems || w.selectedDynamoTable == "" || w.dynamoActionPending {
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Filter DynamoDB scan", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	attribute := gtk.NewEntry()
+	value := gtk.NewEntry()
+	operators := []string{"=", "<>", "<", "<=", ">", ">=", "begins_with", "contains"}
+	operator := gtk.NewDropDownFromStrings(operators)
+	if w.dynamoFilter != nil {
+		attribute.SetText(w.dynamoFilter.Attribute)
+		value.SetText(w.dynamoFilter.Value)
+		for i, candidate := range operators {
+			if candidate == w.dynamoFilter.Operator {
+				operator.SetSelected(uint(i))
+			}
+		}
+	}
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.AddCSSClass("error")
+	for _, row := range []struct {
+		label  string
+		widget gtk.Widgetter
+	}{{"Attribute", attribute}, {"Operator", operator}, {"String value", value}} {
+		label := gtk.NewLabel(row.label)
+		label.SetXAlign(0)
+		content.Append(label)
+		content.Append(row.widget)
+	}
+	content.Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Clear", 101)
+	dialog.AddButton("Apply", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response == 101 {
+			dialog.Destroy()
+			w.runDynamoFilter(nil)
+			return
+		}
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		name := strings.TrimSpace(attribute.Text())
+		if name == "" {
+			errorLabel.SetLabel("Enter an attribute name")
+			return
+		}
+		index := int(operator.Selected())
+		if index < 0 || index >= len(operators) {
+			return
+		}
+		filter := &model.DynamoFilter{Attribute: name, Operator: operators[index], Value: value.Text()}
+		dialog.Destroy()
+		w.runDynamoFilter(filter)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runDynamoFilter(filter *model.DynamoFilter) {
+	if w.options.DynamoDB == nil || w.selectedDynamoTable == "" || w.dynamoActionPending {
+		return
+	}
+	w.dynamoActionPending = true
+	w.updateActionSensitivity()
+	table := w.selectedDynamoTable
+	ctx, generation := w.startRequest("Filtering DynamoDB items…")
+	go func() {
+		page, err := w.options.DynamoDB.Scan(ctx, model.DynamoScanRequest{Table: table, Limit: 100, Filter: filter})
+		w.finishDynamoAction(ctx, generation, err, "Filtered DynamoDB items", func() {
+			w.dynamoFilter = filter
+			w.dynamoPartiQL = ""
+			w.activeSavedDynamoQuery = ""
+			w.allDynamoItems = page.Items
+			w.dynamoNextToken = page.NextToken
+			w.dynamoScannedCount = page.ScannedCount
+			w.selectedDynamoItem = -1
+			w.applyDynamoItemFilter()
+			w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+		})
+	}()
+}
+
+func (w *mainWindow) promptDynamoPartiQL() {
+	if w.currentPage != pageDynamoItems || w.dynamoActionPending {
+		return
+	}
+	initial := w.dynamoPartiQL
+	if initial == "" {
+		table := w.selectedDynamoTable
+		if table == "" {
+			table = "table-name"
+		}
+		initial = fmt.Sprintf("SELECT * FROM \"%s\" WHERE ", table)
+	}
+	dialog, entry := w.newSavedLogNameDialog("DynamoDB PartiQL", "Statement", initial)
+	entry.SetHExpand(true)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Execute", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		statement := strings.TrimSpace(entry.Text())
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) && statement != "" {
+			w.loadDynamoPartiQL(statement, "")
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) finishDynamoAction(ctx context.Context, generation uint64, err error, success string, apply func()) {
+	glib.IdleAdd(func() {
+		if ctx.Err() != nil || generation != w.generation {
+			return
+		}
+		w.requestCancel = nil
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.dynamoActionPending = false
+		w.updateActionSensitivity()
+		if err != nil {
+			w.setStatus(err.Error(), true)
+			return
+		}
+		apply()
+		w.updateActionSensitivity()
+		w.setStatus(success, false)
+	})
 }
 
 func (w *mainWindow) applyDynamoItemFilter() {
@@ -287,7 +451,7 @@ func (w *mainWindow) openDynamoItemAt(position uint) {
 }
 
 func (w *mainWindow) currentDynamoItemSummary() string {
-	return dynamoItemListSummary(w.selectedDynamoTable, len(w.allDynamoItems), len(w.allDynamoItems), w.dynamoNextToken != "")
+	return dynamoItemListSummary(w.selectedDynamoTable, len(w.allDynamoItems), w.dynamoScannedCount, w.dynamoNextToken != "")
 }
 
 func (w *mainWindow) rebuildDynamoRail() {
@@ -378,6 +542,267 @@ func (w *mainWindow) reloadDynamoConfig() {
 	w.options.Config.DynamoTables = append([]config.DynamoTable(nil), fresh.DynamoTables...)
 	w.options.Config.DynamoQueries = append([]config.DynamoQuery(nil), fresh.DynamoQueries...)
 	w.rebuildDynamoRail()
+}
+
+func (w *mainWindow) promptSaveDynamoTable() {
+	if w.options.Config == nil || w.selectedDynamoTable == "" {
+		return
+	}
+	table := w.selectedDynamoTable
+	dialog, entry := w.newSavedLogNameDialog("Save DynamoDB table", "Destination name", "")
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.AddCSSClass("error")
+	dialog.ContentArea().Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Save", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		name := strings.TrimSpace(entry.Text())
+		if name == "" {
+			errorLabel.SetLabel("Enter a destination name")
+			return
+		}
+		if _, found := findDynamoTable(w.options.Config.DynamoTables, name); found {
+			errorLabel.SetLabel("A saved table already uses that name")
+			return
+		}
+		if !w.mutateDynamoConfig(func(cfg *config.Config) { cfg.AddDynamoTable(name, table) }) {
+			return
+		}
+		dialog.Destroy()
+		w.activeSavedDynamoTable = name
+		w.rebuildDynamoRail()
+		w.setBreadcrumb(dynamoBreadcrumb(name, table))
+		w.updateActionSensitivity()
+		w.setStatus("Saved DynamoDB table "+name, false)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) promptSaveDynamoQuery() {
+	if w.options.Config == nil || strings.TrimSpace(w.dynamoPartiQL) == "" {
+		return
+	}
+	statement := w.dynamoPartiQL
+	dialog, entry := w.newSavedLogNameDialog("Save DynamoDB query", "Query name", "")
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.AddCSSClass("error")
+	dialog.ContentArea().Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Save", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		name := strings.TrimSpace(entry.Text())
+		if name == "" {
+			errorLabel.SetLabel("Enter a query name")
+			return
+		}
+		if _, found := findDynamoQuery(w.options.Config.DynamoQueries, name); found {
+			errorLabel.SetLabel("A saved query already uses that name")
+			return
+		}
+		if !w.mutateDynamoConfig(func(cfg *config.Config) { cfg.AddDynamoQuery(name, statement) }) {
+			return
+		}
+		dialog.Destroy()
+		w.activeSavedDynamoQuery = name
+		w.rebuildDynamoRail()
+		w.setBreadcrumb(dynamoItemBreadcrumb("", name, ""))
+		w.updateActionSensitivity()
+		w.setStatus("Saved DynamoDB query "+name, false)
+	})
+	dialog.Present()
+}
+
+type savedDynamoDestination struct {
+	kind  string
+	name  string
+	value string
+}
+
+func (w *mainWindow) promptManageDynamoSaved() {
+	if w.options.Config == nil {
+		return
+	}
+	var destinations []savedDynamoDestination
+	for _, table := range w.options.Config.DynamoTables {
+		destinations = append(destinations, savedDynamoDestination{kind: "Table", name: table.Name, value: table.Table})
+	}
+	for _, query := range w.options.Config.DynamoQueries {
+		destinations = append(destinations, savedDynamoDestination{kind: "Query", name: query.Name, value: query.Statement})
+	}
+	if len(destinations) == 0 {
+		return
+	}
+	sort.SliceStable(destinations, func(i, j int) bool {
+		if destinations[i].kind != destinations[j].kind {
+			return destinations[i].kind < destinations[j].kind
+		}
+		return strings.ToLower(destinations[i].name) < strings.ToLower(destinations[j].name)
+	})
+	labels := make([]string, len(destinations))
+	for i, destination := range destinations {
+		labels[i] = destination.kind + ": " + destination.name
+	}
+	dialog := gtk.NewDialogWithFlags("Saved DynamoDB destinations", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	selector := gtk.NewDropDownFromStrings(labels)
+	nameEntry := gtk.NewEntry()
+	valueEntry := gtk.NewEntry()
+	kindLabel := gtk.NewLabel("")
+	kindLabel.SetXAlign(0)
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.AddCSSClass("error")
+	loadSelected := func() {
+		index := int(selector.Selected())
+		if index < 0 || index >= len(destinations) {
+			return
+		}
+		destination := destinations[index]
+		kindLabel.SetLabel(destination.kind + " value")
+		nameEntry.SetText(destination.name)
+		valueEntry.SetText(destination.value)
+		errorLabel.SetLabel("")
+	}
+	selector.NotifyProperty("selected", loadSelected)
+	loadSelected()
+	content.Append(selector)
+	nameLabel := gtk.NewLabel("Name")
+	nameLabel.SetXAlign(0)
+	content.Append(nameLabel)
+	content.Append(nameEntry)
+	content.Append(kindLabel)
+	content.Append(valueEntry)
+	content.Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Open", 101)
+	dialog.AddButton("Delete…", 102)
+	dialog.AddButton("Apply", 103)
+	dialog.ConnectResponse(func(response int) {
+		index := int(selector.Selected())
+		if index < 0 || index >= len(destinations) {
+			dialog.Destroy()
+			return
+		}
+		current := destinations[index]
+		switch response {
+		case 101:
+			dialog.Destroy()
+			w.openSavedDynamoDestination(current)
+		case 102:
+			dialog.Destroy()
+			w.confirmDeleteDynamoDestination(current)
+		case 103:
+			name, value := strings.TrimSpace(nameEntry.Text()), strings.TrimSpace(valueEntry.Text())
+			if name == "" || value == "" {
+				errorLabel.SetLabel("Name and value are required")
+				return
+			}
+			if name != current.name {
+				if current.kind == "Table" {
+					if _, found := findDynamoTable(w.options.Config.DynamoTables, name); found {
+						errorLabel.SetLabel("A saved table already uses that name")
+						return
+					}
+				} else if _, found := findDynamoQuery(w.options.Config.DynamoQueries, name); found {
+					errorLabel.SetLabel("A saved query already uses that name")
+					return
+				}
+			}
+			if !w.mutateDynamoConfig(func(cfg *config.Config) {
+				if current.kind == "Table" {
+					cfg.RemoveDynamoTable(current.name)
+					cfg.AddDynamoTable(name, value)
+				} else {
+					cfg.RemoveDynamoQuery(current.name)
+					cfg.AddDynamoQuery(name, value)
+				}
+			}) {
+				return
+			}
+			dialog.Destroy()
+			w.rebuildDynamoRail()
+			if (current.kind == "Table" && current.name == w.activeSavedDynamoTable) || (current.kind == "Query" && current.name == w.activeSavedDynamoQuery) {
+				w.openSavedDynamoDestination(savedDynamoDestination{kind: current.kind, name: name, value: value})
+			} else {
+				w.updateActionSensitivity()
+			}
+			w.setStatus("Updated saved DynamoDB "+strings.ToLower(current.kind)+" "+name, false)
+		default:
+			dialog.Destroy()
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) openSavedDynamoDestination(destination savedDynamoDestination) {
+	if destination.kind == "Table" {
+		w.loadDynamoItems(destination.value, destination.name, "")
+		return
+	}
+	w.loadDynamoPartiQL(destination.value, destination.name)
+}
+
+func (w *mainWindow) confirmDeleteDynamoDestination(destination savedDynamoDestination) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetMarkup("Delete saved DynamoDB " + strings.ToLower(destination.kind) + " <b>" + html.EscapeString(destination.name) + "</b>?")
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Delete", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response != int(gtk.ResponseOK) {
+			return
+		}
+		if !w.mutateDynamoConfig(func(cfg *config.Config) {
+			if destination.kind == "Table" {
+				cfg.RemoveDynamoTable(destination.name)
+			} else {
+				cfg.RemoveDynamoQuery(destination.name)
+			}
+		}) {
+			return
+		}
+		wasActive := destination.name == w.activeSavedDynamoTable || destination.name == w.activeSavedDynamoQuery
+		w.rebuildDynamoRail()
+		if wasActive {
+			w.loadDynamoTables("", "")
+		} else {
+			w.updateActionSensitivity()
+		}
+		w.setStatus("Deleted saved DynamoDB "+strings.ToLower(destination.kind)+" "+destination.name, false)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) mutateDynamoConfig(mutate func(*config.Config)) bool {
+	if w.options.Config == nil {
+		return false
+	}
+	beforeTables := append([]config.DynamoTable(nil), w.options.Config.DynamoTables...)
+	beforeQueries := append([]config.DynamoQuery(nil), w.options.Config.DynamoQueries...)
+	mutate(w.options.Config)
+	if err := w.options.Config.Save(); err != nil {
+		w.options.Config.DynamoTables = beforeTables
+		w.options.Config.DynamoQueries = beforeQueries
+		w.setStatus("Save DynamoDB destination: "+err.Error(), true)
+		return false
+	}
+	return true
 }
 
 func dynamoBreadcrumb(savedName, table string) string {
@@ -485,6 +910,15 @@ func findDynamoTable(tables []config.DynamoTable, name string) (config.DynamoTab
 		}
 	}
 	return config.DynamoTable{}, false
+}
+
+func findDynamoQuery(queries []config.DynamoQuery, name string) (config.DynamoQuery, bool) {
+	for _, query := range queries {
+		if query.Name == name {
+			return query, true
+		}
+	}
+	return config.DynamoQuery{}, false
 }
 
 func containsString(values []string, target string) bool {
