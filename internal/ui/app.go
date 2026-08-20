@@ -123,6 +123,7 @@ type App struct {
 	loadBalancing              *service.LoadBalancing
 	ecr                        *service.ECR
 	s3                         *service.S3
+	dynamoDB                   *service.DynamoDB
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -256,7 +257,7 @@ type App struct {
 	s3DownloadKey            string
 	s3DownloadIsPrefix       bool
 	dynamoKeyNames           []string
-	dynamoLastKey            any // stores map[string]dbtypes.AttributeValue for pagination
+	dynamoLastKey            string
 	dynamoFilterAttr         string
 	dynamoFilterOp           string
 	dynamoFilterExpr         bool
@@ -276,8 +277,8 @@ type App struct {
 	lambdaEditZip            []byte
 	dynamoEditField          string
 	dynamoEditValue          string
-	dynamoEditItem           *e9saws.DynamoItem
-	dynamoCloneItem          *e9saws.DynamoItem
+	dynamoEditItem           *model.DynamoItem
+	dynamoCloneItem          *model.DynamoItem
 	resourceLinks            []model.ResourceRef
 	resourceHistory          []model.ResourceRef
 
@@ -332,6 +333,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		loadBalancing: service.NewLoadBalancing(client),
 		ecr:           service.NewECR(client),
 		s3:            service.NewS3(client),
+		dynamoDB:      service.NewDynamoDB(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,

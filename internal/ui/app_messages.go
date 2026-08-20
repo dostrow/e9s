@@ -171,38 +171,38 @@ type dynamoTablesLoadedMsg struct{ tables []string }
 type dynamoScanReadyMsg struct {
 	tableName string
 	keyNames  []string
-	items     []e9saws.DynamoItem
+	items     []model.DynamoItem
 	hasMore   bool
-	lastKey   any
+	lastKey   string
 }
 type dynamoItemsLoadedMsg struct {
-	items   []e9saws.DynamoItem
+	items   []model.DynamoItem
 	hasMore bool
-	lastKey any
+	lastKey string
 }
 type dynamoPageLoadedMsg struct {
-	items   []e9saws.DynamoItem
+	items   []model.DynamoItem
 	hasMore bool
-	lastKey any
+	lastKey string
 }
 type dynamoPartiQLResultMsg struct {
-	items []e9saws.DynamoItem
+	items []model.DynamoItem
 	err   error
 }
 
 type dynamoItemRefreshedMsg struct {
-	item *e9saws.DynamoItem
+	item *model.DynamoItem
 }
 type dynamoFieldEditedMsg struct {
 	tableName string
 	keyNames  []string
-	item      *e9saws.DynamoItem
+	item      *model.DynamoItem
 	fieldName string
 	newValue  string
 }
 type dynamoItemClonedMsg struct {
 	tableName string
-	newItem   e9saws.DynamoItem
+	newItem   model.DynamoItem
 }
 type dynamoWriteDoneMsg struct {
 	message string

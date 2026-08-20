@@ -4,8 +4,27 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
+
+func TestDynamoScanResultEncodesOpaquePageToken(t *testing.T) {
+	lastKey := map[string]dbtypes.AttributeValue{
+		"pk":       &dbtypes.AttributeValueMemberS{Value: "one"},
+		"sequence": &dbtypes.AttributeValueMemberN{Value: "12345678901234567890"},
+	}
+	result, err := dynamoScanResult(nil, 0, 10, lastKey)
+	if err != nil || result.NextToken == "" {
+		t.Fatalf("dynamoScanResult() = %#v, %v", result, err)
+	}
+	decoded, err := attributevalue.UnmarshalMapJSON([]byte(result.NextToken))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if number, ok := decoded["sequence"].(*dbtypes.AttributeValueMemberN); !ok || number.Value != "12345678901234567890" {
+		t.Fatalf("decoded token = %#v", decoded)
+	}
+}
 
 func TestDynamoValueToEditableString_MapProducesValidJSON(t *testing.T) {
 	got := DynamoValueToEditableString(map[string]interface{}{

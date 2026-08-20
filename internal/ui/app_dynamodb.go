@@ -1,14 +1,13 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
-	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -36,9 +35,9 @@ func (a App) openDynamoTables(filter string) (App, tea.Cmd) {
 	a.dynamoTablesView = views.NewDynamoTables(filter)
 	a.dynamoTablesView = a.dynamoTablesView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
 	return a, func() tea.Msg {
-		tables, err := client.ListDynamoTables(context.Background(), filter)
+		tables, err := dynamoService.Tables(ctx, filter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -54,17 +53,17 @@ func (a App) openDynamoTableDirect(tableName string) (App, tea.Cmd) {
 func (a App) scanDynamoTable(tableName string) (App, tea.Cmd) {
 	a.state = viewDynamoItems
 	a.loading = true
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
 	return a, func() tea.Msg {
-		// Fetch key schema first
-		desc, err := client.DescribeDynamoTable(context.Background(), tableName)
-		var keyNames []string
-		if err == nil {
-			for _, k := range desc.KeySchema {
-				keyNames = append(keyNames, k.Name)
-			}
+		desc, err := dynamoService.Table(ctx, tableName)
+		if err != nil {
+			return errMsg{err}
 		}
-		result, err := client.ScanDynamoTable(context.Background(), tableName, 50, nil)
+		keyNames := make([]string, 0, len(desc.KeySchema))
+		for _, key := range desc.KeySchema {
+			keyNames = append(keyNames, key.Name)
+		}
+		result, err := dynamoService.Scan(ctx, model.DynamoScanRequest{Table: tableName, Limit: 50})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -72,32 +71,29 @@ func (a App) scanDynamoTable(tableName string) (App, tea.Cmd) {
 			tableName: tableName,
 			keyNames:  keyNames,
 			items:     result.Items,
-			hasMore:   len(result.LastEvaluatedKey) > 0,
-			lastKey:   result.LastEvaluatedKey,
+			hasMore:   result.NextToken != "",
+			lastKey:   result.NextToken,
 		}
 	}
 }
 
 func (a App) loadDynamoNextPage() (App, tea.Cmd) {
-	if !a.dynamoItemsView.HasMore() || a.dynamoLastKey == nil {
-		return a, nil
-	}
-	startKey, ok := a.dynamoLastKey.(map[string]dbtypes.AttributeValue)
-	if !ok {
+	if !a.dynamoItemsView.HasMore() || a.dynamoLastKey == "" {
 		return a, nil
 	}
 	tableName := a.dynamoItemsView.TableName()
 	a.loading = true
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
+	nextToken := a.dynamoLastKey
 	return a, func() tea.Msg {
-		result, err := client.ScanDynamoTable(context.Background(), tableName, 50, startKey)
+		result, err := dynamoService.Scan(ctx, model.DynamoScanRequest{Table: tableName, Limit: 50, NextToken: nextToken})
 		if err != nil {
 			return errMsg{err}
 		}
 		return dynamoPageLoadedMsg{
 			items:   result.Items,
-			hasMore: len(result.LastEvaluatedKey) > 0,
-			lastKey: result.LastEvaluatedKey,
+			hasMore: result.NextToken != "",
+			lastKey: result.NextToken,
 		}
 	}
 }
@@ -176,34 +172,19 @@ func (a App) executeDynamoFilter(value string) (App, tea.Cmd) {
 	tableName := a.dynamoItemsView.TableName()
 	attr := a.dynamoFilterAttr
 	op := a.dynamoFilterOp
-	isFunc := a.dynamoFilterExpr
 
 	a.loading = true
-	client := a.client
-	keyNames := a.dynamoKeyNames
+	dynamoService, ctx := a.dynamoDB, a.ctx
 
 	return a, func() tea.Msg {
-		_ = keyNames // used in message
-		var result *aws.DynamoScanResult
-		var err error
-		if isFunc {
-			// Use function-style filter: contains(#attr, :val)
-			result, err = client.ScanDynamoTableWithFilter(context.Background(),
-				tableName, attr, fmt.Sprintf("%s(#attr, :val)", op), value, 100, nil)
-			// Rewrite the filter to use function syntax
-			if err != nil {
-				// Retry with corrected expression
-				result, err = client.ScanDynamoTableWithFuncFilter(context.Background(),
-					tableName, attr, op, value, 100, nil)
-			}
-		} else {
-			result, err = client.ScanDynamoTableWithFilter(context.Background(),
-				tableName, attr, op, value, 100, nil)
-		}
+		result, err := dynamoService.Scan(ctx, model.DynamoScanRequest{
+			Table: tableName, Limit: 100,
+			Filter: &model.DynamoFilter{Attribute: attr, Operator: op, Value: value},
+		})
 		if err != nil {
 			return errMsg{err}
 		}
-		return dynamoItemsLoadedMsg{items: result.Items, hasMore: len(result.LastEvaluatedKey) > 0, lastKey: result.LastEvaluatedKey}
+		return dynamoItemsLoadedMsg{items: result.Items, hasMore: result.NextToken != "", lastKey: result.NextToken}
 	}
 }
 
@@ -235,9 +216,9 @@ func (a App) promptDynamoPartiQL() (App, tea.Cmd) {
 func (a App) executeDynamoPartiQL(statement string) (App, tea.Cmd) {
 	a.dynamoLastPartiQL = statement
 	a.loading = true
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
 	return a, func() tea.Msg {
-		items, err := client.ExecutePartiQL(context.Background(), statement)
+		items, err := dynamoService.PartiQL(ctx, statement)
 		return dynamoPartiQLResultMsg{items: items, err: err}
 	}
 }
@@ -265,7 +246,7 @@ func (a App) doSaveDynamoQuery(name string) (App, tea.Cmd) {
 // --- Refresh Detail ---
 
 func (a App) refreshDynamoDetail() tea.Cmd {
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
 	tableName := a.dynamoDetailView.TableName()
 	keyNames := a.dynamoDetailView.KeyNames()
 	item := a.dynamoDetailView.Item()
@@ -274,11 +255,7 @@ func (a App) refreshDynamoDetail() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		keyAV, err := aws.BuildKeyFromItem(*item, keyNames)
-		if err != nil {
-			return errMsg{err}
-		}
-		refreshed, err := client.GetDynamoItem(context.Background(), tableName, keyAV)
+		refreshed, err := dynamoService.Item(ctx, tableName, keyNames, *item)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -334,7 +311,7 @@ func (a App) editDynamoField() (App, tea.Cmd) {
 }
 
 func (a App) doDynamoFieldEdit() tea.Cmd {
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
 	tableName := a.dynamoDetailView.TableName()
 	keyNames := a.dynamoDetailView.KeyNames()
 	item := a.dynamoEditItem
@@ -345,12 +322,11 @@ func (a App) doDynamoFieldEdit() tea.Cmd {
 		if item == nil {
 			return errMsg{fmt.Errorf("no item to edit")}
 		}
-		keyAV, err := aws.BuildKeyFromItem(*item, keyNames)
-		if err != nil {
-			return errMsg{err}
-		}
 		originalValue := (*item)[fieldName]
-		err = client.UpdateDynamoField(context.Background(), tableName, keyAV, fieldName, originalValue, newValue)
+		err := dynamoService.UpdateField(ctx, model.DynamoFieldUpdate{
+			Table: tableName, KeyNames: keyNames, Item: *item, Attribute: fieldName,
+			OriginalValue: originalValue, NewValue: newValue,
+		})
 		if err != nil {
 			return dynamoWriteDoneMsg{err: err}
 		}
@@ -366,7 +342,7 @@ func (a App) cloneDynamoItem() (App, tea.Cmd) {
 		return a, nil
 	}
 
-	jsonStr := aws.DynamoItemToJSON(*item)
+	jsonStr := service.DynamoItemToJSON(*item)
 
 	tmpFile, err := os.CreateTemp("", "e9s-dynamo-clone-*.json")
 	if err != nil {
@@ -389,7 +365,7 @@ func (a App) cloneDynamoItem() (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		newItem, err := aws.ParseDynamoItemFromJSON(string(data))
+		newItem, err := service.ParseDynamoItemJSON(string(data))
 		if err != nil {
 			return errMsg{err}
 		}
@@ -401,7 +377,7 @@ func (a App) cloneDynamoItem() (App, tea.Cmd) {
 }
 
 func (a App) doDynamoClone() tea.Cmd {
-	client := a.client
+	dynamoService, ctx := a.dynamoDB, a.ctx
 	tableName := a.dynamoDetailView.TableName()
 	item := a.dynamoCloneItem
 
@@ -409,7 +385,7 @@ func (a App) doDynamoClone() tea.Cmd {
 		if item == nil {
 			return errMsg{fmt.Errorf("no item to clone")}
 		}
-		err := client.PutDynamoItem(context.Background(), tableName, *item)
+		err := dynamoService.PutItem(ctx, tableName, *item)
 		if err != nil {
 			return dynamoWriteDoneMsg{err: err}
 		}
