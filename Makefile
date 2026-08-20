@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 INSTALL ?= install
 
-.PHONY: build build-gui build-gui-basic install install-gui install-gui-assets package-deb clean test
+.PHONY: build build-gui build-gui-basic install install-gui install-gui-assets package-deb package-appimage clean test
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) .
@@ -39,6 +39,9 @@ install-gui-assets:
 
 package-deb:
 	packaging/debian/build-debs.sh "$(VERSION)" "$(CURDIR)/dist"
+
+package-appimage:
+	packaging/appimage/build-appimage.sh "$(VERSION)" "$(CURDIR)/dist"
 
 test:
 	go test ./...

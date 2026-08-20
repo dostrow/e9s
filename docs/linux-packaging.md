@@ -42,6 +42,20 @@ distribution rebuilds. Required build packages on Ubuntu 24.04 are Go 1.24 or
 newer, `pkg-config`, `libfontconfig-dev`, `libgtk-4-dev`,
 `libgtksourceview-5-dev`, and `libvte-2.91-gtk4-dev`.
 
+## AppImage
+
+`make package-appimage` stages the same desktop assets and builds a portable
+GUI under `dist/`. The builder pins linuxdeploy
+`1-alpha-20251107-1` by SHA-256 for x86-64 and AArch64. It deploys the linked
+GTK 4, GtkSourceView, VTE, Fontconfig, and Pango dependency closure directly;
+the legacy linuxdeploy GTK plugin is deliberately not used because it only
+supports GTK 2 and GTK 3.
+
+The custom `AppRun` points e9s at its private fonts and any bundled Gio or GDK
+Pixbuf module caches. Release AppImages, like Debian packages, must be built in
+the Ubuntu 24.04 baseline environment so their glibc requirement remains
+portable to all supported distributions.
+
 ## Staged installation
 
 `make install-gui` installs the GUI and desktop assets. Packaging builds should
