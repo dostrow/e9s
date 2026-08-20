@@ -98,6 +98,7 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlPaneStack.SetVisibleChildName("empty")
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
+	pane.AddCSSClass("e9s-sql-pane")
 	pane.Append(toolbar)
 	pane.Append(w.sqlPaneStack)
 	w.sqlPane = pane

@@ -50,6 +50,8 @@ func TestApplicationCSSNormalizesThemeIndependentControlGeometry(t *testing.T) {
 		"notebook.e9s-settings-notebook > stack",
 		"notebook.e9s-terminal-notebook > header > tabs",
 		"notebook.e9s-terminal-notebook > stack",
+		"notebook.e9s-sql-notebook > header > tabs",
+		"notebook.e9s-sql-notebook > stack",
 		"checkbutton.e9s-check > check",
 		`-gtk-icon-source: -gtk-icontheme("object-select-symbolic")`,
 	} {
