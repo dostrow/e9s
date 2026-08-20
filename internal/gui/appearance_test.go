@@ -53,7 +53,8 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 		`notebook.e9s-settings-notebook > header > tabs`,
 		`window dropdown > button`,
 		`window spinbutton > button`,
-		`popover > contents, tooltip`,
+		`popover.background > contents, tooltip`,
+		`popover.background.menu button.model:disabled`,
 		"background-color:",
 	} {
 		if !strings.Contains(css, fragment) {

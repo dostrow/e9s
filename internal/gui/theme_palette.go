@@ -194,8 +194,13 @@ window label, window image, window checkbutton, window switch,
 window notebook, window notebook tab, window popover,
 window entry, window searchentry, window text,
 window button, window dropdown { color: %s; }
-popover { color: %s; background-color: transparent; }
-popover > contents, tooltip { color: %s; background-color: %s; }
+popover.background {
+  color: %s;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+popover.background > contents, tooltip { color: %s; background-color: %s; }
 popover label, tooltip label { color: %s; }
 .e9s-root { color: %s; background-color: %s; }
 .e9s-root .toolbar, .e9s-root .status-bar { color: %s; background-color: %s; }
@@ -205,7 +210,7 @@ popover label, tooltip label { color: %s; }
 .e9s-root row:selected { background-color: alpha(%s, 0.38); }
 window entry, window searchentry, window searchentry > text,
 window textview, window listview, window columnview,
-window dropdown, window popover { color: %s; background-color: %s; }
+window dropdown, window popover.background > contents { color: %s; background-color: %s; }
 window button:not(.flat) { color: %s; background-color: %s; border-color: %s; }
 window button:not(.flat):hover { background-color: %s; }
 window button:not(.flat):checked, window button:not(.flat):active { background-color: alpha(%s, 0.38); }
@@ -310,6 +315,13 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
 `, palette.foreground.String(), palette.background.String(),
 			palette.foreground.String(), palette.foreground.String(), palette.accent.String(),
 			palette.foreground.String(), palette.accent.String(), palette.accent.String())
+		fmt.Fprintf(&css, `
+popover.background.menu button.model:disabled,
+popover.background.menu button.model:disabled label {
+  color: %s;
+  opacity: 0.55;
+}
+`, palette.muted.String())
 		fmt.Fprintf(&css, `
 .e9s-root .e9s-settings-page,
 .e9s-root .e9s-settings-page notebook,
