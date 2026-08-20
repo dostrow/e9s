@@ -364,6 +364,9 @@ type mainWindow struct {
 	savedSQSQueueButtons        []*gtk.ToggleButton
 	route53ZonesNavButton       *gtk.ToggleButton
 	route53TestDNSButton        *gtk.Button
+	route53CreateButton         *gtk.Button
+	route53EditButton           *gtk.Button
+	route53DeleteButton         *gtk.Button
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -994,6 +997,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsDeleteButton.ConnectClicked(w.confirmDeleteSQSMessage)
 	w.route53TestDNSButton = gtk.NewButtonWithLabel("Test DNS")
 	w.route53TestDNSButton.ConnectClicked(w.testSelectedRoute53DNS)
+	w.route53CreateButton = gtk.NewButtonWithLabel("New record…")
+	w.route53CreateButton.ConnectClicked(w.promptCreateRoute53Record)
+	w.route53EditButton = gtk.NewButtonWithLabel("Edit record…")
+	w.route53EditButton.ConnectClicked(w.promptEditRoute53Record)
+	w.route53DeleteButton = gtk.NewButtonWithLabel("Delete record…")
+	w.route53DeleteButton.AddCSSClass("destructive-action")
+	w.route53DeleteButton.ConnectClicked(w.confirmDeleteRoute53Record)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1102,6 +1112,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.sqsCloneButton)
 	header.Append(w.sqsDeleteButton)
 	header.Append(w.route53TestDNSButton)
+	header.Append(w.route53CreateButton)
+	header.Append(w.route53EditButton)
+	header.Append(w.route53DeleteButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -3672,6 +3685,15 @@ func (w *mainWindow) updateActionSensitivity() {
 	route53Ready := w.currentPage == pageRoute53Records && route53RecordSelected && w.options.Route53 != nil && !w.route53ActionPending
 	w.route53TestDNSButton.SetVisible(w.currentPage == pageRoute53Records && route53RecordSelected)
 	w.route53TestDNSButton.SetSensitive(route53Ready)
+	route53RecordPage := w.currentPage == pageRoute53Records
+	w.route53CreateButton.SetVisible(route53RecordPage)
+	w.route53CreateButton.SetSensitive(route53RecordPage && w.route53ZoneContext != nil && w.options.Route53 != nil && !w.route53ActionPending)
+	w.route53EditButton.SetVisible(route53RecordPage && route53RecordSelected)
+	w.route53EditButton.SetSensitive(route53Ready)
+	record, _ := w.selectedRoute53RecordValue()
+	deleteRoute53Record := route53RecordPage && route53RecordSelected && record.Type != "NS" && record.Type != "SOA"
+	w.route53DeleteButton.SetVisible(deleteRoute53Record)
+	w.route53DeleteButton.SetSensitive(deleteRoute53Record && route53Ready)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

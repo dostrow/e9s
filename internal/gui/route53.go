@@ -5,11 +5,13 @@ package gui
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 )
 
 func (w *mainWindow) openRoute53Module() {
@@ -411,6 +413,173 @@ func formatRoute53Record(zone model.Route53Zone, record model.Route53Record, ans
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (w *mainWindow) promptCreateRoute53Record() {
+	if w.currentPage != pageRoute53Records || w.route53ZoneContext == nil || w.options.Route53 == nil || w.route53ActionPending {
+		return
+	}
+	w.promptRoute53RecordEditor("Create Route53 record", service.BuildRoute53RecordTemplate(nil), nil)
+}
+
+func (w *mainWindow) promptEditRoute53Record() {
+	record, found := w.selectedRoute53RecordValue()
+	if !found || w.route53ZoneContext == nil || w.options.Route53 == nil || w.route53ActionPending {
+		return
+	}
+	w.promptRoute53RecordEditor("Edit Route53 record", service.BuildRoute53RecordTemplate(&record), &record)
+}
+
+func (w *mainWindow) promptRoute53RecordEditor(title, initial string, original *model.Route53Record) {
+	dialog := gtk.NewDialogWithFlags(title, &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(760, 620)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	guidance := "Edit the portable JSON record document. Use either values with a positive TTL or an alias target."
+	if original != nil {
+		guidance += " Name, type, and setIdentifier are immutable in this edit."
+	}
+	label := gtk.NewLabel(guidance)
+	label.SetXAlign(0)
+	label.SetWrap(true)
+	content.Append(label)
+	editor := newSourceEditor(sourceDocument{Path: "route53-record.json", Language: "json"})
+	editor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	editor.SetText(initial)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetChild(editor.Widget())
+	content.Append(scroll)
+	errorLabel := gtk.NewLabel("")
+	errorLabel.SetXAlign(0)
+	errorLabel.SetWrap(true)
+	errorLabel.AddCSSClass("error")
+	content.Append(errorLabel)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Review change…", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response != int(gtk.ResponseOK) {
+			dialog.Destroy()
+			return
+		}
+		record, err := service.ParseRoute53RecordTemplate(editor.Text())
+		if err == nil && original != nil && route53RecordIdentity(*record) != route53RecordIdentity(*original) {
+			err = fmt.Errorf("name, type, and setIdentifier cannot be changed by an edit; create a new record instead")
+		}
+		if err != nil {
+			errorLabel.SetLabel(err.Error())
+			return
+		}
+		dialog.Destroy()
+		w.confirmRoute53RecordChange(*record, original != nil)
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) confirmRoute53RecordChange(record model.Route53Record, update bool) {
+	if w.route53ZoneContext == nil {
+		return
+	}
+	action := "Create"
+	if update {
+		action = "Update"
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle(action + " Route53 record")
+	dialog.SetMarkup(action + " <b>" + html.EscapeString(record.Type) + " " + html.EscapeString(record.Name) + "</b> in <b>" + html.EscapeString(w.route53ZoneContext.Name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", route53RecordChangeSummary(record))
+	dialog.SetDestroyWithParent(true)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton(action, int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.runRoute53RecordChange(record, update)
+		}
+	})
+	dialog.Present()
+}
+
+func route53RecordChangeSummary(record model.Route53Record) string {
+	if record.AliasTarget != "" {
+		return fmt.Sprintf("Alias: %s • Target zone: %s • Routing: %s", record.AliasTarget, record.AliasZoneID, route53RoutingLabel(record))
+	}
+	return fmt.Sprintf("TTL: %ds • Values: %d • Routing: %s", record.TTL, len(record.Values), route53RoutingLabel(record))
+}
+
+func (w *mainWindow) runRoute53RecordChange(record model.Route53Record, update bool) {
+	if w.route53ZoneContext == nil || w.options.Route53 == nil || w.route53ActionPending {
+		return
+	}
+	w.route53ActionPending = true
+	w.updateActionSensitivity()
+	zone := *w.route53ZoneContext
+	action := "Creating"
+	success := "Created"
+	if update {
+		action, success = "Updating", "Updated"
+	}
+	ctx, generation := w.startRequest(action + " Route53 record " + record.Name + "…")
+	go func() {
+		var err error
+		if update {
+			err = w.options.Route53.Update(ctx, zone.ID, record)
+		} else {
+			err = w.options.Route53.Create(ctx, zone.ID, record)
+		}
+		w.finishRoute53Action(ctx, generation, err, success+" Route53 record "+record.Name, func() {
+			w.loadRoute53Records(zone)
+		})
+	}()
+}
+
+func (w *mainWindow) confirmDeleteRoute53Record() {
+	record, found := w.selectedRoute53RecordValue()
+	if !found || w.route53ZoneContext == nil || w.options.Route53 == nil || w.route53ActionPending {
+		return
+	}
+	if record.Type == "NS" || record.Type == "SOA" {
+		w.setStatus("Apex "+record.Type+" records are protected", true)
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Delete Route53 record")
+	dialog.SetMarkup("Permanently delete <b>" + html.EscapeString(record.Type) + " " + html.EscapeString(record.Name) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "The complete loaded record set will be submitted for deletion. This cannot be undone.")
+	dialog.SetDestroyWithParent(true)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Delete", int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.runDeleteRoute53Record(record)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) runDeleteRoute53Record(record model.Route53Record) {
+	if w.route53ZoneContext == nil || w.options.Route53 == nil || w.route53ActionPending {
+		return
+	}
+	w.route53ActionPending = true
+	w.updateActionSensitivity()
+	zone := *w.route53ZoneContext
+	ctx, generation := w.startRequest("Deleting Route53 record " + record.Name + "…")
+	go func() {
+		err := w.options.Route53.Delete(ctx, zone.ID, record)
+		w.finishRoute53Action(ctx, generation, err, "Deleted Route53 record "+record.Name, func() {
+			w.selectedRoute53Record = ""
+			w.loadRoute53Records(zone)
+		})
+	}()
 }
 
 func route53ZoneListSummary(count int) string {
