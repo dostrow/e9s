@@ -76,4 +76,21 @@ func (terminal *vteTerminal) SetFontScale(scale float64) {
 	)
 }
 
+func (terminal *vteTerminal) SetPalette(palette semanticPalette) {
+	colors := []string{
+		rgbaHex(palette.foreground), rgbaHex(palette.surface), rgbaHex(palette.accent),
+		rgbaHex(palette.success), rgbaHex(palette.warning), rgbaHex(palette.error),
+		rgbaHex(palette.info), rgbaHex(palette.muted),
+	}
+	cColors := make([]*C.char, len(colors))
+	for i, color := range colors {
+		cColors[i] = C.CString(color)
+		defer C.free(unsafe.Pointer(cColors[i]))
+	}
+	C.e9s_vte_terminal_set_palette(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+		cColors[0], cColors[1], cColors[2], cColors[3], cColors[4], cColors[5], cColors[6], cColors[7],
+	)
+}
+
 func vteAvailable() bool { return true }

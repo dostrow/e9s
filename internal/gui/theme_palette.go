@@ -82,6 +82,13 @@ func blendRGBA(from, to gdk.RGBA, amount float64) gdk.RGBA {
 	)
 }
 
+func rgbaHex(color gdk.RGBA) string {
+	channel := func(value float32) uint8 {
+		return uint8(min(255, max(0, int(float64(value)*255+0.5))))
+	}
+	return fmt.Sprintf("#%02X%02X%02X", channel(color.Red()), channel(color.Green()), channel(color.Blue()))
+}
+
 func semanticStyleCSS(palette semanticPalette) string {
 	return fmt.Sprintf(`
 .saved-log-modified, .semantic-warning { color: %s; }
@@ -121,6 +128,11 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	}
 	for _, resourceTag := range w.detailResourceTags {
 		resourceTag.tag.SetObjectProperty("foreground", palette.info.String())
+	}
+	w.taskDefinitionSourceEditor.ApplyPalette(palette)
+	w.lambdaSourceEditor.ApplyPalette(palette)
+	if w.terminal != nil {
+		w.terminal.SetPalette(palette)
 	}
 }
 

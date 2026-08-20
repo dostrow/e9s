@@ -38,4 +38,6 @@ func (terminal *vteTerminal) Stop() {}
 
 func (terminal *vteTerminal) SetFontScale(float64) {}
 
+func (terminal *vteTerminal) SetPalette(semanticPalette) {}
+
 func vteAvailable() bool { return false }

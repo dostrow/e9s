@@ -10,9 +10,10 @@ type sourceDocument struct {
 }
 
 type sourceEditor struct {
-	buffer      *gtk.TextBuffer
-	view        gtk.Widgetter
-	setDocument func(sourceDocument)
+	buffer       *gtk.TextBuffer
+	view         gtk.Widgetter
+	setDocument  func(sourceDocument)
+	applyPalette func(semanticPalette)
 }
 
 func (e *sourceEditor) Buffer() *gtk.TextBuffer { return e.buffer }
@@ -36,6 +37,12 @@ func (e *sourceEditor) ConnectChanged(changed func()) {
 	e.buffer.ConnectChanged(changed)
 }
 
+func (e *sourceEditor) ApplyPalette(palette semanticPalette) {
+	if e != nil && e.applyPalette != nil {
+		e.applyPalette(palette)
+	}
+}
+
 func configurePlainSourceView(view *gtk.TextView) {
 	view.SetEditable(true)
 	view.SetCursorVisible(true)
@@ -44,19 +51,14 @@ func configurePlainSourceView(view *gtk.TextView) {
 	view.AddCSSClass("inspector")
 }
 
-func darkEditorBackground(widget *gtk.Widget) bool {
-	style := widget.StyleContext()
-	for _, name := range []string{"theme_bg_color", "window_bg_color", "view_bg_color"} {
-		color, ok := style.LookupColor(name)
-		if !ok {
-			continue
-		}
-		return editorColorIsDark(float64(color.Red()), float64(color.Green()), float64(color.Blue()))
+func sourceEditorPalette(palette semanticPalette) []string {
+	selection := blendRGBA(palette.surface, palette.accent, 0.42)
+	currentLine := blendRGBA(palette.surface, palette.foreground, 0.07)
+	gutter := blendRGBA(palette.surface, palette.foreground, 0.035)
+	return []string{
+		rgbaHex(palette.foreground), rgbaHex(palette.surface), rgbaHex(palette.accent),
+		rgbaHex(palette.success), rgbaHex(palette.warning), rgbaHex(palette.error),
+		rgbaHex(palette.info), rgbaHex(palette.muted), rgbaHex(selection),
+		rgbaHex(currentLine), rgbaHex(gutter),
 	}
-	return false
-}
-
-func editorColorIsDark(red, green, blue float64) bool {
-	luminance := 0.2126*red + 0.7152*green + 0.0722*blue
-	return luminance < 0.5
 }

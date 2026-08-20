@@ -110,3 +110,66 @@ void e9s_vte_terminal_reset(GtkWidget *widget) {
 void e9s_vte_terminal_set_font_scale(GtkWidget *widget, double scale) {
     vte_terminal_set_font_scale(VTE_TERMINAL(widget), scale);
 }
+
+static GdkRGBA e9s_vte_color(const char *value) {
+    GdkRGBA color = {0};
+    gdk_rgba_parse(&color, value);
+    return color;
+}
+
+static GdkRGBA e9s_vte_blend(GdkRGBA from, GdkRGBA to, double amount) {
+    GdkRGBA color = {
+        .red = from.red + (to.red - from.red) * amount,
+        .green = from.green + (to.green - from.green) * amount,
+        .blue = from.blue + (to.blue - from.blue) * amount,
+        .alpha = 1.0,
+    };
+    return color;
+}
+
+void e9s_vte_terminal_set_palette(
+    GtkWidget *widget,
+    const char *foreground_value,
+    const char *background_value,
+    const char *accent_value,
+    const char *success_value,
+    const char *warning_value,
+    const char *error_value,
+    const char *info_value,
+    const char *muted_value
+) {
+    GdkRGBA foreground = e9s_vte_color(foreground_value);
+    GdkRGBA background = e9s_vte_color(background_value);
+    GdkRGBA accent = e9s_vte_color(accent_value);
+    GdkRGBA success = e9s_vte_color(success_value);
+    GdkRGBA warning = e9s_vte_color(warning_value);
+    GdkRGBA error_color = e9s_vte_color(error_value);
+    GdkRGBA info = e9s_vte_color(info_value);
+    GdkRGBA muted = e9s_vte_color(muted_value);
+    GdkRGBA cyan = e9s_vte_blend(info, success, 0.5);
+    GdkRGBA palette[16] = {
+        e9s_vte_blend(background, foreground, 0.14),
+        error_color,
+        success,
+        warning,
+        info,
+        accent,
+        cyan,
+        foreground,
+        muted,
+        e9s_vte_blend(error_color, foreground, 0.22),
+        e9s_vte_blend(success, foreground, 0.22),
+        e9s_vte_blend(warning, foreground, 0.22),
+        e9s_vte_blend(info, foreground, 0.22),
+        e9s_vte_blend(accent, foreground, 0.22),
+        e9s_vte_blend(cyan, foreground, 0.22),
+        foreground,
+    };
+    VteTerminal *terminal = VTE_TERMINAL(widget);
+    vte_terminal_set_colors(terminal, &foreground, &background, palette, 16);
+    vte_terminal_set_color_cursor(terminal, &accent);
+    vte_terminal_set_color_cursor_foreground(terminal, &background);
+    vte_terminal_set_color_highlight(terminal, &accent);
+    vte_terminal_set_color_highlight_foreground(terminal, &background);
+    vte_terminal_set_color_bold(terminal, &foreground);
+}

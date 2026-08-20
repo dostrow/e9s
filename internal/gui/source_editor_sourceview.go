@@ -43,23 +43,25 @@ func newSourceEditor(document sourceDocument) *sourceEditor {
 	}
 	setDocument(document)
 
-	applyTheme := func() {
-		dark := darkEditorBackground(&view.Widget)
-		C.e9s_source_editor_set_dark(
+	applyPalette := func(palette semanticPalette) {
+		colors := sourceEditorPalette(palette)
+		cColors := make([]*C.char, len(colors))
+		for i, color := range colors {
+			cColors[i] = C.CString(color)
+			defer C.free(unsafe.Pointer(cColors[i]))
+		}
+		C.e9s_source_editor_set_palette(
 			C.uintptr_t(coreglib.BaseObject(view).Native()),
-			C.gboolean(boolToGBoolean(dark)),
+			cColors[0], cColors[1], cColors[2], cColors[3], cColors[4], cColors[5],
+			cColors[6], cColors[7], cColors[8], cColors[9], cColors[10],
 		)
-	}
-	view.ConnectMap(applyTheme)
-	if settings := gtk.SettingsGetDefault(); settings != nil {
-		settings.NotifyProperty("gtk-theme-name", applyTheme)
-		settings.NotifyProperty("gtk-application-prefer-dark-theme", applyTheme)
 	}
 
 	return &sourceEditor{
-		buffer:      buffer,
-		view:        view,
-		setDocument: setDocument,
+		buffer:       buffer,
+		view:         view,
+		setDocument:  setDocument,
+		applyPalette: applyPalette,
 	}
 }
 
@@ -73,11 +75,4 @@ func sourceViewLanguageID(document sourceDocument) string {
 		return ""
 	}
 	return C.GoString(id)
-}
-
-func boolToGBoolean(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }
