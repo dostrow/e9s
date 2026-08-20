@@ -48,6 +48,8 @@ func TestApplicationCSSNormalizesThemeIndependentControlGeometry(t *testing.T) {
 	for _, fragment := range []string{
 		"notebook.e9s-settings-notebook > header > tabs",
 		"notebook.e9s-settings-notebook > stack",
+		"notebook.e9s-terminal-notebook > header > tabs",
+		"notebook.e9s-terminal-notebook > stack",
 		"checkbutton.e9s-check > check",
 		`-gtk-icon-source: -gtk-icontheme("object-select-symbolic")`,
 	} {

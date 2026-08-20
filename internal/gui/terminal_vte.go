@@ -11,6 +11,7 @@ import "C"
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
@@ -89,6 +90,18 @@ func (terminal *vteTerminal) Running() bool {
 
 func (terminal *vteTerminal) ExitStatus() int {
 	return int(C.e9s_vte_terminal_exit_status((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native()))))
+}
+
+func (terminal *vteTerminal) WindowTitle() string {
+	title := C.e9s_vte_terminal_window_title((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
+	if title == nil {
+		return ""
+	}
+	return strings.TrimSpace(C.GoString(title))
+}
+
+func (terminal *vteTerminal) ConnectWindowTitleChanged(f func()) {
+	terminal.widget.NotifyProperty("window-title", f)
 }
 
 func (terminal *vteTerminal) SetFontScale(scale float64) {

@@ -3,6 +3,7 @@
 #include "vte_bridge.h"
 
 #include <signal.h>
+#define VTE_DISABLE_DEPRECATION_WARNINGS
 #include <vte/vte.h>
 
 typedef struct {
@@ -128,6 +129,12 @@ int e9s_vte_terminal_exit_status(GtkWidget *widget) {
         return 0;
     }
     return state->exit_status;
+}
+
+const char *e9s_vte_terminal_window_title(GtkWidget *widget) {
+    /* This compatibility accessor remains available across the GTK4 VTE
+     * versions supported by e9s; newer releases implement it via xterm.title. */
+    return vte_terminal_get_window_title(VTE_TERMINAL(widget));
 }
 
 void e9s_vte_terminal_reset(GtkWidget *widget) {

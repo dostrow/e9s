@@ -120,6 +120,26 @@
   box-shadow: inset 0 -2px currentColor;
 }
 
+/* The terminal drawer is already framed by its containing pane. Suppress the
+ * notebook's theme-owned inner frame and use one continuous active-tab mark. */
+.terminal-dock notebook.e9s-terminal-notebook,
+.terminal-dock notebook.e9s-terminal-notebook > header,
+.terminal-dock notebook.e9s-terminal-notebook > header > tabs,
+.terminal-dock notebook.e9s-terminal-notebook > stack {
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+.terminal-dock notebook.e9s-terminal-notebook > header > tabs > tab {
+  border: 0;
+  box-shadow: none;
+}
+
+.terminal-dock notebook.e9s-terminal-notebook > header > tabs > tab:checked {
+  box-shadow: inset 0 -2px currentColor;
+}
+
 /* Some GTK themes implement a Material ripple by allocating a large circular
  * check node around a theme-private SVG. Keep e9s controls compact and use a
  * standard symbolic glyph while retaining the active theme's currentColor. */

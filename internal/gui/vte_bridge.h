@@ -9,6 +9,7 @@ void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_
 void e9s_vte_terminal_stop(GtkWidget *widget);
 gboolean e9s_vte_terminal_running(GtkWidget *widget);
 int e9s_vte_terminal_exit_status(GtkWidget *widget);
+const char *e9s_vte_terminal_window_title(GtkWidget *widget);
 void e9s_vte_terminal_reset(GtkWidget *widget);
 void e9s_vte_terminal_set_font_scale(GtkWidget *widget, double scale);
 void e9s_vte_terminal_set_font(GtkWidget *widget, const char *description);

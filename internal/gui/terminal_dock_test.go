@@ -47,3 +47,19 @@ func TestTerminalDockUsesActiveTofuWorkspaceAsDirectory(t *testing.T) {
 		t.Fatalf("non-Tofu terminal directory = %q, want %q", got, fallback)
 	}
 }
+
+func TestTerminalDockSessionTitlePrefersRenameThenTerminalContext(t *testing.T) {
+	session := &terminalDockSession{id: 4, autoTitle: "nvim main.go"}
+	if got := terminalDockSessionTitle(session); got != "nvim main.go" {
+		t.Fatalf("automatic title = %q", got)
+	}
+	session.customTitle = "API logs"
+	if got := terminalDockSessionTitle(session); got != "API logs" {
+		t.Fatalf("custom title = %q", got)
+	}
+	session.customTitle = ""
+	session.autoTitle = ""
+	if got := terminalDockSessionTitle(session); got != "Terminal 4" {
+		t.Fatalf("fallback title = %q", got)
+	}
+}

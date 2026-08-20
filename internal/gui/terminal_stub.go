@@ -48,6 +48,10 @@ func (terminal *vteTerminal) Running() bool { return false }
 
 func (terminal *vteTerminal) ExitStatus() int { return 0 }
 
+func (terminal *vteTerminal) WindowTitle() string { return "" }
+
+func (terminal *vteTerminal) ConnectWindowTitleChanged(func()) {}
+
 func (terminal *vteTerminal) SetFontScale(float64) {}
 
 func (terminal *vteTerminal) SetFont(string) {}

@@ -18,11 +18,13 @@ import (
 const terminalDockPreferredHeight = 280
 
 type terminalDockSession struct {
-	id       int
-	terminal *vteTerminal
-	cwd      string
-	page     gtk.Widgetter
-	tabLabel *gtk.Label
+	id          int
+	terminal    *vteTerminal
+	cwd         string
+	page        gtk.Widgetter
+	tabLabel    *gtk.Label
+	autoTitle   string
+	customTitle string
 }
 
 func (w *mainWindow) buildTerminalDock() *gtk.Box {
@@ -31,6 +33,9 @@ func (w *mainWindow) buildTerminalDock() *gtk.Box {
 	newButton := gtk.NewButtonWithLabel("New tab")
 	newButton.SetTooltipText("Open another local terminal (Ctrl+Shift+T)")
 	newButton.ConnectClicked(func() { w.newTerminalDockTab() })
+	renameButton := gtk.NewButtonWithLabel("Rename tab…")
+	renameButton.SetTooltipText("Rename the active terminal tab")
+	renameButton.ConnectClicked(w.promptRenameActiveTerminalDock)
 	closeButton := gtk.NewButtonWithLabel("Close tab…")
 	closeButton.SetTooltipText("Close the active terminal (Ctrl+Shift+W)")
 	closeButton.ConnectClicked(w.confirmCloseActiveTerminalDock)
@@ -47,10 +52,12 @@ func (w *mainWindow) buildTerminalDock() *gtk.Box {
 	toolbar.Append(hideButton)
 	toolbar.Append(w.terminalDockTitle)
 	toolbar.Append(newButton)
+	toolbar.Append(renameButton)
 	toolbar.Append(closeButton)
 	toolbar.Append(restartButton)
 
 	w.terminalDockNotebook = gtk.NewNotebook()
+	w.terminalDockNotebook.AddCSSClass("e9s-terminal-notebook")
 	w.terminalDockNotebook.SetHExpand(true)
 	w.terminalDockNotebook.SetVExpand(true)
 	w.terminalDockNotebook.SetScrollable(true)
@@ -152,13 +159,20 @@ func (w *mainWindow) spawnTerminalDock() (*terminalDockSession, error) {
 	}
 	w.terminalDockNextID++
 	session := &terminalDockSession{
-		id:       w.terminalDockNextID,
-		terminal: terminal,
-		cwd:      workingDirectory,
-		page:     terminal.Widget(),
-		tabLabel: gtk.NewLabel(fmt.Sprintf("Terminal %d", w.terminalDockNextID)),
+		id:        w.terminalDockNextID,
+		terminal:  terminal,
+		cwd:       workingDirectory,
+		page:      terminal.Widget(),
+		tabLabel:  gtk.NewLabel(""),
+		autoTitle: terminal.WindowTitle(),
 	}
-	session.tabLabel.SetTooltipText(workingDirectory)
+	session.tabLabel.SetEllipsize(pango.EllipsizeMiddle)
+	session.tabLabel.SetMaxWidthChars(28)
+	w.updateTerminalDockSessionTitle(session)
+	terminal.ConnectWindowTitleChanged(func() {
+		session.autoTitle = terminal.WindowTitle()
+		w.updateTerminalDockSessionTitle(session)
+	})
 	tab := w.terminalDockTabLabel(session)
 	w.terminalDockSessions = append(w.terminalDockSessions, session)
 	page := w.terminalDockNotebook.AppendPage(session.page, tab)
@@ -210,8 +224,71 @@ func (w *mainWindow) updateTerminalDockTitle() {
 		w.terminalDockTitle.SetTooltipText("")
 		return
 	}
-	w.terminalDockTitle.SetLabel(fmt.Sprintf("Local terminal %d — %s", session.id, session.cwd))
+	w.terminalDockTitle.SetLabel(fmt.Sprintf("%s — %s", terminalDockSessionTitle(session), session.cwd))
 	w.terminalDockTitle.SetTooltipText(session.cwd)
+}
+
+func terminalDockSessionTitle(session *terminalDockSession) string {
+	if session == nil {
+		return "Local terminal"
+	}
+	if title := strings.TrimSpace(session.customTitle); title != "" {
+		return title
+	}
+	if title := strings.TrimSpace(session.autoTitle); title != "" {
+		return title
+	}
+	return fmt.Sprintf("Terminal %d", session.id)
+}
+
+func (w *mainWindow) updateTerminalDockSessionTitle(session *terminalDockSession) {
+	if session == nil || session.tabLabel == nil {
+		return
+	}
+	title := terminalDockSessionTitle(session)
+	session.tabLabel.SetLabel(title)
+	tooltip := title
+	if session.cwd != "" {
+		tooltip += "\n" + session.cwd
+	}
+	session.tabLabel.SetTooltipText(tooltip)
+	if w.activeTerminalDockSession() == session {
+		w.updateTerminalDockTitle()
+	}
+}
+
+func (w *mainWindow) promptRenameActiveTerminalDock() {
+	session := w.activeTerminalDockSession()
+	if session == nil {
+		return
+	}
+	dialog := gtk.NewDialogWithFlags("Rename terminal tab", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	label := gtk.NewLabel("Tab title (leave blank to follow the terminal title)")
+	label.SetXAlign(0)
+	entry := gtk.NewEntry()
+	entry.SetText(session.customTitle)
+	entry.SetPlaceholderText(terminalDockSessionTitle(&terminalDockSession{id: session.id, autoTitle: session.autoTitle}))
+	entry.SetActivatesDefault(true)
+	content.Append(label)
+	content.Append(entry)
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Rename", int(gtk.ResponseOK))
+	dialog.SetDefaultResponse(int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		if response == int(gtk.ResponseOK) {
+			session.customTitle = strings.TrimSpace(entry.Text())
+			w.updateTerminalDockSessionTitle(session)
+		}
+		dialog.Destroy()
+	})
+	dialog.Present()
 }
 
 func (w *mainWindow) confirmCloseActiveTerminalDock() {
