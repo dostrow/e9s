@@ -18,6 +18,7 @@ type settingsChoice struct {
 
 var settingsModuleChoices = []settingsChoice{
 	{label: "Ask when e9s starts", value: ""},
+	{label: "API Gateway", value: "API Gateway"},
 	{label: "CloudWatch Alarms", value: "CloudWatch Alarms"},
 	{label: "CloudWatch Logs", value: "CloudWatch Logs"},
 	{label: "CodeBuild", value: "CodeBuild"},

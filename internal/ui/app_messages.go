@@ -321,6 +321,15 @@ type elastiCacheDetailLoadedMsg struct {
 	metrics  *model.MetricSnapshot
 }
 
+type apiGatewayLoadedMsg struct {
+	kind      model.APIGatewayKind
+	resources []model.APIGatewayAPI
+}
+type apiGatewayDetailLoadedMsg struct {
+	resource *model.APIGatewayAPI
+	metrics  *model.MetricSnapshot
+}
+
 type costReportLoadedMsg struct {
 	report model.CostReport
 	status model.CostCacheStatus

@@ -551,6 +551,14 @@ serverless caches. Select a resource to inspect topology, endpoints,
 encryption and network configuration, tags, and recent CloudWatch metrics.
 In the TUI, use `1`, `2`, and `3` to switch resource types.
 
+### API Gateway
+
+The API Gateway module covers REST, HTTP, and WebSocket APIs plus custom
+domains. Details include stages and invoke URLs, routes/resources,
+integrations, access-log destinations, domain mappings, tags, and recent
+request, latency, and error metrics. In the TUI, use `1` through `4` to switch
+between the four resource scopes.
+
 ## Configuration
 
 Config is stored at `~/.config/e9s/config.yaml` (XDG convention). Press `ctrl+e` to edit it in your `$EDITOR`, or it hot-reloads on file changes.
@@ -592,6 +600,7 @@ modules:
   tofu: true
   cost_explorer: true
   elasticache: true
+  api_gateway: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -636,6 +645,7 @@ Your IAM identity needs permissions for whichever modules you use:
 | RDS browse | `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `cloudwatch:GetMetricData` |
 | Cost Explorer | `ce:GetCostAndUsage`, `ce:GetCostForecast`, `ce:GetAnomalies`; resource view also uses `ce:GetCostAndUsageWithResources` |
 | ElastiCache | `elasticache:DescribeReplicationGroups`, `elasticache:DescribeCacheClusters`, `elasticache:DescribeServerlessCaches`, `elasticache:ListTagsForResource`, `cloudwatch:GetMetricData` |
+| API Gateway | `apigateway:GET` for REST/HTTP/WebSocket APIs, stages, routes/resources, integrations, domains, and mappings; `cloudwatch:GetMetricData` |
 | EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSecurityGroups`, `ec2:DescribeSecurityGroupRules`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeVolumes`, `ec2:GetConsoleOutput`, `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTargetHealth` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |

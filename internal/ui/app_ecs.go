@@ -1042,6 +1042,13 @@ func (a App) refreshCurrentView() tea.Cmd {
 			_, cmd := a.openElastiCacheDetail()
 			return cmd
 		}
+	case viewAPIGateway:
+		return a.loadAPIGateway(a.apiGatewayKind)
+	case viewAPIGatewayDetail:
+		if a.selectedAPIGateway != nil {
+			_, cmd := a.openAPIGatewayDetail()
+			return cmd
+		}
 	default:
 		return nil
 	}

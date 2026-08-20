@@ -68,6 +68,9 @@ func TestModuleDefaults(t *testing.T) {
 	if !cfg.ModuleElastiCache() {
 		t.Error("ModuleElastiCache should default to true")
 	}
+	if !cfg.ModuleAPIGateway() {
+		t.Error("ModuleAPIGateway should default to true")
+	}
 }
 
 func TestCostViewValidation(t *testing.T) {

@@ -153,6 +153,12 @@ type ElastiCacheService interface {
 	Metrics(context.Context, model.ElastiCacheResource, time.Duration) (*model.MetricSnapshot, error)
 }
 
+type APIGatewayService interface {
+	List(context.Context, model.APIGatewayKind, string) ([]model.APIGatewayAPI, error)
+	Detail(context.Context, model.APIGatewayKind, string) (*model.APIGatewayAPI, error)
+	Metrics(context.Context, model.APIGatewayAPI, time.Duration) (*model.MetricSnapshot, error)
+}
+
 type S3Service interface {
 	Buckets(context.Context, string) ([]model.S3Bucket, error)
 	Objects(context.Context, string, string) ([]model.S3Object, error)
@@ -224,6 +230,7 @@ type Options struct {
 	ECR             ECRService
 	RDS             RDSService
 	ElastiCache     ElastiCacheService
+	APIGateway      APIGatewayService
 	S3              S3Service
 	DynamoDB        DynamoDBService
 	SQS             SQSService

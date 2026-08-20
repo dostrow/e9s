@@ -40,6 +40,7 @@ const (
 	modeRDS
 	modeCostExplorer
 	modeElastiCache
+	modeAPIGateway
 )
 
 type viewState int
@@ -111,6 +112,8 @@ const (
 	viewCostExplorer
 	viewElastiCache
 	viewElastiCacheDetail
+	viewAPIGateway
+	viewAPIGatewayDetail
 )
 
 type App struct {
@@ -135,6 +138,7 @@ type App struct {
 	tofu                       *service.Tofu
 	costExplorer               *service.CostExplorer
 	elastiCache                *service.ElastiCache
+	apiGateway                 *service.APIGateway
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -220,6 +224,11 @@ type App struct {
 	elastiCacheKind            model.ElastiCacheKind
 	elastiCacheResources       []model.ElastiCacheResource
 	selectedElastiCache        *model.ElastiCacheResource
+	apiGatewayView             views.EC2ResourceListModel
+	apiGatewayDetailView       views.EC2ResourceDetailModel
+	apiGatewayKind             model.APIGatewayKind
+	apiGatewayResources        []model.APIGatewayAPI
+	selectedAPIGateway         *model.APIGatewayAPI
 	regionPicker               views.RegionPickerModel
 
 	// Navigation context
@@ -378,6 +387,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		tofu:          service.NewTofu(),
 		costExplorer:  service.NewCostExplorer(client),
 		elastiCache:   service.NewElastiCache(client),
+		apiGateway:    service.NewAPIGateway(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,
@@ -415,6 +425,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeRDS, "RDS", cfg.ModuleRDS()},
 		{modeCostExplorer, "COST", cfg.ModuleCostExplorer()},
 		{modeElastiCache, "CACHE", cfg.ModuleElastiCache()},
+		{modeAPIGateway, "APIGW", cfg.ModuleAPIGateway()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -467,6 +478,7 @@ func resolveDefaultMode(s string) *topMode {
 		"RDS": modeRDS, "rds": modeRDS,
 		"Cost Explorer": modeCostExplorer, "cost explorer": modeCostExplorer, "cost": modeCostExplorer, "CE": modeCostExplorer, "ce": modeCostExplorer,
 		"ElastiCache": modeElastiCache, "elasticache": modeElastiCache, "CACHE": modeElastiCache, "cache": modeElastiCache,
+		"API Gateway": modeAPIGateway, "api gateway": modeAPIGateway, "apigateway": modeAPIGateway, "APIGW": modeAPIGateway,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -560,6 +572,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.costView = a.costView.SetSize(w, h)
 		a.elastiCacheView = a.elastiCacheView.SetSize(w, h)
 		a.elastiCacheDetailView = a.elastiCacheDetailView.SetSize(w, h)
+		a.apiGatewayView = a.apiGatewayView.SetSize(w, h)
+		a.apiGatewayDetailView = a.apiGatewayDetailView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -1462,6 +1476,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.loading = false
 		return a, nil
 
+	case apiGatewayLoadedMsg:
+		if a.mode != modeAPIGateway || a.apiGatewayKind != msg.kind {
+			return a, nil
+		}
+		a.apiGatewayResources = msg.resources
+		a.apiGatewayView = a.apiGatewayView.SetRows(apiGatewayTUIRows(msg.resources))
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case apiGatewayDetailLoadedMsg:
+		if msg.resource != nil {
+			a.selectedAPIGateway = msg.resource
+			a.apiGatewayDetailView = views.NewEC2ResourceDetail(formatTUIAPIGateway(*msg.resource, msg.metrics)).SetSize(a.width-3, a.height-6)
+			a.state = viewAPIGatewayDetail
+		}
+		a.loading = false
+		return a, nil
+
 	case costReportLoadedMsg:
 		a = a.setCostReport(msg.report, msg.status)
 		return a, nil
@@ -1985,6 +2018,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.openElastiCache(model.ElastiCacheServerless)
 			}
 		}
+		if a.mode == modeAPIGateway && a.state == viewAPIGateway && !a.isFiltering() {
+			switch k {
+			case "1":
+				return a.openAPIGateway(model.APIGatewayREST)
+			case "2":
+				return a.openAPIGateway(model.APIGatewayHTTP)
+			case "3":
+				return a.openAPIGateway(model.APIGatewayWebSocket)
+			case "4":
+				return a.openAPIGateway(model.APIGatewayDomain)
+			}
+		}
 		if a.mode == modeEC2 {
 			if k == a.kb.EC2Resource {
 				return a.switchEC2Resource()
@@ -2497,6 +2542,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.elastiCacheView, cmd = a.elastiCacheView.Update(msg)
 	case viewElastiCacheDetail:
 		a.elastiCacheDetailView, cmd = a.elastiCacheDetailView.Update(msg)
+	case viewAPIGateway:
+		a.apiGatewayView, cmd = a.apiGatewayView.Update(msg)
+	case viewAPIGatewayDetail:
+		a.apiGatewayDetailView, cmd = a.apiGatewayDetailView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2567,6 +2616,8 @@ func (a App) isFiltering() bool {
 		return a.costView.IsFiltering()
 	case viewElastiCache:
 		return a.elastiCacheView.IsFiltering()
+	case viewAPIGateway:
+		return a.apiGatewayView.IsFiltering()
 	}
 	return false
 }
@@ -2710,6 +2761,10 @@ func (a App) View() string {
 		content = a.elastiCacheView.View()
 	case viewElastiCacheDetail:
 		content = a.elastiCacheDetailView.View()
+	case viewAPIGateway:
+		content = a.apiGatewayView.View()
+	case viewAPIGatewayDetail:
+		content = a.apiGatewayDetailView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -2903,6 +2958,10 @@ func (a App) helpText() string {
 	case viewElastiCache:
 		primary = "[enter] detail  [1/2/3] resource type"
 	case viewElastiCacheDetail:
+		primary = "[j/k] scroll"
+	case viewAPIGateway:
+		primary = "[enter] detail  [1/2/3/4] resource type"
+	case viewAPIGatewayDetail:
 		primary = "[j/k] scroll"
 	case viewEC2Instances:
 		primary = "[enter] detail"
@@ -3328,6 +3387,10 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{{"enter", "View cache details and current metrics"}, {"1/2/3", "Replication groups / cache clusters / serverless caches"}, {"/", "Filter resources"}}
 	case viewElastiCacheDetail:
 		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
+	case viewAPIGateway:
+		context = []kv{{"enter", "View stages, routes, integrations, mappings, and metrics"}, {"1/2/3/4", "REST / HTTP / WebSocket APIs / custom domains"}, {"/", "Filter resources"}}
+	case viewAPIGatewayDetail:
+		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -3504,6 +3567,8 @@ func (a App) drillDown() (App, tea.Cmd) {
 		}
 	case viewElastiCache:
 		return a.openElastiCacheDetail()
+	case viewAPIGateway:
+		return a.openAPIGatewayDetail()
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -3583,6 +3648,8 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openCostExplorer("overview", nil)
 	case modeElastiCache:
 		return a.openElastiCache(model.ElastiCacheReplicationGroup)
+	case modeAPIGateway:
+		return a.openAPIGateway(model.APIGatewayREST)
 	}
 	return a, nil
 }
@@ -3632,6 +3699,8 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openCostExplorer("overview", nil)
 	case modeElastiCache:
 		return a.openElastiCache(model.ElastiCacheReplicationGroup)
+	case modeAPIGateway:
+		return a.openAPIGateway(model.APIGatewayREST)
 	}
 	return a, nil
 }
@@ -3881,6 +3950,11 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a.showModePicker()
 	case viewElastiCacheDetail:
 		a.state = viewElastiCache
+		return a, nil
+	case viewAPIGateway:
+		return a.showModePicker()
+	case viewAPIGatewayDetail:
+		a.state = viewAPIGateway
 		return a, nil
 	case viewEC2Instances:
 		return a.showModePicker()

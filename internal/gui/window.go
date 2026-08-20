@@ -52,6 +52,7 @@ const (
 	pageRDSInstances      = "rds-instances"
 	pageRDSClusters       = "rds-clusters"
 	pageElastiCache       = "elasticache"
+	pageAPIGateway        = "api-gateway"
 	pageS3Buckets         = "s3-buckets"
 	pageS3Objects         = "s3-objects"
 	pageDynamoTables      = "dynamodb-tables"
@@ -98,6 +99,7 @@ const (
 	detailRDS              = "rds-instance"
 	detailRDSCluster       = "rds-cluster"
 	detailElastiCache      = "elasticache"
+	detailAPIGateway       = "api-gateway"
 	detailS3Bucket         = "s3-bucket"
 	detailS3Object         = "s3-object"
 	detailDynamoTable      = "dynamodb-table"
@@ -245,6 +247,12 @@ type mainWindow struct {
 	elastiCacheKind     model.ElastiCacheKind
 	elastiCacheDetail   *model.ElastiCacheResource
 
+	allAPIGateways      []model.APIGatewayAPI
+	filteredAPIGateways []model.APIGatewayAPI
+	selectedAPIGateway  string
+	apiGatewayKind      model.APIGatewayKind
+	apiGatewayDetail    *model.APIGatewayAPI
+
 	allS3Buckets               []model.S3Bucket
 	filteredS3Buckets          []model.S3Bucket
 	selectedS3Bucket           string
@@ -341,6 +349,7 @@ type mainWindow struct {
 	rdsClusterTable            *stringTable
 
 	elastiCacheTable *stringTable
+	apiGatewayTable  *stringTable
 
 	s3BucketTable            *stringTable
 	s3ObjectTable            *stringTable
@@ -375,6 +384,7 @@ type mainWindow struct {
 	rdsModuleItems           *gtk.Box
 
 	elastiCacheModuleItems *gtk.Box
+	apiGatewayModuleItems  *gtk.Box
 
 	s3ModuleItems              *gtk.Box
 	dynamoModuleItems          *gtk.Box
@@ -410,6 +420,10 @@ type mainWindow struct {
 	elastiCacheReplicationNavButton *gtk.ToggleButton
 	elastiCacheClustersNavButton    *gtk.ToggleButton
 	elastiCacheServerlessNavButton  *gtk.ToggleButton
+	apiGatewayRESTNavButton         *gtk.ToggleButton
+	apiGatewayHTTPNavButton         *gtk.ToggleButton
+	apiGatewayWebSocketNavButton    *gtk.ToggleButton
+	apiGatewayDomainsNavButton      *gtk.ToggleButton
 
 	s3BucketsNavButton          *gtk.ToggleButton
 	savedS3SearchesLabel        *gtk.Label
@@ -862,6 +876,10 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "STATUS", field: 2}, {title: "TYPE", field: 3}, {title: "NODES", field: 4},
 		{title: "ENDPOINT", field: 5, expand: true},
 	})
+	w.apiGatewayTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "ID", field: 1}, {title: "PROTOCOL", field: 2},
+		{title: "STATUS", field: 3}, {title: "ENDPOINT", field: 4, expand: true}, {title: "CREATED", field: 5},
+	})
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
 	})
@@ -929,6 +947,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsTable.view.ConnectActivate(w.openRDSInstanceAt)
 	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
 	w.elastiCacheTable.view.ConnectActivate(w.openElastiCacheAt)
+	w.apiGatewayTable.view.ConnectActivate(w.openAPIGatewayAt)
 	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
 	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
 	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
@@ -967,6 +986,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSInstanceRow() })
 	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
 	w.elastiCacheTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectElastiCacheRow() })
+	w.apiGatewayTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAPIGatewayRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
@@ -1415,6 +1435,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.elastiCacheModuleItems.Append(w.elastiCacheClustersNavButton)
 	w.elastiCacheModuleItems.Append(w.elastiCacheServerlessNavButton)
 	elastiCache := w.newModuleExpander("ElastiCache", moduleElastiCache, w.elastiCacheModuleItems)
+	w.apiGatewayRESTNavButton = newModuleRailButton("REST APIs", func() { w.openAPIGatewayModule(model.APIGatewayREST) })
+	w.apiGatewayRESTNavButton.SetGroup(w.clustersNavButton)
+	w.apiGatewayHTTPNavButton = newModuleRailButton("HTTP APIs", func() { w.openAPIGatewayModule(model.APIGatewayHTTP) })
+	w.apiGatewayHTTPNavButton.SetGroup(w.clustersNavButton)
+	w.apiGatewayWebSocketNavButton = newModuleRailButton("WebSocket APIs", func() { w.openAPIGatewayModule(model.APIGatewayWebSocket) })
+	w.apiGatewayWebSocketNavButton.SetGroup(w.clustersNavButton)
+	w.apiGatewayDomainsNavButton = newModuleRailButton("Custom Domains", func() { w.openAPIGatewayModule(model.APIGatewayDomain) })
+	w.apiGatewayDomainsNavButton.SetGroup(w.clustersNavButton)
+	w.apiGatewayModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.apiGatewayModuleItems.AddCSSClass("module-subitems")
+	w.apiGatewayModuleItems.Append(w.apiGatewayRESTNavButton)
+	w.apiGatewayModuleItems.Append(w.apiGatewayHTTPNavButton)
+	w.apiGatewayModuleItems.Append(w.apiGatewayWebSocketNavButton)
+	w.apiGatewayModuleItems.Append(w.apiGatewayDomainsNavButton)
+	apiGateway := w.newModuleExpander("API Gateway", moduleAPIGateway, w.apiGatewayModuleItems)
 	w.s3BucketsNavButton = newModuleRailButton("Buckets", w.openS3Module)
 	w.s3BucketsNavButton.SetGroup(w.clustersNavButton)
 	w.s3ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1527,6 +1562,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	lambdaFunctions := w.newModuleExpander("Lambda", moduleLambda, w.lambdaModuleItems)
 	sidebar.Append(modules)
 	w.moduleSections = []moduleRailSection{
+		{key: moduleAPIGateway, name: "API Gateway", defaultItem: "REST APIs", aliases: []string{"api gateway", "apigateway", "api", "gateway"}, expander: apiGateway, activate: func() { w.openAPIGatewayModule(model.APIGatewayREST) }},
 		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
 		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
@@ -1694,6 +1730,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	elastiCacheScroll.SetVExpand(true)
 	elastiCacheScroll.SetHExpand(true)
 	elastiCacheScroll.SetChild(w.elastiCacheTable.view)
+	apiGatewayScroll := gtk.NewScrolledWindow()
+	apiGatewayScroll.SetVExpand(true)
+	apiGatewayScroll.SetHExpand(true)
+	apiGatewayScroll.SetChild(w.apiGatewayTable.view)
 	s3BucketScroll := gtk.NewScrolledWindow()
 	s3BucketScroll.SetVExpand(true)
 	s3BucketScroll.SetHExpand(true)
@@ -1782,6 +1822,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(rdsScroll, pageRDSInstances)
 	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
 	w.resourceStack.AddNamed(elastiCacheScroll, pageElastiCache)
+	w.resourceStack.AddNamed(apiGatewayScroll, pageAPIGateway)
 	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
 	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
 	w.resourceStack.AddNamed(dynamoTableScroll, pageDynamoTables)
@@ -2948,6 +2989,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyElastiCacheFilter()
 		return
 	}
+	if w.currentPage == pageAPIGateway {
+		w.applyAPIGatewayFilter()
+		return
+	}
 	if w.currentPage == pageLambda {
 		w.applyLambdaFilter()
 		return
@@ -3420,6 +3465,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		w.refreshElastiCache(foreground)
 		return
 	}
+	if w.currentPage == pageAPIGateway {
+		w.refreshAPIGateway(foreground)
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		if foreground && !w.reloadS3SearchConfig() {
 			return
@@ -3803,6 +3852,12 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.elastiCacheClustersNavButton.SetActive(w.currentPage == pageElastiCache && w.elastiCacheKind == model.ElastiCacheCluster)
 			w.elastiCacheServerlessNavButton.SetActive(w.currentPage == pageElastiCache && w.elastiCacheKind == model.ElastiCacheServerless)
 		}
+		if w.apiGatewayRESTNavButton != nil {
+			w.apiGatewayRESTNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayREST)
+			w.apiGatewayHTTPNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayHTTP)
+			w.apiGatewayWebSocketNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayWebSocket)
+			w.apiGatewayDomainsNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayDomain)
+		}
 		if w.s3BucketsNavButton != nil {
 			w.s3BucketsNavButton.SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && w.activeSavedS3Search == "")
 			for i, search := range w.options.ConfigS3Searches() {
@@ -3870,9 +3925,11 @@ func (w *mainWindow) updateActionSensitivity() {
 	rdsMetricsSelected := w.currentPage == pageRDSInstances && w.selectedRDSInstance != "" && w.rdsDetail != nil
 	rdsClusterMetricsSelected := w.currentPage == pageRDSClusters && w.selectedRDSCluster != "" && w.rdsClusterDetail != nil
 	elastiCacheMetricsSelected := w.currentPage == pageElastiCache && w.selectedElastiCache != "" && w.elastiCacheDetail != nil
-	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected || elastiCacheMetricsSelected)
+	apiGatewayMetricsSelected := w.currentPage == pageAPIGateway && w.apiGatewayKind != model.APIGatewayDomain && w.selectedAPIGateway != "" && w.apiGatewayDetail != nil
+	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected || elastiCacheMetricsSelected || apiGatewayMetricsSelected)
 	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) ||
-		((rdsMetricsSelected || rdsClusterMetricsSelected) && w.options.RDS != nil) || (elastiCacheMetricsSelected && w.options.ElastiCache != nil))
+		((rdsMetricsSelected || rdsClusterMetricsSelected) && w.options.RDS != nil) || (elastiCacheMetricsSelected && w.options.ElastiCache != nil) ||
+		(apiGatewayMetricsSelected && w.options.APIGateway != nil))
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

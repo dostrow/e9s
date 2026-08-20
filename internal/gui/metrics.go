@@ -172,6 +172,14 @@ func (w *mainWindow) openMetrics() {
 		w.loadMetrics(true)
 		return
 	}
+	if w.currentPage == pageAPIGateway {
+		if w.selectedAPIGateway == "" || w.apiGatewayDetail == nil || w.apiGatewayKind == model.APIGatewayDomain {
+			return
+		}
+		w.metricsKind = "api-gateway"
+		w.loadMetrics(true)
+		return
+	}
 	if w.currentPage == pageEC2Instances {
 		if w.selectedEC2Instance == "" {
 			return
@@ -188,6 +196,10 @@ func (w *mainWindow) openMetrics() {
 }
 
 func (w *mainWindow) loadMetrics(foreground bool) {
+	if w.metricsKind == "api-gateway" {
+		w.loadAPIGatewayMetrics(foreground)
+		return
+	}
 	if w.metricsKind == "elasticache" {
 		w.loadElastiCacheMetrics(foreground)
 		return
@@ -205,6 +217,52 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 		return
 	}
 	w.loadECSMetrics(foreground)
+}
+
+func (w *mainWindow) loadAPIGatewayMetrics(foreground bool) {
+	if w.options.APIGateway == nil || w.apiGatewayDetail == nil {
+		return
+	}
+	resource := *w.apiGatewayDetail
+	opening := !w.showingMetrics
+	ctx, generation := w.startRefreshRequest("Loading metrics for API Gateway "+resource.Name+"…", foreground)
+	go func() {
+		snapshot, err := w.options.APIGateway.Metrics(ctx, resource, w.metricsWindow())
+		w.finishRequestResult(ctx, generation, err, "Metrics updated for API Gateway "+resource.Name, opening, foreground, func() {
+			if w.currentPage != pageAPIGateway || w.selectedAPIGateway != resource.ID {
+				return
+			}
+			w.showingMetrics = true
+			w.metricsKind = "api-gateway"
+			w.metricsSnapshot = nil
+			w.metricsGenericSnapshot = snapshot
+			w.metricsTaskID = ""
+			w.renderAPIGatewayMetrics(resource)
+			w.detailStack.SetVisibleChildName("metrics")
+		})
+	}()
+}
+
+func (w *mainWindow) renderAPIGatewayMetrics(resource model.APIGatewayAPI) {
+	snapshot := w.metricsGenericSnapshot
+	if snapshot == nil {
+		return
+	}
+	w.metricsTitle.SetLabel("API GATEWAY METRICS — " + strings.ToUpper(w.metricsRangeLabel()))
+	w.metricsScope.SetLabel(resource.Protocol + " API " + resource.Name + " (" + resource.ID + ")")
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(snapshot.EndTime), formatMetricPeriod(snapshot.Period)))
+	w.metricsScaleButton.SetVisible(false)
+	w.metricsScaleLabel.SetVisible(false)
+	w.metricsAlarmSection.SetVisible(false)
+	w.metricsNotice.SetVisible(!metricSnapshotHasData(snapshot))
+	if !metricSnapshotHasData(snapshot) {
+		w.metricsNotice.SetLabel("No API Gateway datapoints were returned for the selected period.")
+	}
+	w.setMetricCharts(snapshot, []metricChartSpec{
+		{title: "REQUESTS", unit: "count", minZero: true, ids: []string{"count"}},
+		{title: "LATENCY", unit: "ms", minZero: true, ids: []string{"latency", "integration_latency"}},
+		{title: "CLIENT / SERVER ERRORS", unit: "count", minZero: true, ids: []string{"4xx", "5xx"}},
+	})
 }
 
 func (w *mainWindow) loadElastiCacheMetrics(foreground bool) {
