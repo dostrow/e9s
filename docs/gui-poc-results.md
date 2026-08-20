@@ -521,6 +521,14 @@ the TUI retains its keyboard-first instance-detail screen. That presentation
 difference is intentional; discovery, detail composition, session preparation,
 validation, mutation, cancellation, and error behavior remain shared.
 
+The full GTK build also provides a GUI-only local Terminal Dock beneath the
+Browser and Workspace panes. It uses a VTE instance separate from operation
+terminals, inherits the active GTK-derived terminal palette, retains its shell
+when hidden or while modules change, and supports independent zoom. New shells
+start in an active OpenTofu workspace when applicable and otherwise inherit the
+e9s process directory. The TUI intentionally has no equivalent because it
+already runs inside a terminal.
+
 ### ECR module follow-up
 
 ECR now uses `service.ECR` in both frontends for deterministic repository and

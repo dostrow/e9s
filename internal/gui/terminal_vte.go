@@ -42,6 +42,10 @@ func (terminal *vteTerminal) Widget() gtk.Widgetter {
 }
 
 func (terminal *vteTerminal) Spawn(executable string, args []string) error {
+	return terminal.SpawnInDirectory(executable, args, "")
+}
+
+func (terminal *vteTerminal) SpawnInDirectory(executable string, args []string, workingDirectory string) error {
 	if executable == "" {
 		return fmt.Errorf("terminal command is empty")
 	}
@@ -57,13 +61,23 @@ func (terminal *vteTerminal) Spawn(executable string, args []string) error {
 		defer C.free(unsafe.Pointer(items[i]))
 	}
 	items[len(argv)] = nil
+	var directory *C.char
+	if workingDirectory != "" {
+		directory = C.CString(workingDirectory)
+		defer C.free(unsafe.Pointer(directory))
+	}
 	C.e9s_vte_terminal_reset((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
 	C.e9s_vte_terminal_spawn(
 		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
 		(**C.char)(native),
+		directory,
 	)
 	return nil
 }
+
+func (terminal *vteTerminal) GrabFocus() { terminal.widget.GrabFocus() }
+
+func (terminal *vteTerminal) HasFocus() bool { return terminal.widget.HasFocus() }
 
 func (terminal *vteTerminal) Stop() {
 	C.e9s_vte_terminal_stop((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))

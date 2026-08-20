@@ -34,6 +34,14 @@ func (terminal *vteTerminal) Spawn(string, []string) error {
 	return fmt.Errorf("embedded terminal unavailable: rebuild e9s-gui with GTK 4 VTE support")
 }
 
+func (terminal *vteTerminal) SpawnInDirectory(string, []string, string) error {
+	return fmt.Errorf("embedded terminal unavailable: rebuild e9s-gui with GTK 4 VTE support")
+}
+
+func (terminal *vteTerminal) GrabFocus() {}
+
+func (terminal *vteTerminal) HasFocus() bool { return false }
+
 func (terminal *vteTerminal) Stop() {}
 
 func (terminal *vteTerminal) Running() bool { return false }

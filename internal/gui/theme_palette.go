@@ -142,6 +142,9 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	if w.terminal != nil {
 		w.terminal.SetPalette(palette)
 	}
+	if w.terminalDock != nil {
+		w.terminalDock.SetPalette(palette)
+	}
 }
 
 func (w *mainWindow) applyDetailHeadingStyles() {

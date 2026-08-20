@@ -48,8 +48,8 @@ make build-gui
 ```
 
 `make build-gui` enables the `gui`, `vte`, and `sourceview` tags. It includes the
-embedded ECS Exec terminal plus syntax-aware task-definition and Lambda source
-editors. A GTK-only diagnostic build remains available as `make build-gui-basic`;
+embedded operation terminals, the persistent local Terminal Dock, and
+syntax-aware source editors. A GTK-only diagnostic build remains available as `make build-gui-basic`;
 it uses the plain text editor fallback, disables Exec, and explains the missing
 terminal feature in the GUI.
 
@@ -411,6 +411,13 @@ memory than a cached rebuild.
     streams in the embedded terminal, refresh pauses, cancellation works, and a
     successful close returns to refreshed state. Repeat without the `vte` tag and
     verify the captured-output fallback.
+73. Toggle the local Terminal Dock with its Header Bar button, Ctrl+backtick, and
+    `F12`. Confirm it spans the Browser and Workspace panes without covering the
+    Module Rail, remains alive while hidden and during module navigation, follows
+    GTK terminal colors, and zooms independently. From an active OpenTofu
+    workspace, start a fresh dock shell and confirm its working directory is the
+    workspace; elsewhere confirm it uses the e9s process directory. Restart a
+    running shell and verify the destructive confirmation appears.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

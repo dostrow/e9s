@@ -201,7 +201,10 @@ GDK_BACKEND=wayland ./e9s-gui
 ```
 
 The full GUI build uses GtkSourceView 5 for highlighted source editors and GTK 4
-VTE for embedded ECS Exec, Session Manager, and OpenTofu operation terminals.
+VTE for embedded ECS Exec, Session Manager, OpenTofu operation terminals, and a
+persistent local Terminal Dock. Toggle the dock with the Header Bar button,
+Ctrl+backtick, or `F12`; hiding it preserves the running shell. When opened from an
+active OpenTofu workspace, a new dock shell starts in that workspace directory.
 On Ubuntu or Debian, install
 `libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
 prerequisites; AWS's `session-manager-plugin` is required at runtime.

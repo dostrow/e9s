@@ -75,7 +75,7 @@ GtkWidget *e9s_vte_terminal_new(void) {
     return widget;
 }
 
-void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv) {
+void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory) {
     E9sVteState *state = e9s_vte_state(widget);
     if (state->child_pid != 0) {
         kill(state->child_pid, SIGHUP);
@@ -91,7 +91,7 @@ void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv) {
     vte_terminal_spawn_async(
         VTE_TERMINAL(widget),
         VTE_PTY_DEFAULT,
-        NULL,
+        working_directory,
         argv,
         NULL,
         G_SPAWN_DEFAULT,

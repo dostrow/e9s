@@ -14,6 +14,7 @@ type paneZoomTarget uint8
 const (
 	zoomBrowser paneZoomTarget = iota
 	zoomWorkspace
+	zoomTerminal
 )
 
 var (
@@ -27,6 +28,7 @@ func (w *mainWindow) installPaneZoom(browser, workspace *gtk.Widget) {
 	w.workspacePane = workspace
 	w.browserZoom = zoomDefault
 	w.workspaceZoom = zoomDefault
+	w.terminalZoom = zoomDefault
 	w.zoomTarget = zoomBrowser
 	w.applyZoomClass(browser, 0, zoomDefault)
 	w.applyZoomClass(workspace, 0, zoomDefault)
@@ -70,8 +72,11 @@ func (w *mainWindow) resetActivePaneZoom() {
 
 func (w *mainWindow) adjustPaneZoom(target paneZoomTarget, direction int) {
 	current := w.browserZoom
-	if target == zoomWorkspace {
+	switch target {
+	case zoomWorkspace:
 		current = w.workspaceZoom
+	case zoomTerminal:
+		current = w.terminalZoom
 	}
 	w.setPaneZoom(target, steppedZoom(current, direction))
 }
@@ -80,10 +85,19 @@ func (w *mainWindow) setPaneZoom(target paneZoomTarget, level int) {
 	name := "Browser"
 	widget := w.browserPane
 	current := w.browserZoom
-	if target == zoomWorkspace {
+	switch target {
+	case zoomWorkspace:
 		name = "Workspace"
 		widget = w.workspacePane
 		current = w.workspaceZoom
+	case zoomTerminal:
+		if w.terminalDock == nil {
+			return
+		}
+		w.terminalZoom = level
+		w.terminalDock.SetFontScale(float64(level) / 100)
+		w.setStatus(fmt.Sprintf("Terminal dock zoom: %d%%", level), false)
+		return
 	}
 	if widget == nil {
 		return

@@ -115,6 +115,7 @@ type mainWindow struct {
 	workspacePane *gtk.Widget
 	browserZoom   int
 	workspaceZoom int
+	terminalZoom  int
 	zoomTarget    paneZoomTarget
 
 	currentPage                 string
@@ -400,6 +401,7 @@ type mainWindow struct {
 	tofuPlanButton              *gtk.Button
 	tofuInitButton              *gtk.Button
 	tofuApplyButton             *gtk.Button
+	terminalDockButton          *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -567,6 +569,14 @@ type mainWindow struct {
 	terminalCommand             string
 	terminalDescription         string
 	showingTerminal             bool
+	terminalDock                *vteTerminal
+	terminalDockContainer       *gtk.Box
+	terminalDockSplit           *gtk.Paned
+	terminalDockTitle           *gtk.Label
+	terminalDockVisible         bool
+	terminalDockStarted         bool
+	terminalDockPositioned      bool
+	terminalDockCWD             string
 	resourceHistory             []resourceNavigationState
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
@@ -888,6 +898,9 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		if w.terminal != nil {
 			w.terminal.Stop()
 		}
+		if w.terminalDock != nil {
+			w.terminalDock.Stop()
+		}
 		w.discardLambdaEditor()
 	})
 	w.installActions(app)
@@ -1078,6 +1091,11 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.tofuApplyButton = gtk.NewButtonWithLabel("Apply plan…")
 	w.tofuApplyButton.AddCSSClass("destructive-action")
 	w.tofuApplyButton.ConnectClicked(w.confirmTofuApply)
+	w.terminalDockButton = gtk.NewToggleButtonWithLabel("Terminal")
+	w.terminalDockButton.SetTooltipText("Toggle the local terminal dock (Ctrl+` or F12)")
+	w.terminalDockButton.ConnectToggled(func() {
+		w.setTerminalDockVisible(w.terminalDockButton.Active())
+	})
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1198,6 +1216,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
+	header.Append(w.terminalDockButton)
 	header.Append(refresh)
 
 	sidebar := gtk.NewBox(gtk.OrientationVertical, 6)
@@ -1678,12 +1697,23 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	contentSplit.SetResizeEndChild(true)
 	w.installPaneZoom(&resourcePane.Widget, &workspace.Widget)
 
+	w.terminalDockContainer = w.buildTerminalDock()
+	w.terminalDockContainer.SetVisible(false)
+	w.terminalDockSplit = gtk.NewPaned(gtk.OrientationVertical)
+	w.terminalDockSplit.SetStartChild(contentSplit)
+	w.terminalDockSplit.SetEndChild(w.terminalDockContainer)
+	w.terminalDockSplit.SetResizeStartChild(true)
+	w.terminalDockSplit.SetResizeEndChild(false)
+	w.terminalDockSplit.SetShrinkStartChild(false)
+	w.terminalDockSplit.SetShrinkEndChild(false)
+	w.installZoomControllers(&w.terminalDockContainer.Widget, zoomTerminal)
+
 	mainSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	sidebarScroll := gtk.NewScrolledWindow()
 	sidebarScroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	sidebarScroll.SetChild(sidebar)
 	mainSplit.SetStartChild(sidebarScroll)
-	mainSplit.SetEndChild(contentSplit)
+	mainSplit.SetEndChild(w.terminalDockSplit)
 	mainSplit.SetPosition(190)
 	mainSplit.SetResizeStartChild(false)
 	mainSplit.SetResizeEndChild(true)
@@ -1749,6 +1779,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	})
 	w.addAction(app, "back", []string{"Escape"}, w.goBack)
 	w.addAction(app, "modes", []string{"<Control>p"}, w.showModulePicker)
+	w.addAction(app, "terminal-dock", []string{"<Control>grave", "F12"}, w.toggleTerminalDock)
 	w.addAction(app, "help", nil, func() {
 		if w.showingTerminal {
 			w.setStatus("Disconnect the terminal session before opening help", false)
@@ -1758,7 +1789,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+` / F12   Toggle local terminal dock\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", nil, w.openServiceLogs)
@@ -1843,7 +1874,7 @@ func printableShortcutAction(keyval uint, state gdk.ModifierType) string {
 }
 
 func (w *mainWindow) focusAcceptsTextInput() bool {
-	if w.showingTerminal {
+	if w.showingTerminal || (w.terminalDock != nil && w.terminalDock.HasFocus()) {
 		return true
 	}
 	focus := w.window.Focus()

@@ -5,7 +5,7 @@
 #include <gtk/gtk.h>
 
 GtkWidget *e9s_vte_terminal_new(void);
-void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv);
+void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory);
 void e9s_vte_terminal_stop(GtkWidget *widget);
 gboolean e9s_vte_terminal_running(GtkWidget *widget);
 int e9s_vte_terminal_exit_status(GtkWidget *widget);
