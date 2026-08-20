@@ -64,6 +64,19 @@ func TestTerminalDockSessionTitlePrefersRenameThenTerminalContext(t *testing.T) 
 	}
 }
 
+func TestTerminalDockTabTitlePrefersTabRenameThenActiveSession(t *testing.T) {
+	session := &terminalDockSession{id: 7, autoTitle: "psql reporting"}
+	tab := &terminalDockTab{active: session}
+	session.tab = tab
+	if got := terminalDockTabTitle(tab); got != "psql reporting" {
+		t.Fatalf("automatic tab title = %q", got)
+	}
+	tab.customTitle = "Database"
+	if got := terminalDockTabTitle(tab); got != "Database" {
+		t.Fatalf("custom tab title = %q", got)
+	}
+}
+
 func TestTerminalDockTabWidthTracksTitleWithinBounds(t *testing.T) {
 	for _, test := range []struct {
 		title string

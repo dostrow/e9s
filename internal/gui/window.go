@@ -679,6 +679,7 @@ type mainWindow struct {
 	terminalDockSplit           *gtk.Paned
 	terminalDockTitle           *gtk.Label
 	terminalDockNotebook        *gtk.Notebook
+	terminalDockTabs            []*terminalDockTab
 	terminalDockSessions        []*terminalDockSession
 	terminalDockNextID          int
 	terminalDockVisible         bool
