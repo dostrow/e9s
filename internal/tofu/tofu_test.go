@@ -1,11 +1,52 @@
 package tofu
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestNewRunnerRejectsEmptyWorkspace(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if _, err := NewRunner("  "); err == nil || !strings.Contains(err.Error(), "workspace path is required") {
+		t.Fatalf("NewRunner error = %v", err)
+	}
+}
+
+func TestParseResourceAddress(t *testing.T) {
+	t.Parallel()
+
+	resource := ParseResourceAddress("module.network.module.private.aws_subnet.this[0]")
+	if resource.Module != "module.network.module.private" || resource.Type != "aws_subnet" || resource.Name != "this[0]" {
+		t.Fatalf("ParseResourceAddress = %+v", resource)
+	}
+}
+
+func TestRunnerHonorsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	workdir := t.TempDir()
+	binary := writeFakeTofuBinary(t, `{"format_version":"1.2"}`)
+	runner := &Runner{Dir: workdir, Binary: binary}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := runner.StateListContext(ctx); err == nil || !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("StateListContext error = %v", err)
+	}
+}
+
+func TestApplyCommandUsesReviewedPlan(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{Dir: "/work/tofu", Binary: "/usr/bin/tofu"}
+	command := runner.ApplyCommand("/tmp/reviewed.tfplan")
+	want := []string{"-chdir=/work/tofu", "apply", "-no-color", "/tmp/reviewed.tfplan"}
+	if strings.Join(command.Args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("ApplyCommand args = %#v, want %#v", command.Args, want)
+	}
+}
 
 func TestPlanJSONSavedPreservesPlanFile(t *testing.T) {
 	t.Parallel()

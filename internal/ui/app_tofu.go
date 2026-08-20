@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/tofu"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -47,12 +46,10 @@ func (a App) openTofuResources(dir string) (App, tea.Cmd) {
 	a.tofuResourcesView = views.NewTofuResources(dir)
 	a.tofuResourcesView = a.tofuResourcesView.SetSize(a.width-3, a.height-6)
 	a.loading = true
+	ctx := a.ctx
+	tofuService := a.tofu
 	return a, func() tea.Msg {
-		runner, err := tofu.NewRunner(dir)
-		if err != nil {
-			return errMsg{err}
-		}
-		resources, err := runner.StateList()
+		resources, err := tofuService.Resources(ctx, dir)
 		if err != nil {
 			return errMsg{fmt.Errorf("state list: %w", err)}
 		}
@@ -71,12 +68,10 @@ func (a App) openTofuStateDetail() (App, tea.Cmd) {
 	a.loading = true
 	dir := a.tofuDir
 	addr := res.Address
+	ctx := a.ctx
+	tofuService := a.tofu
 	return a, func() tea.Msg {
-		runner, err := tofu.NewRunner(dir)
-		if err != nil {
-			return errMsg{err}
-		}
-		output, err := runner.StateShow(addr)
+		output, err := tofuService.State(ctx, dir, addr)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -90,18 +85,11 @@ func (a App) runTofuPlan() (App, tea.Cmd) {
 	a.tofuPlanView = views.NewTofuPlan(dir)
 	a.tofuPlanView = a.tofuPlanView.SetSize(a.width-3, a.height-6)
 	a.loading = true
+	ctx := a.ctx
+	tofuService := a.tofu
 	return a, func() tea.Msg {
-		runner, err := tofu.NewRunner(dir)
+		plan, planFile, err := tofuService.Plan(ctx, dir)
 		if err != nil {
-			return errMsg{err}
-		}
-		jsonOut, planFile, err := runner.PlanJSONSaved()
-		if err != nil {
-			return errMsg{err}
-		}
-		plan, err := tofu.ParsePlan(jsonOut)
-		if err != nil {
-			_ = os.Remove(planFile)
 			return errMsg{err}
 		}
 		return tofuPlanLoadedMsg{plan: plan, planFile: planFile}
@@ -121,26 +109,23 @@ func (a App) openTofuPlanDetail() (App, tea.Cmd) {
 
 func (a App) runTofuApply() (App, tea.Cmd) {
 	dir := a.tofuDir
-	runner, err := tofu.NewRunner(dir)
+	command, err := a.tofu.ApplyCommand(dir, func() string {
+		if a.state == viewTofuPlan {
+			return a.tofuPlanFile
+		}
+		return ""
+	}())
 	if err != nil {
 		a.err = err
 		return a, nil
 	}
-	wrap := NewExecWrap(runner.Binary, a.tofuApplyArgs(dir))
+	wrap := NewExecWrap(command.Executable, command.Args)
 	return a, tea.Exec(wrap, func(err error) tea.Msg {
 		if err != nil {
 			return tofuApplyDoneMsg{fmt.Sprintf("Apply finished with error: %v", err)}
 		}
 		return tofuApplyDoneMsg{"Apply completed successfully"}
 	})
-}
-
-func (a App) tofuApplyArgs(dir string) []string {
-	args := []string{"-chdir=" + dir, "apply", "-no-color"}
-	if a.state == viewTofuPlan && a.tofuPlanFile != "" {
-		args = append(args, a.tofuPlanFile)
-	}
-	return args
 }
 
 func (a *App) cleanupTofuPlanFile() {
@@ -152,19 +137,17 @@ func (a *App) cleanupTofuPlanFileExcept(keep string) {
 		a.tofuPlanFile = keep
 		return
 	}
-	_ = os.Remove(a.tofuPlanFile)
+	a.tofu.CleanupPlan(a.tofuPlanFile)
 	a.tofuPlanFile = keep
 }
 
 func (a App) runTofuInit() (App, tea.Cmd) {
 	dir := a.tofuDir
 	a.loading = true
+	ctx := a.ctx
+	tofuService := a.tofu
 	return a, func() tea.Msg {
-		runner, err := tofu.NewRunner(dir)
-		if err != nil {
-			return errMsg{err}
-		}
-		_, err = runner.Init()
+		_, err := tofuService.Init(ctx, dir)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -195,12 +178,10 @@ func (a App) doSaveTofuDir(name string) (App, tea.Cmd) {
 
 func (a App) refreshTofuResources() tea.Cmd {
 	dir := a.tofuDir
+	ctx := a.ctx
+	tofuService := a.tofu
 	return func() tea.Msg {
-		runner, err := tofu.NewRunner(dir)
-		if err != nil {
-			return errMsg{err}
-		}
-		resources, err := runner.StateList()
+		resources, err := tofuService.Resources(ctx, dir)
 		if err != nil {
 			return errMsg{err}
 		}

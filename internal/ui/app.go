@@ -126,6 +126,7 @@ type App struct {
 	dynamoDB                   *service.DynamoDB
 	sqs                        *service.SQS
 	route53                    *service.Route53
+	tofu                       *service.Tofu
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -338,6 +339,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		dynamoDB:      service.NewDynamoDB(client),
 		sqs:           service.NewSQS(client),
 		route53:       service.NewRoute53(client),
+		tofu:          service.NewTofu(),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,

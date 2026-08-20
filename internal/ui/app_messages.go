@@ -297,7 +297,7 @@ type r53ActionDoneMsg struct{ message string }
 
 // --- OpenTofu Messages ---
 
-type tofuResourcesLoadedMsg struct{ resources []string }
+type tofuResourcesLoadedMsg struct{ resources []tofu.Resource }
 type tofuStateDetailMsg struct{ output string }
 type tofuPlanLoadedMsg struct {
 	plan     *tofu.PlanResult
