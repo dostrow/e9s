@@ -161,6 +161,13 @@
   box-shadow: inset 0 -2px currentColor;
 }
 
+/* Some GtkTextView context menus use a plain popover instead of the .menu
+ * variant. Preserve the theme's disabled color while making the state
+ * unmistakable in themes whose disabled foreground is close to normal text. */
+popover.background button:disabled {
+  opacity: 0.52;
+}
+
 /* Some GTK themes implement a Material ripple by allocating a large circular
  * check node around a theme-private SVG. Keep e9s controls compact and use a
  * standard symbolic glyph while retaining the active theme's currentColor. */

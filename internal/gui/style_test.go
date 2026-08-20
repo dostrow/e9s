@@ -52,6 +52,7 @@ func TestApplicationCSSNormalizesThemeIndependentControlGeometry(t *testing.T) {
 		"notebook.e9s-terminal-notebook > stack",
 		"notebook.e9s-sql-notebook > header > tabs",
 		"notebook.e9s-sql-notebook > stack",
+		"popover.background button:disabled",
 		"checkbutton.e9s-check > check",
 		`-gtk-icon-source: -gtk-icontheme("object-select-symbolic")`,
 	} {

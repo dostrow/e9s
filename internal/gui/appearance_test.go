@@ -54,7 +54,7 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 		`window dropdown > button`,
 		`window spinbutton > button`,
 		`popover.background > contents, tooltip`,
-		`popover.background.menu button.model:disabled`,
+		`popover.background button:disabled`,
 		"background-color:",
 	} {
 		if !strings.Contains(css, fragment) {

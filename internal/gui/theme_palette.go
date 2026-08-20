@@ -316,10 +316,10 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
 			palette.foreground.String(), palette.foreground.String(), palette.accent.String(),
 			palette.foreground.String(), palette.accent.String(), palette.accent.String())
 		fmt.Fprintf(&css, `
-popover.background.menu button.model:disabled,
-popover.background.menu button.model:disabled label {
+popover.background button:disabled,
+popover.background button:disabled label,
+popover.background label:disabled {
   color: %s;
-  opacity: 0.55;
 }
 `, palette.muted.String())
 		fmt.Fprintf(&css, `
