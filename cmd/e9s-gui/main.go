@@ -71,6 +71,7 @@ func main() {
 				ECR:             service.NewECR(client),
 				RDS:             service.NewRDS(client),
 				S3:              service.NewS3(client),
+				DynamoDB:        service.NewDynamoDB(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

@@ -148,6 +148,16 @@ type S3Service interface {
 	DownloadWithProgress(context.Context, model.S3DownloadRequest, func(model.S3DownloadProgress)) (model.S3DownloadResult, error)
 }
 
+type DynamoDBService interface {
+	Tables(context.Context, string) ([]string, error)
+	Table(context.Context, string) (*model.DynamoTable, error)
+	Scan(context.Context, model.DynamoScanRequest) (*model.DynamoPage, error)
+	PartiQL(context.Context, string) ([]model.DynamoItem, error)
+	Item(context.Context, string, []string, model.DynamoItem) (*model.DynamoItem, error)
+	UpdateField(context.Context, model.DynamoFieldUpdate) error
+	PutItem(context.Context, string, model.DynamoItem) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -163,6 +173,7 @@ type Options struct {
 	ECR             ECRService
 	RDS             RDSService
 	S3              S3Service
+	DynamoDB        DynamoDBService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

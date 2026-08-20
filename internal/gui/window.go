@@ -50,6 +50,8 @@ const (
 	pageRDSClusters       = "rds-clusters"
 	pageS3Buckets         = "s3-buckets"
 	pageS3Objects         = "s3-objects"
+	pageDynamoTables      = "dynamodb-tables"
+	pageDynamoItems       = "dynamodb-items"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -80,6 +82,8 @@ const (
 	detailRDSCluster       = "rds-cluster"
 	detailS3Bucket         = "s3-bucket"
 	detailS3Object         = "s3-object"
+	detailDynamoTable      = "dynamodb-table"
+	detailDynamoItem       = "dynamodb-item"
 )
 
 type mainWindow struct {
@@ -219,6 +223,20 @@ type mainWindow struct {
 	s3ObjectSearchActive        bool
 	s3ObjectDetail              *model.S3ObjectDetail
 	s3DownloadPending           bool
+	allDynamoTables             []string
+	filteredDynamoTables        []string
+	selectedDynamoTable         string
+	dynamoTableDetail           *model.DynamoTable
+	allDynamoItems              []model.DynamoItem
+	filteredDynamoItems         []model.DynamoItem
+	selectedDynamoItem          int
+	dynamoKeyNames              []string
+	dynamoNextToken             string
+	dynamoFilter                *model.DynamoFilter
+	dynamoPartiQL               string
+	activeSavedDynamoTable      string
+	activeSavedDynamoQuery      string
+	dynamoActionPending         bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -252,6 +270,8 @@ type mainWindow struct {
 	rdsClusterTable             *stringTable
 	s3BucketTable               *stringTable
 	s3ObjectTable               *stringTable
+	dynamoTable                 *stringTable
+	dynamoItemTable             *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -268,6 +288,7 @@ type mainWindow struct {
 	ecrModuleItems              *gtk.Box
 	rdsModuleItems              *gtk.Box
 	s3ModuleItems               *gtk.Box
+	dynamoModuleItems           *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -295,6 +316,11 @@ type mainWindow struct {
 	s3BucketsNavButton          *gtk.ToggleButton
 	savedS3SearchesLabel        *gtk.Label
 	savedS3SearchButtons        []*gtk.ToggleButton
+	dynamoTablesNavButton       *gtk.ToggleButton
+	savedDynamoTablesLabel      *gtk.Label
+	savedDynamoTableButtons     []*gtk.ToggleButton
+	savedDynamoQueriesLabel     *gtk.Label
+	savedDynamoQueryButtons     []*gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -482,10 +508,11 @@ type moduleRailSection struct {
 
 func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *mainWindow {
 	w := &mainWindow{
-		ctx:           ctx,
-		options:       options,
-		currentPage:   pageModulePicker,
-		detailContent: detailIntro,
+		ctx:                ctx,
+		options:            options,
+		currentPage:        pageModulePicker,
+		detailContent:      detailIntro,
+		selectedDynamoItem: -1,
 	}
 
 	w.clusterTable = newStringTable([]columnSpec{
@@ -646,6 +673,12 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "NAME", field: 0, expand: true}, {title: "TYPE", field: 1},
 		{title: "SIZE", field: 2}, {title: "MODIFIED", field: 3},
 	})
+	w.dynamoTable = newStringTable([]columnSpec{
+		{title: "TABLE", field: 0, expand: true},
+	})
+	w.dynamoItemTable = newStringTable([]columnSpec{
+		{title: "ITEM", field: 0, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -673,6 +706,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
 	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
 	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
+	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
+	w.dynamoItemTable.view.ConnectActivate(w.openDynamoItemAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -699,6 +734,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
+	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
+	w.dynamoItemTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoItemRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -1006,6 +1043,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.s3ModuleItems.Append(w.s3BucketsNavButton)
 	w.rebuildS3SearchRail()
 	s3Buckets := w.newModuleExpander("S3", moduleS3, w.s3ModuleItems)
+	w.dynamoTablesNavButton = newModuleRailButton("Tables", w.openDynamoDBModule)
+	w.dynamoTablesNavButton.SetGroup(w.clustersNavButton)
+	w.dynamoModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.dynamoModuleItems.AddCSSClass("module-subitems")
+	w.dynamoModuleItems.Append(w.dynamoTablesNavButton)
+	w.rebuildDynamoRail()
+	dynamoDB := w.newModuleExpander("DynamoDB", moduleDynamoDB, w.dynamoModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1064,6 +1108,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
 		{key: moduleRDS, name: "RDS", defaultItem: "Clusters", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.openRDSClustersModule},
 		{key: moduleS3, name: "S3", defaultItem: "Buckets", aliases: []string{"s3", "object storage", "buckets"}, expander: s3Buckets, activate: w.openS3Module},
+		{key: moduleDynamoDB, name: "DynamoDB", defaultItem: "Tables", aliases: []string{"dynamodb", "ddb", "tables"}, expander: dynamoDB, activate: w.openDynamoDBModule},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1217,6 +1262,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	s3ObjectScroll.SetVExpand(true)
 	s3ObjectScroll.SetHExpand(true)
 	s3ObjectScroll.SetChild(w.s3ObjectTable.view)
+	dynamoTableScroll := gtk.NewScrolledWindow()
+	dynamoTableScroll.SetVExpand(true)
+	dynamoTableScroll.SetHExpand(true)
+	dynamoTableScroll.SetChild(w.dynamoTable.view)
+	dynamoItemScroll := gtk.NewScrolledWindow()
+	dynamoItemScroll.SetVExpand(true)
+	dynamoItemScroll.SetHExpand(true)
+	dynamoItemScroll.SetChild(w.dynamoItemTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1254,6 +1307,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
 	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
 	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
+	w.resourceStack.AddNamed(dynamoTableScroll, pageDynamoTables)
+	w.resourceStack.AddNamed(dynamoItemScroll, pageDynamoItems)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1760,6 +1815,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.ec2Detail = nil
 	w.rdsDetail = nil
 	w.s3DownloadPending = false
+	w.dynamoActionPending = false
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2279,6 +2335,14 @@ func (w *mainWindow) applyFilter() {
 		w.applyS3ObjectFilter()
 		return
 	}
+	if w.currentPage == pageDynamoTables {
+		w.applyDynamoTableFilter()
+		return
+	}
+	if w.currentPage == pageDynamoItems {
+		w.applyDynamoItemFilter()
+		return
+	}
 	if w.currentPage == pageECRRepositories {
 		w.applyECRRepositoryFilter()
 		return
@@ -2447,6 +2511,10 @@ func (w *mainWindow) navigateBrowserBack() {
 		return
 	}
 	if w.navigateS3Back() {
+		return
+	}
+	if w.currentPage == pageDynamoItems {
+		w.loadDynamoTables("", "")
 		return
 	}
 	if w.currentPage == pageRDSInstances && w.rdsClusterContext != "" {
@@ -2727,6 +2795,17 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageS3Objects {
 		w.refreshS3Objects(foreground)
+		return
+	}
+	if w.currentPage == pageDynamoTables {
+		if foreground {
+			w.reloadDynamoConfig()
+		}
+		w.refreshDynamoTables(foreground)
+		return
+	}
+	if w.currentPage == pageDynamoItems {
+		w.refreshDynamoItems(foreground)
 		return
 	}
 	if w.currentPage == pageEC2LoadBalancers {
@@ -3110,6 +3189,20 @@ func (w *mainWindow) updateActionSensitivity() {
 			for i, search := range w.options.ConfigS3Searches() {
 				if i < len(w.savedS3SearchButtons) {
 					w.savedS3SearchButtons[i].SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && search.Name == w.activeSavedS3Search)
+				}
+			}
+		}
+		if w.dynamoTablesNavButton != nil {
+			dynamoPage := w.currentPage == pageDynamoTables || w.currentPage == pageDynamoItems
+			w.dynamoTablesNavButton.SetActive(dynamoPage && w.activeSavedDynamoTable == "" && w.activeSavedDynamoQuery == "")
+			for i, saved := range w.options.ConfigDynamoTables() {
+				if i < len(w.savedDynamoTableButtons) {
+					w.savedDynamoTableButtons[i].SetActive(dynamoPage && saved.Name == w.activeSavedDynamoTable)
+				}
+			}
+			for i, saved := range w.options.ConfigDynamoQueries() {
+				if i < len(w.savedDynamoQueryButtons) {
+					w.savedDynamoQueryButtons[i].SetActive(dynamoPage && saved.Name == w.activeSavedDynamoQuery)
 				}
 			}
 		}

@@ -22,6 +22,7 @@ const (
 	moduleECR              = "ecr"
 	moduleRDS              = "rds"
 	moduleS3               = "s3"
+	moduleDynamoDB         = "dynamodb"
 )
 
 func compactStatusMessage(message string) string {
@@ -57,6 +58,8 @@ func moduleForPage(page string) string {
 		return moduleRDS
 	case pageS3Buckets, pageS3Objects:
 		return moduleS3
+	case pageDynamoTables, pageDynamoItems:
+		return moduleDynamoDB
 	default:
 		return ""
 	}
