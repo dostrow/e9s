@@ -319,6 +319,7 @@ func (w *mainWindow) refreshS3Objects(foreground bool) {
 				w.s3ObjectDetail = nil
 				w.setBreadcrumb(s3ObjectBreadcrumb(w.activeSavedS3Search, bucket, valueIf(searching, keyPrefix, prefix), searching))
 				w.setDetail("The selected object is no longer available.\n\n"+s3ObjectListSummary(bucket, valueIf(searching, keyPrefix, prefix), searching, len(objects)), detailIntro)
+				w.updateActionSensitivity()
 				return
 			}
 			if object.IsPrefix {
@@ -365,6 +366,7 @@ func (w *mainWindow) selectS3ObjectRow() {
 			w.s3ObjectDetail = nil
 			w.setBreadcrumb(w.currentS3ObjectBreadcrumb())
 			w.setDetail(w.currentS3ObjectSummary(), detailIntro)
+			w.updateActionSensitivity()
 		}
 		return
 	}
@@ -375,6 +377,7 @@ func (w *mainWindow) selectS3ObjectRow() {
 	w.selectedS3Object = object.Key
 	w.s3ObjectDetail = nil
 	w.setBreadcrumb(w.currentS3ObjectBreadcrumb() + " / " + s3ObjectDisplayName(object.Key, w.s3Prefix))
+	w.updateActionSensitivity()
 	if object.IsPrefix {
 		w.setDetail(formatS3Prefix(w.selectedS3Bucket, object.Key), detailS3Object)
 		return
