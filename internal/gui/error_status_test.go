@@ -141,6 +141,25 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 	}
 }
 
+func TestGroupModuleRailSections(t *testing.T) {
+	sections := []moduleRailSection{
+		{key: moduleAPIGateway, name: "API Gateway"},
+		{key: moduleECS, name: "ECS"},
+		{key: moduleTofu, name: "OpenTofu"},
+		{key: moduleSQLWorkbench, name: "SQL Workbench"},
+	}
+	groups := groupModuleRailSections(sections)
+	if len(groups) != 2 || groups[0].name != "AWS SERVICES" || groups[1].name != "TOOLS" {
+		t.Fatalf("unexpected groups: %#v", groups)
+	}
+	if len(groups[0].sections) != 2 || groups[0].sections[0].key != moduleAPIGateway || groups[0].sections[1].key != moduleECS {
+		t.Fatalf("unexpected AWS modules: %#v", groups[0].sections)
+	}
+	if len(groups[1].sections) != 2 || groups[1].sections[0].key != moduleTofu || groups[1].sections[1].key != moduleSQLWorkbench {
+		t.Fatalf("unexpected tool modules: %#v", groups[1].sections)
+	}
+}
+
 func TestNativeModuleChevronIsHidden(t *testing.T) {
 	for _, fragment := range []string{
 		".module-heading > box > title > expander",

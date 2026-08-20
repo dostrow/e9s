@@ -1636,8 +1636,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleLambda, name: "Lambda", defaultItem: "Functions", aliases: []string{"lambda", "λ"}, expander: lambdaFunctions, activate: func() { w.loadLambdaFunctions("", "") }},
 	}
 	sortModuleRailSections(w.moduleSections)
-	for _, section := range w.moduleSections {
-		sidebar.Append(section.expander)
+	for groupIndex, group := range groupModuleRailSections(w.moduleSections) {
+		if len(group.sections) == 0 {
+			continue
+		}
+		label := gtk.NewLabel(group.name)
+		label.SetXAlign(0)
+		label.AddCSSClass("section-title")
+		label.AddCSSClass("module-group-title")
+		if groupIndex > 0 {
+			label.SetMarginTop(8)
+		}
+		sidebar.Append(label)
+		for _, section := range group.sections {
+			sidebar.Append(section.expander)
+		}
 	}
 	w.settingsNavButton = newModuleRailButton("Settings", w.showSettings)
 	w.settingsNavButton.SetGroup(w.clustersNavButton)

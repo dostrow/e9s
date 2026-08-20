@@ -16,6 +16,26 @@ func sortModuleRailSections(sections []moduleRailSection) {
 	})
 }
 
+type moduleRailGroup struct {
+	name     string
+	sections []moduleRailSection
+}
+
+// groupModuleRailSections separates provider-neutral tools from AWS service
+// browsers while retaining the alphabetic order established by the caller.
+// The picker intentionally remains a single alphabetic list for fast search.
+func groupModuleRailSections(sections []moduleRailSection) []moduleRailGroup {
+	groups := []moduleRailGroup{{name: "AWS SERVICES"}, {name: "TOOLS"}}
+	for _, section := range sections {
+		group := 0
+		if section.key == moduleTofu || section.key == moduleSQLWorkbench {
+			group = 1
+		}
+		groups[group].sections = append(groups[group].sections, section)
+	}
+	return groups
+}
+
 func normalizeModuleSelection(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
