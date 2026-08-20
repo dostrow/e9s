@@ -3,9 +3,11 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -134,9 +136,281 @@ func (w *mainWindow) selectRoute53ZoneRow() {
 }
 
 func (w *mainWindow) openRoute53ZoneAt(position uint) {
-	if int(position) < len(w.filteredRoute53Zones) {
-		w.route53ZoneTable.selection.SetSelected(position)
+	if int(position) >= len(w.filteredRoute53Zones) {
+		return
 	}
+	zone := w.filteredRoute53Zones[position]
+	w.route53ZoneTable.selection.SetSelected(position)
+	w.loadRoute53Records(zone)
+}
+
+func (w *mainWindow) loadRoute53Records(zone model.Route53Zone) {
+	if w.options.Route53 == nil || zone.ID == "" {
+		return
+	}
+	w.resetWorkspaceForBrowserChange()
+	w.clearRoute53Records()
+	w.currentPage = pageRoute53Records
+	w.route53ZoneContext = &zone
+	w.selectedRoute53Zone = zone.ID
+	w.search.SetPlaceholderText("Filter record sets…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageRoute53Records)
+	w.backButton.SetSensitive(true)
+	w.setBreadcrumb(route53RecordBreadcrumb(zone, ""))
+	w.setDetail("Loading Route53 record sets…", detailIntro)
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Loading Route53 records for " + zone.Name + "…")
+	go func() {
+		records, err := w.options.Route53.Records(ctx, zone.ID)
+		w.finishRequest(ctx, generation, err, func() {
+			if w.currentPage != pageRoute53Records || w.route53ZoneContext == nil || w.route53ZoneContext.ID != zone.ID {
+				return
+			}
+			w.allRoute53Records = records
+			w.applyRoute53RecordFilter()
+			w.setDetail(route53RecordListSummary(zone, len(records)), detailRoute53Zone)
+		})
+	}()
+}
+
+func (w *mainWindow) restoreRoute53ZoneBrowser() {
+	zoneID := w.selectedRoute53Zone
+	w.resetWorkspaceForBrowserChange()
+	w.clearRoute53Records()
+	w.currentPage = pageRoute53Zones
+	w.search.SetPlaceholderText("Filter hosted zones…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageRoute53Zones)
+	w.backButton.SetSensitive(false)
+	w.applyRoute53ZoneFilter()
+	if index := findRoute53ZoneIndex(w.filteredRoute53Zones, zoneID); index >= 0 {
+		zone := w.filteredRoute53Zones[index]
+		w.selectedRoute53Zone = zone.ID
+		w.route53ZoneTable.selection.SetSelected(uint(index))
+		w.setBreadcrumb("Route53 / Hosted zones / " + zone.Name)
+		w.setDetail(formatRoute53Zone(zone), detailRoute53Zone)
+	} else {
+		w.selectedRoute53Zone = ""
+		w.setBreadcrumb("Route53 / Hosted zones")
+		w.setDetail(route53ZoneListSummary(len(w.allRoute53Zones)), detailIntro)
+	}
+	w.updateActionSensitivity()
+	w.setStatus("Ready", false)
+}
+
+func (w *mainWindow) applyRoute53RecordFilter() {
+	w.filteredRoute53Records = filterRoute53Records(w.allRoute53Records, w.search.Text())
+	rows := make([]string, 0, len(w.filteredRoute53Records))
+	for _, record := range w.filteredRoute53Records {
+		ttl := "—"
+		if record.TTL > 0 {
+			ttl = fmt.Sprintf("%d", record.TTL)
+		}
+		rows = append(rows, strings.Join([]string{record.Name, record.Type, ttl, route53RecordSummaryValue(record), route53RoutingLabel(record)}, "\t"))
+	}
+	w.route53RecordTable.replace(rows)
+}
+
+func filterRoute53Records(records []model.Route53Record, query string) []model.Route53Record {
+	query = strings.ToLower(strings.TrimSpace(query))
+	filtered := make([]model.Route53Record, 0, len(records))
+	for _, record := range records {
+		search := strings.Join([]string{record.Name, record.Type, strings.Join(record.Values, " "), record.AliasTarget, record.RoutingPolicy, record.SetIdentifier}, "\n")
+		if query == "" || strings.Contains(strings.ToLower(search), query) {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+func (w *mainWindow) selectRoute53RecordRow() {
+	if w.currentPage != pageRoute53Records || w.route53ZoneContext == nil {
+		return
+	}
+	position := w.route53RecordTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredRoute53Records) {
+		w.selectedRoute53Record = ""
+		w.route53DNSAnswer = nil
+		w.setBreadcrumb(route53RecordBreadcrumb(*w.route53ZoneContext, ""))
+		w.setDetail(route53RecordListSummary(*w.route53ZoneContext, len(w.allRoute53Records)), detailRoute53Zone)
+		w.updateActionSensitivity()
+		return
+	}
+	record := w.filteredRoute53Records[position]
+	w.selectedRoute53Record = route53RecordIdentity(record)
+	w.route53DNSAnswer = nil
+	w.setBreadcrumb(route53RecordBreadcrumb(*w.route53ZoneContext, record.Name+" "+record.Type))
+	w.setDetail(formatRoute53Record(*w.route53ZoneContext, record, nil), detailRoute53Record)
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) openRoute53RecordAt(position uint) {
+	if int(position) < len(w.filteredRoute53Records) {
+		w.route53RecordTable.selection.SetSelected(position)
+	}
+}
+
+func (w *mainWindow) refreshRoute53Records(foreground bool) {
+	if w.options.Route53 == nil || w.route53ZoneContext == nil || w.route53ActionPending {
+		return
+	}
+	zone, selected := *w.route53ZoneContext, w.selectedRoute53Record
+	ctx, generation := w.startRefreshRequest("Refreshing Route53 records…", foreground)
+	go func() {
+		records, err := w.options.Route53.Records(ctx, zone.ID)
+		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+			w.allRoute53Records = records
+			w.applyRoute53RecordFilter()
+			if selected != "" {
+				if index := findRoute53RecordIndex(w.filteredRoute53Records, selected); index >= 0 {
+					w.route53RecordTable.selection.SetSelected(uint(index))
+					return
+				}
+			}
+			w.selectedRoute53Record = ""
+			w.route53DNSAnswer = nil
+			w.setBreadcrumb(route53RecordBreadcrumb(zone, ""))
+			w.setDetail(route53RecordListSummary(zone, len(records)), detailRoute53Zone)
+			w.updateActionSensitivity()
+		})
+	}()
+}
+
+func (w *mainWindow) testSelectedRoute53DNS() {
+	record, found := w.selectedRoute53RecordValue()
+	if !found || w.route53ZoneContext == nil || w.options.Route53 == nil || w.route53ActionPending {
+		return
+	}
+	w.route53ActionPending = true
+	w.updateActionSensitivity()
+	zone := *w.route53ZoneContext
+	ctx, generation := w.startRequest("Testing DNS answer for " + record.Name + "…")
+	go func() {
+		answer, err := w.options.Route53.TestDNS(ctx, zone.ID, record)
+		w.finishRoute53Action(ctx, generation, err, "DNS test completed for "+record.Name, func() {
+			w.route53DNSAnswer = answer
+			w.setDetail(formatRoute53Record(zone, record, answer), detailRoute53Record)
+		})
+	}()
+}
+
+func (w *mainWindow) finishRoute53Action(ctx context.Context, generation uint64, err error, success string, apply func()) {
+	glib.IdleAdd(func() {
+		if ctx.Err() != nil || generation != w.generation {
+			return
+		}
+		w.requestCancel = nil
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.route53ActionPending = false
+		if err != nil {
+			w.updateActionSensitivity()
+			w.setStatus(err.Error(), true)
+			return
+		}
+		if apply != nil {
+			apply()
+		}
+		w.updateActionSensitivity()
+		w.setStatus(success, false)
+	})
+}
+
+func (w *mainWindow) selectedRoute53RecordValue() (model.Route53Record, bool) {
+	if w.selectedRoute53Record == "" {
+		return model.Route53Record{}, false
+	}
+	for _, record := range w.allRoute53Records {
+		if route53RecordIdentity(record) == w.selectedRoute53Record {
+			return record, true
+		}
+	}
+	return model.Route53Record{}, false
+}
+
+func route53RecordIdentity(record model.Route53Record) string {
+	return record.Name + "\x00" + record.Type + "\x00" + record.SetIdentifier
+}
+
+func findRoute53RecordIndex(records []model.Route53Record, identity string) int {
+	for index, record := range records {
+		if route53RecordIdentity(record) == identity {
+			return index
+		}
+	}
+	return -1
+}
+
+func route53RecordSummaryValue(record model.Route53Record) string {
+	if record.AliasTarget != "" {
+		return "ALIAS → " + record.AliasTarget
+	}
+	if len(record.Values) == 0 {
+		return "—"
+	}
+	if len(record.Values) == 1 {
+		return record.Values[0]
+	}
+	return fmt.Sprintf("%s (+%d more)", record.Values[0], len(record.Values)-1)
+}
+
+func route53RoutingLabel(record model.Route53Record) string {
+	if record.RoutingPolicy == "" || record.RoutingPolicy == "Simple" {
+		return "—"
+	}
+	return record.RoutingPolicy
+}
+
+func route53RecordBreadcrumb(zone model.Route53Zone, record string) string {
+	breadcrumb := "Route53 / Hosted zones / " + zone.Name + " / Records"
+	if record != "" {
+		breadcrumb += " / " + record
+	}
+	return breadcrumb
+}
+
+func route53RecordListSummary(zone model.Route53Zone, count int) string {
+	return fmt.Sprintf("ROUTE53 RECORD SETS\n\nHosted zone  %s\nZone ID      %s\nRecord sets  %d\n\nSelect a record set for its complete values and routing configuration.", zone.Name, zone.ID, count)
+}
+
+func formatRoute53Record(zone model.Route53Zone, record model.Route53Record, answer *model.Route53DNSAnswer) string {
+	lines := []string{
+		"ROUTE53 RECORD SET", "", "Hosted zone    " + zone.Name, "Name           " + record.Name,
+		"Type           " + record.Type, "Routing        " + route53RoutingLabel(record),
+	}
+	if record.TTL > 0 {
+		lines = append(lines, fmt.Sprintf("TTL            %d seconds", record.TTL))
+	}
+	if record.SetIdentifier != "" {
+		lines = append(lines, "Set identifier "+record.SetIdentifier)
+	}
+	if record.Weight > 0 {
+		lines = append(lines, fmt.Sprintf("Weight         %d", record.Weight))
+	}
+	if record.Region != "" {
+		lines = append(lines, "Region         "+record.Region)
+	}
+	if record.Failover != "" {
+		lines = append(lines, "Failover       "+record.Failover)
+	}
+	if record.HealthCheckID != "" {
+		lines = append(lines, "Health check   "+record.HealthCheckID)
+	}
+	if record.AliasTarget != "" {
+		lines = append(lines, "", "ALIAS TARGET", "DNS name       "+record.AliasTarget, "Hosted zone ID "+record.AliasZoneID, fmt.Sprintf("Evaluate health %t", record.EvaluateTargetHealth))
+	} else {
+		lines = append(lines, "", fmt.Sprintf("VALUES (%d)", len(record.Values)))
+		lines = append(lines, record.Values...)
+	}
+	if answer != nil {
+		lines = append(lines, "", "DNS TEST RESULT", "Response       "+answer.ResponseCode, "Nameserver     "+answer.Nameserver, "Protocol       "+answer.Protocol)
+		if len(answer.RecordData) > 0 {
+			lines = append(lines, "Resolved values")
+			lines = append(lines, answer.RecordData...)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func route53ZoneListSummary(count int) string {

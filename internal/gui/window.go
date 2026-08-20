@@ -363,6 +363,7 @@ type mainWindow struct {
 	savedSQSQueuesLabel         *gtk.Label
 	savedSQSQueueButtons        []*gtk.ToggleButton
 	route53ZonesNavButton       *gtk.ToggleButton
+	route53TestDNSButton        *gtk.Button
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -781,6 +782,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.sqsQueueTable.view.ConnectActivate(w.openSQSQueueAt)
 	w.sqsMessageTable.view.ConnectActivate(w.openSQSMessageAt)
 	w.route53ZoneTable.view.ConnectActivate(w.openRoute53ZoneAt)
+	w.route53RecordTable.view.ConnectActivate(w.openRoute53RecordAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -812,6 +814,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.sqsQueueTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSQueueRow() })
 	w.sqsMessageTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSMessageRow() })
 	w.route53ZoneTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRoute53ZoneRow() })
+	w.route53RecordTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRoute53RecordRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -989,6 +992,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsDeleteButton = gtk.NewButtonWithLabel("Delete message…")
 	w.sqsDeleteButton.AddCSSClass("destructive-action")
 	w.sqsDeleteButton.ConnectClicked(w.confirmDeleteSQSMessage)
+	w.route53TestDNSButton = gtk.NewButtonWithLabel("Test DNS")
+	w.route53TestDNSButton.ConnectClicked(w.testSelectedRoute53DNS)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1096,6 +1101,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.sqsSendButton)
 	header.Append(w.sqsCloneButton)
 	header.Append(w.sqsDeleteButton)
+	header.Append(w.route53TestDNSButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -2502,6 +2508,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyRoute53ZoneFilter()
 		return
 	}
+	if w.currentPage == pageRoute53Records {
+		w.applyRoute53RecordFilter()
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		w.applyS3BucketFilter()
 		return
@@ -2690,6 +2700,10 @@ func (w *mainWindow) navigateBrowserBack() {
 	}
 	if w.currentPage == pageSQSMessages {
 		w.restoreSQSQueueBrowser()
+		return
+	}
+	if w.currentPage == pageRoute53Records {
+		w.restoreRoute53ZoneBrowser()
 		return
 	}
 	if w.currentPage == pageDynamoItems {
@@ -2886,6 +2900,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageRoute53Zones {
 		w.refreshRoute53Zones(foreground)
+		return
+	}
+	if w.currentPage == pageRoute53Records {
+		w.refreshRoute53Records(foreground)
 		return
 	}
 	if w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings {
@@ -3650,6 +3668,10 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.sqsCloneButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
 	w.sqsDeleteButton.SetVisible(w.currentPage == pageSQSMessages && sqsMessageSelected)
 	w.sqsDeleteButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
+	_, route53RecordSelected := w.selectedRoute53RecordValue()
+	route53Ready := w.currentPage == pageRoute53Records && route53RecordSelected && w.options.Route53 != nil && !w.route53ActionPending
+	w.route53TestDNSButton.SetVisible(w.currentPage == pageRoute53Records && route53RecordSelected)
+	w.route53TestDNSButton.SetSensitive(route53Ready)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""
