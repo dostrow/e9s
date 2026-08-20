@@ -3,7 +3,27 @@ package aws
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+func TestNormalizeS3StorageClass(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value types.StorageClass
+		want  string
+	}{
+		{name: "standard is omitted by HeadObject", want: "STANDARD"},
+		{name: "explicit class", value: types.StorageClassDeepArchive, want: "DEEP_ARCHIVE"},
+		{name: "future class", value: types.StorageClass("FUTURE_CLASS"), want: "FUTURE_CLASS"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := normalizeS3StorageClass(test.value); got != test.want {
+				t.Fatalf("normalizeS3StorageClass(%q) = %q, want %q", test.value, got, test.want)
+			}
+		})
+	}
+}
 
 func TestS3PrefixDestinationStaysWithinSelectedDirectory(t *testing.T) {
 	destination := filepath.Join("tmp", "download")

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/dostrow/e9s/internal/model"
 )
 
@@ -149,7 +150,7 @@ func (c *Client) GetObjectDetail(ctx context.Context, bucket, key string) (*S3Ob
 		Key:          key,
 		ContentType:  derefStrAws(head.ContentType),
 		ETag:         derefStrAws(head.ETag),
-		StorageClass: string(head.StorageClass),
+		StorageClass: normalizeS3StorageClass(head.StorageClass),
 	}
 	if head.ContentLength != nil {
 		detail.Size = *head.ContentLength
@@ -164,6 +165,16 @@ func (c *Client) GetObjectDetail(ctx context.Context, bucket, key string) (*S3Ob
 	}
 
 	return detail, nil
+}
+
+// HeadObject omits the storage-class header for objects in S3 Standard.
+// Preserve explicit and future SDK values while presenting that omission as
+// the class it represents rather than as missing metadata.
+func normalizeS3StorageClass(storageClass types.StorageClass) string {
+	if storageClass == "" {
+		return string(types.StorageClassStandard)
+	}
+	return string(storageClass)
 }
 
 // DownloadObject downloads a single S3 object to a local file path.
