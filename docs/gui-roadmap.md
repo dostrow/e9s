@@ -28,13 +28,20 @@ Implement and evaluate modules in this order:
    time-series chart foundation.
 10. **S3** — add bucket searches, hierarchical object browsing, metadata/tags,
     and native cancellable downloads.
+11. **DynamoDB** — add table and item browsing, paged scans, saved tables and
+    PartiQL queries, and guarded item mutations.
+12. **SQS** — add queue/message drill-down, DLQ navigation, and guarded message
+    send/delete workflows.
+13. **Route53** — add hosted-zone and record-set browsing with carefully scoped
+    record mutations.
+14. **OpenTofu/Terraform** — adapt workspace, state, plan, and apply workflows
+    to the native editor, terminal, and long-running-operation surfaces.
 
 The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
 the next **compute and delivery** batch: together they exercise log-heavy jobs,
 interactive host sessions, nested resource browsers, and destructive actions.
-The next batch begins with RDS. Its standard CloudWatch monitoring is built on
-the shared time-series foundation first established for ECS and EC2. The
-remaining candidates after S3 are DynamoDB, SQS, Route53, and OpenTofu/Terraform.
+The RDS and S3 batch is complete. DynamoDB is the first module in the remaining
+data-and-workflow batch, followed by SQS, Route53, and OpenTofu/Terraform.
 
 ## Shared metrics foundation
 
@@ -559,3 +566,56 @@ The intentional frontend differences are presentational. The TUI uses its picker
 key bindings, and configured save-directory input; GTK renders saved searches in
 the Module Rail and uses platform-native file/folder choosers plus a cancellable
 Workspace progress bar. Both invoke the same service methods and AWS adapter.
+
+## DynamoDB delivery phases
+
+DynamoDB is implemented in the GTK frontend and shares table discovery,
+configuration, scan/filter routing, opaque pagination, PartiQL, item reads, and
+guarded mutations with the TUI through `service.DynamoDB`. The Module Rail
+exposes **Tables** as the default destination plus configured saved tables and
+queries as dynamic sub-items.
+
+### Phase 1: shared service and TUI migration
+
+- Move table, schema, item, page, filter, and mutation values into the UI-neutral
+  model package.
+- Centralize validation, sorting, filter-operator routing, key construction, and
+  contextual errors in the shared service.
+- Preserve high-precision pagination keys through opaque tokens and migrate the
+  TUI to caller-owned context.
+
+### Phase 2: module shell and tables
+
+- Add an alphabetically positioned, collapsible **DynamoDB** Module Rail entry
+  with **Tables** as its default item.
+- Render configured tables and PartiQL queries as directly selectable saved
+  destinations with active highlighting and config reload.
+- Browse/filter tables and show status, size, billing mode, key schema, and
+  global secondary indexes while rejecting stale responses.
+
+### Phase 3: items, queries, and saved destinations
+
+- Scan table items in pages, retain cumulative scanned counts, and expose Load
+  more only while an opaque next token exists.
+- Apply comparison and function-style server filters, execute PartiQL, and
+  locally filter the currently loaded buffer.
+- Save, open, rename, edit, and delete saved tables and queries without allowing
+  accidental name collisions.
+
+### Phase 4: guarded mutations
+
+- Edit non-key fields in a theme-aware embedded editor and re-read the item after
+  a successful update.
+- Clone full items in a JSON-aware editor, require a changed and complete key,
+  and require explicit confirmation before writing.
+- Use conditional updates and creates so concurrent field changes or existing
+  item keys fail visibly instead of being silently overwritten. Apply the same
+  clone guard to the TUI.
+
+### Phase 5: parity and evaluation
+
+- Verify plain GTK and GtkSourceView builds plus the full TUI/service suite.
+- Exercise stale-response cancellation, filtering, pagination, saved-config
+  reload, theme changes, and guarded writes under Hyprland.
+- Keep the frontend differences presentational: GTK uses Module Rail saved
+  destinations and embedded editors, while the TUI uses pickers and `$EDITOR`.

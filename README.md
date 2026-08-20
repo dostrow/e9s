@@ -86,7 +86,9 @@ Browse DynamoDB tables, scan items with pagination (press `]` to load more), and
 - **Filter Scan** — filter by attribute with operators (=, <>, contains, begins_with, etc.)
 - **PartiQL** — run arbitrary PartiQL queries with saved query support
 - **Edit Fields** — edit individual field values via `$EDITOR` with type inference
-- **Clone Items** — clone and modify items via `$EDITOR` for creating new entries
+  and a conditional write that detects concurrent changes
+- **Clone Items** — clone and modify items via `$EDITOR`; same or existing keys
+  are rejected instead of replacing an item
 
 ### SQS
 
@@ -184,7 +186,7 @@ go install github.com/dostrow/e9s@latest
 
 The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
 for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager,
-Lambda, CodeBuild, EC2, ECR, RDS, and S3. It shares
+Lambda, CodeBuild, EC2, ECR, RDS, S3, and DynamoDB. It shares
 connection, query, mutation, and log services with the TUI while remaining a
 separate, build-tagged executable.
 

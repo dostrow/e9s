@@ -567,6 +567,30 @@ that would escape the selected directory are rejected. The TUI retains its
 keyboard/input flow and configured save directory while calling the same shared
 service and atomic AWS adapter.
 
+### DynamoDB module follow-up
+
+DynamoDB now uses `service.DynamoDB` in both frontends for sorted table
+discovery, configuration reads, comparison/function scan filters, opaque scan
+pagination, PartiQL, exact item reads, and mutations. Table, item, schema,
+filter, page, and mutation values are UI-neutral models; pagination tokens retain
+the exact DynamoDB key representation rather than round-tripping through lossy
+generic JSON numbers.
+
+The GTK frontend adds an alphabetically positioned, collapsible DynamoDB module
+with Tables as its default item. Tables drill into a paged item browser with
+local buffered filtering, server-side filters, cumulative scan counts, PartiQL,
+and context-sensitive actions. Configured tables and queries appear as direct
+Module Rail destinations and can be saved, edited, opened, or removed without
+restarting the application.
+
+Selected non-key fields can be edited in a theme-aware embedded editor; cloning
+uses a JSON-aware editor and requires a complete, changed key. Both operations
+require review and confirmation, disable conflicting actions while pending, and
+pause normal updates. Updates compare the loaded field value and clones use a
+conditional create, so concurrent changes and existing keys fail visibly rather
+than overwriting data. The TUI uses the same service safeguards while retaining
+its `$EDITOR` workflow.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

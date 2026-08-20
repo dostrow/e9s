@@ -76,14 +76,16 @@ The Module Rail starts collapsed. With no `defaults.default_mode`, the GUI opens
 a module picker; choosing a module expands only that module and opens its default
 sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
 CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
-Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda, and
-**Projects** for CodeBuild, and **Instances** for EC2. Use `Ctrl+P` to reopen the
-picker from anywhere.
+Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda,
+**Projects** for CodeBuild, **Instances** for EC2, **Repositories** for ECR,
+**Clusters** for RDS, **Buckets** for S3, and **Tables** for DynamoDB. Use
+`Ctrl+P` to reopen the picker from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
 `CB` and `CodeBuild` select the CodeBuild project browser; `EC2` and `EC2i`
-select the EC2 instance browser.
+select the EC2 instance browser. `ECR`, `RDS`, `S3`, and `DDB`/`DynamoDB`
+select their corresponding default browsers.
 For example:
 
 ```yaml
@@ -142,7 +144,8 @@ EC2 security-group, VPC, subnet, EBS-volume, ALB/NLB, and target-group browsing
 with inline cross-resource navigation; ECR repository, image, scan, and finding
 browsing; RDS cluster/instance browsing and shared metrics dashboards; S3 bucket,
 folder, object-metadata, key-prefix search, saved-search, and cancellable download
-workflows; ECS-task infrastructure links;
+workflows; DynamoDB table/item browsing, paged and filtered scans, PartiQL, saved
+destinations, and guarded field editing and item cloning; ECS-task infrastructure links;
 service-wide and selected-task metrics; scaling and guarded ECS mutations; and
 ECS Exec in an embedded VTE terminal.
 The GTK frontend and Bubble Tea frontend both call the same UI-neutral
@@ -338,6 +341,24 @@ memory than a cached rebuild.
     is visible and conflicting S3 actions are disabled. Cancel a large transfer
     and verify no partial destination file remains. Include an object whose key
     contains path traversal components and confirm recursive download rejects it.
+57. Expand DynamoDB and confirm Tables is its default item. Filter the table
+    browser, select tables rapidly, and verify only the final configuration
+    appears in the Workspace. Double-click a table and confirm the old item rows
+    clear before its first scan returns.
+58. Apply comparison, `begins_with`, and `contains` scan filters. Load multiple
+    pages and confirm Loaded and cumulative Scanned counts advance while Load
+    more disappears with the final page. Run PartiQL and locally filter its
+    loaded result buffer.
+59. Save a table and a PartiQL query, open both from their direct Module Rail
+    entries, rename/edit them through Manage saved, and delete the active entry.
+    Confirm exact rail highlighting and external config reload remain correct.
+60. On a disposable table, edit a non-key string and structured field and verify
+    the refreshed item remains selected. Clone an item after changing its full
+    key. Confirm same-key clones are rejected, confirmation precedes each write,
+    actions and refresh remain disabled while pending, and a concurrent field
+    change or existing clone key produces a visible conflict instead of an
+    overwrite. Swap GTK themes while an editor is open and verify its palette is
+    theme-derived.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.
