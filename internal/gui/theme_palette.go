@@ -280,6 +280,57 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
 `, palette.foreground.String(), palette.background.String(),
 			palette.foreground.String(), palette.foreground.String(), palette.accent.String(),
 			palette.foreground.String(), palette.accent.String(), palette.accent.String())
+		fmt.Fprintf(&css, `
+.e9s-root .e9s-settings-page,
+.e9s-root .e9s-settings-page notebook,
+.e9s-root .e9s-settings-page notebook > header,
+.e9s-root .e9s-settings-page notebook > stack,
+.e9s-root .settings-actions {
+  color: %s;
+  background-color: %s;
+}
+.e9s-root .e9s-settings-page notebook > header {
+  border-color: %s;
+}
+.e9s-root checkbutton check {
+  min-width: 14px; min-height: 14px;
+  margin: 0; padding: 0;
+  color: %s; background-color: %s;
+  border: 1px solid %s; border-radius: 3px;
+  background-image: none; box-shadow: none;
+  -gtk-icon-shadow: none;
+  -gtk-icon-source: none;
+}
+.e9s-root checkbutton check:checked {
+  color: %s; background-color: %s; border-color: %s;
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+.e9s-root checkbutton:disabled check { opacity: 0.55; }
+.e9s-root searchentry,
+.e9s-root searchentry > text,
+.e9s-root searchentry image {
+  color: %s;
+  background-color: %s;
+  border-color: %s;
+}
+.e9s-root searchentry placeholder { color: %s; }
+.e9s-root scrollbar { background-color: %s; }
+.e9s-root scrollbar slider {
+  min-width: 8px; min-height: 8px;
+  background-color: alpha(%s, 0.65);
+  border: 0;
+  border-radius: 999px;
+}
+.e9s-root scrollbar slider:hover,
+.e9s-root scrollbar slider:active { background-color: %s; }
+.e9s-root expander.module-heading > title > expander {
+  min-width: 0; min-height: 0; opacity: 0;
+}
+`, palette.foreground.String(), palette.background.String(), palette.muted.String(),
+			palette.foreground.String(), palette.surface.String(), palette.muted.String(),
+			palette.background.String(), palette.accent.String(), palette.accent.String(),
+			palette.foreground.String(), palette.surface.String(), palette.muted.String(), palette.muted.String(),
+			palette.background.String(), palette.muted.String(), palette.foreground.String())
 	}
 	if cfg == nil {
 		return css.String()

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"gopkg.in/yaml.v3"
@@ -82,9 +81,11 @@ func settingsNote(text string) *gtk.Label {
 }
 
 func (w *mainWindow) showSettings() {
-	if w.settingsDialog != nil {
-		w.settingsDialog.Present()
+	if w.settingsOpen {
 		return
+	}
+	if w.settingsNavButton != nil && !w.settingsNavButton.Active() {
+		w.settingsNavButton.SetActive(true)
 	}
 
 	cfg := config.DefaultConfig()
@@ -96,18 +97,23 @@ func (w *mainWindow) showSettings() {
 		raw, _ = yaml.Marshal(&cfg)
 	}
 
-	dialog := gtk.NewDialogWithFlags("e9s Settings", &w.window.Window, gtk.DialogModal)
-	w.settingsDialog = dialog
-	dialog.AddCSSClass("e9s-settings")
-	dialog.SetDestroyWithParent(true)
-	dialog.SetDefaultSize(760, 600)
-	content := dialog.ContentArea()
-	content.AddCSSClass("e9s-dialog-surface")
-	content.SetSpacing(8)
+	for child := w.settingsHost.FirstChild(); child != nil; child = w.settingsHost.FirstChild() {
+		w.settingsHost.Remove(child)
+	}
+	w.settingsOpen = true
+	w.settingsReturnBreadcrumb = w.breadcrumbText
+	w.mainContentStack.SetVisibleChildName(pageSettings)
+	w.setBreadcrumb("Settings")
+	w.backButton.SetSensitive(true)
+
+	page := gtk.NewBox(gtk.OrientationVertical, 0)
+	page.AddCSSClass("e9s-settings-page")
+	page.SetHExpand(true)
+	page.SetVExpand(true)
 	notebook := gtk.NewNotebook()
 	notebook.SetHExpand(true)
 	notebook.SetVExpand(true)
-	content.Append(notebook)
+	page.Append(notebook)
 
 	general := settingsPage()
 	moduleSelector := gtk.NewDropDownFromStrings(settingsChoiceLabels(settingsModuleChoices))
@@ -262,38 +268,33 @@ func (w *mainWindow) showSettings() {
 	})
 	notebook.AppendPage(advancedPage, gtk.NewLabel("Advanced"))
 
-	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
-	dialog.AddButton("Apply", int(gtk.ResponseApply))
-	dialog.AddButton("OK", int(gtk.ResponseOK))
-	dialog.SetDefaultResponse(int(gtk.ResponseOK))
-	closing := false
-	restoreAndClose := func() {
-		if closing {
-			return
-		}
-		closing = true
+	actions := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	actions.AddCSSClass("settings-actions")
+	spacer := gtk.NewLabel("")
+	spacer.SetHExpand(true)
+	actions.Append(spacer)
+	revertButton := gtk.NewButtonWithLabel("Revert")
+	applyButton := gtk.NewButtonWithLabel("Apply")
+	doneButton := gtk.NewButtonWithLabel("Done")
+	actions.Append(revertButton)
+	actions.Append(applyButton)
+	actions.Append(doneButton)
+	page.Append(actions)
+	w.settingsHost.Append(page)
+
+	w.settingsDiscard = func() {
 		restored := cfg
-		glib.IdleAdd(func() {
-			dialog.Destroy()
-			w.applyAppearanceConfig(&restored)
-		})
+		w.applyAppearanceConfig(&restored)
 	}
-	dialog.ConnectDestroy(func() { w.settingsDialog = nil })
-	dialog.ConnectCloseRequest(func() bool {
-		restoreAndClose()
-		return true
-	})
-	dialog.ConnectResponse(func(response int) {
-		closeAfterSave := response == int(gtk.ResponseOK)
-		if response != int(gtk.ResponseApply) && !closeAfterSave {
-			restoreAndClose()
-			return
-		}
+	saveSettings := func(closeAfterSave bool) {
 		if advancedToggle.Active() {
-			w.reviewRawSettings(dialog, raw, []byte(advancedEditor.Text()), closeAfterSave, func(saved config.Config, savedRaw []byte) {
+			w.reviewRawSettings(raw, []byte(advancedEditor.Text()), func(saved config.Config, savedRaw []byte) {
 				cfg = saved
 				raw = append(raw[:0], savedRaw...)
 				advancedEditor.SetText(string(savedRaw))
+				if closeAfterSave {
+					w.closeSettings(false)
+				}
 			})
 			return
 		}
@@ -333,12 +334,33 @@ func (w *mainWindow) showSettings() {
 			advancedEditor.SetText(string(savedRaw))
 		}
 		if closeAfterSave {
-			closing = true
-			dialog.Destroy()
+			w.closeSettings(false)
 		}
 		w.setStatus("Settings saved", false)
+	}
+	revertButton.ConnectClicked(func() {
+		w.closeSettings(true)
+		w.showSettings()
 	})
-	dialog.Present()
+	applyButton.ConnectClicked(func() { saveSettings(false) })
+	doneButton.ConnectClicked(func() { saveSettings(true) })
+}
+
+func (w *mainWindow) closeSettings(restorePreview bool) {
+	if !w.settingsOpen {
+		return
+	}
+	if restorePreview && w.settingsDiscard != nil {
+		w.settingsDiscard()
+	}
+	w.settingsDiscard = nil
+	w.settingsOpen = false
+	w.mainContentStack.SetVisibleChildName("content")
+	w.setBreadcrumb(w.settingsReturnBreadcrumb)
+	if w.settingsNavButton != nil && w.settingsNavButton.Active() {
+		w.settingsNavButton.SetActive(false)
+	}
+	w.updateActionSensitivity()
 }
 
 func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
@@ -352,7 +374,7 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	w.applyAppearanceConfig(&updated)
 }
 
-func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte, closeParent bool, onSaved func(config.Config, []byte)) {
+func (w *mainWindow) reviewRawSettings(before, after []byte, onSaved func(config.Config, []byte)) {
 	parsed, err := config.Parse(after)
 	if err != nil {
 		w.setStatus("Invalid configuration: "+err.Error(), true)
@@ -361,11 +383,9 @@ func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte,
 	diff := configurationDiff(string(before), string(after))
 	if diff == "" {
 		w.setStatus("Configuration is unchanged", false)
-		if closeParent {
-			parent.Destroy()
-			glib.IdleAdd(func() { w.applyAppearanceConfig(&parsed) })
-		} else {
-			w.applyAppearanceConfig(&parsed)
+		w.applyAppearanceConfig(&parsed)
+		if onSaved != nil {
+			onSaved(parsed, after)
 		}
 		return
 	}
@@ -416,9 +436,6 @@ func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte,
 			onSaved(saved, after)
 		}
 		review.Destroy()
-		if closeParent {
-			parent.Destroy()
-		}
 		w.setStatus("Configuration saved; previous version retained as config.yaml.bak", false)
 	})
 	review.Present()

@@ -2,7 +2,10 @@
 
 package gui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCompactStatusMessageMakesMultilineErrorsReadable(t *testing.T) {
 	got := compactStatusMessage("request failed:\n  AccessDenied:   missing permission")
@@ -135,11 +138,8 @@ func TestModuleRailSectionsStayAlphabetical(t *testing.T) {
 	}
 }
 
-func TestExpandedModuleHeadingAddsChevronSpacing(t *testing.T) {
-	if got := moduleHeadingTextOffset(false); got != 0 {
-		t.Fatalf("collapsed heading text offset = %d, want 0", got)
-	}
-	if got := moduleHeadingTextOffset(true); got <= 0 {
-		t.Fatalf("expanded heading text offset = %d, want positive spacing", got)
+func TestNativeModuleChevronIsHidden(t *testing.T) {
+	if !strings.Contains(styleCSS, ".module-heading > title > expander") || !strings.Contains(styleCSS, "opacity: 0") {
+		t.Fatal("native GtkExpander arrow must stay hidden behind the palette-aware module chevron")
 	}
 }

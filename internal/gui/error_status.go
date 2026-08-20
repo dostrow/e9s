@@ -74,22 +74,17 @@ func moduleForPage(page string) string {
 	}
 }
 
-func moduleHeadingTextOffset(expanded bool) int {
-	if expanded {
-		return 4
-	}
-	return 0
-}
-
 func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter) *gtk.Expander {
 	expander := gtk.NewExpander("")
 	heading := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	heading.SetHExpand(true)
+	chevron := w.newModuleChevronArea(expander.Expanded)
 	text := w.newModuleHeadingArea(label, expander.Expanded)
 	glyph := gtk.NewImageFromIconName("dialog-error-symbolic")
 	glyph.SetPixelSize(16)
 	glyph.SetTooltipText("This module has an error")
 	glyph.SetVisible(false)
+	heading.Append(chevron)
 	heading.Append(text)
 	heading.Append(glyph)
 
@@ -97,9 +92,36 @@ func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter
 	expander.SetExpanded(false)
 	expander.SetChild(child)
 	expander.AddCSSClass("module-heading")
-	expander.NotifyProperty("expanded", text.QueueDraw)
+	expander.NotifyProperty("expanded", func() {
+		chevron.QueueDraw()
+		text.QueueDraw()
+	})
 	w.moduleErrorGlyphs[module] = glyph
 	return expander
+}
+
+func (w *mainWindow) newModuleChevronArea(expanded func() bool) *gtk.DrawingArea {
+	area := gtk.NewDrawingArea()
+	area.SetContentWidth(12)
+	area.SetContentHeight(20)
+	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
+		clearDrawingSurface(cr)
+		foreground := w.currentSemanticPalette(area.StyleContext()).foreground
+		cr.SetSourceRGBA(float64(foreground.Red()), float64(foreground.Green()), float64(foreground.Blue()), float64(foreground.Alpha()))
+		cr.SetLineWidth(1.6)
+		centerX, centerY := float64(width)/2, float64(height)/2
+		if expanded() {
+			cr.MoveTo(centerX-3.5, centerY-2)
+			cr.LineTo(centerX, centerY+2)
+			cr.LineTo(centerX+3.5, centerY-2)
+		} else {
+			cr.MoveTo(centerX-2, centerY-3.5)
+			cr.LineTo(centerX+2, centerY)
+			cr.LineTo(centerX-2, centerY+3.5)
+		}
+		cr.Stroke()
+	})
+	return area
 }
 
 func (w *mainWindow) newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
@@ -121,10 +143,7 @@ func (w *mainWindow) newModuleHeadingArea(label string, expanded func() bool) *g
 		)
 		layout := area.CreatePangoLayout(label)
 		_, textHeight := layout.PixelSize()
-		cr.MoveTo(
-			float64(moduleHeadingTextOffset(expanded())),
-			float64(max(0, height-textHeight)/2),
-		)
+		cr.MoveTo(0, float64(max(0, height-textHeight)/2))
 		pangocairo.ShowLayout(cr, layout)
 	})
 	return area

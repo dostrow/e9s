@@ -62,6 +62,7 @@ const (
 	pageTofuResources     = "tofu-resources"
 	pageTofuPlan          = "tofu-plan"
 	pageModulePicker      = "module-picker"
+	pageSettings          = "settings"
 
 	detailIntro            = "intro"
 	detailClusterSummary   = "cluster-summary"
@@ -402,7 +403,12 @@ type mainWindow struct {
 	tofuInitButton              *gtk.Button
 	tofuApplyButton             *gtk.Button
 	terminalDockButton          *gtk.ToggleButton
-	settingsDialog              *gtk.Dialog
+	mainContentStack            *gtk.Stack
+	settingsHost                *gtk.Box
+	settingsNavButton           *gtk.ToggleButton
+	settingsOpen                bool
+	settingsReturnBreadcrumb    string
+	settingsDiscard             func()
 	semanticStyleProvider       *gtk.CSSProvider
 	semanticPalette             semanticPalette
 	semanticPaletteReady        bool
@@ -1101,9 +1107,6 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.terminalDockButton.ConnectToggled(func() {
 		w.setTerminalDockVisible(w.terminalDockButton.Active())
 	})
-	settingsButton := gtk.NewButtonWithLabel("Settings…")
-	settingsButton.SetTooltipText("Open application settings (Ctrl+,)")
-	settingsButton.ConnectClicked(w.showSettings)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1225,7 +1228,6 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
 	header.Append(w.terminalDockButton)
-	header.Append(settingsButton)
 	header.Append(refresh)
 
 	sidebar := gtk.NewBox(gtk.OrientationVertical, 6)
@@ -1391,6 +1393,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	for _, section := range w.moduleSections {
 		sidebar.Append(section.expander)
 	}
+	w.settingsNavButton = newModuleRailButton("Settings", w.showSettings)
+	w.settingsNavButton.SetGroup(w.clustersNavButton)
+	w.settingsNavButton.SetTooltipText("Open application settings (Ctrl+,)")
+	w.settingsNavButton.ConnectToggled(func() {
+		if !w.settingsNavButton.Active() && w.settingsOpen {
+			w.closeSettings(true)
+		}
+	})
 
 	w.search = gtk.NewSearchEntry()
 	w.search.SetPlaceholderText("Choose a module…")
@@ -1708,13 +1718,23 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	contentSplit.SetResizeStartChild(true)
 	contentSplit.SetResizeEndChild(true)
 	w.installPaneZoom(&resourcePane.Widget, &workspace.Widget)
+	w.settingsHost = gtk.NewBox(gtk.OrientationVertical, 0)
+	w.settingsHost.AddCSSClass("settings-host")
+	w.settingsHost.SetHExpand(true)
+	w.settingsHost.SetVExpand(true)
+	w.mainContentStack = gtk.NewStack()
+	w.mainContentStack.SetHExpand(true)
+	w.mainContentStack.SetVExpand(true)
+	w.mainContentStack.AddNamed(contentSplit, "content")
+	w.mainContentStack.AddNamed(w.settingsHost, pageSettings)
+	w.mainContentStack.SetVisibleChildName("content")
 
 	w.terminalDockContainer = w.buildTerminalDock()
 	preparePaneCard(&w.terminalDockContainer.Widget)
 	w.terminalDockContainer.SetVisible(false)
 	w.terminalDockSplit = gtk.NewPaned(gtk.OrientationVertical)
 	w.terminalDockSplit.AddCSSClass("pane-split")
-	w.terminalDockSplit.SetStartChild(contentSplit)
+	w.terminalDockSplit.SetStartChild(w.mainContentStack)
 	w.terminalDockSplit.SetEndChild(w.terminalDockContainer)
 	w.terminalDockSplit.SetResizeStartChild(true)
 	w.terminalDockSplit.SetResizeEndChild(false)
@@ -1725,10 +1745,15 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	mainSplit := gtk.NewPaned(gtk.OrientationHorizontal)
 	mainSplit.AddCSSClass("pane-split")
 	sidebarScroll := gtk.NewScrolledWindow()
-	preparePaneCard(&sidebarScroll.Widget)
 	sidebarScroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	sidebarScroll.SetChild(sidebar)
-	mainSplit.SetStartChild(sidebarScroll)
+	sidebarScroll.SetVExpand(true)
+	sidebarShell := gtk.NewBox(gtk.OrientationVertical, 6)
+	preparePaneCard(&sidebarShell.Widget)
+	sidebarShell.Append(sidebarScroll)
+	sidebarShell.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+	sidebarShell.Append(w.settingsNavButton)
+	mainSplit.SetStartChild(sidebarShell)
 	mainSplit.SetEndChild(w.terminalDockSplit)
 	mainSplit.SetPosition(190)
 	mainSplit.SetResizeStartChild(false)
@@ -2853,6 +2878,10 @@ func (w *mainWindow) applyServiceFilter() {
 }
 
 func (w *mainWindow) goBack() {
+	if w.settingsOpen {
+		w.closeSettings(true)
+		return
+	}
 	if w.showingTerminal {
 		w.closeTerminal()
 		return

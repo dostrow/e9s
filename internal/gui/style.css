@@ -50,6 +50,14 @@
   font-weight: 700;
 }
 
+/* GtkExpander reserves and paints a theme-owned arrow before its label. e9s
+ * paints a palette-aware chevron in the label widget instead. */
+.module-heading > title > expander {
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+}
+
 .module-heading-text {
   font-weight: 700;
 }
@@ -77,6 +85,20 @@
 
 .resource-search {
   margin-bottom: 2px;
+}
+
+.settings-host {
+  margin: 6px;
+}
+
+.e9s-settings-page {
+  border: 1px solid alpha(currentColor, 0.14);
+  border-radius: 10px;
+}
+
+.settings-actions {
+  border-top: 1px solid alpha(currentColor, 0.14);
+  padding: 10px 12px;
 }
 
 .inspector {
