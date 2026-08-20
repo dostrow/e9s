@@ -511,6 +511,9 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	for _, chart := range w.metricsCharts {
 		chart.SetPalette(palette)
 	}
+	if w.costChart != nil {
+		w.costChart.SetPalette(palette)
+	}
 }
 
 func (w *mainWindow) applyDetailHeadingStyles() {

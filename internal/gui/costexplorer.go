@@ -33,7 +33,15 @@ func (w *mainWindow) openCostExplorerView(page string, saved config.CostView) {
 	w.backButton.SetSensitive(false)
 	w.resourceStack.SetVisibleChildName(costStackPage(page))
 	w.setBreadcrumb(costBreadcrumb(page, saved.Name))
-	w.setDetail("Loading Cost Explorer data…", detailCost)
+	if page == pageCostAnomalies {
+		w.setDetail("Loading Cost Explorer data…", detailCost)
+	} else {
+		w.setCostSummary("Loading Cost Explorer data…")
+		w.costChart.SetReport(model.CostReport{Query: w.costQuery})
+		w.costChart.SetExpanded(false)
+		w.costSummaryScroll.SetVisible(true)
+		w.detailStack.SetVisibleChildName("cost")
+	}
 	w.updateActionSensitivity()
 	w.loadCurrentCostView(false)
 }
@@ -114,7 +122,15 @@ func (w *mainWindow) loadCurrentCostView(force bool) {
 			return
 		}
 		report, status, err := w.options.CostExplorer.Report(ctx, query, w.costCurrentResources, w.costCurrentForecast, force)
-		w.finishRequest(ctx, generation, err, func() {
+		if err != nil {
+			glib.IdleAdd(func() {
+				if ctx.Err() == nil && generation == w.generation {
+					w.setCostSummary("ERROR\n\n" + err.Error())
+					w.detailStack.SetVisibleChildName("cost")
+				}
+			})
+		}
+		w.finishRequestResult(ctx, generation, err, "", false, true, func() {
 			w.costReport, w.costCacheStatus = report, status
 			w.showCostReport()
 		})
@@ -133,7 +149,9 @@ func (w *mainWindow) finishCostRequest(generation uint64) {
 
 func (w *mainWindow) showCostReport() {
 	w.applyCostFilter()
-	w.setDetail(formatCostReportSummary(w.costReport, w.costCacheStatus, w.costCurrentResources), detailCost)
+	w.costChart.SetReport(w.costReport)
+	w.setCostSummary(formatCostReportSummary(w.costReport, w.costCacheStatus, w.costCurrentResources))
+	w.detailStack.SetVisibleChildName("cost")
 	w.setStatus(costLoadStatus(w.costCacheStatus), false)
 }
 
@@ -178,16 +196,20 @@ func (w *mainWindow) showCostAnomalies() {
 }
 
 func (w *mainWindow) selectCostGroupRow() {
-	if costStackPage(w.currentPage) != pageCostOverview {
+	if !isCostReportPage(w.currentPage) {
 		return
 	}
 	position := w.costGroupTable.selection.Selected()
 	if position == gtk.InvalidListPosition || int(position) >= len(w.filteredCostGroups) {
-		w.setDetail(formatCostReportSummary(w.costReport, w.costCacheStatus, w.costCurrentResources), detailCost)
+		w.setCostSummary(formatCostReportSummary(w.costReport, w.costCacheStatus, w.costCurrentResources))
 		return
 	}
 	group := w.filteredCostGroups[position]
-	w.setDetail(formatCostGroup(group, w.costReport.Total), detailCost)
+	w.setCostSummary(formatCostGroup(group, w.costReport.Total))
+}
+
+func isCostReportPage(page string) bool {
+	return page == pageCostOverview || page == pageCostBreakdown || page == pageCostResources || page == pageCostSavedView
 }
 
 func (w *mainWindow) openCostGroupAt(position uint) { w.costGroupTable.selection.SetSelected(position) }

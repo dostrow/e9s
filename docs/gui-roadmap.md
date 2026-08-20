@@ -53,6 +53,13 @@ and are discarded when e9s exits. Cache keys include the effective AWS
 session, billing view, date range, metric, grouping, filters, and resource/
 forecast options.
 
+The GUI renders those cached points as a theme-aware Cost and Usage chart in
+stacked-bar, grouped-bar, or line mode. It keeps the highest-cost groups
+visible, combines the remainder as `Others`, and aggregates display buckets
+from daily to weekly or monthly for longer ranges. Chart-mode changes, hover
+inspection, and maximization are local presentation operations and do not make
+additional paid API requests.
+
 The module never auto-refreshes. Ordinary navigation and Refresh reuse a valid
 cache entry. **Force paid refresh** is the only cache-bypass path and always
 requires confirmation that Cost Explorer charges $0.01 per paginated API

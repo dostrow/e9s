@@ -343,6 +343,9 @@ type mainWindow struct {
 	tofuPlanTable               *stringTable
 	costGroupTable              *stringTable
 	costAnomalyTable            *stringTable
+	costChart                   *costChart
+	costSummaryBuffer           *gtk.TextBuffer
+	costSummaryScroll           *gtk.ScrolledWindow
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -1810,6 +1813,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildLambdaCodeEditor(), "lambda-editor")
 	w.detailStack.AddNamed(w.buildTofuVariablesEditor(), "tofu-variables-editor")
 	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
+	w.detailStack.AddNamed(w.buildCostPane(), "cost")
 	w.detailStack.SetVisibleChildName("detail")
 	w.workspaceBusySpinner = gtk.NewSpinner()
 	w.workspaceBusyLabel = gtk.NewLabel("")
