@@ -591,6 +591,29 @@ conditional create, so concurrent changes and existing keys fail visibly rather
 than overwriting data. The TUI uses the same service safeguards while retaining
 its `$EDITOR` workflow.
 
+### SQS module follow-up
+
+SQS now uses `service.SQS` in both frontends for sorted queue discovery,
+configuration reads, bounded long polling, DLQ URL resolution, sends, and
+deletes. Queue, counter, message, attribute, receive, and portable send-document
+values are UI-neutral models. Binary message attributes retain their bytes in
+the model and are represented as base64 only in the editable JSON document.
+
+The GTK frontend adds an alphabetically positioned, collapsible SQS module with
+Queues as its default item and configured queues as direct Module Rail
+destinations. Queue selection loads counters and delivery configuration; queue
+activation opens an initially empty message browser because receiving changes
+message visibility and must remain explicit. A cancellable Poll messages action
+loads up to ten messages, pauses automatic updates, deduplicates repeated IDs,
+and refreshes receipt handles without displaying them.
+
+Message bodies, system attributes, and user attributes are locally searchable;
+JSON bodies are pretty-printed in the Workspace. Configured dead-letter queues
+resolve through the shared service and preserve Back navigation. Send and clone
+use a theme-aware JSON editor with FIFO, delay, datatype, and base64 validation,
+then require confirmation. Delete is explicitly destructive and removes the
+acknowledged message from only the local buffer after AWS succeeds.
+
 ### Final verification
 
 With Go 1.24, gotk4's weak-reference internals trip the race build's default

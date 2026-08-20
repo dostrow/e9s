@@ -78,13 +78,13 @@ sub-item. The current defaults are **Clusters** for ECS, **Log groups** for
 CloudWatch Logs, **All alarms** for CloudWatch Alarms, **Parameters** for SSM
 Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda,
 **Projects** for CodeBuild, **Instances** for EC2, **Repositories** for ECR,
-**Clusters** for RDS, **Buckets** for S3, and **Tables** for DynamoDB. Use
-`Ctrl+P` to reopen the picker from anywhere.
+**Clusters** for RDS, **Buckets** for S3, **Tables** for DynamoDB, and **Queues**
+for SQS. Use `Ctrl+P` to reopen the picker from anywhere.
 
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
 `CB` and `CodeBuild` select the CodeBuild project browser; `EC2` and `EC2i`
-select the EC2 instance browser. `ECR`, `RDS`, `S3`, and `DDB`/`DynamoDB`
+select the EC2 instance browser. `ECR`, `RDS`, `S3`, `DDB`/`DynamoDB`, and `SQS`
 select their corresponding default browsers.
 For example:
 
@@ -145,7 +145,9 @@ with inline cross-resource navigation; ECR repository, image, scan, and finding
 browsing; RDS cluster/instance browsing and shared metrics dashboards; S3 bucket,
 folder, object-metadata, key-prefix search, saved-search, and cancellable download
 workflows; DynamoDB table/item browsing, paged and filtered scans, PartiQL, saved
-destinations, and guarded field editing and item cloning; ECS-task infrastructure links;
+destinations, and guarded field editing and item cloning; SQS queue/message
+browsing, saved queues, explicit cancellable polling, DLQ navigation, and guarded
+send/clone/delete actions; ECS-task infrastructure links;
 service-wide and selected-task metrics; scaling and guarded ECS mutations; and
 ECS Exec in an embedded VTE terminal.
 The GTK frontend and Bubble Tea frontend both call the same UI-neutral
@@ -359,6 +361,21 @@ memory than a cached rebuild.
     change or existing clone key produces a visible conflict instead of an
     overwrite. Swap GTK themes while an editor is open and verify its palette is
     theme-derived.
+61. Expand SQS and confirm Queues is its default item. Filter by queue name and
+    URL, rapidly change selections, and verify only the final queue counters and
+    configuration appear in the Workspace.
+62. Save several queues, open them from direct Module Rail sub-items, rename and
+    edit one through Manage saved, and delete the active destination. Confirm
+    active highlighting and external config reload remain correct.
+63. Double-click a queue and confirm no receive occurs until Poll messages is
+    pressed. During a long poll, verify the Workspace shows progress, automatic
+    refresh pauses, conflicting actions are disabled, and cancellation returns
+    the page to an operable state. Poll twice and verify renewed receipt handles
+    do not duplicate buffered messages; filter by body and message attribute.
+64. Open a configured DLQ and use Back to restore the originating queue. On a
+    disposable standard and FIFO queue, send and clone text, JSON, and binary-
+    attribute messages, confirming invalid FIFO group IDs and base64 are rejected.
+    Delete a received message and verify its receipt handle is never rendered.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.

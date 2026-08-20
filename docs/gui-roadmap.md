@@ -40,8 +40,8 @@ Implement and evaluate modules in this order:
 The first reassessment was completed after Lambda. CodeBuild, EC2, and ECR form
 the next **compute and delivery** batch: together they exercise log-heavy jobs,
 interactive host sessions, nested resource browsers, and destructive actions.
-The RDS and S3 batch is complete. DynamoDB is the first module in the remaining
-data-and-workflow batch, followed by SQS, Route53, and OpenTofu/Terraform.
+The RDS, S3, DynamoDB, and SQS work is complete. Route53 and
+OpenTofu/Terraform remain in the data-and-workflow batch.
 
 ## Shared metrics foundation
 
@@ -619,3 +619,55 @@ queries as dynamic sub-items.
   reload, theme changes, and guarded writes under Hyprland.
 - Keep the frontend differences presentational: GTK uses Module Rail saved
   destinations and embedded editors, while the TUI uses pickers and `$EDITOR`.
+
+## SQS delivery phases
+
+SQS is implemented in the GTK frontend and shares queue discovery,
+configuration, receive, send, delete, and dead-letter resolution workflows with
+the TUI through `service.SQS`. The Module Rail exposes **Queues** as the default
+destination and configured queues as dynamic saved sub-items.
+
+### Phase 1: shared service and TUI migration
+
+- Move queue, counter, message, attribute, receive, and send values into the
+  UI-neutral model package.
+- Centralize sorting, contextual errors, receive limits, FIFO validation, and
+  binary-attribute encoding in the shared service.
+- Migrate the TUI to caller-owned context and the same portable JSON send
+  document used by the GUI.
+
+### Phase 2: module shell and queues
+
+- Add an alphabetically positioned, collapsible **SQS** Module Rail entry with
+  **Queues** as its default item.
+- Browse and filter queues, show approximate counters and configuration, and
+  reject stale list/detail responses.
+- Save, open, rename, edit, and delete queue destinations as direct Module Rail
+  sub-items with exact active highlighting.
+
+### Phase 3: messages and dead-letter navigation
+
+- Enter a queue without receiving messages automatically; make the visibility-
+  changing receive operation an explicit, cancellable **Poll messages** action.
+- Buffer and locally filter received messages, replace renewed receipt handles
+  without duplicating messages, and render JSON bodies plus sorted attributes.
+- Resolve and open configured dead-letter queues while preserving Back
+  navigation to the originating queue.
+
+### Phase 4: guarded message actions
+
+- Send and clone messages through a theme-aware JSON editor that preserves
+  binary attributes as base64 and validates FIFO group IDs and delays.
+- Require a review summary and confirmation before sends; require destructive
+  confirmation before deleting a received message.
+- Disable conflicting controls, pause automatic refresh, and show Workspace
+  progress for every pending receive or mutation. Never expose receipt handles.
+
+### Phase 5: parity and evaluation
+
+- Verify plain GTK, GtkSourceView, and full VTE builds plus the TUI/service suite.
+- Exercise cancellation, stale-response rejection, saved-config reload, local
+  filtering, DLQ navigation, FIFO sends, binary attributes, and guarded deletes
+  under Hyprland.
+- Keep frontend differences presentational: GTK uses contextual Header Bar
+  actions and embedded editors, while the TUI retains its picker/key workflow.
