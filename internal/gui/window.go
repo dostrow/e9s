@@ -54,6 +54,8 @@ const (
 	pageDynamoItems       = "dynamodb-items"
 	pageSQSQueues         = "sqs-queues"
 	pageSQSMessages       = "sqs-messages"
+	pageRoute53Zones      = "route53-zones"
+	pageRoute53Records    = "route53-records"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -88,6 +90,8 @@ const (
 	detailDynamoItem       = "dynamodb-item"
 	detailSQSQueue         = "sqs-queue"
 	detailSQSMessage       = "sqs-message"
+	detailRoute53Zone      = "route53-zone"
+	detailRoute53Record    = "route53-record"
 )
 
 type mainWindow struct {
@@ -256,6 +260,15 @@ type mainWindow struct {
 	sqsMessagesParentURL        string
 	sqsMessagesParentSavedName  string
 	sqsActionPending            bool
+	allRoute53Zones             []model.Route53Zone
+	filteredRoute53Zones        []model.Route53Zone
+	selectedRoute53Zone         string
+	allRoute53Records           []model.Route53Record
+	filteredRoute53Records      []model.Route53Record
+	selectedRoute53Record       string
+	route53ZoneContext          *model.Route53Zone
+	route53DNSAnswer            *model.Route53DNSAnswer
+	route53ActionPending        bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -293,6 +306,8 @@ type mainWindow struct {
 	dynamoItemTable             *stringTable
 	sqsQueueTable               *stringTable
 	sqsMessageTable             *stringTable
+	route53ZoneTable            *stringTable
+	route53RecordTable          *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -311,6 +326,7 @@ type mainWindow struct {
 	s3ModuleItems               *gtk.Box
 	dynamoModuleItems           *gtk.Box
 	sqsModuleItems              *gtk.Box
+	route53ModuleItems          *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -346,6 +362,7 @@ type mainWindow struct {
 	sqsQueuesNavButton          *gtk.ToggleButton
 	savedSQSQueuesLabel         *gtk.Label
 	savedSQSQueueButtons        []*gtk.ToggleButton
+	route53ZonesNavButton       *gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -724,6 +741,14 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.sqsMessageTable = newStringTable([]columnSpec{
 		{title: "MESSAGE ID", field: 0}, {title: "BODY PREVIEW", field: 1, expand: true},
 	})
+	w.route53ZoneTable = newStringTable([]columnSpec{
+		{title: "ZONE NAME", field: 0, expand: true}, {title: "TYPE", field: 1},
+		{title: "RECORDS", field: 2}, {title: "COMMENT", field: 3, expand: true},
+	})
+	w.route53RecordTable = newStringTable([]columnSpec{
+		{title: "NAME", field: 0, expand: true}, {title: "TYPE", field: 1}, {title: "TTL", field: 2},
+		{title: "VALUE", field: 3, expand: true}, {title: "ROUTING", field: 4},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -755,6 +780,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.dynamoItemTable.view.ConnectActivate(w.openDynamoItemAt)
 	w.sqsQueueTable.view.ConnectActivate(w.openSQSQueueAt)
 	w.sqsMessageTable.view.ConnectActivate(w.openSQSMessageAt)
+	w.route53ZoneTable.view.ConnectActivate(w.openRoute53ZoneAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -785,6 +811,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.dynamoItemTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoItemRow() })
 	w.sqsQueueTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSQueueRow() })
 	w.sqsMessageTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSMessageRow() })
+	w.route53ZoneTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRoute53ZoneRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -1155,6 +1182,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsModuleItems.Append(w.sqsQueuesNavButton)
 	w.rebuildSQSRail()
 	sqsQueues := w.newModuleExpander("SQS", moduleSQS, w.sqsModuleItems)
+	w.route53ZonesNavButton = newModuleRailButton("Hosted zones", w.openRoute53Module)
+	w.route53ZonesNavButton.SetGroup(w.clustersNavButton)
+	w.route53ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.route53ModuleItems.AddCSSClass("module-subitems")
+	w.route53ModuleItems.Append(w.route53ZonesNavButton)
+	route53Zones := w.newModuleExpander("Route53", moduleRoute53, w.route53ModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1215,6 +1248,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleS3, name: "S3", defaultItem: "Buckets", aliases: []string{"s3", "object storage", "buckets"}, expander: s3Buckets, activate: w.openS3Module},
 		{key: moduleDynamoDB, name: "DynamoDB", defaultItem: "Tables", aliases: []string{"dynamodb", "ddb", "tables"}, expander: dynamoDB, activate: w.openDynamoDBModule},
 		{key: moduleSQS, name: "SQS", defaultItem: "Queues", aliases: []string{"sqs", "queue", "queues"}, expander: sqsQueues, activate: w.openSQSModule},
+		{key: moduleRoute53, name: "Route53", defaultItem: "Hosted zones", aliases: []string{"route53", "r53", "dns", "hosted zones"}, expander: route53Zones, activate: w.openRoute53Module},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1384,6 +1418,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sqsMessageScroll.SetVExpand(true)
 	sqsMessageScroll.SetHExpand(true)
 	sqsMessageScroll.SetChild(w.sqsMessageTable.view)
+	route53ZoneScroll := gtk.NewScrolledWindow()
+	route53ZoneScroll.SetVExpand(true)
+	route53ZoneScroll.SetHExpand(true)
+	route53ZoneScroll.SetChild(w.route53ZoneTable.view)
+	route53RecordScroll := gtk.NewScrolledWindow()
+	route53RecordScroll.SetVExpand(true)
+	route53RecordScroll.SetHExpand(true)
+	route53RecordScroll.SetChild(w.route53RecordTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1425,6 +1467,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(dynamoItemScroll, pageDynamoItems)
 	w.resourceStack.AddNamed(sqsQueueScroll, pageSQSQueues)
 	w.resourceStack.AddNamed(sqsMessageScroll, pageSQSMessages)
+	w.resourceStack.AddNamed(route53ZoneScroll, pageRoute53Zones)
+	w.resourceStack.AddNamed(route53RecordScroll, pageRoute53Records)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1934,6 +1978,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.s3DownloadPending = false
 	w.dynamoActionPending = false
 	w.sqsActionPending = false
+	w.route53ActionPending = false
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2453,6 +2498,10 @@ func (w *mainWindow) applyFilter() {
 		w.applySQSMessageFilter()
 		return
 	}
+	if w.currentPage == pageRoute53Zones {
+		w.applyRoute53ZoneFilter()
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		w.applyS3BucketFilter()
 		return
@@ -2833,6 +2882,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageSQSMessages {
 		w.refreshSQSMessages(foreground)
+		return
+	}
+	if w.currentPage == pageRoute53Zones {
+		w.refreshRoute53Zones(foreground)
 		return
 	}
 	if w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings {
@@ -3352,6 +3405,9 @@ func (w *mainWindow) updateActionSensitivity() {
 					w.savedSQSQueueButtons[i].SetActive(sqsPage && saved.Name == w.activeSavedSQSQueue)
 				}
 			}
+		}
+		if w.route53ZonesNavButton != nil {
+			w.route53ZonesNavButton.SetActive(w.currentPage == pageRoute53Zones || w.currentPage == pageRoute53Records)
 		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)

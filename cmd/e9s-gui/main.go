@@ -73,6 +73,7 @@ func main() {
 				S3:              service.NewS3(client),
 				DynamoDB:        service.NewDynamoDB(client),
 				SQS:             service.NewSQS(client),
+				Route53:         service.NewRoute53(client),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

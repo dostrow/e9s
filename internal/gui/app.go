@@ -167,6 +167,15 @@ type SQSService interface {
 	SendMessage(context.Context, model.SQSSendRequest) (string, error)
 }
 
+type Route53Service interface {
+	Zones(context.Context, string) ([]model.Route53Zone, error)
+	Records(context.Context, string) ([]model.Route53Record, error)
+	TestDNS(context.Context, string, model.Route53Record) (*model.Route53DNSAnswer, error)
+	Create(context.Context, string, model.Route53Record) error
+	Update(context.Context, string, model.Route53Record) error
+	Delete(context.Context, string, model.Route53Record) error
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -184,6 +193,7 @@ type Options struct {
 	S3              S3Service
 	DynamoDB        DynamoDBService
 	SQS             SQSService
+	Route53         Route53Service
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

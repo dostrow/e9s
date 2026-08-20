@@ -44,6 +44,8 @@ func TestModuleForPage(t *testing.T) {
 		pageDynamoItems:       moduleDynamoDB,
 		pageSQSQueues:         moduleSQS,
 		pageSQSMessages:       moduleSQS,
+		pageRoute53Zones:      moduleRoute53,
+		pageRoute53Records:    moduleRoute53,
 		pageModulePicker:      "",
 		"unknown":             "",
 	}
@@ -67,6 +69,7 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		{key: moduleS3, name: "S3", aliases: []string{"s3", "buckets"}},
 		{key: moduleDynamoDB, name: "DynamoDB", aliases: []string{"dynamodb", "ddb"}},
 		{key: moduleSQS, name: "SQS", aliases: []string{"sqs", "queues"}},
+		{key: moduleRoute53, name: "Route53", aliases: []string{"route53", "r53", "dns"}},
 	}
 	tests := map[string]string{
 		"ECS":               moduleECS,
@@ -86,6 +89,8 @@ func TestModuleSectionIndexAcceptsTUIDefaultModeAliases(t *testing.T) {
 		"ddb":               moduleDynamoDB,
 		"SQS":               moduleSQS,
 		"queues":            moduleSQS,
+		"R53":               moduleRoute53,
+		"dns":               moduleRoute53,
 	}
 	for value, want := range tests {
 		index, found := moduleSectionIndex(sections, value)

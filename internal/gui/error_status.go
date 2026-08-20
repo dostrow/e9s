@@ -24,6 +24,7 @@ const (
 	moduleS3               = "s3"
 	moduleDynamoDB         = "dynamodb"
 	moduleSQS              = "sqs"
+	moduleRoute53          = "route53"
 )
 
 func compactStatusMessage(message string) string {
@@ -63,6 +64,8 @@ func moduleForPage(page string) string {
 		return moduleDynamoDB
 	case pageSQSQueues, pageSQSMessages:
 		return moduleSQS
+	case pageRoute53Zones, pageRoute53Records:
+		return moduleRoute53
 	default:
 		return ""
 	}
