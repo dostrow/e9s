@@ -5,6 +5,8 @@ package gui
 
 import (
 	"context"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
@@ -232,6 +234,7 @@ type Options struct {
 
 // Run starts the experimental GTK application.
 func Run(options Options) error {
+	configureHyprlandRenderer()
 	app := gtk.NewApplication(applicationID, gio.ApplicationFlagsNone)
 	gtk.WindowSetDefaultIconName(applicationID)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -259,6 +262,28 @@ func Run(options Options) error {
 		return &ExitError{Code: code}
 	}
 	return nil
+}
+
+// configureHyprlandRenderer avoids GTK's Vulkan swapchain path on native
+// Hyprland/Wayland sessions. A renderer selected by the user always wins; the
+// fallback is deliberately scoped so other compositors retain GTK's default.
+// This must run before GTK creates the default display.
+func configureHyprlandRenderer() bool {
+	if strings.TrimSpace(os.Getenv("GSK_RENDERER")) != "" {
+		return false
+	}
+	if strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) == "" {
+		return false
+	}
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("GDK_BACKEND")))
+	if backend != "" && !strings.HasPrefix(backend, "wayland") {
+		return false
+	}
+	desktop := strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP") + ";" + os.Getenv("XDG_SESSION_DESKTOP"))
+	if !strings.Contains(desktop, "hyprland") {
+		return false
+	}
+	return os.Setenv("GSK_RENDERER", "gl") == nil
 }
 
 type ExitError struct {

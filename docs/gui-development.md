@@ -107,6 +107,11 @@ To require native Wayland while developing under Hyprland:
 GDK_BACKEND=wayland ./e9s-gui
 ```
 
+e9s defaults to GTK's OpenGL renderer on native Hyprland/Wayland sessions to
+avoid Vulkan swapchain failures during compositor-driven surface changes. An
+explicit GTK renderer choice is always preserved; for diagnostic testing, run
+with `GSK_RENDERER=vulkan`, `GSK_RENDERER=gl`, or `GSK_RENDERER=cairo`.
+
 The ordinary TUI remains independent:
 
 ```bash
