@@ -7,13 +7,13 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type SQSQueuesModel struct {
-	queues      []aws.SQSQueue
+	queues      []model.SQSQueue
 	searchTerm  string
 	cursor      int
 	filter      string
@@ -111,12 +111,12 @@ func (m SQSQueuesModel) View() string {
 	return b.String()
 }
 
-func (m SQSQueuesModel) filteredQueues() []aws.SQSQueue {
+func (m SQSQueuesModel) filteredQueues() []model.SQSQueue {
 	if m.filter == "" {
 		return m.queues
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.SQSQueue
+	var out []model.SQSQueue
 	for _, q := range m.queues {
 		if strings.Contains(strings.ToLower(q.Name), lf) {
 			out = append(out, q)
@@ -125,7 +125,7 @@ func (m SQSQueuesModel) filteredQueues() []aws.SQSQueue {
 	return out
 }
 
-func (m SQSQueuesModel) SetQueues(queues []aws.SQSQueue) SQSQueuesModel {
+func (m SQSQueuesModel) SetQueues(queues []model.SQSQueue) SQSQueuesModel {
 	m.queues = queues
 	m.loaded = true
 	filtered := m.filteredQueues()
@@ -135,7 +135,7 @@ func (m SQSQueuesModel) SetQueues(queues []aws.SQSQueue) SQSQueuesModel {
 	return m
 }
 
-func (m SQSQueuesModel) SelectedQueue() *aws.SQSQueue {
+func (m SQSQueuesModel) SelectedQueue() *model.SQSQueue {
 	filtered := m.filteredQueues()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
@@ -144,8 +144,8 @@ func (m SQSQueuesModel) SelectedQueue() *aws.SQSQueue {
 	return &q
 }
 
-func (m SQSQueuesModel) SearchTerm() string  { return m.searchTerm }
-func (m SQSQueuesModel) IsFiltering() bool    { return m.filtering }
+func (m SQSQueuesModel) SearchTerm() string { return m.searchTerm }
+func (m SQSQueuesModel) IsFiltering() bool  { return m.filtering }
 
 func (m SQSQueuesModel) visibleRows() int {
 	overhead := 9

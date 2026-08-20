@@ -124,6 +124,7 @@ type App struct {
 	ecr                        *service.ECR
 	s3                         *service.S3
 	dynamoDB                   *service.DynamoDB
+	sqs                        *service.SQS
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -263,7 +264,7 @@ type App struct {
 	dynamoFilterExpr         bool
 	dynamoLastPartiQL        string
 	sqsSendQueueURL          string
-	sqsSendTemplate          *e9saws.SQSSendTemplate
+	sqsSendTemplate          *model.SQSSendTemplate
 	cbTriggerProject         string
 	pathInput                *PathInput
 	runTaskForm              RunTaskFormModel
@@ -334,6 +335,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		ecr:           service.NewECR(client),
 		s3:            service.NewS3(client),
 		dynamoDB:      service.NewDynamoDB(client),
+		sqs:           service.NewSQS(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,

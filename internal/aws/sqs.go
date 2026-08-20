@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -9,50 +10,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type SQSQueue struct {
-	Name string
-	URL  string
-}
-
-type SQSQueueStats struct {
-	URL                 string
-	MessagesAvailable   int
-	MessagesInFlight    int
-	MessagesDelayed     int
-	RetentionSeconds    int
-	VisibilityTimeout   int
-	DelaySeconds        int
-	MaxMessageSize      int
-	IsFIFO              bool
-	DeadLetterTargetARN string
-	MaxReceiveCount     int
-}
-
-type SQSMessage struct {
-	MessageID     string
-	ReceiptHandle string
-	Body          string
-	MD5           string
-	Attributes    map[string]string                         // system attributes
-	UserAttrs     map[string]sqstypes.MessageAttributeValue // user message attributes
-	UserAttrsMap  map[string]string                         // simplified user attrs for display
-}
-
-// SQSSendTemplate is the JSON structure for composing a message in $EDITOR.
-type SQSSendTemplate struct {
-	Body            string             `json:"body"`
-	GroupID         string             `json:"groupId"`
-	DeduplicationID string             `json:"deduplicationId"`
-	DelaySeconds    int                `json:"delaySeconds"`
-	Attributes      map[string]SQSAttr `json:"attributes"`
-}
-
-type SQSAttr struct {
-	DataType string `json:"dataType"` // String, Number, Binary
-	Value    string `json:"value"`
-}
+type SQSQueue = model.SQSQueue
+type SQSQueueStats = model.SQSQueueStats
+type SQSMessage = model.SQSMessage
+type SQSSendTemplate = model.SQSSendTemplate
+type SQSAttr = model.SQSAttr
 
 // ListSQSQueues returns SQS queues. The SQS API only supports prefix matching,
 // so for substring searches we fetch all queues and filter client-side.
@@ -142,19 +107,17 @@ func (c *Client) ReceiveSQSMessages(ctx context.Context, queueURL string, maxMes
 	var messages []SQSMessage
 	for _, m := range out.Messages {
 		msg := SQSMessage{
-			MessageID:     derefStrAws(m.MessageId),
-			ReceiptHandle: derefStrAws(m.ReceiptHandle),
-			Body:          derefStrAws(m.Body),
-			MD5:           derefStrAws(m.MD5OfBody),
-			Attributes:    m.Attributes,
-			UserAttrs:     m.MessageAttributes,
-			UserAttrsMap:  make(map[string]string),
+			MessageID:      derefStrAws(m.MessageId),
+			ReceiptHandle:  derefStrAws(m.ReceiptHandle),
+			Body:           derefStrAws(m.Body),
+			MD5:            derefStrAws(m.MD5OfBody),
+			Attributes:     m.Attributes,
+			UserAttributes: make(map[string]model.SQSMessageAttribute, len(m.MessageAttributes)),
 		}
 		for k, v := range m.MessageAttributes {
-			if v.StringValue != nil {
-				msg.UserAttrsMap[k] = *v.StringValue
-			} else {
-				msg.UserAttrsMap[k] = fmt.Sprintf("(%s)", derefStrAws(v.DataType))
+			msg.UserAttributes[k] = model.SQSMessageAttribute{
+				DataType: derefStrAws(v.DataType), StringValue: derefStrAws(v.StringValue),
+				BinaryValue: append([]byte(nil), v.BinaryValue...),
 			}
 		}
 		messages = append(messages, msg)
@@ -191,10 +154,17 @@ func (c *Client) SendSQSMessage(ctx context.Context, queueURL string, tmpl SQSSe
 	if len(tmpl.Attributes) > 0 {
 		attrs := make(map[string]sqstypes.MessageAttributeValue)
 		for k, v := range tmpl.Attributes {
-			attrs[k] = sqstypes.MessageAttributeValue{
-				DataType:    &v.DataType,
-				StringValue: &v.Value,
+			attribute := sqstypes.MessageAttributeValue{DataType: &v.DataType}
+			if strings.HasPrefix(v.DataType, "Binary") {
+				value, err := base64.StdEncoding.DecodeString(v.Value)
+				if err != nil {
+					return "", fmt.Errorf("decode binary message attribute %q: %w", k, err)
+				}
+				attribute.BinaryValue = value
+			} else {
+				attribute.StringValue = &v.Value
 			}
+			attrs[k] = attribute
 		}
 		input.MessageAttributes = attrs
 	}
@@ -204,51 +174,6 @@ func (c *Client) SendSQSMessage(ctx context.Context, queueURL string, tmpl SQSSe
 		return "", err
 	}
 	return derefStrAws(out.MessageId), nil
-}
-
-// BuildSendTemplate creates a JSON template string for editing in $EDITOR.
-func BuildSendTemplate(isFIFO bool) string {
-	tmpl := SQSSendTemplate{
-		Body:       "",
-		Attributes: map[string]SQSAttr{},
-	}
-	if isFIFO {
-		tmpl.GroupID = ""
-		tmpl.DeduplicationID = ""
-	}
-	b, _ := json.MarshalIndent(tmpl, "", "  ")
-	return string(b)
-}
-
-// BuildSendTemplateFromMessage creates a template pre-filled from a received message.
-func BuildSendTemplateFromMessage(msg SQSMessage) string {
-	tmpl := SQSSendTemplate{
-		Body:       msg.Body,
-		Attributes: map[string]SQSAttr{},
-	}
-	if gid, ok := msg.Attributes["MessageGroupId"]; ok {
-		tmpl.GroupID = gid
-	}
-	for k, v := range msg.UserAttrs {
-		tmpl.Attributes[k] = SQSAttr{
-			DataType: derefStrAws(v.DataType),
-			Value:    derefStrAws(v.StringValue),
-		}
-	}
-	b, _ := json.MarshalIndent(tmpl, "", "  ")
-	return string(b)
-}
-
-// ParseSendTemplate parses a JSON template back into a SQSSendTemplate.
-func ParseSendTemplate(jsonStr string) (*SQSSendTemplate, error) {
-	var tmpl SQSSendTemplate
-	if err := json.Unmarshal([]byte(jsonStr), &tmpl); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if tmpl.Body == "" {
-		return nil, fmt.Errorf("message body is required")
-	}
-	return &tmpl, nil
 }
 
 // GetQueueURL resolves a queue name to its URL.
@@ -263,16 +188,6 @@ func (c *Client) GetQueueURL(ctx context.Context, queueName string) (string, err
 		return "", fmt.Errorf("queue %q not found", queueName)
 	}
 	return *out.QueueUrl, nil
-}
-
-// QueueNameFromARN extracts the queue name from an SQS ARN.
-func QueueNameFromARN(arn string) string {
-	// ARN format: arn:aws:sqs:region:account:queue-name
-	parts := strings.Split(arn, ":")
-	if len(parts) >= 6 {
-		return parts[5]
-	}
-	return arn
 }
 
 func queueNameFromURL(url string) string {

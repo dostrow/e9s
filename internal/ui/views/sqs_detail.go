@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type SQSDetailModel struct {
 	queueName string
 	queueURL  string
-	stats     *aws.SQSQueueStats
+	stats     *model.SQSQueueStats
 	width     int
 	height    int
 }
@@ -63,14 +63,14 @@ func (m SQSDetailModel) View() string {
 	return b.String()
 }
 
-func (m SQSDetailModel) SetStats(stats *aws.SQSQueueStats) SQSDetailModel {
+func (m SQSDetailModel) SetStats(stats *model.SQSQueueStats) SQSDetailModel {
 	m.stats = stats
 	return m
 }
 
-func (m SQSDetailModel) QueueName() string { return m.queueName }
-func (m SQSDetailModel) QueueURL() string  { return m.queueURL }
-func (m SQSDetailModel) Stats() *aws.SQSQueueStats { return m.stats }
+func (m SQSDetailModel) QueueName() string           { return m.queueName }
+func (m SQSDetailModel) QueueURL() string            { return m.queueURL }
+func (m SQSDetailModel) Stats() *model.SQSQueueStats { return m.stats }
 
 func (m SQSDetailModel) SetSize(w, h int) SQSDetailModel {
 	m.width = w

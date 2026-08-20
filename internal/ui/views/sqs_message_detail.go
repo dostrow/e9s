@@ -8,21 +8,22 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type SQSMessageDetailModel struct {
 	queueName string
 	queueURL  string
-	message   *aws.SQSMessage
+	message   *model.SQSMessage
 	lines     []string
 	scroll    int
 	width     int
 	height    int
 }
 
-func NewSQSMessageDetail(queueName, queueURL string, msg *aws.SQSMessage) SQSMessageDetailModel {
+func NewSQSMessageDetail(queueName, queueURL string, msg *model.SQSMessage) SQSMessageDetailModel {
 	var lines []string
 	if msg != nil {
 		lines = buildSQSMessageLines(msg)
@@ -35,7 +36,7 @@ func NewSQSMessageDetail(queueName, queueURL string, msg *aws.SQSMessage) SQSMes
 	}
 }
 
-func buildSQSMessageLines(msg *aws.SQSMessage) []string {
+func buildSQSMessageLines(msg *model.SQSMessage) []string {
 	var lines []string
 
 	lines = append(lines, fmt.Sprintf("%s: %s", theme.HeaderStyle.Render("Message ID"), msg.MessageID))
@@ -56,16 +57,16 @@ func buildSQSMessageLines(msg *aws.SQSMessage) []string {
 	}
 
 	// User attributes
-	if len(msg.UserAttrsMap) > 0 {
+	if len(msg.UserAttributes) > 0 {
 		lines = append(lines, "")
 		lines = append(lines, theme.TitleStyle.Render("Message Attributes"))
-		keys := make([]string, 0, len(msg.UserAttrsMap))
-		for k := range msg.UserAttrsMap {
+		keys := make([]string, 0, len(msg.UserAttributes))
+		for k := range msg.UserAttributes {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			lines = append(lines, fmt.Sprintf("  %s: %s", theme.HeaderStyle.Render(k), msg.UserAttrsMap[k]))
+			lines = append(lines, fmt.Sprintf("  %s: %s", theme.HeaderStyle.Render(k), service.SQSMessageAttributeDisplay(msg.UserAttributes[k])))
 		}
 	}
 
@@ -143,8 +144,8 @@ func (m SQSMessageDetailModel) View() string {
 	return b.String()
 }
 
-func (m SQSMessageDetailModel) Message() *aws.SQSMessage { return m.message }
-func (m SQSMessageDetailModel) QueueName() string         { return m.queueName }
+func (m SQSMessageDetailModel) Message() *model.SQSMessage { return m.message }
+func (m SQSMessageDetailModel) QueueName() string          { return m.queueName }
 func (m SQSMessageDetailModel) QueueURL() string           { return m.queueURL }
 
 func (m SQSMessageDetailModel) visibleLines() int {

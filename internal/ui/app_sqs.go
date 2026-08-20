@@ -1,13 +1,13 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -35,9 +35,9 @@ func (a App) openSQSQueues(filter string) (App, tea.Cmd) {
 	a.sqsQueuesView = views.NewSQSQueues(filter)
 	a.sqsQueuesView = a.sqsQueuesView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	sqsService, ctx := a.sqs, a.ctx
 	return a, func() tea.Msg {
-		queues, err := client.ListSQSQueues(context.Background(), filter)
+		queues, err := sqsService.Queues(ctx, filter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -51,9 +51,9 @@ func (a App) openSQSDetail(queueName, queueURL string) (App, tea.Cmd) {
 	a.sqsDetailView = views.NewSQSDetail(queueName, queueURL)
 	a.sqsDetailView = a.sqsDetailView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	sqsService, ctx := a.sqs, a.ctx
 	return a, func() tea.Msg {
-		stats, err := client.GetQueueStats(context.Background(), queueURL)
+		stats, err := sqsService.Queue(ctx, queueURL)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -95,12 +95,12 @@ func (a App) openSQSDLQ() (App, tea.Cmd) {
 		return a, nil
 	}
 
-	dlqName := aws.QueueNameFromARN(stats.DeadLetterTargetARN)
-	client := a.client
+	dlqName := service.QueueNameFromARN(stats.DeadLetterTargetARN)
+	sqsService, ctx := a.sqs, a.ctx
 	a.loading = true
 
 	return a, func() tea.Msg {
-		url, err := client.GetQueueURL(context.Background(), dlqName)
+		url, err := sqsService.ResolveQueueURL(ctx, dlqName)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -122,9 +122,9 @@ func (a App) openSQSMessages() (App, tea.Cmd) {
 func (a App) pollSQSMessages() (App, tea.Cmd) {
 	queueURL := a.sqsMessagesView.QueueURL()
 	a.loading = true
-	client := a.client
+	sqsService, ctx := a.sqs, a.ctx
 	return a, func() tea.Msg {
-		messages, err := client.ReceiveSQSMessages(context.Background(), queueURL, 10, 5)
+		messages, err := sqsService.Messages(ctx, model.SQSReceiveRequest{QueueURL: queueURL, MaxMessages: 10, WaitSeconds: 5})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -151,12 +151,12 @@ func (a App) doDeleteSQSMessage() tea.Cmd {
 	if msg == nil {
 		return nil
 	}
-	client := a.client
+	sqsService, ctx := a.sqs, a.ctx
 	queueURL := a.sqsMessagesView.QueueURL()
 	receiptHandle := msg.ReceiptHandle
 
 	return func() tea.Msg {
-		err := client.DeleteSQSMessage(context.Background(), queueURL, receiptHandle)
+		err := sqsService.DeleteMessage(ctx, queueURL, receiptHandle)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -179,7 +179,7 @@ func (a App) sendSQSMessage() (App, tea.Cmd) {
 		queueURL = a.sqsMessagesView.QueueURL()
 	}
 
-	template := aws.BuildSendTemplate(isFIFO)
+	template := service.BuildSQSSendTemplate(isFIFO)
 	return a.openSQSSendEditor(queueURL, template)
 }
 
@@ -189,7 +189,7 @@ func (a App) cloneSQSMessage() (App, tea.Cmd) {
 		return a, nil
 	}
 	queueURL := a.sqsMsgDetailView.QueueURL()
-	template := aws.BuildSendTemplateFromMessage(*msg)
+	template := service.BuildSQSSendTemplateFromMessage(*msg)
 	return a.openSQSSendEditor(queueURL, template)
 }
 
@@ -213,7 +213,7 @@ func (a App) openSQSSendEditor(queueURL, template string) (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		tmpl, err := aws.ParseSendTemplate(string(data))
+		tmpl, err := service.ParseSQSSendTemplate(string(data))
 		if err != nil {
 			return errMsg{err}
 		}
@@ -221,10 +221,10 @@ func (a App) openSQSSendEditor(queueURL, template string) (App, tea.Cmd) {
 	})
 }
 
-func (a App) doSendSQSMessage(queueURL string, tmpl *aws.SQSSendTemplate) tea.Cmd {
-	client := a.client
+func (a App) doSendSQSMessage(queueURL string, tmpl *model.SQSSendTemplate) tea.Cmd {
+	sqsService, ctx := a.sqs, a.ctx
 	return func() tea.Msg {
-		msgID, err := client.SendSQSMessage(context.Background(), queueURL, *tmpl)
+		msgID, err := sqsService.SendMessage(ctx, model.SQSSendRequest{QueueURL: queueURL, Template: *tmpl})
 		if err != nil {
 			return errMsg{err}
 		}

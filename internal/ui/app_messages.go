@@ -211,16 +211,16 @@ type dynamoWriteDoneMsg struct {
 
 // --- SQS Messages ---
 
-type sqsQueuesLoadedMsg struct{ queues []e9saws.SQSQueue }
-type sqsStatsLoadedMsg struct{ stats *e9saws.SQSQueueStats }
-type sqsMessagesReceivedMsg struct{ messages []e9saws.SQSMessage }
+type sqsQueuesLoadedMsg struct{ queues []model.SQSQueue }
+type sqsStatsLoadedMsg struct{ stats *model.SQSQueueStats }
+type sqsMessagesReceivedMsg struct{ messages []model.SQSMessage }
 type sqsDLQResolvedMsg struct {
 	name string
 	url  string
 }
 type sqsSendReadyMsg struct {
 	queueURL string
-	template *e9saws.SQSSendTemplate
+	template *model.SQSSendTemplate
 }
 
 // --- Lambda Messages ---
