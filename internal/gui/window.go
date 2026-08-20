@@ -889,6 +889,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
+	w.window.SetIconName(applicationID)
 	w.window.SetDefaultSize(1380, 820)
 	w.window.SetChild(w.buildLayout())
 	w.window.ConnectDestroy(func() {

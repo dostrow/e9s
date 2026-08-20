@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=e9s
+GenericName=AWS Operations Console
+Comment=Browse and operate AWS infrastructure
+TryExec=e9s-gui
+Exec=e9s-gui
+Icon=io.github.dostrow.e9s
+Terminal=false
+Categories=System;
+Keywords=AWS;ECS;CloudWatch;OpenTofu;Terraform;
+StartupNotify=true

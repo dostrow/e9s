@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.dostrow.e9s</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>e9s</name>
+  <summary>Browse and operate AWS infrastructure</summary>
+  <developer id="io.github.dostrow">
+    <name>Daniel Ostrow</name>
+  </developer>
+  <description>
+    <p>
+      e9s is a focused AWS operations console with native graphical and terminal
+      interfaces backed by shared service and query logic.
+    </p>
+    <p>
+      Browse resources, inspect metrics and logs, operate workloads, and work
+      with saved OpenTofu workspaces without leaving the application.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.dostrow.e9s.desktop</launchable>
+  <url type="homepage">https://github.com/dostrow/e9s</url>
+  <categories>
+    <category>System</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

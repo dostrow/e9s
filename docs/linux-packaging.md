@@ -28,3 +28,17 @@ The release set is intentionally split:
 
 Flatpak, RPM, Nix, and Snap packaging remain follow-up targets. An Arch package
 recipe is included after release artifact names and URLs are stable.
+
+## Staged installation
+
+`make install-gui` installs the GUI and desktop assets. Packaging builds should
+stage the result instead of writing to the host:
+
+```sh
+make install-gui DESTDIR="$package_root" PREFIX=/usr
+```
+
+The staged tree includes the executable, desktop entry, AppStream metadata,
+full-color and symbolic icons, raster fallback, and project license. Debian and
+AppImage builders consume this same layout so their desktop integration cannot
+silently diverge.

@@ -225,6 +225,7 @@ type Options struct {
 // Run starts the experimental GTK application.
 func Run(options Options) error {
 	app := gtk.NewApplication(applicationID, gio.ApplicationFlagsNone)
+	gtk.WindowSetDefaultIconName(applicationID)
 	ctx, cancel := context.WithCancel(context.Background())
 	var window *mainWindow
 
