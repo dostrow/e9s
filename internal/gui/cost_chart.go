@@ -287,7 +287,7 @@ func (c *costChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, height
 	}
 	c.drawXAxis(area, cr, left, top, plotWidth, plotHeight, foreground)
 	if c.hovering && hasData && c.hoverX >= left && c.hoverX <= left+plotWidth && c.hoverY >= top && c.hoverY <= top+plotHeight {
-		c.drawHover(area, cr, left, top, plotWidth, plotHeight, palette)
+		c.drawHover(area, cr, left, top, plotWidth, plotHeight, palette, colors)
 	}
 	title := "COST AND USAGE"
 	if c.data.granularity != "" {
@@ -479,7 +479,7 @@ func (c *costChart) legendRowCount(area *gtk.DrawingArea, startX, maxX float64) 
 	return rows
 }
 
-func (c *costChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, top, plotWidth, plotHeight float64, palette semanticPalette) {
+func (c *costChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, top, plotWidth, plotHeight float64, palette semanticPalette, colors []gdk.RGBA) {
 	index := int((c.hoverX - left) / plotWidth * float64(len(c.data.buckets)))
 	index = min(len(c.data.buckets)-1, max(0, index))
 	bucket := c.data.buckets[index]
@@ -497,14 +497,40 @@ func (c *costChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, to
 	if bucket.estimated {
 		period += " (estimated)"
 	}
-	lines := []string{period, "Total: " + formatCost(total, c.data.unit)}
+	headers := []string{period, "Total: " + formatCost(total, c.data.unit)}
+	rows := make([]string, 0, len(c.data.series))
 	for seriesIndex, series := range c.data.series {
-		lines = append(lines, fmt.Sprintf("%s: %s", series.name, formatCost(bucket.values[seriesIndex], c.data.unit)))
+		rows = append(rows, fmt.Sprintf("%s: %s", series.name, formatCost(bucket.values[seriesIndex], c.data.unit)))
 	}
-	text := strings.Join(lines, "\n")
-	layout := area.CreatePangoLayout(text)
-	textWidth, textHeight := layout.PixelSize()
-	boxWidth, boxHeight := float64(textWidth)+18, float64(textHeight)+14
+	const (
+		padding        = 9.0
+		seriesKeyWidth = 16.0
+		seriesKeyGap   = 6.0
+		headerGap      = 3.0
+	)
+	headerWidth, rowWidth, lineHeight := 0, 0, 0
+	for _, line := range headers {
+		layout := area.CreatePangoLayout(line)
+		width, height := layout.PixelSize()
+		headerWidth = max(headerWidth, width)
+		lineHeight = max(lineHeight, height)
+	}
+	for _, line := range rows {
+		layout := area.CreatePangoLayout(line)
+		width, height := layout.PixelSize()
+		rowWidth = max(rowWidth, width)
+		lineHeight = max(lineHeight, height)
+	}
+	lineHeight = max(lineHeight, 1)
+	contentWidth := float64(headerWidth)
+	if len(rows) > 0 {
+		contentWidth = max(contentWidth, float64(rowWidth)+seriesKeyWidth+seriesKeyGap)
+	}
+	boxWidth := contentWidth + padding*2
+	boxHeight := padding*2 + float64(len(headers)+len(rows))*float64(lineHeight)
+	if len(headers) > 0 && len(rows) > 0 {
+		boxHeight += headerGap
+	}
 	boxX := x + slot + 8
 	if boxX+boxWidth > left+plotWidth-4 {
 		boxX = x - boxWidth - 8
@@ -518,7 +544,32 @@ func (c *costChart) drawHover(area *gtk.DrawingArea, cr *cairo.Context, left, to
 	cr.SetLineWidth(1)
 	cr.Rectangle(boxX+0.5, boxY+0.5, boxWidth-1, boxHeight-1)
 	cr.Stroke()
-	drawChartText(area, cr, text, boxX+9, boxY+7, palette.foreground, 1)
+	textY := boxY + padding
+	for _, line := range headers {
+		drawChartText(area, cr, line, boxX+padding, textY, palette.foreground, 1)
+		textY += float64(lineHeight)
+	}
+	if len(headers) > 0 && len(rows) > 0 {
+		textY += headerGap
+	}
+	for index, line := range rows {
+		keyY := textY + (float64(lineHeight)-10)/2
+		color := colors[index]
+		cr.SetSourceRGBA(float64(color.Red()), float64(color.Green()), float64(color.Blue()), 0.96)
+		if c.mode == costChartLines {
+			cr.SetLineWidth(2)
+			cr.SetDash(metricSeriesDash(index), 0)
+			cr.MoveTo(boxX+padding, keyY+5)
+			cr.LineTo(boxX+padding+seriesKeyWidth, keyY+5)
+			cr.Stroke()
+			cr.SetDash(nil, 0)
+		} else {
+			cr.Rectangle(boxX+padding+3, keyY, 10, 10)
+			cr.Fill()
+		}
+		drawChartText(area, cr, line, boxX+padding+seriesKeyWidth+seriesKeyGap, textY, palette.foreground, 1)
+		textY += float64(lineHeight)
+	}
 }
 
 func costChartColors(palette semanticPalette, count int) []gdk.RGBA {
