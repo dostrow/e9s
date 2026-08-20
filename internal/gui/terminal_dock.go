@@ -86,7 +86,11 @@ func (w *mainWindow) setTerminalDockVisible(visible bool) {
 }
 
 func (w *mainWindow) spawnTerminalDock() error {
-	shell, err := resolveTerminalShell(os.Getenv("SHELL"))
+	configuredShell := os.Getenv("SHELL")
+	if w.options.Config != nil && strings.TrimSpace(w.options.Config.GUI.TerminalShell) != "" {
+		configuredShell = w.options.Config.GUI.TerminalShell
+	}
+	shell, err := resolveTerminalShell(configuredShell)
 	if err != nil {
 		return err
 	}

@@ -294,6 +294,76 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestSavePreservesUnknownKeysAndComments(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
+
+	path := filepath.Join(tmpDir, "e9s", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	original := "# operator notes\ndefaults:\n  # keep this explanation\n  region: us-east-1\ncustom_plugin:\n  enabled: true\n"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	cfg.Defaults.Region = "us-west-2"
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, fragment := range []string{"# operator notes", "# keep this explanation", "custom_plugin:", "enabled: true", "region: us-west-2"} {
+		if !strings.Contains(text, fragment) {
+			t.Errorf("saved configuration is missing %q:\n%s", fragment, text)
+		}
+	}
+	backup, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != original {
+		t.Fatalf("backup changed:\n%s", backup)
+	}
+}
+
+func TestSaveRawRejectsInvalidConfiguration(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
+
+	cfg := DefaultConfig()
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(tmpDir, "e9s", "config.yaml")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveRaw([]byte("display:\n  timestamp_format: sometimes\n")); err == nil {
+		t.Fatal("SaveRaw accepted an invalid timestamp format")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("invalid raw save changed the active configuration")
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origXDG := os.Getenv("XDG_CONFIG_HOME")

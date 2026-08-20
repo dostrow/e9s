@@ -4,8 +4,11 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,6 +91,9 @@ type Config struct {
 		MaxEvents       int    `yaml:"max_events"`
 		MaxLogLines     int    `yaml:"max_log_lines"`
 	} `yaml:"display"`
+	GUI struct {
+		TerminalShell string `yaml:"terminal_shell,omitempty"`
+	} `yaml:"gui,omitempty"`
 	Modules struct {
 		ECS        *bool `yaml:"ecs"`
 		CloudWatch *bool `yaml:"cloudwatch"` // legacy: maps to CWLogs
@@ -217,6 +223,39 @@ func Load() Config {
 	return cfg
 }
 
+// Parse validates YAML configuration data and applies the same defaults as a
+// normal on-disk load. It is used by the GUI's reviewed advanced editor.
+func Parse(data []byte) (Config, error) {
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, err
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// Validate checks values whose invalid forms would otherwise make the two
+// frontends behave differently.
+func (c Config) Validate() error {
+	timestamp := strings.ToLower(strings.TrimSpace(c.Display.TimestampFormat))
+	if timestamp != "" && timestamp != "relative" && timestamp != "absolute" {
+		return fmt.Errorf("display.timestamp_format must be relative or absolute")
+	}
+	if c.Defaults.RefreshInterval < 0 {
+		return fmt.Errorf("defaults.refresh_interval cannot be negative")
+	}
+	if c.Defaults.IdleTimeout < 0 {
+		return fmt.Errorf("defaults.idle_timeout cannot be negative")
+	}
+	if c.Display.MaxEvents < 0 || c.Display.MaxLogLines < 0 {
+		return fmt.Errorf("display limits cannot be negative")
+	}
+	return nil
+}
+
 // Reload re-reads the config file from disk, returning a fresh Config.
 func Reload() Config {
 	// Reset the path cache to pick up any changes
@@ -263,12 +302,125 @@ func (c *Config) Save() error {
 		return err
 	}
 
-	data, err := yaml.Marshal(c)
+	freshData, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
+	data := freshData
+	if existingData, readErr := os.ReadFile(path); readErr == nil {
+		var existing, fresh yaml.Node
+		if yaml.Unmarshal(existingData, &existing) == nil && yaml.Unmarshal(freshData, &fresh) == nil &&
+			len(existing.Content) > 0 && len(fresh.Content) > 0 {
+			mergeYAMLMapping(existing.Content[0], fresh.Content[0])
+			var output bytes.Buffer
+			encoder := yaml.NewEncoder(&output)
+			encoder.SetIndent(2)
+			if encodeErr := encoder.Encode(&existing); encodeErr == nil {
+				data = output.Bytes()
+			}
+			_ = encoder.Close()
+		}
+	}
+	return writeConfigFile(path, data, true)
+}
 
-	return os.WriteFile(path, data, 0644)
+// ReadRaw returns the exact active YAML document for the advanced settings
+// editor.
+func ReadRaw() ([]byte, error) {
+	return os.ReadFile(resolveConfigPath())
+}
+
+// SaveRaw validates and atomically stores a reviewed YAML document. The
+// previous valid document is retained beside it with a .bak suffix.
+func SaveRaw(data []byte) (Config, error) {
+	cfg, err := Parse(data)
+	if err != nil {
+		return Config{}, err
+	}
+	path := resolveConfigPath()
+	if path == "" {
+		return Config{}, os.ErrNotExist
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return Config{}, err
+	}
+	if err := writeConfigFile(path, data, true); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func mergeYAMLMapping(existing, fresh *yaml.Node) {
+	if existing.Kind != yaml.MappingNode || fresh.Kind != yaml.MappingNode {
+		return
+	}
+	positions := make(map[string]int, len(existing.Content)/2)
+	for i := 0; i+1 < len(existing.Content); i += 2 {
+		positions[existing.Content[i].Value] = i
+	}
+	for i := 0; i+1 < len(fresh.Content); i += 2 {
+		key, value := fresh.Content[i], fresh.Content[i+1]
+		position, found := positions[key.Value]
+		if !found {
+			existing.Content = append(existing.Content, key, value)
+			continue
+		}
+		oldValue := existing.Content[position+1]
+		if oldValue.Kind == yaml.MappingNode && value.Kind == yaml.MappingNode {
+			mergeYAMLMapping(oldValue, value)
+			continue
+		}
+		preserveYAMLComments(oldValue, value)
+		existing.Content[position+1] = value
+	}
+}
+
+func preserveYAMLComments(existing, replacement *yaml.Node) {
+	if replacement.HeadComment == "" {
+		replacement.HeadComment = existing.HeadComment
+	}
+	if replacement.LineComment == "" {
+		replacement.LineComment = existing.LineComment
+	}
+	if replacement.FootComment == "" {
+		replacement.FootComment = existing.FootComment
+	}
+}
+
+func writeConfigFile(path string, data []byte, backup bool) error {
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	if backup {
+		if previous, err := os.ReadFile(path); err == nil {
+			if err := writeConfigFile(path+".bak", previous, false); err != nil {
+				return fmt.Errorf("back up configuration: %w", err)
+			}
+		}
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".config-*.yaml")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(mode); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryName, path)
 }
 
 func (c *Config) applyDefaults() {
