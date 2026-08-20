@@ -29,6 +29,7 @@ const (
 	moduleCostExplorer     = "cost-explorer"
 	moduleElastiCache      = "elasticache"
 	moduleAPIGateway       = "api-gateway"
+	moduleSQLWorkbench     = "sql-workbench"
 )
 
 func compactStatusMessage(message string) string {
@@ -66,6 +67,8 @@ func moduleForPage(page string) string {
 		return moduleElastiCache
 	case pageAPIGateway:
 		return moduleAPIGateway
+	case pageSQLConnections:
+		return moduleSQLWorkbench
 	case pageS3Buckets, pageS3Objects:
 		return moduleS3
 	case pageDynamoTables, pageDynamoItems:

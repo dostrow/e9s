@@ -78,6 +78,8 @@ func main() {
 				Route53:         service.NewRoute53(client),
 				Tofu:            service.NewTofu(),
 				CostExplorer:    service.NewCostExplorer(client),
+				SQLAuth:         client,
+				SQLDataAPI:      client,
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

@@ -28,3 +28,10 @@ func TestConfigurationDiff(t *testing.T) {
 		t.Fatalf("unchanged diff = %q, want empty", got)
 	}
 }
+
+func TestSplitSettingsPaths(t *testing.T) {
+	got := splitSettingsPaths(" ~/.pgpass, , /run/secrets/prod.pgpass ")
+	if len(got) != 2 || got[0] != "~/.pgpass" || got[1] != "/run/secrets/prod.pgpass" {
+		t.Fatalf("splitSettingsPaths() = %#v", got)
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pangocairo"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/tofu"
 )
 
@@ -53,6 +54,7 @@ const (
 	pageRDSClusters       = "rds-clusters"
 	pageElastiCache       = "elasticache"
 	pageAPIGateway        = "api-gateway"
+	pageSQLConnections    = "sql-connections"
 	pageS3Buckets         = "s3-buckets"
 	pageS3Objects         = "s3-objects"
 	pageDynamoTables      = "dynamodb-tables"
@@ -100,6 +102,7 @@ const (
 	detailRDSCluster       = "rds-cluster"
 	detailElastiCache      = "elasticache"
 	detailAPIGateway       = "api-gateway"
+	detailSQLConnection    = "sql-connection"
 	detailS3Bucket         = "s3-bucket"
 	detailS3Object         = "s3-object"
 	detailDynamoTable      = "dynamodb-table"
@@ -253,6 +256,18 @@ type mainWindow struct {
 	apiGatewayKind      model.APIGatewayKind
 	apiGatewayDetail    *model.APIGatewayAPI
 
+	sqlProfiles         []config.SQLConnection
+	filteredSQLProfiles []config.SQLConnection
+	selectedSQLProfile  string
+	sqlExecutor         *sqlworkbench.Executor
+	sqlState            sqlworkbench.WorkbenchState
+	sqlStatePath        string
+	sqlTabs             []*sqlWorkbenchTab
+	sqlStateSavePending bool
+	sqlActionPending    bool
+	sqlActionGeneration uint64
+	sqlWritesUpdating   bool
+
 	allS3Buckets               []model.S3Bucket
 	filteredS3Buckets          []model.S3Bucket
 	selectedS3Bucket           string
@@ -350,6 +365,7 @@ type mainWindow struct {
 
 	elastiCacheTable *stringTable
 	apiGatewayTable  *stringTable
+	sqlProfileTable  *stringTable
 
 	s3BucketTable            *stringTable
 	s3ObjectTable            *stringTable
@@ -385,6 +401,7 @@ type mainWindow struct {
 
 	elastiCacheModuleItems *gtk.Box
 	apiGatewayModuleItems  *gtk.Box
+	sqlModuleItems         *gtk.Box
 
 	s3ModuleItems              *gtk.Box
 	dynamoModuleItems          *gtk.Box
@@ -424,6 +441,7 @@ type mainWindow struct {
 	apiGatewayHTTPNavButton         *gtk.ToggleButton
 	apiGatewayWebSocketNavButton    *gtk.ToggleButton
 	apiGatewayDomainsNavButton      *gtk.ToggleButton
+	sqlConnectionsNavButton         *gtk.ToggleButton
 
 	s3BucketsNavButton          *gtk.ToggleButton
 	savedS3SearchesLabel        *gtk.Label
@@ -596,6 +614,15 @@ type mainWindow struct {
 	scaleInSuspended            bool
 	scaleInKnown                bool
 	showingMetrics              bool
+	sqlNotebook                 *gtk.Notebook
+	sqlPane                     *gtk.Box
+	sqlEmptyLabel               *gtk.Label
+	sqlRunSelectionButton       *gtk.Button
+	sqlRunCurrentButton         *gtk.Button
+	sqlRunAllButton             *gtk.Button
+	sqlReconnectButton          *gtk.Button
+	sqlExportButton             *gtk.Button
+	sqlWritesButton             *gtk.ToggleButton
 	taskDefinitionBuffer        *gtk.TextBuffer
 	taskDefinitionSummaryButton *gtk.Button
 	taskDefinitionEnvButton     *gtk.Button
@@ -713,6 +740,15 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		currentPage:        pageModulePicker,
 		detailContent:      detailIntro,
 		selectedDynamoItem: -1,
+	}
+	w.sqlState, _ = sqlworkbench.LoadState("")
+	w.sqlStatePath, _ = sqlworkbench.DefaultStatePath()
+	w.sqlExecutor = sqlworkbench.NewExecutor(sqlworkbench.ExecutorOptions{
+		AuthProvider: options.SQLAuth, DataAPI: options.SQLDataAPI, Prompt: w.promptSQLPassword,
+		AWSProfile: options.Profile, AWSRegion: options.Region,
+	})
+	if options.Config != nil {
+		w.sqlExecutor.SetPolicy(options.Config.SQL.AllowWrites, options.Config.SQL.PGPassFiles)
 	}
 	w.lastAWSActivity.Store(time.Now().UnixNano())
 	if options.Config != nil {
@@ -880,6 +916,10 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "NAME", field: 0, expand: true}, {title: "ID", field: 1}, {title: "PROTOCOL", field: 2},
 		{title: "STATUS", field: 3}, {title: "ENDPOINT", field: 4, expand: true}, {title: "CREATED", field: 5},
 	})
+	w.sqlProfileTable = newStringTable([]columnSpec{
+		{title: "CONNECTION", field: 0, expand: true}, {title: "RESOURCE", field: 1, expand: true},
+		{title: "DATABASE", field: 2}, {title: "USER", field: 3}, {title: "AUTH", field: 4},
+	})
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
 	})
@@ -948,6 +988,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsClusterTable.view.ConnectActivate(w.openRDSClusterAt)
 	w.elastiCacheTable.view.ConnectActivate(w.openElastiCacheAt)
 	w.apiGatewayTable.view.ConnectActivate(w.openAPIGatewayAt)
+	w.sqlProfileTable.view.ConnectActivate(w.openSQLProfileAt)
 	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
 	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
 	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
@@ -987,6 +1028,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.rdsClusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRDSClusterRow() })
 	w.elastiCacheTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectElastiCacheRow() })
 	w.apiGatewayTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAPIGatewayRow() })
+	w.sqlProfileTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQLProfileRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
@@ -1015,6 +1057,10 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		w.scheduleRefresh()
 	})
 	w.window.ConnectDestroy(func() {
+		w.saveSQLStateNow()
+		if w.sqlExecutor != nil {
+			w.sqlExecutor.Close()
+		}
 		if w.options.Tofu != nil {
 			w.options.Tofu.CleanupPlan(w.tofuPlanFile)
 		}
@@ -1450,6 +1496,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.apiGatewayModuleItems.Append(w.apiGatewayWebSocketNavButton)
 	w.apiGatewayModuleItems.Append(w.apiGatewayDomainsNavButton)
 	apiGateway := w.newModuleExpander("API Gateway", moduleAPIGateway, w.apiGatewayModuleItems)
+	w.sqlConnectionsNavButton = newModuleRailButton("Connections", w.openSQLWorkbenchModule)
+	w.sqlConnectionsNavButton.SetGroup(w.clustersNavButton)
+	w.sqlModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.sqlModuleItems.AddCSSClass("module-subitems")
+	w.sqlModuleItems.Append(w.sqlConnectionsNavButton)
+	sqlWorkbench := w.newModuleExpander("SQL Workbench", moduleSQLWorkbench, w.sqlModuleItems)
 	w.s3BucketsNavButton = newModuleRailButton("Buckets", w.openS3Module)
 	w.s3BucketsNavButton.SetGroup(w.clustersNavButton)
 	w.s3ModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1563,6 +1615,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebar.Append(modules)
 	w.moduleSections = []moduleRailSection{
 		{key: moduleAPIGateway, name: "API Gateway", defaultItem: "REST APIs", aliases: []string{"api gateway", "apigateway", "api", "gateway"}, expander: apiGateway, activate: func() { w.openAPIGatewayModule(model.APIGatewayREST) }},
+		{key: moduleSQLWorkbench, name: "SQL Workbench", defaultItem: "Connections", aliases: []string{"sql", "postgres", "postgresql", "database workbench"}, expander: sqlWorkbench, activate: w.openSQLWorkbenchModule},
 		{key: moduleCodeBuild, name: "CodeBuild", defaultItem: "Projects", aliases: []string{"cb", "codebuild"}, expander: codeBuild, activate: w.loadCodeBuildProjects},
 		{key: moduleEC2, name: "EC2", defaultItem: "Instances", aliases: []string{"ec2", "ec2i"}, expander: ec2Instances, activate: w.loadEC2Instances},
 		{key: moduleECR, name: "ECR", defaultItem: "Repositories", aliases: []string{"ecr", "registry", "container registry"}, expander: ecrRepositories, activate: w.loadECRRepositories},
@@ -1734,6 +1787,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	apiGatewayScroll.SetVExpand(true)
 	apiGatewayScroll.SetHExpand(true)
 	apiGatewayScroll.SetChild(w.apiGatewayTable.view)
+	sqlProfileScroll := gtk.NewScrolledWindow()
+	sqlProfileScroll.SetVExpand(true)
+	sqlProfileScroll.SetHExpand(true)
+	sqlProfileScroll.SetChild(w.sqlProfileTable.view)
 	s3BucketScroll := gtk.NewScrolledWindow()
 	s3BucketScroll.SetVExpand(true)
 	s3BucketScroll.SetHExpand(true)
@@ -1823,6 +1880,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(rdsClusterScroll, pageRDSClusters)
 	w.resourceStack.AddNamed(elastiCacheScroll, pageElastiCache)
 	w.resourceStack.AddNamed(apiGatewayScroll, pageAPIGateway)
+	w.resourceStack.AddNamed(sqlProfileScroll, pageSQLConnections)
 	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
 	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
 	w.resourceStack.AddNamed(dynamoTableScroll, pageDynamoTables)
@@ -1900,6 +1958,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildTofuVariablesEditor(), "tofu-variables-editor")
 	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
 	w.detailStack.AddNamed(w.buildCostPane(), "cost")
+	w.detailStack.AddNamed(w.buildSQLWorkbenchPane(), "sql-workbench")
 	w.detailStack.SetVisibleChildName("detail")
 	w.workspaceBusySpinner = gtk.NewSpinner()
 	w.workspaceBusyLabel = gtk.NewLabel("")
@@ -2367,6 +2426,8 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 		w.generation++
 	}
 	w.requestPending = false
+	w.sqlActionGeneration++
+	w.sqlActionPending = false
 	w.spinner.Stop()
 	w.setWorkspaceBusy("", false)
 	if w.logCancel != nil {
@@ -2993,6 +3054,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyAPIGatewayFilter()
 		return
 	}
+	if w.currentPage == pageSQLConnections {
+		w.applySQLProfileFilter()
+		return
+	}
 	if w.currentPage == pageLambda {
 		w.applyLambdaFilter()
 		return
@@ -3469,6 +3534,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		w.refreshAPIGateway(foreground)
 		return
 	}
+	if w.currentPage == pageSQLConnections {
+		w.refreshSQLProfiles(foreground)
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		if foreground && !w.reloadS3SearchConfig() {
 			return
@@ -3857,6 +3926,9 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.apiGatewayHTTPNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayHTTP)
 			w.apiGatewayWebSocketNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayWebSocket)
 			w.apiGatewayDomainsNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayDomain)
+		}
+		if w.sqlConnectionsNavButton != nil {
+			w.sqlConnectionsNavButton.SetActive(w.currentPage == pageSQLConnections)
 		}
 		if w.s3BucketsNavButton != nil {
 			w.s3BucketsNavButton.SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && w.activeSavedS3Search == "")

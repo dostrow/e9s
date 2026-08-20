@@ -15,6 +15,7 @@ import (
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/tofu"
 )
 
@@ -237,6 +238,8 @@ type Options struct {
 	Route53         Route53Service
 	Tofu            TofuService
 	CostExplorer    CostExplorerService
+	SQLAuth         sqlworkbench.AuthProvider
+	SQLDataAPI      sqlworkbench.DataAPI
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

@@ -34,6 +34,7 @@ var settingsModuleChoices = []settingsChoice{
 	{label: "Route 53", value: "Route53"},
 	{label: "S3", value: "S3"},
 	{label: "Secrets Manager", value: "SM"},
+	{label: "SQL Workbench", value: "SQL Workbench"},
 	{label: "SQS", value: "SQS"},
 	{label: "SSM Parameter Store", value: "SSM"},
 }
@@ -221,11 +222,16 @@ func (w *mainWindow) showSettings() {
 	costGuard := gtk.NewSpinButtonWithRange(0, 1000, 0.10)
 	costGuard.SetDigits(2)
 	costGuard.SetValue(cfg.Defaults.CostGuardUSD)
+	pgpassFiles := gtk.NewEntry()
+	pgpassFiles.SetText(strings.Join(cfg.SQL.PGPassFiles, ", "))
+	pgpassFiles.SetPlaceholderText("~/.pgpass, ~/.config/e9s/production.pgpass")
 	awsPage.Append(settingsRow("AWS profile", profile))
 	awsPage.Append(settingsRow("AWS region", region))
 	awsPage.Append(settingsRow("Default ECS cluster", cluster))
 	awsPage.Append(settingsRow("Save directory", saveDirectory))
 	awsPage.Append(settingsRow("Pause at known session cost (USD; 0 disables)", costGuard))
+	awsPage.Append(settingsRow("PostgreSQL password files", pgpassFiles))
+	awsPage.Append(settingsNote("Password files are tried from left to right after any per-connection pgpass_file. PostgreSQL requires private file permissions (0600). Passwords are never copied into e9s configuration or session state."))
 	awsPage.Append(settingsNote("Profile and region changes are saved immediately and take effect the next time e9s starts. Existing AWS clients are never replaced mid-request."))
 	awsPage.Append(settingsNote("Cost Explorer results are cached in memory for 24 hours or until e9s exits. Only the explicitly confirmed Force paid refresh action bypasses that cache."))
 	if w.options.RequestSnapshot != nil {
@@ -256,8 +262,12 @@ func (w *mainWindow) showSettings() {
 	confirmActions := newApplicationCheckButton("Require confirmation for destructive actions")
 	confirmActions.SetActive(true)
 	confirmActions.SetSensitive(false)
+	allowSQLWrites := newApplicationCheckButton("Allow SQL write break-glass controls")
+	allowSQLWrites.SetActive(cfg.SQL.AllowWrites)
 	safetyPage.Append(confirmActions)
 	safetyPage.Append(settingsNote("Safety confirmations cannot currently be disabled. Break-glass controls for infrastructure-as-code-managed resources are planned separately."))
+	safetyPage.Append(allowSQLWrites)
+	safetyPage.Append(settingsNote("SQL tabs remain read-only unless this global setting and the tab's separately confirmed Writes control are both enabled. Write authorization is never restored when e9s restarts."))
 	notebook.AppendPage(safetyPage, gtk.NewLabel("Safety"))
 
 	advancedPage := settingsPage()
@@ -328,6 +338,8 @@ func (w *mainWindow) showSettings() {
 		updated.Defaults.Cluster = strings.TrimSpace(cluster.Text())
 		updated.Defaults.SaveDirectory = strings.TrimSpace(saveDirectory.Text())
 		updated.Defaults.CostGuardUSD = costGuard.Value()
+		updated.SQL.PGPassFiles = splitSettingsPaths(pgpassFiles.Text())
+		updated.SQL.AllowWrites = allowSQLWrites.Active()
 		updated.Display.MaxEvents = maxEvents.ValueAsInt()
 		updated.Display.MaxLogLines = maxLogLines.ValueAsInt()
 		updated.GUI.TerminalShell = strings.TrimSpace(terminalShell.Text())
@@ -387,6 +399,19 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	w.options.DefaultCluster = updated.Defaults.Cluster
 	w.idleTimeoutSeconds.Store(int64(updated.Defaults.IdleTimeout))
 	w.applyAppearanceConfig(&updated)
+	if w.sqlExecutor != nil {
+		w.sqlExecutor.SetPolicy(updated.SQL.AllowWrites, updated.SQL.PGPassFiles)
+	}
+}
+
+func splitSettingsPaths(value string) []string {
+	var paths []string
+	for _, path := range strings.Split(value, ",") {
+		if path = strings.TrimSpace(path); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 func (w *mainWindow) reviewRawSettings(before, after []byte, onSaved func(config.Config, []byte)) {

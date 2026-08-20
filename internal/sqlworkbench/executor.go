@@ -34,9 +34,10 @@ type ExecutorOptions struct {
 }
 
 type Executor struct {
-	options  ExecutorOptions
-	mu       sync.Mutex
-	sessions map[string]*directSession
+	optionsMu sync.RWMutex
+	options   ExecutorOptions
+	mu        sync.Mutex
+	sessions  map[string]*directSession
 }
 
 type directSession struct {
@@ -53,30 +54,40 @@ func NewExecutor(options ExecutorOptions) *Executor {
 	return &Executor{options: options, sessions: make(map[string]*directSession)}
 }
 
+// SetPolicy applies runtime safety and credential-source settings to future
+// executions without discarding healthy database sessions.
+func (e *Executor) SetPolicy(allowWrites bool, pgpassFiles []string) {
+	e.optionsMu.Lock()
+	e.options.AllowWrites = allowWrites
+	e.options.PGPassFiles = append(e.options.PGPassFiles[:0], pgpassFiles...)
+	e.optionsMu.Unlock()
+}
+
 func (e *Executor) Execute(ctx context.Context, profile config.SQLConnection, source string, tabAllowsWrites bool) ([]model.SQLQueryResult, error) {
+	options := e.optionsSnapshot()
 	statements := SplitStatements(source)
 	if len(statements) == 0 {
 		return nil, fmt.Errorf("query is empty")
 	}
 	readOnlyErr := ValidateReadOnly(source)
-	if readOnlyErr != nil && !(e.options.AllowWrites && tabAllowsWrites) {
-		if e.options.AllowWrites {
+	if readOnlyErr != nil && !(options.AllowWrites && tabAllowsWrites) {
+		if options.AllowWrites {
 			return nil, fmt.Errorf("%w; enable writes for this tab to continue", readOnlyErr)
 		}
 		return nil, fmt.Errorf("%w; writes are disabled globally in settings", readOnlyErr)
 	}
-	resolved, err := ResolveConnection(ctx, profile, e.options.PGPassFiles, e.options.AuthProvider, e.options.Prompt)
+	resolved, err := ResolveConnection(ctx, profile, options.PGPassFiles, options.AuthProvider, options.Prompt)
 	if err != nil {
 		return nil, err
 	}
 	if resolved.DataAPI {
-		return e.executeDataAPI(ctx, resolved, statements)
+		return e.executeDataAPI(ctx, resolved, statements, options)
 	}
-	session, err := e.session(ctx, resolved)
+	session, err := e.session(ctx, resolved, options)
 	if err != nil {
 		return nil, err
 	}
-	results, err := session.execute(ctx, statements, e.options.MaxRows)
+	results, err := session.execute(ctx, statements, options.MaxRows)
 	if err == nil {
 		return results, nil
 	}
@@ -87,26 +98,27 @@ func (e *Executor) Execute(ctx context.Context, profile config.SQLConnection, so
 	// A dropped connection is retried once after credentials are freshly
 	// resolved. This is especially useful for expired IAM tokens and tunnels.
 	e.dropSession(profile.Name)
-	resolved, resolveErr := ResolveConnection(ctx, profile, e.options.PGPassFiles, e.options.AuthProvider, e.options.Prompt)
+	resolved, resolveErr := ResolveConnection(ctx, profile, options.PGPassFiles, options.AuthProvider, options.Prompt)
 	if resolveErr != nil {
 		return results, fmt.Errorf("query failed and credentials could not be refreshed: %v (refresh: %w)", err, resolveErr)
 	}
-	session, connectErr := e.session(ctx, resolved)
+	session, connectErr := e.session(ctx, resolved, options)
 	if connectErr != nil {
 		return results, fmt.Errorf("query failed and reconnect did not succeed: %v (reconnect: %w)", err, connectErr)
 	}
-	return session.execute(ctx, statements, e.options.MaxRows)
+	return session.execute(ctx, statements, options.MaxRows)
 }
 
 func (e *Executor) Ping(ctx context.Context, profile config.SQLConnection) error {
-	resolved, err := ResolveConnection(ctx, profile, e.options.PGPassFiles, e.options.AuthProvider, e.options.Prompt)
+	options := e.optionsSnapshot()
+	resolved, err := ResolveConnection(ctx, profile, options.PGPassFiles, options.AuthProvider, options.Prompt)
 	if err != nil {
 		return err
 	}
 	if resolved.DataAPI {
 		return nil
 	}
-	session, err := e.session(ctx, resolved)
+	session, err := e.session(ctx, resolved, options)
 	if err != nil {
 		return err
 	}
@@ -130,8 +142,8 @@ func (e *Executor) Close() {
 	}
 }
 
-func (e *Executor) executeDataAPI(ctx context.Context, connection ResolvedConnection, statements []Statement) ([]model.SQLQueryResult, error) {
-	if e.options.DataAPI == nil {
+func (e *Executor) executeDataAPI(ctx context.Context, connection ResolvedConnection, statements []Statement, options ExecutorOptions) ([]model.SQLQueryResult, error) {
+	if options.DataAPI == nil {
 		return nil, fmt.Errorf("RDS Data API execution is unavailable")
 	}
 	if strings.TrimSpace(connection.Profile.ResourceARN) == "" || strings.TrimSpace(connection.Profile.SecretARN) == "" {
@@ -139,8 +151,8 @@ func (e *Executor) executeDataAPI(ctx context.Context, connection ResolvedConnec
 	}
 	results := make([]model.SQLQueryResult, 0, len(statements))
 	for _, statement := range statements {
-		result, err := e.options.DataAPI.ExecuteSQLData(ctx, model.SQLQueryRequest{ResourceARN: connection.Profile.ResourceARN,
-			SecretARN: connection.Profile.SecretARN, Database: connection.Database, SQL: statement.SQL, MaxRows: e.options.MaxRows})
+		result, err := options.DataAPI.ExecuteSQLData(ctx, model.SQLQueryRequest{ResourceARN: connection.Profile.ResourceARN,
+			SecretARN: connection.Profile.SecretARN, Database: connection.Database, SQL: statement.SQL, MaxRows: options.MaxRows})
 		if err != nil {
 			return results, err
 		}
@@ -149,7 +161,7 @@ func (e *Executor) executeDataAPI(ctx context.Context, connection ResolvedConnec
 	return results, nil
 }
 
-func (e *Executor) session(ctx context.Context, connection ResolvedConnection) (*directSession, error) {
+func (e *Executor) session(ctx context.Context, connection ResolvedConnection, options ExecutorOptions) (*directSession, error) {
 	key := connectionKey(connection)
 	e.mu.Lock()
 	if session := e.sessions[connection.Profile.Name]; session != nil && session.profileKey == key {
@@ -162,7 +174,7 @@ func (e *Executor) session(ctx context.Context, connection ResolvedConnection) (
 	if stale != nil {
 		stale.close()
 	}
-	session, err := e.connect(ctx, connection, key)
+	session, err := e.connect(ctx, connection, key, options)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +189,7 @@ func (e *Executor) session(ctx context.Context, connection ResolvedConnection) (
 	return session, nil
 }
 
-func (e *Executor) connect(ctx context.Context, connection ResolvedConnection, key string) (*directSession, error) {
+func (e *Executor) connect(ctx context.Context, connection ResolvedConnection, key string, options ExecutorOptions) (*directSession, error) {
 	connectionURL := &url.URL{Scheme: "postgres", Host: net.JoinHostPort(connection.Host, strconv.Itoa(connection.Port)), Path: "/" + connection.Database,
 		User: url.UserPassword(connection.User, connection.Password)}
 	query := connectionURL.Query()
@@ -194,7 +206,7 @@ func (e *Executor) connect(ctx context.Context, connection ResolvedConnection, k
 	var tunnel *Tunnel
 	if connection.Profile.SSMTunnel != nil {
 		tunnel, err = StartSSMTunnel(ctx, *connection.Profile.SSMTunnel, connection.Host, connection.Port,
-			TunnelOptions{AWSProfile: e.options.AWSProfile, AWSRegion: e.options.AWSRegion})
+			TunnelOptions{AWSProfile: options.AWSProfile, AWSRegion: options.AWSRegion})
 		if err != nil {
 			return nil, err
 		}
@@ -211,6 +223,14 @@ func (e *Executor) connect(ctx context.Context, connection ResolvedConnection, k
 		return nil, err
 	}
 	return &directSession{profileKey: key, connection: client, tunnel: tunnel}, nil
+}
+
+func (e *Executor) optionsSnapshot() ExecutorOptions {
+	e.optionsMu.RLock()
+	defer e.optionsMu.RUnlock()
+	options := e.options
+	options.PGPassFiles = append([]string(nil), e.options.PGPassFiles...)
+	return options
 }
 
 func (e *Executor) dropSession(profileName string) {
