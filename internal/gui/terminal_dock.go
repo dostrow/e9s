@@ -45,6 +45,9 @@ type terminalDockNode struct {
 	parent  *terminalDockNode
 	widget  gtk.Widgetter
 	session *terminalDockSession
+	split   *gtk.Paned
+	first   *terminalDockNode
+	second  *terminalDockNode
 }
 
 func (w *mainWindow) buildTerminalDock() *gtk.Box {
@@ -53,11 +56,17 @@ func (w *mainWindow) buildTerminalDock() *gtk.Box {
 	newButton := gtk.NewButtonWithLabel("New tab")
 	newButton.SetTooltipText("Open another local terminal (Ctrl+Shift+T)")
 	newButton.ConnectClicked(func() { w.newTerminalDockTab() })
+	splitRightButton := gtk.NewButtonWithLabel("Split right")
+	splitRightButton.SetTooltipText("Split the active tab side by side")
+	splitRightButton.ConnectClicked(func() { w.splitActiveTerminalDock(gtk.OrientationHorizontal) })
+	splitDownButton := gtk.NewButtonWithLabel("Split down")
+	splitDownButton.SetTooltipText("Split the active tab into top and bottom panes")
+	splitDownButton.ConnectClicked(func() { w.splitActiveTerminalDock(gtk.OrientationVertical) })
 	renameButton := gtk.NewButtonWithLabel("Rename tab…")
 	renameButton.SetTooltipText("Rename the active terminal tab")
 	renameButton.ConnectClicked(w.promptRenameActiveTerminalDock)
-	closeButton := gtk.NewButtonWithLabel("Close tab…")
-	closeButton.SetTooltipText("Close the active terminal (Ctrl+Shift+W)")
+	closeButton := gtk.NewButtonWithLabel("Close pane…")
+	closeButton.SetTooltipText("Close the focused terminal pane (Ctrl+Shift+W)")
 	closeButton.ConnectClicked(w.confirmCloseActiveTerminalDock)
 	restartButton := gtk.NewButtonWithLabel("Restart shell…")
 	restartButton.ConnectClicked(w.confirmRestartTerminalDock)
@@ -72,6 +81,8 @@ func (w *mainWindow) buildTerminalDock() *gtk.Box {
 	toolbar.Append(hideButton)
 	toolbar.Append(w.terminalDockTitle)
 	toolbar.Append(newButton)
+	toolbar.Append(splitRightButton)
+	toolbar.Append(splitDownButton)
 	toolbar.Append(renameButton)
 	toolbar.Append(closeButton)
 	toolbar.Append(restartButton)
@@ -178,6 +189,7 @@ func (w *mainWindow) spawnTerminalDock() (*terminalDockSession, error) {
 	}
 	session.tab = tab
 	session.node = node
+	w.bindTerminalDockSessionFocus(session)
 	tab.tabLabel.SetEllipsize(pango.EllipsizeMiddle)
 	tab.tabLabel.SetMaxWidthChars(terminalTabMaximumChars)
 	w.terminalDockTabs = append(w.terminalDockTabs, tab)
@@ -229,10 +241,27 @@ func (w *mainWindow) terminalDockTabLabel(tab *terminalDockTab) *gtk.Box {
 	closeButton := gtk.NewButtonFromIconName("window-close-symbolic")
 	closeButton.AddCSSClass("flat")
 	closeButton.AddCSSClass("terminal-tab-close")
-	closeButton.SetTooltipText("Close this terminal")
-	closeButton.ConnectClicked(func() { w.confirmCloseTerminalDock(tab.active) })
+	closeButton.SetTooltipText("Close this terminal tab")
+	closeButton.ConnectClicked(func() { w.confirmCloseTerminalDockTab(tab) })
 	box.Append(closeButton)
 	return box
+}
+
+func (w *mainWindow) bindTerminalDockSessionFocus(session *terminalDockSession) {
+	if session == nil || session.terminal == nil {
+		return
+	}
+	focus := gtk.NewEventControllerFocus()
+	focus.ConnectEnter(func() { w.setActiveTerminalDockSession(session) })
+	gtk.BaseWidget(session.terminal.Widget()).AddController(focus)
+}
+
+func (w *mainWindow) setActiveTerminalDockSession(session *terminalDockSession) {
+	if session == nil || session.tab == nil || session.tab.active == session {
+		return
+	}
+	session.tab.active = session
+	w.updateTerminalDockSessionTitle(session)
 }
 
 func (w *mainWindow) activeTerminalDockSession() *terminalDockSession {
@@ -372,6 +401,94 @@ func (w *mainWindow) promptRenameActiveTerminalDock() {
 	dialog.Present()
 }
 
+func (w *mainWindow) splitActiveTerminalDock(orientation gtk.Orientation) {
+	active := w.activeTerminalDockSession()
+	if active == nil || active.node == nil || active.tab == nil {
+		return
+	}
+	workingDirectory := active.cwd
+	session, err := w.spawnTerminalDockSession(workingDirectory)
+	if err != nil {
+		w.setStatus(err.Error(), true)
+		return
+	}
+
+	node := active.node
+	tab := active.tab
+	oldWidget := node.widget
+	w.detachTerminalDockNode(tab, node)
+	first := &terminalDockNode{parent: node, widget: oldWidget, session: active}
+	second := &terminalDockNode{parent: node, widget: session.terminal.Widget(), session: session}
+	paned := gtk.NewPaned(orientation)
+	paned.AddCSSClass("pane-split")
+	paned.AddCSSClass("terminal-pane-split")
+	paned.SetResizeStartChild(true)
+	paned.SetResizeEndChild(true)
+	paned.SetShrinkStartChild(false)
+	paned.SetShrinkEndChild(false)
+	paned.SetStartChild(first.widget)
+	paned.SetEndChild(second.widget)
+	node.widget = paned
+	node.session = nil
+	node.split = paned
+	node.first = first
+	node.second = second
+	active.node = first
+	session.node = second
+	session.tab = tab
+	w.attachTerminalDockNode(tab, node)
+	w.terminalDockSessions = append(w.terminalDockSessions, session)
+	w.bindTerminalDockSessionFocus(session)
+	w.setActiveTerminalDockSession(session)
+	w.updateTerminalDockSessionTitle(session)
+
+	glib.IdleAdd(func() {
+		size := paned.Width()
+		if orientation == gtk.OrientationVertical {
+			size = paned.Height()
+		}
+		if size > 0 {
+			paned.SetPosition(size / 2)
+		}
+		session.terminal.GrabFocus()
+	})
+	direction := "right"
+	if orientation == gtk.OrientationVertical {
+		direction = "down"
+	}
+	w.setStatus("Split terminal "+direction+" in "+workingDirectory, false)
+}
+
+func (w *mainWindow) detachTerminalDockNode(tab *terminalDockTab, node *terminalDockNode) {
+	if tab == nil || node == nil {
+		return
+	}
+	if node.parent == nil {
+		tab.container.Remove(node.widget)
+		return
+	}
+	if node.parent.first == node {
+		node.parent.split.SetStartChild(nil)
+	} else {
+		node.parent.split.SetEndChild(nil)
+	}
+}
+
+func (w *mainWindow) attachTerminalDockNode(tab *terminalDockTab, node *terminalDockNode) {
+	if tab == nil || node == nil {
+		return
+	}
+	if node.parent == nil {
+		tab.container.Append(node.widget)
+		return
+	}
+	if node.parent.first == node {
+		node.parent.split.SetStartChild(node.widget)
+	} else {
+		node.parent.split.SetEndChild(node.widget)
+	}
+}
+
 func (w *mainWindow) confirmCloseActiveTerminalDock() {
 	w.confirmCloseTerminalDock(w.activeTerminalDockSession())
 }
@@ -385,8 +502,8 @@ func (w *mainWindow) confirmCloseTerminalDock(session *terminalDockSession) {
 		return
 	}
 	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
-	dialog.SetTitle("Close local terminal")
-	dialog.SetMarkup("Stop the shell running in <b>" + html.EscapeString(valueOrDash(session.cwd)) + "</b> and close its tab?")
+	dialog.SetTitle("Close terminal pane")
+	dialog.SetMarkup("Stop the shell running in <b>" + html.EscapeString(valueOrDash(session.cwd)) + "</b> and close its pane?")
 	dialog.SetObjectProperty("secondary-text", "Any foreground command running in this terminal will also be stopped.")
 	dialog.SetDefaultResponse(int(gtk.ResponseNo))
 	dialog.SetDestroyWithParent(true)
@@ -399,22 +516,128 @@ func (w *mainWindow) confirmCloseTerminalDock(session *terminalDockSession) {
 	dialog.Present()
 }
 
+func (w *mainWindow) confirmCloseTerminalDockTab(tab *terminalDockTab) {
+	if tab == nil {
+		return
+	}
+	running := false
+	for _, session := range terminalDockNodeSessions(tab.root) {
+		if session.terminal.Running() {
+			running = true
+			break
+		}
+	}
+	if !running {
+		w.closeTerminalDockTab(tab)
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Close terminal tab")
+	dialog.SetMarkup("Stop every shell in <b>" + html.EscapeString(terminalDockTabTitle(tab)) + "</b> and close the tab?")
+	dialog.SetObjectProperty("secondary-text", "Any foreground commands running in its terminal panes will also be stopped.")
+	dialog.SetDefaultResponse(int(gtk.ResponseNo))
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.closeTerminalDockTab(tab)
+		}
+	})
+	dialog.Present()
+}
+
 func (w *mainWindow) closeTerminalDockSession(session *terminalDockSession) {
 	if session == nil || session.tab == nil {
 		return
 	}
 	tab := session.tab
-	tabIndex := w.indexOfTerminalDockTab(tab)
 	sessionIndex := w.indexOfTerminalDockSession(session)
-	if tabIndex < 0 || sessionIndex < 0 {
+	if sessionIndex < 0 {
 		return
 	}
+	if session.node == nil || session.node.parent == nil {
+		w.closeTerminalDockTab(tab)
+		return
+	}
+	node := session.node
+	parent := node.parent
+	sibling := parent.first
+	if sibling == node {
+		sibling = parent.second
+	}
+	grandparent := parent.parent
+	parentWasFirst := grandparent != nil && grandparent.first == parent
+	w.detachTerminalDockNode(tab, parent)
+	if parent.first == sibling {
+		parent.split.SetStartChild(nil)
+	} else {
+		parent.split.SetEndChild(nil)
+	}
+	if parent.first == node {
+		parent.split.SetStartChild(nil)
+	} else {
+		parent.split.SetEndChild(nil)
+	}
+	sibling.parent = grandparent
+	if grandparent == nil {
+		tab.root = sibling
+	} else if parentWasFirst {
+		grandparent.first = sibling
+	} else {
+		grandparent.second = sibling
+	}
+	w.attachTerminalDockNode(tab, sibling)
 	session.terminal.Stop()
-	w.terminalDockNotebook.RemovePage(tabIndex)
-	w.terminalDockTabs = append(w.terminalDockTabs[:tabIndex], w.terminalDockTabs[tabIndex+1:]...)
 	w.terminalDockSessions = append(w.terminalDockSessions[:sessionIndex], w.terminalDockSessions[sessionIndex+1:]...)
+	tab.active = firstTerminalDockSession(sibling)
+	if tab.active != nil {
+		w.updateTerminalDockSessionTitle(tab.active)
+		glib.IdleAdd(tab.active.terminal.GrabFocus)
+	}
 	w.updateTerminalDockTitle()
-	w.setStatus(fmt.Sprintf("Closed local terminal %d", session.id), false)
+	w.setStatus(fmt.Sprintf("Closed terminal pane %d", session.id), false)
+}
+
+func (w *mainWindow) closeTerminalDockTab(tab *terminalDockTab) {
+	index := w.indexOfTerminalDockTab(tab)
+	if index < 0 {
+		return
+	}
+	closed := make(map[*terminalDockSession]struct{})
+	for _, session := range terminalDockNodeSessions(tab.root) {
+		session.terminal.Stop()
+		closed[session] = struct{}{}
+	}
+	kept := w.terminalDockSessions[:0]
+	for _, session := range w.terminalDockSessions {
+		if _, found := closed[session]; !found {
+			kept = append(kept, session)
+		}
+	}
+	w.terminalDockSessions = kept
+	w.terminalDockNotebook.RemovePage(index)
+	w.terminalDockTabs = append(w.terminalDockTabs[:index], w.terminalDockTabs[index+1:]...)
+	w.updateTerminalDockTitle()
+	w.setStatus(fmt.Sprintf("Closed terminal tab %d", tab.id), false)
+}
+
+func terminalDockNodeSessions(node *terminalDockNode) []*terminalDockSession {
+	if node == nil {
+		return nil
+	}
+	if node.session != nil {
+		return []*terminalDockSession{node.session}
+	}
+	sessions := terminalDockNodeSessions(node.first)
+	return append(sessions, terminalDockNodeSessions(node.second)...)
+}
+
+func firstTerminalDockSession(node *terminalDockNode) *terminalDockSession {
+	sessions := terminalDockNodeSessions(node)
+	if len(sessions) == 0 {
+		return nil
+	}
+	return sessions[0]
 }
 
 func (w *mainWindow) confirmRestartTerminalDock() {

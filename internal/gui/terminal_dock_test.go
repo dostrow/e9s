@@ -92,3 +92,28 @@ func TestTerminalDockTabWidthTracksTitleWithinBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminalDockNodeSessionsFollowVisualOrder(t *testing.T) {
+	first := &terminalDockSession{id: 1}
+	second := &terminalDockSession{id: 2}
+	third := &terminalDockSession{id: 3}
+	root := &terminalDockNode{
+		first: &terminalDockNode{session: first},
+		second: &terminalDockNode{
+			first:  &terminalDockNode{session: second},
+			second: &terminalDockNode{session: third},
+		},
+	}
+	sessions := terminalDockNodeSessions(root)
+	if len(sessions) != 3 {
+		t.Fatalf("session count = %d, want 3", len(sessions))
+	}
+	for index, want := range []*terminalDockSession{first, second, third} {
+		if sessions[index] != want {
+			t.Errorf("session %d = %v, want %v", index, sessions[index], want)
+		}
+	}
+	if got := firstTerminalDockSession(root); got != first {
+		t.Fatalf("first session = %v, want %v", got, first)
+	}
+}
