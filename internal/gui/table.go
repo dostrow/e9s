@@ -46,8 +46,13 @@ func newStringTable(columns []columnSpec) *stringTable {
 // discovered from the current result set and may expand when another page loads.
 func (t *stringTable) setColumns(specs []columnSpec) {
 	if columnSpecsEqual(t.specs, specs) {
+		t.view.SetVisible(len(specs) > 0)
 		return
 	}
+	// GtkColumnView's horizontal adjustment requires the content width to be
+	// at least the allocated page width. Avoid allocating the transient
+	// zero-column state while dynamic schemas are replaced.
+	t.view.SetVisible(false)
 	for _, column := range t.columns {
 		t.view.RemoveColumn(column)
 	}
@@ -58,6 +63,7 @@ func (t *stringTable) setColumns(specs []columnSpec) {
 		t.columns = append(t.columns, column)
 	}
 	t.specs = append(t.specs[:0], specs...)
+	t.view.SetVisible(len(specs) > 0)
 	t.view.QueueDraw()
 }
 

@@ -23,13 +23,14 @@ import (
 )
 
 type sqlWorkbenchTab struct {
-	state       sqlworkbench.TabState
-	editor      *sourceEditor
-	page        gtk.Widgetter
-	tabLabel    *gtk.Label
-	resultTable *stringTable
-	resultLabel *gtk.Label
-	results     []model.SQLQueryResult
+	state        sqlworkbench.TabState
+	editor       *sourceEditor
+	page         gtk.Widgetter
+	tabLabel     *gtk.Label
+	resultTable  *stringTable
+	resultScroll *gtk.ScrolledWindow
+	resultLabel  *gtk.Label
+	results      []model.SQLQueryResult
 }
 
 func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
@@ -233,6 +234,11 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	resultScroll.SetHExpand(true)
 	resultScroll.SetVExpand(true)
 	resultScroll.SetChild(resultTable.view)
+	// GtkColumnView cannot configure a valid horizontal adjustment while it
+	// has no columns. Keep the empty result table out of allocation until a
+	// query supplies a schema; otherwise GTK 4.20 emits a critical on every
+	// layout pass.
+	resultScroll.SetVisible(false)
 	resultLabel := gtk.NewLabel("No query has been run in this tab.")
 	resultLabel.SetXAlign(0)
 	resultLabel.AddCSSClass("muted")
@@ -248,7 +254,10 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	split.SetPosition(320)
 	split.SetResizeStartChild(true)
 	split.SetResizeEndChild(true)
-	tab := &sqlWorkbenchTab{state: state, editor: editor, page: split, tabLabel: gtk.NewLabel(""), resultTable: resultTable, resultLabel: resultLabel}
+	tab := &sqlWorkbenchTab{
+		state: state, editor: editor, page: split, tabLabel: gtk.NewLabel(""),
+		resultTable: resultTable, resultScroll: resultScroll, resultLabel: resultLabel,
+	}
 	tab.tabLabel.SetEllipsize(pango.EllipsizeMiddle)
 	tab.tabLabel.SetMaxWidthChars(28)
 	editor.ConnectChanged(func() {
@@ -448,6 +457,7 @@ func (w *mainWindow) runActiveSQL(mode sqlRunMode) {
 			}
 			tab.results = results
 			w.renderSQLResults(tab)
+			w.updateSQLControls()
 			rows := 0
 			for _, result := range results {
 				rows += len(result.Rows)
@@ -459,9 +469,16 @@ func (w *mainWindow) runActiveSQL(mode sqlRunMode) {
 
 func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
 	if tab == nil || len(tab.results) == 0 {
+		if tab != nil {
+			tab.resultScroll.SetVisible(false)
+			tab.resultLabel.SetLabel("The query completed without a result set.")
+		}
 		return
 	}
 	result := tab.results[len(tab.results)-1]
+	// Hide before changing the schema so a result without columns is never
+	// allocated in GtkColumnView's transient zero-width state.
+	tab.resultScroll.SetVisible(false)
 	columns := make([]columnSpec, len(result.Columns))
 	for index, title := range result.Columns {
 		columns[index] = columnSpec{title: title, field: index, expand: true}
@@ -476,6 +493,9 @@ func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
 		rows[index] = strings.Join(values, "\t")
 	}
 	tab.resultTable.replace(rows)
+	if len(columns) > 0 {
+		tab.resultScroll.SetVisible(true)
+	}
 	status := fmt.Sprintf("%s • %d row(s) • %d ms", valueOrDash(result.CommandTag), len(result.Rows), result.DurationMS)
 	if len(tab.results) > 1 {
 		status = fmt.Sprintf("Statement %d of %d • %s", len(tab.results), len(tab.results), status)
@@ -570,7 +590,7 @@ func (w *mainWindow) updateSQLControls() {
 		}
 	}
 	if w.sqlExportButton != nil {
-		w.sqlExportButton.SetSensitive(enabled && len(tab.results) > 0)
+		w.sqlExportButton.SetSensitive(enabled && sqlTabHasExportableResult(tab))
 	}
 	if w.sqlWritesButton != nil {
 		w.sqlWritesUpdating = true
@@ -586,9 +606,17 @@ func (w *mainWindow) updateSQLControls() {
 	}
 }
 
+func sqlTabHasExportableResult(tab *sqlWorkbenchTab) bool {
+	if tab == nil || len(tab.results) == 0 {
+		return false
+	}
+	return len(tab.results[len(tab.results)-1].Columns) > 0
+}
+
 func (w *mainWindow) exportActiveSQLResult() {
 	tab := w.activeSQLTab()
-	if tab == nil || len(tab.results) == 0 {
+	if !sqlTabHasExportableResult(tab) {
+		w.setStatus("Run a query that returns columns before exporting CSV", true)
 		return
 	}
 	result := tab.results[len(tab.results)-1]
