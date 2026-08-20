@@ -15,7 +15,9 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/diamondburned/gotk4/pkg/pangocairo"
+	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/tofu"
 )
 
 const (
@@ -56,6 +58,8 @@ const (
 	pageSQSMessages       = "sqs-messages"
 	pageRoute53Zones      = "route53-zones"
 	pageRoute53Records    = "route53-records"
+	pageTofuWorkspaces    = "tofu-workspaces"
+	pageTofuResources     = "tofu-resources"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -92,6 +96,8 @@ const (
 	detailSQSMessage       = "sqs-message"
 	detailRoute53Zone      = "route53-zone"
 	detailRoute53Record    = "route53-record"
+	detailTofuWorkspace    = "tofu-workspace"
+	detailTofuResource     = "tofu-resource"
 )
 
 type mainWindow struct {
@@ -269,6 +275,15 @@ type mainWindow struct {
 	route53ZoneContext          *model.Route53Zone
 	route53DNSAnswer            *model.Route53DNSAnswer
 	route53ActionPending        bool
+	allTofuWorkspaces           []config.TofuDirEntry
+	filteredTofuWorkspaces      []config.TofuDirEntry
+	selectedTofuWorkspace       string
+	activeSavedTofuWorkspace    string
+	tofuWorkspaceInfo           *tofu.Workspace
+	allTofuResources            []tofu.Resource
+	filteredTofuResources       []tofu.Resource
+	selectedTofuResource        string
+	tofuActionPending           bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -308,6 +323,8 @@ type mainWindow struct {
 	sqsMessageTable             *stringTable
 	route53ZoneTable            *stringTable
 	route53RecordTable          *stringTable
+	tofuWorkspaceTable          *stringTable
+	tofuResourceTable           *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -327,6 +344,7 @@ type mainWindow struct {
 	dynamoModuleItems           *gtk.Box
 	sqsModuleItems              *gtk.Box
 	route53ModuleItems          *gtk.Box
+	tofuModuleItems             *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -363,10 +381,15 @@ type mainWindow struct {
 	savedSQSQueuesLabel         *gtk.Label
 	savedSQSQueueButtons        []*gtk.ToggleButton
 	route53ZonesNavButton       *gtk.ToggleButton
+	tofuWorkspacesNavButton     *gtk.ToggleButton
+	savedTofuWorkspaceLabel     *gtk.Label
+	savedTofuWorkspaceButtons   []*gtk.ToggleButton
 	route53TestDNSButton        *gtk.Button
 	route53CreateButton         *gtk.Button
 	route53EditButton           *gtk.Button
 	route53DeleteButton         *gtk.Button
+	tofuAddWorkspaceButton      *gtk.Button
+	tofuManageWorkspacesButton  *gtk.Button
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -753,6 +776,12 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "NAME", field: 0, expand: true}, {title: "TYPE", field: 1}, {title: "TTL", field: 2},
 		{title: "VALUE", field: 3, expand: true}, {title: "ROUTING", field: 4},
 	})
+	w.tofuWorkspaceTable = newStringTable([]columnSpec{
+		{title: "WORKSPACE", field: 0, expand: true}, {title: "DIRECTORY", field: 1, expand: true},
+	})
+	w.tofuResourceTable = newStringTable([]columnSpec{
+		{title: "TYPE", field: 0}, {title: "NAME", field: 1, expand: true}, {title: "MODULE", field: 2, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -786,6 +815,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.sqsMessageTable.view.ConnectActivate(w.openSQSMessageAt)
 	w.route53ZoneTable.view.ConnectActivate(w.openRoute53ZoneAt)
 	w.route53RecordTable.view.ConnectActivate(w.openRoute53RecordAt)
+	w.tofuWorkspaceTable.view.ConnectActivate(w.openTofuWorkspaceAt)
+	w.tofuResourceTable.view.ConnectActivate(w.openTofuResourceAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -818,6 +849,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.sqsMessageTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSMessageRow() })
 	w.route53ZoneTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRoute53ZoneRow() })
 	w.route53RecordTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRoute53RecordRow() })
+	w.tofuWorkspaceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuWorkspaceRow() })
+	w.tofuResourceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuResourceRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -1004,6 +1037,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.route53DeleteButton = gtk.NewButtonWithLabel("Delete record…")
 	w.route53DeleteButton.AddCSSClass("destructive-action")
 	w.route53DeleteButton.ConnectClicked(w.confirmDeleteRoute53Record)
+	w.tofuAddWorkspaceButton = gtk.NewButtonWithLabel("Add workspace…")
+	w.tofuAddWorkspaceButton.ConnectClicked(w.promptAddTofuWorkspace)
+	w.tofuManageWorkspacesButton = gtk.NewButtonWithLabel("Manage saved…")
+	w.tofuManageWorkspacesButton.ConnectClicked(w.promptManageTofuWorkspaces)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1115,6 +1152,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.route53CreateButton)
 	header.Append(w.route53EditButton)
 	header.Append(w.route53DeleteButton)
+	header.Append(w.tofuAddWorkspaceButton)
+	header.Append(w.tofuManageWorkspacesButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1207,6 +1246,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.route53ModuleItems.AddCSSClass("module-subitems")
 	w.route53ModuleItems.Append(w.route53ZonesNavButton)
 	route53Zones := w.newModuleExpander("Route53", moduleRoute53, w.route53ModuleItems)
+	w.tofuWorkspacesNavButton = newModuleRailButton("Workspaces", w.openTofuModule)
+	w.tofuWorkspacesNavButton.SetGroup(w.clustersNavButton)
+	w.tofuModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.tofuModuleItems.AddCSSClass("module-subitems")
+	w.tofuModuleItems.Append(w.tofuWorkspacesNavButton)
+	w.rebuildTofuWorkspaceRail()
+	tofuWorkspaces := w.newModuleExpander("OpenTofu", moduleTofu, w.tofuModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1268,6 +1314,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleDynamoDB, name: "DynamoDB", defaultItem: "Tables", aliases: []string{"dynamodb", "ddb", "tables"}, expander: dynamoDB, activate: w.openDynamoDBModule},
 		{key: moduleSQS, name: "SQS", defaultItem: "Queues", aliases: []string{"sqs", "queue", "queues"}, expander: sqsQueues, activate: w.openSQSModule},
 		{key: moduleRoute53, name: "Route53", defaultItem: "Hosted zones", aliases: []string{"route53", "r53", "dns", "hosted zones"}, expander: route53Zones, activate: w.openRoute53Module},
+		{key: moduleTofu, name: "OpenTofu", defaultItem: "Workspaces", aliases: []string{"tofu", "opentofu", "terraform", "tf", "infrastructure"}, expander: tofuWorkspaces, activate: w.openTofuModule},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1445,6 +1492,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	route53RecordScroll.SetVExpand(true)
 	route53RecordScroll.SetHExpand(true)
 	route53RecordScroll.SetChild(w.route53RecordTable.view)
+	tofuWorkspaceScroll := gtk.NewScrolledWindow()
+	tofuWorkspaceScroll.SetVExpand(true)
+	tofuWorkspaceScroll.SetHExpand(true)
+	tofuWorkspaceScroll.SetChild(w.tofuWorkspaceTable.view)
+	tofuResourceScroll := gtk.NewScrolledWindow()
+	tofuResourceScroll.SetVExpand(true)
+	tofuResourceScroll.SetHExpand(true)
+	tofuResourceScroll.SetChild(w.tofuResourceTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1488,6 +1543,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(sqsMessageScroll, pageSQSMessages)
 	w.resourceStack.AddNamed(route53ZoneScroll, pageRoute53Zones)
 	w.resourceStack.AddNamed(route53RecordScroll, pageRoute53Records)
+	w.resourceStack.AddNamed(tofuWorkspaceScroll, pageTofuWorkspaces)
+	w.resourceStack.AddNamed(tofuResourceScroll, pageTofuResources)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1998,6 +2055,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.dynamoActionPending = false
 	w.sqsActionPending = false
 	w.route53ActionPending = false
+	w.tofuActionPending = false
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2525,6 +2583,14 @@ func (w *mainWindow) applyFilter() {
 		w.applyRoute53RecordFilter()
 		return
 	}
+	if w.currentPage == pageTofuWorkspaces {
+		w.applyTofuWorkspaceFilter()
+		return
+	}
+	if w.currentPage == pageTofuResources {
+		w.applyTofuResourceFilter()
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		w.applyS3BucketFilter()
 		return
@@ -2717,6 +2783,10 @@ func (w *mainWindow) navigateBrowserBack() {
 	}
 	if w.currentPage == pageRoute53Records {
 		w.restoreRoute53ZoneBrowser()
+		return
+	}
+	if w.currentPage == pageTofuResources {
+		w.restoreTofuWorkspaceBrowser()
 		return
 	}
 	if w.currentPage == pageDynamoItems {
@@ -2917,6 +2987,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageRoute53Records {
 		w.refreshRoute53Records(foreground)
+		return
+	}
+	if w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources {
+		w.refreshTofu(foreground)
 		return
 	}
 	if w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings {
@@ -3440,6 +3514,15 @@ func (w *mainWindow) updateActionSensitivity() {
 		if w.route53ZonesNavButton != nil {
 			w.route53ZonesNavButton.SetActive(w.currentPage == pageRoute53Zones || w.currentPage == pageRoute53Records)
 		}
+		if w.tofuWorkspacesNavButton != nil {
+			tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources
+			w.tofuWorkspacesNavButton.SetActive(tofuPage && w.currentPage == pageTofuWorkspaces)
+			for i, workspace := range sortedTofuWorkspaces(w.options.ConfigTofuDirs()) {
+				if i < len(w.savedTofuWorkspaceButtons) {
+					w.savedTofuWorkspaceButtons[i].SetActive(tofuPage && w.currentPage == pageTofuResources && workspace.Name == w.activeSavedTofuWorkspace)
+				}
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -3694,6 +3777,12 @@ func (w *mainWindow) updateActionSensitivity() {
 	deleteRoute53Record := route53RecordPage && route53RecordSelected && record.Type != "NS" && record.Type != "SOA"
 	w.route53DeleteButton.SetVisible(deleteRoute53Record)
 	w.route53DeleteButton.SetSensitive(deleteRoute53Record && route53Ready)
+	tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources
+	w.tofuAddWorkspaceButton.SetVisible(tofuPage)
+	w.tofuAddWorkspaceButton.SetSensitive(tofuPage && w.options.Config != nil && !w.tofuActionPending)
+	hasTofuWorkspaces := w.options.Config != nil && len(w.options.Config.TofuDirs) > 0
+	w.tofuManageWorkspacesButton.SetVisible(tofuPage && hasTofuWorkspaces)
+	w.tofuManageWorkspacesButton.SetSensitive(tofuPage && hasTofuWorkspaces && !w.tofuActionPending)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

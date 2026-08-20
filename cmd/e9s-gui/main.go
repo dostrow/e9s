@@ -74,6 +74,7 @@ func main() {
 				DynamoDB:        service.NewDynamoDB(client),
 				SQS:             service.NewSQS(client),
 				Route53:         service.NewRoute53(client),
+				Tofu:            service.NewTofu(),
 				Config:          &cfg,
 				ReloadConfig:    config.Reload,
 				DefaultCluster:  cluster,

@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/tofu"
 )
 
 const applicationID = "com.github.dostrow.e9s.gui"
@@ -176,6 +177,16 @@ type Route53Service interface {
 	Delete(context.Context, string, model.Route53Record) error
 }
 
+type TofuService interface {
+	Workspace(context.Context, string) (tofu.Workspace, error)
+	Resources(context.Context, string) ([]tofu.Resource, error)
+	State(context.Context, string, string) (string, error)
+	Plan(context.Context, string) (*tofu.PlanResult, string, error)
+	Init(context.Context, string) (string, error)
+	Apply(context.Context, string, string) (string, error)
+	CleanupPlan(string)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -194,6 +205,7 @@ type Options struct {
 	DynamoDB        DynamoDBService
 	SQS             SQSService
 	Route53         Route53Service
+	Tofu            TofuService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string
