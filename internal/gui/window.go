@@ -615,6 +615,7 @@ type mainWindow struct {
 	scaleInKnown                bool
 	showingMetrics              bool
 	sqlNotebook                 *gtk.Notebook
+	sqlPaneStack                *gtk.Stack
 	sqlPane                     *gtk.Box
 	sqlEmptyLabel               *gtk.Label
 	sqlRunSelectionButton       *gtk.Button

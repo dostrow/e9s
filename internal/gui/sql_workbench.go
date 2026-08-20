@@ -90,23 +90,16 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 		w.scheduleSQLStateSave()
 	})
 
-	stack := gtk.NewStack()
-	stack.SetHExpand(true)
-	stack.SetVExpand(true)
-	stack.AddNamed(w.sqlEmptyLabel, "empty")
-	stack.AddNamed(w.sqlNotebook, "tabs")
-	stack.SetVisibleChildName("empty")
-	w.sqlNotebook.NotifyProperty("n-pages", func() {
-		if len(w.sqlTabs) == 0 {
-			stack.SetVisibleChildName("empty")
-		} else {
-			stack.SetVisibleChildName("tabs")
-		}
-	})
+	w.sqlPaneStack = gtk.NewStack()
+	w.sqlPaneStack.SetHExpand(true)
+	w.sqlPaneStack.SetVExpand(true)
+	w.sqlPaneStack.AddNamed(w.sqlEmptyLabel, "empty")
+	w.sqlPaneStack.AddNamed(w.sqlNotebook, "tabs")
+	w.sqlPaneStack.SetVisibleChildName("empty")
 
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
 	pane.Append(toolbar)
-	pane.Append(stack)
+	pane.Append(w.sqlPaneStack)
 	w.sqlPane = pane
 	w.restoreSQLTabs()
 	w.updateSQLControls()
@@ -264,6 +257,7 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	})
 	w.sqlTabs = append(w.sqlTabs, tab)
 	page := w.sqlNotebook.AppendPage(tab.page, w.sqlTabLabel(tab))
+	w.sqlPaneStack.SetVisibleChildName("tabs")
 	w.updateSQLTabTitle(tab)
 	w.sqlNotebook.SetCurrentPage(page)
 	w.sqlState.ActiveTabID = tab.state.ID
@@ -317,6 +311,9 @@ func (w *mainWindow) closeSQLTab(tab *sqlWorkbenchTab) {
 	}
 	w.sqlNotebook.RemovePage(index)
 	w.sqlTabs = append(w.sqlTabs[:index], w.sqlTabs[index+1:]...)
+	if len(w.sqlTabs) == 0 {
+		w.sqlPaneStack.SetVisibleChildName("empty")
+	}
 	if active := w.activeSQLTab(); active != nil {
 		w.sqlState.ActiveTabID = active.state.ID
 	} else {
