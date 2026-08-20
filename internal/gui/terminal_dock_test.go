@@ -63,3 +63,19 @@ func TestTerminalDockSessionTitlePrefersRenameThenTerminalContext(t *testing.T) 
 		t.Fatalf("fallback title = %q", got)
 	}
 }
+
+func TestTerminalDockTabWidthTracksTitleWithinBounds(t *testing.T) {
+	for _, test := range []struct {
+		title string
+		want  int
+	}{
+		{title: "sh", want: terminalTabMinimumChars},
+		{title: "API logs", want: 8},
+		{title: "database migration", want: 18},
+		{title: strings.Repeat("x", terminalTabMaximumChars+10), want: terminalTabMaximumChars},
+	} {
+		if got := terminalDockTabWidth(test.title); got != test.want {
+			t.Errorf("terminalDockTabWidth(%q) = %d, want %d", test.title, got, test.want)
+		}
+	}
+}

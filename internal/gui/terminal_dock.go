@@ -9,13 +9,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
-const terminalDockPreferredHeight = 280
+const (
+	terminalDockPreferredHeight = 280
+	terminalTabMinimumChars     = 8
+	terminalTabMaximumChars     = 28
+)
 
 type terminalDockSession struct {
 	id          int
@@ -167,7 +172,7 @@ func (w *mainWindow) spawnTerminalDock() (*terminalDockSession, error) {
 		autoTitle: terminal.WindowTitle(),
 	}
 	session.tabLabel.SetEllipsize(pango.EllipsizeMiddle)
-	session.tabLabel.SetMaxWidthChars(28)
+	session.tabLabel.SetMaxWidthChars(terminalTabMaximumChars)
 	w.updateTerminalDockSessionTitle(session)
 	terminal.ConnectWindowTitleChanged(func() {
 		session.autoTitle = terminal.WindowTitle()
@@ -247,6 +252,7 @@ func (w *mainWindow) updateTerminalDockSessionTitle(session *terminalDockSession
 	}
 	title := terminalDockSessionTitle(session)
 	session.tabLabel.SetLabel(title)
+	session.tabLabel.SetWidthChars(terminalDockTabWidth(title))
 	tooltip := title
 	if session.cwd != "" {
 		tooltip += "\n" + session.cwd
@@ -255,6 +261,17 @@ func (w *mainWindow) updateTerminalDockSessionTitle(session *terminalDockSession
 	if w.activeTerminalDockSession() == session {
 		w.updateTerminalDockTitle()
 	}
+}
+
+func terminalDockTabWidth(title string) int {
+	width := utf8.RuneCountInString(title)
+	if width < terminalTabMinimumChars {
+		return terminalTabMinimumChars
+	}
+	if width > terminalTabMaximumChars {
+		return terminalTabMaximumChars
+	}
+	return width
 }
 
 func (w *mainWindow) promptRenameActiveTerminalDock() {
