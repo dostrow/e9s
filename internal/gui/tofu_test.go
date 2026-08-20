@@ -37,9 +37,42 @@ func TestFormatTofuWorkspace(t *testing.T) {
 func TestTofuPagesOwnModuleErrorGlyph(t *testing.T) {
 	t.Parallel()
 
-	for _, page := range []string{pageTofuWorkspaces, pageTofuResources} {
+	for _, page := range []string{pageTofuWorkspaces, pageTofuResources, pageTofuPlan} {
 		if got := moduleForPage(page); got != moduleTofu {
 			t.Fatalf("moduleForPage(%q) = %q", page, got)
+		}
+	}
+}
+
+func TestFilteredTofuPlanChangesMatchesAddressActionAndType(t *testing.T) {
+	t.Parallel()
+
+	plan := &tofu.PlanResult{Changes: []tofu.ResourceChange{
+		{Address: "aws_s3_bucket.assets", Type: "aws_s3_bucket", Action: "create"},
+		{Address: "aws_ecs_service.api", Type: "aws_ecs_service", Action: "update"},
+	}}
+	for query, want := range map[string]string{"assets": "aws_s3_bucket.assets", "UPDATE": "aws_ecs_service.api", "s3_bucket": "aws_s3_bucket.assets"} {
+		changes := filteredTofuPlanChanges(plan, query)
+		if len(changes) != 1 || changes[0].Address != want {
+			t.Fatalf("filteredTofuPlanChanges(%q) = %#v", query, changes)
+		}
+	}
+}
+
+func TestFormatTofuPlanChangeIncludesFullDiff(t *testing.T) {
+	t.Parallel()
+
+	change := tofu.ResourceChange{
+		Address: "aws_ecs_service.api",
+		Type:    "aws_ecs_service",
+		Name:    "api",
+		Action:  "update",
+		Diffs:   []tofu.AttrDiff{{Path: "desired_count", Before: "2", After: "4", Action: "change"}},
+	}
+	text := formatTofuPlanChange(change)
+	for _, expected := range []string{"aws_ecs_service.api", "desired_count", "before: 2", "after:  4"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("formatTofuPlanChange() missing %q in %q", expected, text)
 		}
 	}
 }

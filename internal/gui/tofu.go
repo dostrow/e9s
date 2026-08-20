@@ -3,11 +3,13 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"sort"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/tofu"
@@ -96,6 +98,22 @@ func (w *mainWindow) applyTofuResourceFilter() {
 		rows = append(rows, strings.Join([]string{resource.Type, resource.Name, valueOrDash(resource.Module)}, "\t"))
 	}
 	w.tofuResourceTable.replace(rows)
+}
+
+func (w *mainWindow) applyTofuPlanFilter() {
+	if w.tofuPlan == nil {
+		w.tofuPlanTable.clear()
+		return
+	}
+	query := strings.ToLower(strings.TrimSpace(w.search.Text()))
+	rows := make([]string, 0, len(w.tofuPlan.Changes))
+	for _, change := range w.tofuPlan.Changes {
+		if query != "" && !strings.Contains(strings.ToLower(change.Address), query) && !strings.Contains(strings.ToLower(change.Action), query) && !strings.Contains(strings.ToLower(change.Type), query) {
+			continue
+		}
+		rows = append(rows, fmt.Sprintf("%s\t%s\t%d", strings.ToUpper(change.Action), change.Address, len(change.Diffs)))
+	}
+	w.tofuPlanTable.replace(rows)
 }
 
 func (w *mainWindow) selectTofuWorkspaceRow() {
@@ -194,9 +212,152 @@ func (w *mainWindow) selectTofuResourceRow() {
 }
 
 func (w *mainWindow) openTofuResourceAt(position uint) {
-	if int(position) < len(w.filteredTofuResources) {
-		w.tofuResourceTable.selection.SetSelected(position)
+	if int(position) >= len(w.filteredTofuResources) || w.options.Tofu == nil || w.tofuActionPending {
+		return
 	}
+	resource := w.filteredTofuResources[position]
+	w.tofuResourceTable.selection.SetSelected(position)
+	w.tofuActionPending = true
+	w.updateActionSensitivity()
+	w.setDetail("Loading complete state for "+resource.Address+"…", detailIntro)
+	ctx, generation := w.startRequest("Loading state for " + resource.Address + "…")
+	go func() {
+		output, err := w.options.Tofu.State(ctx, w.selectedTofuWorkspace, resource.Address)
+		w.finishTofuAction(ctx, generation, err, "Loaded state for "+resource.Address, func() {
+			if w.currentPage != pageTofuResources || w.selectedTofuResource != resource.Address {
+				return
+			}
+			w.setDetail(formatTofuState(resource, output), detailTofuResource)
+		})
+	}()
+}
+
+func (w *mainWindow) runTofuPlan() {
+	workspace, found := w.currentTofuWorkspace()
+	if !found || w.options.Tofu == nil || w.tofuActionPending {
+		return
+	}
+	w.discardTofuPlan()
+	w.tofuActionPending = true
+	w.updateActionSensitivity()
+	w.setDetail("Running OpenTofu plan…", detailIntro)
+	ctx, generation := w.startRequest("Planning " + workspace.Name + "…")
+	go func() {
+		plan, planFile, err := w.options.Tofu.Plan(ctx, workspace.Dir)
+		success := "Plan completed"
+		if plan != nil {
+			success += ": " + tofu.FormatPlanSummary(plan)
+		}
+		w.finishTofuAction(ctx, generation, err, success, func() {
+			w.tofuPlan = plan
+			w.tofuPlanFile = planFile
+			w.selectedTofuPlanChange = ""
+			w.currentPage = pageTofuPlan
+			w.search.SetPlaceholderText("Filter planned changes…")
+			w.search.SetText("")
+			w.resourceStack.SetVisibleChildName(pageTofuPlan)
+			w.backButton.SetSensitive(true)
+			w.setBreadcrumb("OpenTofu / " + workspace.Name + " / Plan")
+			w.applyTofuPlanFilter()
+			w.setDetail(formatTofuPlanSummary(workspace, plan), detailTofuPlan)
+		})
+	}()
+}
+
+func (w *mainWindow) selectTofuPlanChangeRow() {
+	if w.currentPage != pageTofuPlan || w.tofuPlan == nil {
+		return
+	}
+	changes := filteredTofuPlanChanges(w.tofuPlan, w.search.Text())
+	position := w.tofuPlanTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(changes) {
+		w.selectedTofuPlanChange = ""
+		workspace, _ := w.currentTofuWorkspace()
+		w.setBreadcrumb("OpenTofu / " + workspace.Name + " / Plan")
+		w.setDetail(formatTofuPlanSummary(workspace, w.tofuPlan), detailTofuPlan)
+		w.updateActionSensitivity()
+		return
+	}
+	change := changes[position]
+	w.selectedTofuPlanChange = change.Address
+	workspace, _ := w.currentTofuWorkspace()
+	w.setBreadcrumb("OpenTofu / " + workspace.Name + " / Plan / " + change.Address)
+	w.setDetail(formatTofuPlanChange(change), detailTofuPlan)
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) openTofuPlanChangeAt(position uint) {
+	if int(position) < len(filteredTofuPlanChanges(w.tofuPlan, w.search.Text())) {
+		w.tofuPlanTable.selection.SetSelected(position)
+	}
+}
+
+func filteredTofuPlanChanges(plan *tofu.PlanResult, query string) []tofu.ResourceChange {
+	if plan == nil {
+		return nil
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	changes := make([]tofu.ResourceChange, 0, len(plan.Changes))
+	for _, change := range plan.Changes {
+		if query == "" || strings.Contains(strings.ToLower(change.Address), query) || strings.Contains(strings.ToLower(change.Action), query) || strings.Contains(strings.ToLower(change.Type), query) {
+			changes = append(changes, change)
+		}
+	}
+	return changes
+}
+
+func (w *mainWindow) restoreTofuResourcesFromPlan() {
+	workspace, found := w.currentTofuWorkspace()
+	if !found {
+		w.loadTofuWorkspaces()
+		return
+	}
+	w.discardTofuPlan()
+	w.currentPage = pageTofuResources
+	w.search.SetPlaceholderText("Filter state resources…")
+	w.search.SetText("")
+	w.resourceStack.SetVisibleChildName(pageTofuResources)
+	w.backButton.SetSensitive(true)
+	w.setBreadcrumb(tofuResourceBreadcrumb(workspace.Name, ""))
+	w.applyTofuResourceFilter()
+	w.setDetail(tofuResourceListSummary(workspace, len(w.allTofuResources)), detailTofuWorkspace)
+	w.updateActionSensitivity()
+	w.setStatus("Ready", false)
+}
+
+func (w *mainWindow) discardTofuPlan() {
+	if w.options.Tofu != nil {
+		w.options.Tofu.CleanupPlan(w.tofuPlanFile)
+	}
+	w.tofuPlanFile = ""
+	w.tofuPlan = nil
+	w.selectedTofuPlanChange = ""
+	if w.tofuPlanTable != nil {
+		w.tofuPlanTable.clear()
+	}
+}
+
+func (w *mainWindow) finishTofuAction(ctx context.Context, generation uint64, err error, success string, apply func()) {
+	glib.IdleAdd(func() {
+		if ctx.Err() != nil || generation != w.generation {
+			return
+		}
+		w.requestCancel = nil
+		w.spinner.Stop()
+		w.setWorkspaceBusy("", false)
+		w.tofuActionPending = false
+		if err != nil {
+			w.updateActionSensitivity()
+			w.setDetail("ERROR\n\n"+err.Error(), detailError)
+			w.setStatus(err.Error(), true)
+			return
+		}
+		if apply != nil {
+			apply()
+		}
+		w.updateActionSensitivity()
+		w.setStatus(success, false)
+	})
 }
 
 func (w *mainWindow) restoreTofuWorkspaceBrowser() {
@@ -220,7 +381,14 @@ func (w *mainWindow) currentTofuWorkspace() (config.TofuDirEntry, bool) {
 }
 
 func (w *mainWindow) refreshTofu(foreground bool) {
+	if !foreground {
+		return
+	}
 	if w.tofuActionPending {
+		return
+	}
+	if w.currentPage == pageTofuPlan {
+		w.setStatus("Plans are snapshots; run Plan again to refresh", false)
 		return
 	}
 	if w.currentPage == pageTofuResources {
@@ -471,6 +639,37 @@ func tofuResourceListSummary(workspace config.TofuDirEntry, count int) string {
 
 func formatTofuResourceSummary(resource tofu.Resource) string {
 	return fmt.Sprintf("OPENTOFU RESOURCE\n\nAddress  %s\nType     %s\nName     %s\nModule   %s\n\nDouble-click to load the complete state representation.", resource.Address, resource.Type, resource.Name, valueOrDash(resource.Module))
+}
+
+func formatTofuState(resource tofu.Resource, output string) string {
+	return fmt.Sprintf("OPENTOFU RESOURCE STATE\n\nAddress  %s\nType     %s\nName     %s\nModule   %s\n\nSTATE\n%s", resource.Address, resource.Type, resource.Name, valueOrDash(resource.Module), strings.TrimSpace(output))
+}
+
+func formatTofuPlanSummary(workspace config.TofuDirEntry, plan *tofu.PlanResult) string {
+	if plan == nil {
+		return "No plan is loaded."
+	}
+	return fmt.Sprintf("OPENTOFU PLAN\n\nWorkspace  %s\nDirectory  %s\nSummary    %s\nCreate     %d\nUpdate     %d\nReplace    %d\nDelete     %d\nUnchanged  %d\n\nSelect a planned change for its attribute-level diff.", workspace.Name, workspace.Dir, tofu.FormatPlanSummary(plan), plan.CreateCount, plan.UpdateCount, plan.ReplaceCount, plan.DeleteCount, plan.NoOpCount)
+}
+
+func formatTofuPlanChange(change tofu.ResourceChange) string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "OPENTOFU PLANNED CHANGE\n\nAction   %s\nAddress  %s\nType     %s\nName     %s\nModule   %s\n\nATTRIBUTE CHANGES", strings.ToUpper(change.Action), change.Address, change.Type, change.Name, valueOrDash(change.Module))
+	if len(change.Diffs) == 0 {
+		builder.WriteString("\nNo attribute-level changes were reported.")
+		return builder.String()
+	}
+	for _, diff := range change.Diffs {
+		switch diff.Action {
+		case "add":
+			fmt.Fprintf(&builder, "\n\n+ %s\n  %s", diff.Path, diff.After)
+		case "remove":
+			fmt.Fprintf(&builder, "\n\n- %s\n  %s", diff.Path, diff.Before)
+		default:
+			fmt.Fprintf(&builder, "\n\n~ %s\n  before: %s\n  after:  %s", diff.Path, diff.Before, diff.After)
+		}
+	}
+	return builder.String()
 }
 
 func tofuResourceBreadcrumb(workspace, resource string) string {

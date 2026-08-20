@@ -60,6 +60,7 @@ const (
 	pageRoute53Records    = "route53-records"
 	pageTofuWorkspaces    = "tofu-workspaces"
 	pageTofuResources     = "tofu-resources"
+	pageTofuPlan          = "tofu-plan"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -98,6 +99,7 @@ const (
 	detailRoute53Record    = "route53-record"
 	detailTofuWorkspace    = "tofu-workspace"
 	detailTofuResource     = "tofu-resource"
+	detailTofuPlan         = "tofu-plan"
 )
 
 type mainWindow struct {
@@ -283,6 +285,9 @@ type mainWindow struct {
 	allTofuResources            []tofu.Resource
 	filteredTofuResources       []tofu.Resource
 	selectedTofuResource        string
+	tofuPlan                    *tofu.PlanResult
+	tofuPlanFile                string
+	selectedTofuPlanChange      string
 	tofuActionPending           bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
@@ -325,6 +330,7 @@ type mainWindow struct {
 	route53RecordTable          *stringTable
 	tofuWorkspaceTable          *stringTable
 	tofuResourceTable           *stringTable
+	tofuPlanTable               *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -390,6 +396,7 @@ type mainWindow struct {
 	route53DeleteButton         *gtk.Button
 	tofuAddWorkspaceButton      *gtk.Button
 	tofuManageWorkspacesButton  *gtk.Button
+	tofuPlanButton              *gtk.Button
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -782,6 +789,9 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.tofuResourceTable = newStringTable([]columnSpec{
 		{title: "TYPE", field: 0}, {title: "NAME", field: 1, expand: true}, {title: "MODULE", field: 2, expand: true},
 	})
+	w.tofuPlanTable = newStringTable([]columnSpec{
+		{title: "ACTION", field: 0}, {title: "RESOURCE", field: 1, expand: true}, {title: "CHANGES", field: 2},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -817,6 +827,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.route53RecordTable.view.ConnectActivate(w.openRoute53RecordAt)
 	w.tofuWorkspaceTable.view.ConnectActivate(w.openTofuWorkspaceAt)
 	w.tofuResourceTable.view.ConnectActivate(w.openTofuResourceAt)
+	w.tofuPlanTable.view.ConnectActivate(w.openTofuPlanChangeAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -851,12 +862,16 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.route53RecordTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectRoute53RecordRow() })
 	w.tofuWorkspaceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuWorkspaceRow() })
 	w.tofuResourceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuResourceRow() })
+	w.tofuPlanTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectTofuPlanChangeRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
 	w.window.SetDefaultSize(1380, 820)
 	w.window.SetChild(w.buildLayout())
 	w.window.ConnectDestroy(func() {
+		if w.options.Tofu != nil {
+			w.options.Tofu.CleanupPlan(w.tofuPlanFile)
+		}
 		if w.terminal != nil {
 			w.terminal.Stop()
 		}
@@ -1041,6 +1056,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.tofuAddWorkspaceButton.ConnectClicked(w.promptAddTofuWorkspace)
 	w.tofuManageWorkspacesButton = gtk.NewButtonWithLabel("Manage saved…")
 	w.tofuManageWorkspacesButton.ConnectClicked(w.promptManageTofuWorkspaces)
+	w.tofuPlanButton = gtk.NewButtonWithLabel("Plan")
+	w.tofuPlanButton.ConnectClicked(w.runTofuPlan)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1154,6 +1171,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.route53DeleteButton)
 	header.Append(w.tofuAddWorkspaceButton)
 	header.Append(w.tofuManageWorkspacesButton)
+	header.Append(w.tofuPlanButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1500,6 +1518,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	tofuResourceScroll.SetVExpand(true)
 	tofuResourceScroll.SetHExpand(true)
 	tofuResourceScroll.SetChild(w.tofuResourceTable.view)
+	tofuPlanScroll := gtk.NewScrolledWindow()
+	tofuPlanScroll.SetVExpand(true)
+	tofuPlanScroll.SetHExpand(true)
+	tofuPlanScroll.SetChild(w.tofuPlanTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1545,6 +1567,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(route53RecordScroll, pageRoute53Records)
 	w.resourceStack.AddNamed(tofuWorkspaceScroll, pageTofuWorkspaces)
 	w.resourceStack.AddNamed(tofuResourceScroll, pageTofuResources)
+	w.resourceStack.AddNamed(tofuPlanScroll, pageTofuPlan)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -2056,6 +2079,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.sqsActionPending = false
 	w.route53ActionPending = false
 	w.tofuActionPending = false
+	w.discardTofuPlan()
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2591,6 +2615,10 @@ func (w *mainWindow) applyFilter() {
 		w.applyTofuResourceFilter()
 		return
 	}
+	if w.currentPage == pageTofuPlan {
+		w.applyTofuPlanFilter()
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		w.applyS3BucketFilter()
 		return
@@ -2787,6 +2815,10 @@ func (w *mainWindow) navigateBrowserBack() {
 	}
 	if w.currentPage == pageTofuResources {
 		w.restoreTofuWorkspaceBrowser()
+		return
+	}
+	if w.currentPage == pageTofuPlan {
+		w.restoreTofuResourcesFromPlan()
 		return
 	}
 	if w.currentPage == pageDynamoItems {
@@ -2989,7 +3021,7 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		w.refreshRoute53Records(foreground)
 		return
 	}
-	if w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources {
+	if w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan {
 		w.refreshTofu(foreground)
 		return
 	}
@@ -3515,11 +3547,11 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.route53ZonesNavButton.SetActive(w.currentPage == pageRoute53Zones || w.currentPage == pageRoute53Records)
 		}
 		if w.tofuWorkspacesNavButton != nil {
-			tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources
+			tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan
 			w.tofuWorkspacesNavButton.SetActive(tofuPage && w.currentPage == pageTofuWorkspaces)
 			for i, workspace := range sortedTofuWorkspaces(w.options.ConfigTofuDirs()) {
 				if i < len(w.savedTofuWorkspaceButtons) {
-					w.savedTofuWorkspaceButtons[i].SetActive(tofuPage && w.currentPage == pageTofuResources && workspace.Name == w.activeSavedTofuWorkspace)
+					w.savedTofuWorkspaceButtons[i].SetActive(tofuPage && w.currentPage != pageTofuWorkspaces && workspace.Name == w.activeSavedTofuWorkspace)
 				}
 			}
 		}
@@ -3777,12 +3809,15 @@ func (w *mainWindow) updateActionSensitivity() {
 	deleteRoute53Record := route53RecordPage && route53RecordSelected && record.Type != "NS" && record.Type != "SOA"
 	w.route53DeleteButton.SetVisible(deleteRoute53Record)
 	w.route53DeleteButton.SetSensitive(deleteRoute53Record && route53Ready)
-	tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources
+	tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan
 	w.tofuAddWorkspaceButton.SetVisible(tofuPage)
 	w.tofuAddWorkspaceButton.SetSensitive(tofuPage && w.options.Config != nil && !w.tofuActionPending)
 	hasTofuWorkspaces := w.options.Config != nil && len(w.options.Config.TofuDirs) > 0
 	w.tofuManageWorkspacesButton.SetVisible(tofuPage && hasTofuWorkspaces)
 	w.tofuManageWorkspacesButton.SetSensitive(tofuPage && hasTofuWorkspaces && !w.tofuActionPending)
+	tofuCanPlan := (w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan) && w.selectedTofuWorkspace != "" && w.options.Tofu != nil
+	w.tofuPlanButton.SetVisible(w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan)
+	w.tofuPlanButton.SetSensitive(tofuCanPlan && !w.tofuActionPending)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

@@ -67,7 +67,7 @@ func moduleForPage(page string) string {
 		return moduleSQS
 	case pageRoute53Zones, pageRoute53Records:
 		return moduleRoute53
-	case pageTofuWorkspaces, pageTofuResources:
+	case pageTofuWorkspaces, pageTofuResources, pageTofuPlan:
 		return moduleTofu
 	default:
 		return ""
