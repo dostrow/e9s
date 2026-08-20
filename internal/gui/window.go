@@ -403,6 +403,7 @@ type mainWindow struct {
 	tofuApplyButton             *gtk.Button
 	terminalDockButton          *gtk.ToggleButton
 	settingsDialog              *gtk.Dialog
+	semanticStyleProvider       *gtk.CSSProvider
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string

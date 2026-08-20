@@ -98,6 +98,15 @@ func (terminal *vteTerminal) SetFontScale(scale float64) {
 	)
 }
 
+func (terminal *vteTerminal) SetFont(description string) {
+	font := C.CString(description)
+	defer C.free(unsafe.Pointer(font))
+	C.e9s_vte_terminal_set_font(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+		font,
+	)
+}
+
 func (terminal *vteTerminal) SetPalette(palette semanticPalette) {
 	colors := []string{
 		rgbaHex(palette.foreground), rgbaHex(palette.surface), rgbaHex(palette.accent),

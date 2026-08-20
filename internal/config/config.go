@@ -93,6 +93,11 @@ type Config struct {
 	} `yaml:"display"`
 	GUI struct {
 		TerminalShell string `yaml:"terminal_shell,omitempty"`
+		Appearance    struct {
+			Preset        string `yaml:"preset,omitempty"`
+			InterfaceFont string `yaml:"interface_font,omitempty"`
+			MonospaceFont string `yaml:"monospace_font,omitempty"`
+		} `yaml:"appearance,omitempty"`
 	} `yaml:"gui,omitempty"`
 	Modules struct {
 		ECS        *bool `yaml:"ecs"`

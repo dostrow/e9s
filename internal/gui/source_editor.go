@@ -49,6 +49,7 @@ func configurePlainSourceView(view *gtk.TextView) {
 	view.SetMonospace(true)
 	view.SetWrapMode(gtk.WrapNone)
 	view.AddCSSClass("inspector")
+	view.AddCSSClass("code-font")
 }
 
 func sourceEditorPalette(palette semanticPalette) []string {

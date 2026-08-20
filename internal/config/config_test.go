@@ -364,6 +364,22 @@ func TestSaveRawRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestGUIAppearanceRoundTrip(t *testing.T) {
+	cfg, err := Parse([]byte(`
+gui:
+  appearance:
+    preset: gruvbox-material-dark
+    interface_font: Inter 11
+    monospace_font: JetBrainsMono Nerd Font 10
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GUI.Appearance.Preset != "gruvbox-material-dark" || cfg.GUI.Appearance.InterfaceFont != "Inter 11" || cfg.GUI.Appearance.MonospaceFont != "JetBrainsMono Nerd Font 10" {
+		t.Fatalf("appearance did not round-trip through YAML: %+v", cfg.GUI.Appearance)
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origXDG := os.Getenv("XDG_CONFIG_HOME")

@@ -138,6 +138,17 @@ void e9s_vte_terminal_set_font_scale(GtkWidget *widget, double scale) {
     vte_terminal_set_font_scale(VTE_TERMINAL(widget), scale);
 }
 
+void e9s_vte_terminal_set_font(GtkWidget *widget, const char *description) {
+    PangoFontDescription *font = NULL;
+    if (description != NULL && description[0] != '\0') {
+        font = pango_font_description_from_string(description);
+    }
+    vte_terminal_set_font(VTE_TERMINAL(widget), font);
+    if (font != NULL) {
+        pango_font_description_free(font);
+    }
+}
+
 static GdkRGBA e9s_vte_color(const char *value) {
     GdkRGBA color = {0};
     gdk_rgba_parse(&color, value);

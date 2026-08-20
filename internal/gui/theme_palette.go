@@ -11,6 +11,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
+	"github.com/dostrow/e9s/internal/config"
 )
 
 // semanticPalette maps application meaning onto colors exported by the active
@@ -18,6 +20,7 @@ import (
 // has a conservative fallback derived from colors that GTK always provides.
 type semanticPalette struct {
 	foreground gdk.RGBA
+	background gdk.RGBA
 	surface    gdk.RGBA
 	accent     gdk.RGBA
 	success    gdk.RGBA
@@ -43,6 +46,7 @@ func semanticPaletteFromStyle(style *gtk.StyleContext) semanticPalette {
 		"dim_label_fg_color", "insensitive_fg_color")
 	return semanticPalette{
 		foreground: foreground,
+		background: background,
 		surface:    surface,
 		accent:     accent,
 		success:    success,
@@ -51,6 +55,73 @@ func semanticPaletteFromStyle(style *gtk.StyleContext) semanticPalette {
 		info:       info,
 		muted:      muted,
 	}
+}
+
+type appearancePreset struct {
+	name    string
+	palette semanticPalette
+}
+
+const appearanceSystem = "system"
+
+var appearancePresets = []appearancePreset{
+	{name: appearanceSystem},
+	{name: "e9s-dark", palette: paletteFromHex("#E6E6E6", "#181A1B", "#242728", "#6EA8FE", "#7EC699", "#E5C07B", "#E06C75", "#61AFEF", "#8B9195")},
+	{name: "e9s-light", palette: paletteFromHex("#25282B", "#F2F3F5", "#FFFFFF", "#315CBE", "#247A45", "#9A6700", "#C42B38", "#2563A8", "#73777C")},
+	{name: "gruvbox-material-dark", palette: paletteFromHex("#D4BE98", "#282828", "#32302F", "#7DAEA3", "#A9B665", "#D8A657", "#EA6962", "#7DAEA3", "#928374")},
+	{name: "catppuccin-mocha", palette: paletteFromHex("#CDD6F4", "#1E1E2E", "#313244", "#CBA6F7", "#A6E3A1", "#F9E2AF", "#F38BA8", "#89B4FA", "#6C7086")},
+	{name: "high-contrast", palette: paletteFromHex("#FFFFFF", "#000000", "#101010", "#00B7FF", "#53FF79", "#FFE65A", "#FF5A67", "#00B7FF", "#BFBFBF")},
+}
+
+func paletteFromHex(foreground, background, surface, accent, success, warning, errorColor, info, muted string) semanticPalette {
+	parse := func(value string) gdk.RGBA {
+		color := gdk.NewRGBA(0, 0, 0, 1)
+		color.Parse(value)
+		return color
+	}
+	return semanticPalette{
+		foreground: parse(foreground), background: parse(background), surface: parse(surface),
+		accent: parse(accent), success: parse(success), warning: parse(warning),
+		error: parse(errorColor), info: parse(info), muted: parse(muted),
+	}
+}
+
+func configuredPreset(name string) (semanticPalette, bool) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		name = appearanceSystem
+	}
+	for _, preset := range appearancePresets {
+		if preset.name == name {
+			return preset.palette, preset.name != appearanceSystem
+		}
+	}
+	return semanticPalette{}, false
+}
+
+func appearancePresetLabels() []string {
+	return []string{"System GTK theme", "e9s Dark", "e9s Light", "Gruvbox Material Dark", "Catppuccin Mocha", "High Contrast"}
+}
+
+func appearancePresetNames() []string {
+	names := make([]string, len(appearancePresets))
+	for index, preset := range appearancePresets {
+		names[index] = preset.name
+	}
+	return names
+}
+
+func appearancePresetIndex(name string) int {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		name = appearanceSystem
+	}
+	for index, preset := range appearancePresets {
+		if preset.name == name {
+			return index
+		}
+	}
+	return 0
 }
 
 // clearDrawingSurface removes the previous Cairo frame without imposing an
@@ -105,13 +176,53 @@ func semanticStyleCSS(palette semanticPalette) string {
 		palette.info.String(), palette.muted.String())
 }
 
+func configuredAppearanceCSS(cfg *config.Config, palette semanticPalette, customPalette bool) string {
+	var css strings.Builder
+	if customPalette {
+		fmt.Fprintf(&css, `
+.e9s-root { color: %s; background-color: %s; }
+.e9s-root .toolbar, .e9s-root .status-bar { color: %s; background-color: %s; }
+.e9s-root .pane-card, .e9s-root .pane-card > viewport,
+.e9s-root .pane-card textview, .e9s-root .pane-card listview,
+.e9s-root .pane-card columnview { color: %s; background-color: %s; }
+.e9s-root row:selected { background-color: alpha(%s, 0.38); }
+.e9s-root entry, .e9s-root button, .e9s-root dropdown { color: %s; }
+`, palette.foreground.String(), palette.background.String(), palette.foreground.String(), palette.background.String(),
+			palette.foreground.String(), palette.surface.String(), palette.accent.String(), palette.foreground.String())
+	}
+	if cfg == nil {
+		return css.String()
+	}
+	if font := fontDescriptionCSS(cfg.GUI.Appearance.InterfaceFont); font != "" {
+		fmt.Fprintf(&css, ".e9s-root { %s }\n", font)
+	}
+	if font := fontDescriptionCSS(cfg.GUI.Appearance.MonospaceFont); font != "" {
+		fmt.Fprintf(&css, ".e9s-root .inspector, .e9s-root .log-view, .e9s-root .code-font { %s }\n", font)
+	}
+	return css.String()
+}
+
+func fontDescriptionCSS(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	description := pango.FontDescriptionFromString(value)
+	if description == nil || strings.TrimSpace(description.Family()) == "" {
+		return ""
+	}
+	size := float64(description.Size()) / 1024
+	if size <= 0 {
+		size = 10
+	}
+	return fmt.Sprintf("font-family: %q; font-size: %.2fpt;", description.Family(), size)
+}
+
 func installSemanticStyles(window *mainWindow) {
 	provider := gtk.NewCSSProvider()
+	window.semanticStyleProvider = provider
 	apply := func() {
-		palette := semanticPaletteFromStyle(window.window.StyleContext())
-		provider.LoadFromString(semanticStyleCSS(palette))
-		window.applySemanticPalette(palette)
-		window.window.QueueDraw()
+		window.refreshConfiguredAppearance()
 	}
 	gtk.StyleContextAddProviderForDisplay(
 		gdk.DisplayGetDefault(),
@@ -124,6 +235,41 @@ func installSemanticStyles(window *mainWindow) {
 		settings.NotifyProperty("gtk-application-prefer-dark-theme", apply)
 	}
 	apply()
+}
+
+func (w *mainWindow) refreshConfiguredAppearance() {
+	if w.semanticStyleProvider == nil {
+		return
+	}
+	w.applyAppearanceConfig(w.options.Config)
+}
+
+func (w *mainWindow) applyAppearanceConfig(cfg *config.Config) {
+	palette := semanticPaletteFromStyle(w.window.StyleContext())
+	custom := false
+	if cfg != nil {
+		if configured, found := configuredPreset(cfg.GUI.Appearance.Preset); found {
+			palette = configured
+			custom = true
+		}
+	}
+	w.semanticStyleProvider.LoadFromString(semanticStyleCSS(palette) + configuredAppearanceCSS(cfg, palette, custom))
+	w.applySemanticPalette(palette)
+	w.applyConfiguredFonts(cfg)
+	w.window.QueueDraw()
+}
+
+func (w *mainWindow) applyConfiguredFonts(cfg *config.Config) {
+	font := ""
+	if cfg != nil {
+		font = strings.TrimSpace(cfg.GUI.Appearance.MonospaceFont)
+	}
+	if w.terminal != nil {
+		w.terminal.SetFont(font)
+	}
+	if w.terminalDock != nil {
+		w.terminalDock.SetFont(font)
+	}
 }
 
 func (w *mainWindow) applySemanticPalette(palette semanticPalette) {

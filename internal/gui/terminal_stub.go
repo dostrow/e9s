@@ -50,6 +50,8 @@ func (terminal *vteTerminal) ExitStatus() int { return 0 }
 
 func (terminal *vteTerminal) SetFontScale(float64) {}
 
+func (terminal *vteTerminal) SetFont(string) {}
+
 func (terminal *vteTerminal) SetPalette(semanticPalette) {}
 
 func vteAvailable() bool { return false }

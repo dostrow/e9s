@@ -122,6 +122,80 @@ func (w *mainWindow) showSettings() {
 	general.Append(settingsRow("Timestamps", timestampSelector))
 	notebook.AppendPage(general, gtk.NewLabel("General"))
 
+	appearancePage := settingsPage()
+	presetSelector := gtk.NewDropDownFromStrings(appearancePresetLabels())
+	presetSelector.SetSelected(uint(appearancePresetIndex(cfg.GUI.Appearance.Preset)))
+	interfaceSystem := gtk.NewCheckButtonWithLabel("Use GTK interface font")
+	interfaceSystem.SetActive(strings.TrimSpace(cfg.GUI.Appearance.InterfaceFont) == "")
+	interfaceFontName := cfg.GUI.Appearance.InterfaceFont
+	if strings.TrimSpace(interfaceFontName) == "" {
+		interfaceFontName = "Sans 11"
+	}
+	interfaceFont := gtk.NewFontButtonWithFont(interfaceFontName)
+	interfaceFont.SetTitle("Choose interface font")
+	interfaceFont.SetUseFont(true)
+	interfaceFont.SetUseSize(true)
+	interfaceFont.SetSensitive(!interfaceSystem.Active())
+	monospaceSystem := gtk.NewCheckButtonWithLabel("Use GTK monospace font")
+	monospaceSystem.SetActive(strings.TrimSpace(cfg.GUI.Appearance.MonospaceFont) == "")
+	monospaceFontName := cfg.GUI.Appearance.MonospaceFont
+	if strings.TrimSpace(monospaceFontName) == "" {
+		monospaceFontName = "Monospace 10"
+	}
+	monospaceFont := gtk.NewFontButtonWithFont(monospaceFontName)
+	monospaceFont.SetTitle("Choose monospace font")
+	monospaceFont.SetUseFont(true)
+	monospaceFont.SetUseSize(true)
+	monospaceFont.SetSensitive(!monospaceSystem.Active())
+	appearancePage.Append(settingsRow("Color preset", presetSelector))
+	appearancePage.Append(interfaceSystem)
+	appearancePage.Append(settingsRow("Interface font", interfaceFont))
+	appearancePage.Append(monospaceSystem)
+	appearancePage.Append(settingsRow("Editor, logs, details, and terminal font", monospaceFont))
+	appearancePage.Append(settingsNote("System follows the active GTK theme. Built-in presets provide a consistent fallback on desktops where installing GTK themes is less convenient."))
+	notebook.AppendPage(appearancePage, gtk.NewLabel("Appearance"))
+
+	appearanceDraft := func() config.Config {
+		preview := cfg
+		presetIndex := int(presetSelector.Selected())
+		presetNames := appearancePresetNames()
+		if presetIndex >= 0 && presetIndex < len(presetNames) {
+			preview.GUI.Appearance.Preset = presetNames[presetIndex]
+		}
+		if interfaceSystem.Active() {
+			preview.GUI.Appearance.InterfaceFont = ""
+		} else {
+			preview.GUI.Appearance.InterfaceFont = interfaceFont.Font()
+		}
+		if monospaceSystem.Active() {
+			preview.GUI.Appearance.MonospaceFont = ""
+		} else {
+			preview.GUI.Appearance.MonospaceFont = monospaceFont.Font()
+		}
+		return preview
+	}
+	previewAppearance := func() {
+		preview := appearanceDraft()
+		w.applyAppearanceConfig(&preview)
+	}
+	presetSelector.NotifyProperty("selected", previewAppearance)
+	interfaceSystem.ConnectToggled(func() {
+		interfaceFont.SetSensitive(!interfaceSystem.Active())
+		previewAppearance()
+	})
+	monospaceSystem.ConnectToggled(func() {
+		monospaceFont.SetSensitive(!monospaceSystem.Active())
+		previewAppearance()
+	})
+	interfaceFont.ConnectFontSet(func() {
+		interfaceSystem.SetActive(false)
+		previewAppearance()
+	})
+	monospaceFont.ConnectFontSet(func() {
+		monospaceSystem.SetActive(false)
+		previewAppearance()
+	})
+
 	awsPage := settingsPage()
 	profile := gtk.NewEntry()
 	profile.SetText(cfg.Defaults.Profile)
@@ -191,6 +265,7 @@ func (w *mainWindow) showSettings() {
 	dialog.ConnectDestroy(func() { w.settingsDialog = nil })
 	dialog.ConnectResponse(func(response int) {
 		if response != int(gtk.ResponseApply) {
+			w.applyAppearanceConfig(&cfg)
 			dialog.Destroy()
 			return
 		}
@@ -217,6 +292,8 @@ func (w *mainWindow) showSettings() {
 		updated.Display.MaxEvents = maxEvents.ValueAsInt()
 		updated.Display.MaxLogLines = maxLogLines.ValueAsInt()
 		updated.GUI.TerminalShell = strings.TrimSpace(terminalShell.Text())
+		appearance := appearanceDraft()
+		updated.GUI.Appearance = appearance.GUI.Appearance
 		if err := updated.Validate(); err != nil {
 			w.setStatus("Invalid settings: "+err.Error(), true)
 			return
@@ -240,6 +317,7 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	}
 	w.options.RefreshInterval = updated.Defaults.RefreshInterval
 	w.options.DefaultCluster = updated.Defaults.Cluster
+	w.applyAppearanceConfig(&updated)
 }
 
 func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte) {
