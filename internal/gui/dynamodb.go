@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -236,23 +237,31 @@ func (w *mainWindow) refreshDynamoItems(foreground bool) {
 		if statement != "" {
 			items, err := w.options.DynamoDB.PartiQL(ctx, statement)
 			w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+				selected, preserveSelection := w.selectedDynamoItemValue()
 				w.allDynamoItems = items
 				w.dynamoNextToken = ""
 				w.selectedDynamoItem = -1
+				w.dynamoItemTable.selection.SetSelected(gtk.InvalidListPosition)
 				w.applyDynamoItemFilter()
-				w.setDetail(fmt.Sprintf("DYNAMODB PARTIQL RESULTS\n\nRows       %d\nStatement  %s", len(items), statement), detailIntro)
+				if !preserveSelection || !w.trySelectDynamoItem(selected) {
+					w.setDetail(fmt.Sprintf("DYNAMODB PARTIQL RESULTS\n\nRows       %d\nStatement  %s", len(items), statement), detailIntro)
+				}
 				w.updateActionSensitivity()
 			})
 			return
 		}
 		page, err := w.options.DynamoDB.Scan(ctx, model.DynamoScanRequest{Table: table, Limit: 50, Filter: filter})
 		w.finishRefreshRequest(ctx, generation, err, foreground, func() {
+			selected, preserveSelection := w.selectedDynamoItemValue()
 			w.allDynamoItems = page.Items
 			w.dynamoNextToken = page.NextToken
 			w.dynamoScannedCount = page.ScannedCount
 			w.selectedDynamoItem = -1
+			w.dynamoItemTable.selection.SetSelected(gtk.InvalidListPosition)
 			w.applyDynamoItemFilter()
-			w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+			if !preserveSelection || !w.trySelectDynamoItem(selected) {
+				w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+			}
 			w.updateActionSensitivity()
 		})
 	}()
@@ -270,11 +279,14 @@ func (w *mainWindow) loadMoreDynamoItems() {
 	go func() {
 		page, err := w.options.DynamoDB.Scan(ctx, request)
 		w.finishDynamoAction(ctx, generation, err, "Loaded more DynamoDB items", func() {
+			selected, preserveSelection := w.selectedDynamoItemValue()
 			w.allDynamoItems = append(w.allDynamoItems, page.Items...)
 			w.dynamoNextToken = page.NextToken
 			w.dynamoScannedCount += page.ScannedCount
 			w.applyDynamoItemFilter()
-			w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+			if !preserveSelection || !w.trySelectDynamoItem(selected) {
+				w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+			}
 		})
 	}()
 }
@@ -744,17 +756,24 @@ func (w *mainWindow) replaceDynamoItem(original, replacement model.DynamoItem) {
 }
 
 func (w *mainWindow) selectDynamoItemByKey(item model.DynamoItem) {
-	for index, candidate := range w.filteredDynamoItems {
-		if dynamoItemsShareKey(candidate, item, w.dynamoKeyNames) {
-			w.selectedDynamoItem = index
-			w.dynamoItemTable.selection.SetSelected(uint(index))
-			w.setDetail(formatDynamoItem(candidate, w.dynamoKeyNames), detailDynamoItem)
-			return
-		}
+	if w.trySelectDynamoItem(item) {
+		return
 	}
 	w.selectedDynamoItem = -1
 	w.dynamoItemTable.selection.SetSelected(gtk.InvalidListPosition)
 	w.setDetail(w.currentDynamoItemSummary(), detailIntro)
+}
+
+func (w *mainWindow) trySelectDynamoItem(item model.DynamoItem) bool {
+	for index, candidate := range w.filteredDynamoItems {
+		if dynamoItemsSameIdentity(candidate, item, w.dynamoKeyNames) {
+			w.selectedDynamoItem = index
+			w.dynamoItemTable.selection.SetSelected(uint(index))
+			w.setDetail(formatDynamoItem(candidate, w.dynamoKeyNames), detailDynamoItem)
+			return true
+		}
+	}
+	return false
 }
 
 func editableDynamoAttributes(item model.DynamoItem, keyNames []string) []string {
@@ -775,6 +794,13 @@ func editableDynamoAttributes(item model.DynamoItem, keyNames []string) []string
 func dynamoItemsShareKey(left, right model.DynamoItem, keyNames []string) bool {
 	same, err := service.DynamoItemsShareKey(left, right, keyNames)
 	return err == nil && same
+}
+
+func dynamoItemsSameIdentity(left, right model.DynamoItem, keyNames []string) bool {
+	if len(keyNames) > 0 {
+		return dynamoItemsShareKey(left, right, keyNames)
+	}
+	return reflect.DeepEqual(left, right)
 }
 
 func dynamoKeyDescription(item model.DynamoItem, keyNames []string) string {

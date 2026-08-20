@@ -89,6 +89,20 @@ func TestDynamoItemsShareKeyIgnoresNonKeyFields(t *testing.T) {
 	}
 }
 
+func TestDynamoItemsSameIdentityUsesKeysWhenAvailable(t *testing.T) {
+	before := model.DynamoItem{"pk": "one", "value": "before"}
+	after := model.DynamoItem{"pk": "one", "value": "after"}
+	if !dynamoItemsSameIdentity(before, after, []string{"pk"}) {
+		t.Fatal("dynamoItemsSameIdentity() did not preserve a refreshed item with the same key")
+	}
+	if dynamoItemsSameIdentity(before, after, nil) {
+		t.Fatal("dynamoItemsSameIdentity() matched changed keyless query rows")
+	}
+	if !dynamoItemsSameIdentity(before, model.DynamoItem{"pk": "one", "value": "before"}, nil) {
+		t.Fatal("dynamoItemsSameIdentity() did not preserve an unchanged keyless query row")
+	}
+}
+
 func TestDiscoverDynamoItemColumnsPlacesKeysFirstThenSortsAttributes(t *testing.T) {
 	items := []model.DynamoItem{
 		{"SK": "two", "zeta": 1, "PK": "one"},
