@@ -418,8 +418,8 @@ func (w *mainWindow) applyConfiguredFonts(cfg *config.Config) {
 	if w.terminal != nil {
 		w.terminal.SetFont(font)
 	}
-	if w.terminalDock != nil {
-		w.terminalDock.SetFont(font)
+	for _, session := range w.terminalDockSessions {
+		session.terminal.SetFont(font)
 	}
 }
 
@@ -439,8 +439,8 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	if w.terminal != nil {
 		w.terminal.SetPalette(palette)
 	}
-	if w.terminalDock != nil {
-		w.terminalDock.SetPalette(palette)
+	for _, session := range w.terminalDockSessions {
+		session.terminal.SetPalette(palette)
 	}
 	for _, chart := range w.metricsCharts {
 		chart.SetPalette(palette)

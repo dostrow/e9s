@@ -91,11 +91,13 @@ func (w *mainWindow) setPaneZoom(target paneZoomTarget, level int) {
 		widget = w.workspacePane
 		current = w.workspaceZoom
 	case zoomTerminal:
-		if w.terminalDock == nil {
+		if len(w.terminalDockSessions) == 0 {
 			return
 		}
 		w.terminalZoom = level
-		w.terminalDock.SetFontScale(float64(level) / 100)
+		for _, session := range w.terminalDockSessions {
+			session.terminal.SetFontScale(float64(level) / 100)
+		}
 		w.setStatus(fmt.Sprintf("Terminal dock zoom: %d%%", level), false)
 		return
 	}

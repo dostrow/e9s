@@ -12,10 +12,19 @@ import (
 )
 
 func (w *mainWindow) noteAWSActivity() {
-	if w.settingsOpen || w.showingTerminal || (w.terminalDock != nil && w.terminalDock.HasFocus()) {
+	if w.settingsOpen || w.showingTerminal || w.terminalDockHasFocus() {
 		return
 	}
 	w.lastAWSActivity.Store(time.Now().UnixNano())
+}
+
+func (w *mainWindow) terminalDockHasFocus() bool {
+	for _, session := range w.terminalDockSessions {
+		if session.terminal.HasFocus() {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *mainWindow) backgroundPollingAllowed(now time.Time) bool {

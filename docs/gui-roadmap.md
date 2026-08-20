@@ -74,6 +74,17 @@ session estimate reaches its configured threshold. It defaults to one dollar;
 zero disables it. `defaults.idle_timeout` defaults to 300 seconds, while an
 explicit zero continues to mean never pause for inactivity.
 
+## Local terminal tabs
+
+The GUI-only terminal dock owns independent VTE sessions behind a scrollable
+tab strip. A new tab inherits the active OpenTofu workspace directory when one
+is selected and otherwise starts in the e9s process directory. Hiding the dock
+does not stop its shells; closing a tab does and therefore requires
+confirmation while its shell is running. Font, palette, and zoom changes apply
+to every session. `Ctrl+Shift+T` opens a tab, `Ctrl+Shift+W` closes the active
+tab, and `Ctrl+PageUp`/`Ctrl+PageDown` move between tabs. Sessions are not
+restored after the application exits.
+
 ## Shared metrics foundation
 
 - Preserve complete timestamped CloudWatch series instead of retaining only a
