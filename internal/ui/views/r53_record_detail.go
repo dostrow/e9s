@@ -7,21 +7,21 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type R53RecordDetailModel struct {
-	record    *aws.R53Record
+	record    *model.Route53Record
 	zoneName  string
 	zoneID    string
-	dnsAnswer *aws.R53DNSAnswer
+	dnsAnswer *model.Route53DNSAnswer
 	scroll    int
 	width     int
 	height    int
 }
 
-func NewR53RecordDetail(record *aws.R53Record, zoneName, zoneID string) R53RecordDetailModel {
+func NewR53RecordDetail(record *model.Route53Record, zoneName, zoneID string) R53RecordDetailModel {
 	return R53RecordDetailModel{record: record, zoneName: zoneName, zoneID: zoneID}
 }
 
@@ -133,14 +133,14 @@ func (m R53RecordDetailModel) View() string {
 	return strings.Join(visible, "\n")
 }
 
-func (m R53RecordDetailModel) SetDNSAnswer(answer *aws.R53DNSAnswer) R53RecordDetailModel {
+func (m R53RecordDetailModel) SetDNSAnswer(answer *model.Route53DNSAnswer) R53RecordDetailModel {
 	m.dnsAnswer = answer
 	return m
 }
 
-func (m R53RecordDetailModel) Record() *aws.R53Record { return m.record }
-func (m R53RecordDetailModel) ZoneName() string       { return m.zoneName }
-func (m R53RecordDetailModel) ZoneID() string         { return m.zoneID }
+func (m R53RecordDetailModel) Record() *model.Route53Record { return m.record }
+func (m R53RecordDetailModel) ZoneName() string             { return m.zoneName }
+func (m R53RecordDetailModel) ZoneID() string               { return m.zoneID }
 
 func (m R53RecordDetailModel) visibleRows() int {
 	rows := m.height - 2

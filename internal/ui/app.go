@@ -125,6 +125,7 @@ type App struct {
 	s3                         *service.S3
 	dynamoDB                   *service.DynamoDB
 	sqs                        *service.SQS
+	route53                    *service.Route53
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
@@ -271,8 +272,8 @@ type App struct {
 	tofuDir                  string
 	tofuPlanFile             string
 	r53EditZoneID            string
-	r53EditRecord            *e9saws.R53Record
-	r53EditOriginal          *e9saws.R53Record
+	r53EditRecord            *model.Route53Record
+	r53EditOriginal          *model.Route53Record
 	lambdaEditDir            string
 	lambdaEditFunc           string
 	lambdaEditZip            []byte
@@ -336,6 +337,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		s3:            service.NewS3(client),
 		dynamoDB:      service.NewDynamoDB(client),
 		sqs:           service.NewSQS(client),
+		route53:       service.NewRoute53(client),
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,
