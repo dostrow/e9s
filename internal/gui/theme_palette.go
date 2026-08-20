@@ -64,10 +64,10 @@ type appearancePreset struct {
 
 const appearanceSystem = "system"
 
-// A selected e9s preset is an explicit per-application choice, so it must win
-// over both the desktop theme and ~/.config/gtk-4.0/gtk.css. System mode still
-// derives its palette from those providers and emits no preset widget overrides.
-const appearanceStylePriority = gtk.STYLE_PROVIDER_PRIORITY_USER + 1
+// e9s-owned geometry and a selected preset must win over both the desktop
+// theme and ~/.config/gtk-4.0/gtk.css. The structural stylesheet contains no
+// fixed palette, so System mode still derives all colors from GTK.
+const e9sStylePriority = gtk.STYLE_PROVIDER_PRIORITY_USER + 1
 
 var appearancePresets = []appearancePreset{
 	{name: appearanceSystem},
@@ -428,7 +428,7 @@ func installSemanticStyles(window *mainWindow) {
 	gtk.StyleContextAddProviderForDisplay(
 		gdk.DisplayGetDefault(),
 		provider,
-		appearanceStylePriority,
+		e9sStylePriority,
 	)
 	window.window.ConnectMap(apply)
 	if settings := gtk.SettingsGetDefault(); settings != nil {

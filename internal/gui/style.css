@@ -100,6 +100,51 @@
   border-radius: 10px;
 }
 
+/* GtkNotebook otherwise draws a second framed surface inside the rounded
+ * Settings card. Keep the tab strip and content on the card's one surface. */
+.e9s-settings-page notebook.e9s-settings-notebook,
+.e9s-settings-page notebook.e9s-settings-notebook > header,
+.e9s-settings-page notebook.e9s-settings-notebook > header > tabs,
+.e9s-settings-page notebook.e9s-settings-notebook > stack {
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+.e9s-settings-page notebook.e9s-settings-notebook > header > tabs > tab {
+  border: 0;
+  box-shadow: none;
+}
+
+.e9s-settings-page notebook.e9s-settings-notebook > header > tabs > tab:checked {
+  box-shadow: inset 0 -2px currentColor;
+}
+
+/* Some GTK themes implement a Material ripple by allocating a large circular
+ * check node around a theme-private SVG. Keep e9s controls compact and use a
+ * standard symbolic glyph while retaining the active theme's currentColor. */
+checkbutton.e9s-check > check {
+  min-width: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid alpha(currentColor, 0.7);
+  border-radius: 3px;
+  background-image: none;
+  box-shadow: none;
+  -gtk-icon-source: none;
+}
+
+checkbutton.e9s-check:checked > check,
+checkbutton.e9s-check > check:checked {
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+
+checkbutton.e9s-check:disabled > check,
+checkbutton.e9s-check > check:disabled {
+  opacity: 0.55;
+}
+
 .settings-actions {
   border-top: 1px solid alpha(currentColor, 0.14);
   padding: 10px 12px;

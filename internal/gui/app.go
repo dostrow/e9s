@@ -300,6 +300,6 @@ func installStyles() {
 	gtk.StyleContextAddProviderForDisplay(
 		gdk.DisplayGetDefault(),
 		provider,
-		gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+		e9sStylePriority,
 	)
 }

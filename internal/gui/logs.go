@@ -658,7 +658,7 @@ func (w *mainWindow) promptLogStreams() {
 	checks := make([]*gtk.CheckButton, len(streams))
 	list := gtk.NewBox(gtk.OrientationVertical, 4)
 	for i, stream := range streams {
-		check := gtk.NewCheckButtonWithLabel(stream)
+		check := newApplicationCheckButton(stream)
 		_, hidden := w.logHiddenStreams[stream]
 		check.SetActive(!hidden)
 		checks[i] = check

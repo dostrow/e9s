@@ -136,7 +136,7 @@ func (w *mainWindow) showSettings() {
 	appearancePage := settingsPage()
 	presetSelector := gtk.NewDropDownFromStrings(appearancePresetLabels())
 	presetSelector.SetSelected(uint(appearancePresetIndex(cfg.GUI.Appearance.Preset)))
-	interfaceSystem := gtk.NewCheckButtonWithLabel("Use GTK interface font")
+	interfaceSystem := newApplicationCheckButton("Use GTK interface font")
 	interfaceSystem.SetActive(strings.TrimSpace(cfg.GUI.Appearance.InterfaceFont) == "")
 	interfaceFontName := cfg.GUI.Appearance.InterfaceFont
 	if strings.TrimSpace(interfaceFontName) == "" {
@@ -147,7 +147,7 @@ func (w *mainWindow) showSettings() {
 	interfaceFont.SetUseFont(true)
 	interfaceFont.SetUseSize(true)
 	interfaceFont.SetSensitive(!interfaceSystem.Active())
-	monospaceSystem := gtk.NewCheckButtonWithLabel("Use GTK monospace font")
+	monospaceSystem := newApplicationCheckButton("Use GTK monospace font")
 	monospaceSystem.SetActive(strings.TrimSpace(cfg.GUI.Appearance.MonospaceFont) == "")
 	monospaceFontName := cfg.GUI.Appearance.MonospaceFont
 	if strings.TrimSpace(monospaceFontName) == "" {
@@ -251,7 +251,7 @@ func (w *mainWindow) showSettings() {
 	notebook.AppendPage(editorPage, gtk.NewLabel("Editor & Terminal"))
 
 	safetyPage := settingsPage()
-	confirmActions := gtk.NewCheckButtonWithLabel("Require confirmation for destructive actions")
+	confirmActions := newApplicationCheckButton("Require confirmation for destructive actions")
 	confirmActions.SetActive(true)
 	confirmActions.SetSensitive(false)
 	safetyPage.Append(confirmActions)
