@@ -158,6 +158,9 @@ Manage infrastructure-as-code workspaces directly from e9s. Point at any directo
 - **Apply** — explicitly confirms and applies the exact saved plan shown in the plan browser; direct TUI apply remains interactive
 - **Init** — confirms backend/provider/module effects before running `tofu init` with `i`
 - **Save Workspaces** — bookmark directories for quick access with `W`
+- **Workspace Variables** — the GUI opens, creates, and saves `terraform.tfvars`
+  in the theme-aware built-in editor, rejects stale on-disk overwrites, and
+  invalidates any plan made from the previous variables
 - Auto-detects `tofu` vs `terraform` in PATH
 
 ## Installation

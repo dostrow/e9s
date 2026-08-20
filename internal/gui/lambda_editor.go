@@ -20,6 +20,7 @@ import (
 const (
 	editorKindTaskDefinition = "task-definition"
 	editorKindLambda         = "lambda"
+	editorKindTofuVariables  = "tofu-variables"
 	maxLambdaEditableBytes   = 2 << 20
 )
 
@@ -293,6 +294,10 @@ func (w *mainWindow) closeEditorThen(after func()) {
 		w.closeLambdaCodeEditorThen(after)
 		return
 	}
+	if w.editorKind == editorKindTofuVariables {
+		w.closeTofuVariablesEditorThen(after)
+		return
+	}
 	w.closeTaskDefinitionEditorThen(after)
 }
 
@@ -302,6 +307,15 @@ func (w *mainWindow) guardEditorNavigation(after func()) bool {
 	}
 	w.closeEditorThen(after)
 	return true
+}
+
+func (w *mainWindow) saveActiveEditor() {
+	switch w.editorKind {
+	case editorKindTaskDefinition:
+		w.confirmRegisterTaskDefinition()
+	case editorKindTofuVariables:
+		w.saveTofuVariables()
+	}
 }
 
 func (w *mainWindow) closeLambdaCodeEditor() {

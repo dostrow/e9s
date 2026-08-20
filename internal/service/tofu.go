@@ -21,6 +21,22 @@ func (s *Tofu) Workspace(ctx context.Context, dir string) (tofu.Workspace, error
 	return runner.Workspace(ctx), nil
 }
 
+func (s *Tofu) Variables(ctx context.Context, dir string) (tofu.VariablesDocument, error) {
+	document, err := tofu.ReadVariables(ctx, dir)
+	if err != nil {
+		return tofu.VariablesDocument{}, fmt.Errorf("open workspace variables: %w", err)
+	}
+	return document, nil
+}
+
+func (s *Tofu) SaveVariables(ctx context.Context, document tofu.VariablesDocument, content string) (tofu.VariablesDocument, error) {
+	saved, err := tofu.SaveVariables(ctx, document, content)
+	if err != nil {
+		return tofu.VariablesDocument{}, fmt.Errorf("save workspace variables: %w", err)
+	}
+	return saved, nil
+}
+
 func (s *Tofu) Resources(ctx context.Context, dir string) ([]tofu.Resource, error) {
 	runner, err := tofu.NewRunner(dir)
 	if err != nil {

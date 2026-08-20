@@ -10,6 +10,7 @@ func TestSourceViewLanguageDefinitionsAreAvailable(t *testing.T) {
 	initializeSourceEditor()
 	for path, want := range map[string]string{
 		"task-definition.json": "json",
+		"terraform.tfvars":     "terraform",
 		"handler.py":           "python3",
 		"index.js":             "js",
 	} {

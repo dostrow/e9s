@@ -179,6 +179,8 @@ type Route53Service interface {
 
 type TofuService interface {
 	Workspace(context.Context, string) (tofu.Workspace, error)
+	Variables(context.Context, string) (tofu.VariablesDocument, error)
+	SaveVariables(context.Context, tofu.VariablesDocument, string) (tofu.VariablesDocument, error)
 	Resources(context.Context, string) ([]tofu.Resource, error)
 	State(context.Context, string, string) (string, error)
 	Plan(context.Context, string) (*tofu.PlanResult, string, error)

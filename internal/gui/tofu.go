@@ -8,6 +8,7 @@ import (
 	"html"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -24,6 +25,9 @@ func (o Options) ConfigTofuDirs() []config.TofuDirEntry {
 
 func (w *mainWindow) openTofuModule() {
 	if w.currentPage == pageTofuWorkspaces {
+		return
+	}
+	if w.guardEditorNavigation(w.openTofuModule) {
 		return
 	}
 	w.loadTofuWorkspaces()
@@ -50,7 +54,210 @@ func (w *mainWindow) loadTofuWorkspaces() {
 }
 
 func (w *mainWindow) openSavedTofuWorkspace(saved config.TofuDirEntry) {
+	if w.guardEditorNavigation(func() { w.openSavedTofuWorkspace(saved) }) {
+		return
+	}
 	w.loadTofuResources(saved)
+}
+
+func (w *mainWindow) buildTofuVariablesEditor() gtk.Widgetter {
+	cancelButton := gtk.NewButtonWithLabel("Cancel")
+	cancelButton.ConnectClicked(w.closeTofuVariablesEditor)
+	w.tofuEditorTitle = gtk.NewLabel("terraform.tfvars editor")
+	w.tofuEditorTitle.SetXAlign(0)
+	w.tofuEditorTitle.SetHExpand(true)
+	w.tofuEditorTitle.AddCSSClass("breadcrumb")
+	w.tofuEditorSaveButton = gtk.NewButtonWithLabel("Save terraform.tfvars")
+	w.tofuEditorSaveButton.AddCSSClass("suggested-action")
+	w.tofuEditorSaveButton.ConnectClicked(w.saveTofuVariables)
+
+	toolbar := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	toolbar.AddCSSClass("log-toolbar")
+	toolbar.Append(cancelButton)
+	toolbar.Append(w.tofuEditorTitle)
+	toolbar.Append(w.tofuEditorSaveButton)
+
+	w.tofuSourceEditor = newSourceEditor(sourceDocument{Path: tofu.VariablesFilename, Language: "terraform"})
+	w.tofuSourceEditor.ConnectChanged(func() {
+		if !w.tofuEditorLoading {
+			w.tofuEditorDirty = true
+			w.tofuEditorSaveButton.SetSensitive(true)
+		}
+	})
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetChild(w.tofuSourceEditor.Widget())
+
+	pane := gtk.NewBox(gtk.OrientationVertical, 0)
+	pane.Append(toolbar)
+	pane.Append(scroll)
+	return pane
+}
+
+func (w *mainWindow) openTofuVariablesEditor() {
+	workspace, found := w.currentTofuWorkspace()
+	if !found || w.options.Tofu == nil || w.tofuActionPending || w.showingEditor {
+		return
+	}
+	w.tofuActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Opening " + tofu.VariablesFilename + " for " + workspace.Name + "…")
+	go func() {
+		document, err := w.options.Tofu.Variables(ctx, workspace.Dir)
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.requestCancel = nil
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.tofuActionPending = false
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			if w.selectedTofuWorkspace != workspace.Dir || (w.currentPage != pageTofuWorkspaces && w.currentPage != pageTofuResources && w.currentPage != pageTofuPlan) {
+				return
+			}
+			w.startTofuVariablesEditor(workspace, document)
+			w.setStatus("Editing "+tofu.VariablesFilename+" for "+workspace.Name, false)
+		})
+	}()
+}
+
+func (w *mainWindow) startTofuVariablesEditor(workspace config.TofuDirEntry, document tofu.VariablesDocument) {
+	w.discardTofuVariablesEditor()
+	w.tofuEditorDocument = document
+	w.tofuEditorWorkspace = workspace
+	w.tofuEditorReturnPage = w.currentPage
+	w.tofuEditorLoading = true
+	w.tofuSourceEditor.SetDocument(sourceDocument{Path: tofu.VariablesFilename, Language: "terraform"})
+	w.tofuSourceEditor.SetText(document.Content)
+	w.tofuEditorLoading = false
+	w.tofuEditorDirty = false
+	w.tofuEditorSaveButton.SetSensitive(false)
+	w.tofuEditorTitle.SetLabel(tofu.VariablesFilename + " editor • " + workspace.Name)
+	w.showingEditor = true
+	w.editorKind = editorKindTofuVariables
+	w.setTofuEditorBrowserSensitive(false)
+	w.detailStack.SetVisibleChildName("tofu-variables-editor")
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) saveTofuVariables() {
+	if !w.showingEditor || w.editorKind != editorKindTofuVariables || w.options.Tofu == nil || w.tofuActionPending {
+		return
+	}
+	if !w.tofuEditorDirty {
+		w.setStatus("No changes to save", false)
+		return
+	}
+	document := w.tofuEditorDocument
+	workspace := w.tofuEditorWorkspace
+	content := w.tofuSourceEditor.Text()
+	returnPage := w.tofuEditorReturnPage
+	w.tofuActionPending = true
+	w.tofuEditorSaveButton.SetSensitive(false)
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Saving " + tofu.VariablesFilename + " for " + workspace.Name + "…")
+	go func() {
+		saved, err := w.options.Tofu.SaveVariables(ctx, document, content)
+		glib.IdleAdd(func() {
+			if ctx.Err() != nil || generation != w.generation {
+				return
+			}
+			w.requestCancel = nil
+			w.spinner.Stop()
+			w.setWorkspaceBusy("", false)
+			w.tofuActionPending = false
+			w.tofuEditorSaveButton.SetSensitive(true)
+			if err != nil {
+				w.updateActionSensitivity()
+				w.setStatus(err.Error(), true)
+				return
+			}
+			w.tofuEditorDocument = saved
+			w.tofuEditorDirty = false
+			w.closeTofuVariablesEditorNow()
+			message := "Saved " + tofu.VariablesFilename + " for " + workspace.Name
+			if returnPage == pageTofuPlan {
+				w.restoreTofuResourcesFromPlan()
+				message += "; discarded the plan generated from the previous variables"
+			}
+			w.lastSuccessfulLoad = time.Now()
+			w.updateActionSensitivity()
+			w.setStatus(message, false)
+		})
+	}()
+}
+
+func (w *mainWindow) closeTofuVariablesEditor() {
+	w.closeTofuVariablesEditorThen(nil)
+}
+
+func (w *mainWindow) closeTofuVariablesEditorThen(after func()) {
+	if !w.showingEditor || w.editorKind != editorKindTofuVariables {
+		if after != nil {
+			after()
+		}
+		return
+	}
+	if !w.tofuEditorDirty {
+		w.closeTofuVariablesEditorNow()
+		if after != nil {
+			after()
+		}
+		return
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsYesNo)
+	dialog.SetTitle("Discard terraform.tfvars changes")
+	dialog.SetMarkup("Discard the unsaved edits to <b>" + html.EscapeString(tofu.VariablesFilename) + "</b>?")
+	dialog.SetDestroyWithParent(true)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseYes) {
+			w.closeTofuVariablesEditorNow()
+			if after != nil {
+				after()
+			}
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) closeTofuVariablesEditorNow() {
+	w.showingEditor = false
+	w.editorKind = ""
+	w.setTofuEditorBrowserSensitive(true)
+	w.discardTofuVariablesEditor()
+	w.detailStack.SetVisibleChildName("detail")
+	w.updateActionSensitivity()
+}
+
+func (w *mainWindow) discardTofuVariablesEditor() {
+	w.tofuEditorDocument = tofu.VariablesDocument{}
+	w.tofuEditorWorkspace = config.TofuDirEntry{}
+	w.tofuEditorReturnPage = ""
+	w.tofuEditorLoading = false
+	w.tofuEditorDirty = false
+}
+
+func (w *mainWindow) setTofuEditorBrowserSensitive(sensitive bool) {
+	if w.search != nil && w.currentPage != pageModulePicker {
+		w.search.SetSensitive(sensitive)
+	}
+	if w.currentPage == pageTofuPlan && w.tofuPlanTable != nil {
+		w.tofuPlanTable.view.SetSensitive(sensitive)
+	}
+	if w.currentPage == pageTofuResources && w.tofuResourceTable != nil {
+		w.tofuResourceTable.view.SetSensitive(sensitive)
+	}
+	if w.currentPage == pageTofuWorkspaces && w.tofuWorkspaceTable != nil {
+		w.tofuWorkspaceTable.view.SetSensitive(sensitive)
+	}
 }
 
 func (w *mainWindow) clearTofuWorkspaces() {

@@ -648,6 +648,13 @@ state resources filter locally and load full state in the Workspace. Planning is
 a native snapshot view with a change table, summary counts, and untruncated
 attribute diffs.
 
+An opened workspace can load or create `terraform.tfvars` in the same
+theme-aware GtkSourceView editor used elsewhere in the GUI. The shared service
+limits the editable file to UTF-8 text, rejects symlinks and stale snapshots,
+and performs a same-directory atomic replacement. New files use owner-only
+permissions; existing file permissions are preserved. Saving variables also
+removes any reviewed plan created from the previous inputs.
+
 Init and apply require explicit review. Apply is only available for a non-empty
 saved plan and submits that exact artifact. Full builds stream operations through
 the theme-derived embedded terminal while refresh and conflicting actions pause;

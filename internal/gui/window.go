@@ -396,6 +396,7 @@ type mainWindow struct {
 	route53DeleteButton         *gtk.Button
 	tofuAddWorkspaceButton      *gtk.Button
 	tofuManageWorkspacesButton  *gtk.Button
+	tofuVariablesButton         *gtk.Button
 	tofuPlanButton              *gtk.Button
 	tofuInitButton              *gtk.Button
 	tofuApplyButton             *gtk.Button
@@ -551,6 +552,14 @@ type mainWindow struct {
 	lambdaEditorFunction        string
 	lambdaEditorLoading         bool
 	lambdaEditorDirty           bool
+	tofuSourceEditor            *sourceEditor
+	tofuEditorTitle             *gtk.Label
+	tofuEditorSaveButton        *gtk.Button
+	tofuEditorDocument          tofu.VariablesDocument
+	tofuEditorWorkspace         config.TofuDirEntry
+	tofuEditorReturnPage        string
+	tofuEditorLoading           bool
+	tofuEditorDirty             bool
 	terminal                    *vteTerminal
 	terminalTitle               *gtk.Label
 	terminalTask                model.Task
@@ -1060,6 +1069,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.tofuAddWorkspaceButton.ConnectClicked(w.promptAddTofuWorkspace)
 	w.tofuManageWorkspacesButton = gtk.NewButtonWithLabel("Manage saved…")
 	w.tofuManageWorkspacesButton.ConnectClicked(w.promptManageTofuWorkspaces)
+	w.tofuVariablesButton = gtk.NewButtonWithLabel("Edit terraform.tfvars")
+	w.tofuVariablesButton.ConnectClicked(w.openTofuVariablesEditor)
 	w.tofuPlanButton = gtk.NewButtonWithLabel("Plan")
 	w.tofuPlanButton.ConnectClicked(w.runTofuPlan)
 	w.tofuInitButton = gtk.NewButtonWithLabel("Init…")
@@ -1180,6 +1191,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.route53DeleteButton)
 	header.Append(w.tofuAddWorkspaceButton)
 	header.Append(w.tofuManageWorkspacesButton)
+	header.Append(w.tofuVariablesButton)
 	header.Append(w.tofuPlanButton)
 	header.Append(w.tofuInitButton)
 	header.Append(w.tofuApplyButton)
@@ -1634,6 +1646,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.detailStack.AddNamed(w.buildTaskDefinitionPane(), "task-definition")
 	w.detailStack.AddNamed(w.buildTaskDefinitionEditor(), "editor")
 	w.detailStack.AddNamed(w.buildLambdaCodeEditor(), "lambda-editor")
+	w.detailStack.AddNamed(w.buildTofuVariablesEditor(), "tofu-variables-editor")
 	w.detailStack.AddNamed(w.buildTerminalPane(), "terminal")
 	w.detailStack.SetVisibleChildName("detail")
 	w.workspaceBusySpinner = gtk.NewSpinner()
@@ -1742,10 +1755,10 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			return
 		}
 		if w.showingEditor {
-			w.setStatus("Close the task-definition editor before opening help", false)
+			w.setStatus("Close the editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Register edited revision\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", nil, w.openServiceLogs)
@@ -1758,7 +1771,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "task-definition-env", nil, w.openTaskDefinitionEnvironment)
 	w.addAction(app, "task-definition-diff", nil, w.openTaskDefinitionDiff)
 	w.addAction(app, "task-definition-edit", []string{"<Control>e"}, w.openTaskDefinitionEditor)
-	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.confirmRegisterTaskDefinition)
+	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.saveActiveEditor)
 	w.addAction(app, "ecs-exec", []string{"<Control><Shift>e"}, w.openExec)
 	w.addAction(app, "toggle-logs", []string{"<Control>space"}, w.toggleLogFollow)
 	w.addAction(app, "log-timestamps", nil, func() {
@@ -2109,6 +2122,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.editorDirty = false
 	w.editorKind = ""
 	w.discardLambdaEditor()
+	w.discardTofuVariablesEditor()
 	if w.detailToolbar != nil {
 		w.detailToolbar.SetVisible(false)
 	}
@@ -3819,19 +3833,22 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.route53DeleteButton.SetSensitive(deleteRoute53Record && route53Ready)
 	tofuPage := w.currentPage == pageTofuWorkspaces || w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan
 	w.tofuAddWorkspaceButton.SetVisible(tofuPage)
-	w.tofuAddWorkspaceButton.SetSensitive(tofuPage && w.options.Config != nil && !w.tofuActionPending)
+	w.tofuAddWorkspaceButton.SetSensitive(tofuPage && w.options.Config != nil && !w.tofuActionPending && !w.showingEditor)
 	hasTofuWorkspaces := w.options.Config != nil && len(w.options.Config.TofuDirs) > 0
 	w.tofuManageWorkspacesButton.SetVisible(tofuPage && hasTofuWorkspaces)
-	w.tofuManageWorkspacesButton.SetSensitive(tofuPage && hasTofuWorkspaces && !w.tofuActionPending)
+	w.tofuManageWorkspacesButton.SetSensitive(tofuPage && hasTofuWorkspaces && !w.tofuActionPending && !w.showingEditor)
+	tofuWorkspaceOpen := tofuPage && w.selectedTofuWorkspace != ""
+	w.tofuVariablesButton.SetVisible(tofuWorkspaceOpen && !w.showingEditor)
+	w.tofuVariablesButton.SetSensitive(tofuWorkspaceOpen && w.options.Tofu != nil && !w.tofuActionPending && !w.showingEditor)
 	tofuCanPlan := (w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan) && w.selectedTofuWorkspace != "" && w.options.Tofu != nil
 	w.tofuPlanButton.SetVisible(w.currentPage == pageTofuResources || w.currentPage == pageTofuPlan)
-	w.tofuPlanButton.SetSensitive(tofuCanPlan && !w.tofuActionPending)
+	w.tofuPlanButton.SetSensitive(tofuCanPlan && !w.tofuActionPending && !w.showingEditor)
 	tofuCanInit := w.currentPage == pageTofuResources && w.selectedTofuWorkspace != "" && w.options.Tofu != nil
 	w.tofuInitButton.SetVisible(w.currentPage == pageTofuResources)
-	w.tofuInitButton.SetSensitive(tofuCanInit && !w.tofuActionPending)
+	w.tofuInitButton.SetSensitive(tofuCanInit && !w.tofuActionPending && !w.showingEditor)
 	tofuCanApply := w.currentPage == pageTofuPlan && w.tofuPlan != nil && len(w.tofuPlan.Changes) > 0 && w.tofuPlanFile != "" && w.options.Tofu != nil
 	w.tofuApplyButton.SetVisible(w.currentPage == pageTofuPlan && w.tofuPlan != nil && len(w.tofuPlan.Changes) > 0)
-	w.tofuApplyButton.SetSensitive(tofuCanApply && !w.tofuActionPending)
+	w.tofuApplyButton.SetSensitive(tofuCanApply && !w.tofuActionPending && !w.showingEditor)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""

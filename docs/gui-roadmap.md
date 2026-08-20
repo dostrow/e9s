@@ -757,6 +757,9 @@ when available and falls back to `terraform`.
 
 ### Phase 4: guarded operations
 
+- Open or create the active workspace's `terraform.tfvars` in the theme-aware
+  source editor. Save atomically, preserve existing permissions, reject stale
+  on-disk changes, and discard plans whose inputs changed.
 - Explain init's provider, module, backend, and lock-file effects before launch.
 - Apply only the exact reviewed saved plan from the plan view, after a destructive
   confirmation that includes the plan summary.

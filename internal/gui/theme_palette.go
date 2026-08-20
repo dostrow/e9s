@@ -138,6 +138,7 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	}
 	w.taskDefinitionSourceEditor.ApplyPalette(palette)
 	w.lambdaSourceEditor.ApplyPalette(palette)
+	w.tofuSourceEditor.ApplyPalette(palette)
 	if w.terminal != nil {
 		w.terminal.SetPalette(palette)
 	}

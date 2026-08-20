@@ -401,7 +401,12 @@ memory than a cached rebuild.
 70. Run Plan and verify the Workspace pending indicator, disabled controls,
     native change table, full attribute diffs, no-change state, and plan snapshot
     refresh behavior. Navigate away and confirm the temporary plan is removed.
-71. Confirm Init describes provider/module/backend and lock-file effects. Apply a
+71. Open `terraform.tfvars` from an active workspace, verify Terraform syntax
+    highlighting follows the GTK theme, edit and save it, and confirm a missing
+    file is created with owner-only permissions. Modify it externally while the
+    editor is open and confirm Save refuses the stale overwrite. Open it from a
+    plan, save a change, and confirm the old plan is discarded.
+72. Confirm Init describes provider/module/backend and lock-file effects. Apply a
     disposable reviewed plan and verify only that saved plan is used, output
     streams in the embedded terminal, refresh pauses, cancellation works, and a
     successful close returns to refreshed state. Repeat without the `vte` tag and
