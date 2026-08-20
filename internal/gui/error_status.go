@@ -23,6 +23,7 @@ const (
 	moduleRDS              = "rds"
 	moduleS3               = "s3"
 	moduleDynamoDB         = "dynamodb"
+	moduleSQS              = "sqs"
 )
 
 func compactStatusMessage(message string) string {
@@ -60,6 +61,8 @@ func moduleForPage(page string) string {
 		return moduleS3
 	case pageDynamoTables, pageDynamoItems:
 		return moduleDynamoDB
+	case pageSQSQueues, pageSQSMessages:
+		return moduleSQS
 	default:
 		return ""
 	}

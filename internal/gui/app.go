@@ -158,6 +158,15 @@ type DynamoDBService interface {
 	PutItem(context.Context, model.DynamoPutRequest) error
 }
 
+type SQSService interface {
+	Queues(context.Context, string) ([]model.SQSQueue, error)
+	Queue(context.Context, string) (*model.SQSQueueStats, error)
+	Messages(context.Context, model.SQSReceiveRequest) ([]model.SQSMessage, error)
+	ResolveQueueURL(context.Context, string) (string, error)
+	DeleteMessage(context.Context, string, string) error
+	SendMessage(context.Context, model.SQSSendRequest) (string, error)
+}
+
 type Options struct {
 	ECS             ECSService
 	Logs            LogService
@@ -174,6 +183,7 @@ type Options struct {
 	RDS             RDSService
 	S3              S3Service
 	DynamoDB        DynamoDBService
+	SQS             SQSService
 	Config          *config.Config
 	ReloadConfig    func() config.Config
 	DefaultCluster  string

@@ -52,6 +52,8 @@ const (
 	pageS3Objects         = "s3-objects"
 	pageDynamoTables      = "dynamodb-tables"
 	pageDynamoItems       = "dynamodb-items"
+	pageSQSQueues         = "sqs-queues"
+	pageSQSMessages       = "sqs-messages"
 	pageModulePicker      = "module-picker"
 
 	detailIntro            = "intro"
@@ -84,6 +86,8 @@ const (
 	detailS3Object         = "s3-object"
 	detailDynamoTable      = "dynamodb-table"
 	detailDynamoItem       = "dynamodb-item"
+	detailSQSQueue         = "sqs-queue"
+	detailSQSMessage       = "sqs-message"
 )
 
 type mainWindow struct {
@@ -238,6 +242,15 @@ type mainWindow struct {
 	activeSavedDynamoTable      string
 	activeSavedDynamoQuery      string
 	dynamoActionPending         bool
+	allSQSQueues                []model.SQSQueue
+	filteredSQSQueues           []model.SQSQueue
+	selectedSQSQueue            string
+	sqsQueueStats               *model.SQSQueueStats
+	activeSavedSQSQueue         string
+	allSQSMessages              []model.SQSMessage
+	filteredSQSMessages         []model.SQSMessage
+	selectedSQSMessage          string
+	sqsActionPending            bool
 	selectedTaskDefinition      *model.TaskDefSummary
 	standaloneReturnPage        string
 	standaloneReturnService     string
@@ -273,6 +286,8 @@ type mainWindow struct {
 	s3ObjectTable               *stringTable
 	dynamoTable                 *stringTable
 	dynamoItemTable             *stringTable
+	sqsQueueTable               *stringTable
+	sqsMessageTable             *stringTable
 	resourceStack               *gtk.Stack
 	search                      *gtk.SearchEntry
 	backButton                  *gtk.Button
@@ -290,6 +305,7 @@ type mainWindow struct {
 	rdsModuleItems              *gtk.Box
 	s3ModuleItems               *gtk.Box
 	dynamoModuleItems           *gtk.Box
+	sqsModuleItems              *gtk.Box
 	moduleErrorGlyphs           map[string]*gtk.Image
 	moduleSections              []moduleRailSection
 	modulePickerOpen            bool
@@ -322,6 +338,9 @@ type mainWindow struct {
 	savedDynamoTableButtons     []*gtk.ToggleButton
 	savedDynamoQueriesLabel     *gtk.Label
 	savedDynamoQueryButtons     []*gtk.ToggleButton
+	sqsQueuesNavButton          *gtk.ToggleButton
+	savedSQSQueuesLabel         *gtk.Label
+	savedSQSQueueButtons        []*gtk.ToggleButton
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -385,6 +404,8 @@ type mainWindow struct {
 	dynamoLoadMoreButton        *gtk.Button
 	dynamoEditButton            *gtk.Button
 	dynamoCloneButton           *gtk.Button
+	sqsSaveQueueButton          *gtk.Button
+	sqsManageSavedButton        *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
 	standaloneButton            *gtk.Button
@@ -688,6 +709,12 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.dynamoItemTable = newStringTable([]columnSpec{
 		{title: "ITEM", field: 0, expand: true},
 	})
+	w.sqsQueueTable = newStringTable([]columnSpec{
+		{title: "QUEUE", field: 0, expand: true}, {title: "URL", field: 1, expand: true},
+	})
+	w.sqsMessageTable = newStringTable([]columnSpec{
+		{title: "MESSAGE ID", field: 0}, {title: "BODY PREVIEW", field: 1, expand: true},
+	})
 	w.clusterTable.view.ConnectActivate(w.openClusterAt)
 	w.serviceTable.view.ConnectActivate(w.openServiceAt)
 	w.taskTable.view.ConnectActivate(w.openTaskAt)
@@ -717,6 +744,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
 	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
 	w.dynamoItemTable.view.ConnectActivate(w.openDynamoItemAt)
+	w.sqsQueueTable.view.ConnectActivate(w.openSQSQueueAt)
 	w.clusterTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectClusterRow() })
 	w.logGroupTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectLogGroupRow() })
 	w.serviceTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectServiceRow() })
@@ -745,6 +773,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
 	w.dynamoItemTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoItemRow() })
+	w.sqsQueueTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQSQueueRow() })
 
 	w.window = gtk.NewApplicationWindow(app)
 	w.window.SetTitle("e9s")
@@ -905,6 +934,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.dynamoEditButton.ConnectClicked(w.promptDynamoFieldEdit)
 	w.dynamoCloneButton = gtk.NewButtonWithLabel("Clone item…")
 	w.dynamoCloneButton.ConnectClicked(w.promptDynamoClone)
+	w.sqsSaveQueueButton = gtk.NewButtonWithLabel("Save queue…")
+	w.sqsSaveQueueButton.ConnectClicked(w.promptSaveSQSQueue)
+	w.sqsManageSavedButton = gtk.NewButtonWithLabel("Manage saved…")
+	w.sqsManageSavedButton.ConnectClicked(w.promptManageSQSQueues)
 	w.standaloneButton = gtk.NewButtonWithLabel("Standalone")
 	w.standaloneButton.SetSensitive(false)
 	w.standaloneButton.ConnectClicked(w.toggleStandaloneTasks)
@@ -1004,6 +1037,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.dynamoLoadMoreButton)
 	header.Append(w.dynamoEditButton)
 	header.Append(w.dynamoCloneButton)
+	header.Append(w.sqsSaveQueueButton)
+	header.Append(w.sqsManageSavedButton)
 	header.Append(w.scaleButton)
 	header.Append(w.stopTaskButton)
 	header.Append(w.deployButton)
@@ -1083,6 +1118,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.dynamoModuleItems.Append(w.dynamoTablesNavButton)
 	w.rebuildDynamoRail()
 	dynamoDB := w.newModuleExpander("DynamoDB", moduleDynamoDB, w.dynamoModuleItems)
+	w.sqsQueuesNavButton = newModuleRailButton("Queues", w.openSQSModule)
+	w.sqsQueuesNavButton.SetGroup(w.clustersNavButton)
+	w.sqsModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.sqsModuleItems.AddCSSClass("module-subitems")
+	w.sqsModuleItems.Append(w.sqsQueuesNavButton)
+	w.rebuildSQSRail()
+	sqsQueues := w.newModuleExpander("SQS", moduleSQS, w.sqsModuleItems)
 	w.logGroupsNavButton = newModuleRailButton("Log groups", w.openLogGroupsModule)
 	w.logGroupsNavButton.SetGroup(w.clustersNavButton)
 	w.cloudWatchModuleItems = gtk.NewBox(gtk.OrientationVertical, 2)
@@ -1142,6 +1184,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleRDS, name: "RDS", defaultItem: "Clusters", aliases: []string{"rds", "database", "databases"}, expander: rdsInstances, activate: w.openRDSClustersModule},
 		{key: moduleS3, name: "S3", defaultItem: "Buckets", aliases: []string{"s3", "object storage", "buckets"}, expander: s3Buckets, activate: w.openS3Module},
 		{key: moduleDynamoDB, name: "DynamoDB", defaultItem: "Tables", aliases: []string{"dynamodb", "ddb", "tables"}, expander: dynamoDB, activate: w.openDynamoDBModule},
+		{key: moduleSQS, name: "SQS", defaultItem: "Queues", aliases: []string{"sqs", "queue", "queues"}, expander: sqsQueues, activate: w.openSQSModule},
 		{key: moduleECS, name: "ECS", defaultItem: "Clusters", aliases: []string{"ecs"}, expander: ecs, activate: w.loadClusters},
 		{key: moduleCloudWatchLogs, name: "CloudWatch Logs", defaultItem: "Log groups", aliases: []string{"cwl", "cw", "cloudwatch-logs", "cloudwatch logs", "cloudwatch"}, expander: cloudWatch, activate: w.loadLogGroups},
 		{key: moduleCloudWatchAlarms, name: "CloudWatch Alarms", defaultItem: "All alarms", aliases: []string{"cwa", "cloudwatch-alarms", "cloudwatch alarms"}, expander: cloudWatchAlarms, activate: func() { w.loadAlarms("") }},
@@ -1303,6 +1346,14 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	dynamoItemScroll.SetVExpand(true)
 	dynamoItemScroll.SetHExpand(true)
 	dynamoItemScroll.SetChild(w.dynamoItemTable.view)
+	sqsQueueScroll := gtk.NewScrolledWindow()
+	sqsQueueScroll.SetVExpand(true)
+	sqsQueueScroll.SetHExpand(true)
+	sqsQueueScroll.SetChild(w.sqsQueueTable.view)
+	sqsMessageScroll := gtk.NewScrolledWindow()
+	sqsMessageScroll.SetVExpand(true)
+	sqsMessageScroll.SetHExpand(true)
+	sqsMessageScroll.SetChild(w.sqsMessageTable.view)
 
 	w.resourceStack = gtk.NewStack()
 	w.resourceStack.SetVExpand(true)
@@ -1342,6 +1393,8 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
 	w.resourceStack.AddNamed(dynamoTableScroll, pageDynamoTables)
 	w.resourceStack.AddNamed(dynamoItemScroll, pageDynamoItems)
+	w.resourceStack.AddNamed(sqsQueueScroll, pageSQSQueues)
+	w.resourceStack.AddNamed(sqsMessageScroll, pageSQSMessages)
 	savedLogScope := gtk.NewLabel("Saved CloudWatch Logs destination")
 	savedLogScope.SetXAlign(0)
 	savedLogScope.SetYAlign(0)
@@ -1849,6 +1902,7 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.rdsDetail = nil
 	w.s3DownloadPending = false
 	w.dynamoActionPending = false
+	w.sqsActionPending = false
 	w.ec2ViewMode = ""
 	w.ec2ActionPending = false
 	w.ec2SecurityGroupDetail = nil
@@ -2360,6 +2414,10 @@ func (w *mainWindow) applyFilter() {
 	if w.currentPage == pageModulePicker {
 		return
 	}
+	if w.currentPage == pageSQSQueues {
+		w.applySQSQueueFilter()
+		return
+	}
 	if w.currentPage == pageS3Buckets {
 		w.applyS3BucketFilter()
 		return
@@ -2728,6 +2786,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 		if foreground {
 			w.showModulePicker()
 		}
+		return
+	}
+	if w.currentPage == pageSQSQueues {
+		w.refreshSQSQueues(foreground)
 		return
 	}
 	if w.currentPage == pageECRRepositories || w.currentPage == pageECRImages || w.currentPage == pageECRFindings {
@@ -3239,6 +3301,15 @@ func (w *mainWindow) updateActionSensitivity() {
 				}
 			}
 		}
+		if w.sqsQueuesNavButton != nil {
+			sqsPage := w.currentPage == pageSQSQueues || w.currentPage == pageSQSMessages
+			w.sqsQueuesNavButton.SetActive(sqsPage && w.activeSavedSQSQueue == "")
+			for i, saved := range w.options.ConfigSQSQueues() {
+				if i < len(w.savedSQSQueueButtons) {
+					w.savedSQSQueueButtons[i].SetActive(sqsPage && saved.Name == w.activeSavedSQSQueue)
+				}
+			}
+		}
 	}
 	w.runTaskButton.SetVisible(standalonePage)
 	w.runTaskButton.SetSensitive(standalonePage)
@@ -3452,6 +3523,14 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.dynamoEditButton.SetSensitive(dynamoItemMutable && dynamoReady)
 	w.dynamoCloneButton.SetVisible(dynamoItemMutable)
 	w.dynamoCloneButton.SetSensitive(dynamoItemMutable && dynamoReady)
+	sqsPage := w.currentPage == pageSQSQueues || w.currentPage == pageSQSMessages
+	_, sqsQueueSelected := findSQSQueue(w.allSQSQueues, w.selectedSQSQueue)
+	sqsReady := w.options.SQS != nil && !w.sqsActionPending
+	w.sqsSaveQueueButton.SetVisible(w.currentPage == pageSQSQueues && sqsQueueSelected && w.activeSavedSQSQueue == "")
+	w.sqsSaveQueueButton.SetSensitive(w.currentPage == pageSQSQueues && sqsQueueSelected && w.activeSavedSQSQueue == "" && w.options.Config != nil && sqsReady)
+	hasSavedSQSQueues := w.options.Config != nil && len(w.options.Config.SQSQueues) > 0
+	w.sqsManageSavedButton.SetVisible(sqsPage && hasSavedSQSQueues)
+	w.sqsManageSavedButton.SetSensitive(sqsPage && hasSavedSQSQueues && sqsReady)
 	ec2Page := w.currentPage == pageEC2Instances
 	ec2Ready := ec2Page && w.ec2Detail != nil && w.ec2Detail.InstanceID == w.selectedEC2Instance
 	ec2State := ""
