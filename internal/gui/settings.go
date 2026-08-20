@@ -112,6 +112,7 @@ func (w *mainWindow) showSettings() {
 	page.SetHExpand(true)
 	page.SetVExpand(true)
 	notebook := gtk.NewNotebook()
+	notebook.AddCSSClass("e9s-settings-notebook")
 	notebook.SetHExpand(true)
 	notebook.SetVExpand(true)
 	page.Append(notebook)

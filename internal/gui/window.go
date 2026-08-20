@@ -431,6 +431,7 @@ type mainWindow struct {
 	semanticStyleProvider       *gtk.CSSProvider
 	semanticPalette             semanticPalette
 	semanticPaletteReady        bool
+	semanticDrawingAreas        []*gtk.DrawingArea
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -2200,6 +2201,7 @@ func (w *mainWindow) setBreadcrumb(text string) {
 
 func (w *mainWindow) newBreadcrumbArea() *gtk.DrawingArea {
 	area := gtk.NewDrawingArea()
+	w.semanticDrawingAreas = append(w.semanticDrawingAreas, area)
 	area.SetHExpand(true)
 	area.AddCSSClass("breadcrumb")
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {

@@ -48,8 +48,11 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 		`.e9s-root button.module-subitem`,
 		`.e9s-root .e9s-settings-page`,
 		`.e9s-root checkbutton check`,
-		`.e9s-root searchentry image`,
+		`.e9s-root entry.resource-search image`,
 		`.e9s-root scrollbar slider`,
+		`notebook.e9s-settings-notebook > header > tabs`,
+		`window dropdown > button`,
+		`window spinbutton > button`,
 		"background-color:",
 	} {
 		if !strings.Contains(css, fragment) {

@@ -105,6 +105,7 @@ func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter
 
 func (w *mainWindow) newModuleChevronArea(expanded func() bool) *gtk.DrawingArea {
 	area := gtk.NewDrawingArea()
+	w.semanticDrawingAreas = append(w.semanticDrawingAreas, area)
 	area.SetContentWidth(12)
 	area.SetContentHeight(20)
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
@@ -129,6 +130,7 @@ func (w *mainWindow) newModuleChevronArea(expanded func() bool) *gtk.DrawingArea
 
 func (w *mainWindow) newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
 	area := gtk.NewDrawingArea()
+	w.semanticDrawingAreas = append(w.semanticDrawingAreas, area)
 	area.SetHExpand(true)
 	area.SetContentWidth(1)
 	area.SetContentHeight(20)

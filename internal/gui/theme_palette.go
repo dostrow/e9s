@@ -64,6 +64,11 @@ type appearancePreset struct {
 
 const appearanceSystem = "system"
 
+// A selected e9s preset is an explicit per-application choice, so it must win
+// over both the desktop theme and ~/.config/gtk-4.0/gtk.css. System mode still
+// derives its palette from those providers and emits no preset widget overrides.
+const appearanceStylePriority = gtk.STYLE_PROVIDER_PRIORITY_USER + 1
+
 var appearancePresets = []appearancePreset{
 	{name: appearanceSystem},
 	{name: "e9s-dark", palette: paletteFromHex("#E6E6E6", "#181A1B", "#242728", "#6EA8FE", "#7EC699", "#E5C07B", "#E06C75", "#61AFEF", "#8B9195")},
@@ -182,6 +187,7 @@ func configuredAppearanceCSS(cfg *config.Config, palette semanticPalette, custom
 	if customPalette {
 		buttonBackground := blendRGBA(palette.surface, palette.foreground, 0.08)
 		buttonHoverBackground := blendRGBA(palette.surface, palette.foreground, 0.14)
+		trackBackground := blendRGBA(palette.background, palette.foreground, 0.08)
 		fmt.Fprintf(&css, `
 window { color: %s; background-color: %s; }
 window label, window image, window checkbutton, window switch,
@@ -202,6 +208,24 @@ window dropdown, window popover { color: %s; background-color: %s; }
 window button:not(.flat) { color: %s; background-color: %s; border-color: %s; }
 window button:not(.flat):hover { background-color: %s; }
 window button:not(.flat):checked, window button:not(.flat):active { background-color: alpha(%s, 0.38); }
+window dropdown > button,
+window spinbutton,
+window spinbutton > text {
+  color: %s; background-color: %s; border-color: %s;
+  background-image: none; box-shadow: none;
+}
+window dropdown > button:hover,
+window spinbutton > button:hover { background-color: %s; }
+window dropdown image,
+window spinbutton > button,
+window spinbutton > button image {
+  color: %s;
+}
+window spinbutton > button {
+  background-color: %s;
+  border-color: %s;
+  background-image: none;
+}
 window notebook > header { color: %s; background-color: %s; border-color: %s; }
 window notebook > header tab { color: %s; background-color: %s; }
 window notebook > header tab:checked { color: %s; border-color: %s; }
@@ -214,12 +238,15 @@ window checkbutton > check,
   background-image: none; box-shadow: none;
   -gtk-icon-source: none;
 }
+window checkbutton:checked > check,
 window checkbutton > check:checked,
+.e9s-settings checkbutton:checked > check,
 .e9s-settings checkbutton > check:checked {
   color: %s; background-color: %s; border-color: %s;
   -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
 }
 window checkbutton:disabled > check,
+window checkbutton > check:disabled,
 .e9s-settings checkbutton:disabled > check { opacity: 0.55; }
 window switch, .e9s-settings switch {
   min-width: 38px; min-height: 20px;
@@ -240,6 +267,8 @@ window .e9s-table > header > button { color: %s; background-color: %s; }
 			palette.foreground.String(), palette.surface.String(),
 			palette.foreground.String(), buttonBackground.String(), palette.muted.String(),
 			buttonHoverBackground.String(), palette.accent.String(),
+			palette.foreground.String(), palette.surface.String(), palette.muted.String(),
+			buttonHoverBackground.String(), palette.foreground.String(), buttonBackground.String(), palette.muted.String(),
 			palette.foreground.String(), palette.background.String(), palette.muted.String(),
 			palette.muted.String(), palette.background.String(), palette.accent.String(), palette.accent.String(),
 			palette.foreground.String(), palette.surface.String(), palette.muted.String(),
@@ -283,14 +312,29 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
 		fmt.Fprintf(&css, `
 .e9s-root .e9s-settings-page,
 .e9s-root .e9s-settings-page notebook,
-.e9s-root .e9s-settings-page notebook > header,
-.e9s-root .e9s-settings-page notebook > stack,
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > header,
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > stack,
 .e9s-root .settings-actions {
   color: %s;
   background-color: %s;
 }
-.e9s-root .e9s-settings-page notebook > header {
-  border-color: %s;
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook,
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > header,
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > header > tabs,
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > stack {
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > header > tabs > tab {
+  color: %s;
+  background-color: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.e9s-root .e9s-settings-page notebook.e9s-settings-notebook > header > tabs > tab:checked {
+  color: %s;
+  box-shadow: inset 0 -2px %s;
 }
 .e9s-root checkbutton check {
   min-width: 14px; min-height: 14px;
@@ -301,20 +345,31 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
   -gtk-icon-shadow: none;
   -gtk-icon-source: none;
 }
+.e9s-root checkbutton:checked check,
 .e9s-root checkbutton check:checked {
   color: %s; background-color: %s; border-color: %s;
   -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
 }
-.e9s-root checkbutton:disabled check { opacity: 0.55; }
-.e9s-root searchentry,
-.e9s-root searchentry > text,
-.e9s-root searchentry image {
+.e9s-root checkbutton:disabled check,
+.e9s-root checkbutton check:disabled { opacity: 0.55; }
+.e9s-root entry.resource-search,
+.e9s-root entry.resource-search > text,
+.e9s-root entry.resource-search image,
+.e9s-root .resource-search,
+.e9s-root .resource-search > text,
+.e9s-root .resource-search image {
   color: %s;
   background-color: %s;
   border-color: %s;
+  background-image: none;
+  box-shadow: none;
 }
-.e9s-root searchentry placeholder { color: %s; }
-.e9s-root scrollbar { background-color: %s; }
+.e9s-root entry.resource-search:focus,
+.e9s-root .resource-search:focus { border-color: %s; }
+.e9s-root entry.resource-search placeholder,
+.e9s-root .resource-search placeholder { color: %s; }
+.e9s-root scrollbar,
+.e9s-root scrollbar trough { background-color: %s; }
 .e9s-root scrollbar slider {
   min-width: 8px; min-height: 8px;
   background-color: alpha(%s, 0.65);
@@ -327,10 +382,11 @@ window button.flat:checked, window button.flat:active { background-color: alpha(
   min-width: 0; min-height: 0; opacity: 0;
 }
 `, palette.foreground.String(), palette.background.String(), palette.muted.String(),
+			palette.accent.String(), palette.accent.String(),
 			palette.foreground.String(), palette.surface.String(), palette.muted.String(),
 			palette.background.String(), palette.accent.String(), palette.accent.String(),
-			palette.foreground.String(), palette.surface.String(), palette.muted.String(), palette.muted.String(),
-			palette.background.String(), palette.muted.String(), palette.foreground.String())
+			palette.foreground.String(), palette.surface.String(), palette.muted.String(), palette.accent.String(), palette.muted.String(),
+			trackBackground.String(), palette.muted.String(), palette.foreground.String())
 	}
 	if cfg == nil {
 		return css.String()
@@ -369,7 +425,7 @@ func installSemanticStyles(window *mainWindow) {
 	gtk.StyleContextAddProviderForDisplay(
 		gdk.DisplayGetDefault(),
 		provider,
-		gtk.STYLE_PROVIDER_PRIORITY_APPLICATION+1,
+		appearanceStylePriority,
 	)
 	window.window.ConnectMap(apply)
 	if settings := gtk.SettingsGetDefault(); settings != nil {
@@ -387,6 +443,10 @@ func (w *mainWindow) refreshConfiguredAppearance() {
 }
 
 func (w *mainWindow) applyAppearanceConfig(cfg *config.Config) {
+	// Remove the previous preset before asking GTK for its native colors. If the
+	// user switches back to System, leaving the old provider populated here
+	// causes StyleContext to report the preset we are trying to discard.
+	w.semanticStyleProvider.LoadFromString("")
 	palette := semanticPaletteFromStyle(w.window.StyleContext())
 	custom := false
 	if cfg != nil {
@@ -400,6 +460,9 @@ func (w *mainWindow) applyAppearanceConfig(cfg *config.Config) {
 	w.semanticStyleProvider.LoadFromString(configuredAppearanceCSS(cfg, palette, custom) + semanticStyleCSS(palette))
 	w.applySemanticPalette(palette)
 	w.applyConfiguredFonts(cfg)
+	for _, area := range w.semanticDrawingAreas {
+		area.QueueDraw()
+	}
 	w.window.QueueDraw()
 }
 
