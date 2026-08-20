@@ -33,6 +33,8 @@ type metricChart struct {
 	onExpand     func()
 	expanded     bool
 	utc          bool
+	palette      semanticPalette
+	paletteSet   bool
 }
 
 func newMetricChart(title, unit string, minZero bool, maxHint float64) *metricChart {
@@ -82,6 +84,12 @@ func (c *metricChart) SetUTC(utc bool) {
 	c.area.QueueDraw()
 }
 
+func (c *metricChart) SetPalette(palette semanticPalette) {
+	c.palette = palette
+	c.paletteSet = true
+	c.area.QueueDraw()
+}
+
 func (c *metricChart) SetExpanded(expanded bool) {
 	c.expanded = expanded
 	c.expandButton.SetVisible(!expanded)
@@ -128,7 +136,10 @@ func (c *metricChart) draw(area *gtk.DrawingArea, cr *cairo.Context, width, heig
 		return
 	}
 	style := area.StyleContext()
-	palette := semanticPaletteFromStyle(style)
+	palette := c.palette
+	if !c.paletteSet {
+		palette = semanticPaletteFromStyle(style)
+	}
 	foreground := palette.foreground
 	background := palette.surface
 	seriesColors := metricSeriesColors(palette)

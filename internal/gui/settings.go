@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"gopkg.in/yaml.v3"
@@ -245,7 +246,7 @@ func (w *mainWindow) showSettings() {
 	advancedPage.Append(settingsNote("Configuration: " + config.Path()))
 	advancedEditor := newSourceEditor(sourceDocument{Path: "config.yaml", Language: "yaml"})
 	advancedEditor.SetText(string(raw))
-	advancedEditor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	advancedEditor.ApplyPalette(w.currentSemanticPalette(w.window.StyleContext()))
 	advancedScroll := gtk.NewScrolledWindow()
 	advancedScroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
 	advancedScroll.SetMinContentHeight(360)
@@ -261,16 +262,37 @@ func (w *mainWindow) showSettings() {
 
 	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
 	dialog.AddButton("Apply", int(gtk.ResponseApply))
-	dialog.SetDefaultResponse(int(gtk.ResponseApply))
-	dialog.ConnectDestroy(func() { w.settingsDialog = nil })
-	dialog.ConnectResponse(func(response int) {
-		if response != int(gtk.ResponseApply) {
-			w.applyAppearanceConfig(&cfg)
+	dialog.AddButton("OK", int(gtk.ResponseOK))
+	dialog.SetDefaultResponse(int(gtk.ResponseOK))
+	closing := false
+	restoreAndClose := func() {
+		if closing {
+			return
+		}
+		closing = true
+		restored := cfg
+		glib.IdleAdd(func() {
 			dialog.Destroy()
+			w.applyAppearanceConfig(&restored)
+		})
+	}
+	dialog.ConnectDestroy(func() { w.settingsDialog = nil })
+	dialog.ConnectCloseRequest(func() bool {
+		restoreAndClose()
+		return true
+	})
+	dialog.ConnectResponse(func(response int) {
+		closeAfterSave := response == int(gtk.ResponseOK)
+		if response != int(gtk.ResponseApply) && !closeAfterSave {
+			restoreAndClose()
 			return
 		}
 		if advancedToggle.Active() {
-			w.reviewRawSettings(dialog, raw, []byte(advancedEditor.Text()))
+			w.reviewRawSettings(dialog, raw, []byte(advancedEditor.Text()), closeAfterSave, func(saved config.Config, savedRaw []byte) {
+				cfg = saved
+				raw = append(raw[:0], savedRaw...)
+				advancedEditor.SetText(string(savedRaw))
+			})
 			return
 		}
 
@@ -303,7 +325,15 @@ func (w *mainWindow) showSettings() {
 			return
 		}
 		w.applyRuntimeSettings(updated)
-		dialog.Destroy()
+		cfg = updated
+		if savedRaw, readErr := config.ReadRaw(); readErr == nil {
+			raw = savedRaw
+			advancedEditor.SetText(string(savedRaw))
+		}
+		if closeAfterSave {
+			closing = true
+			dialog.Destroy()
+		}
 		w.setStatus("Settings saved", false)
 	})
 	dialog.Present()
@@ -320,7 +350,7 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	w.applyAppearanceConfig(&updated)
 }
 
-func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte) {
+func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte, closeParent bool, onSaved func(config.Config, []byte)) {
 	parsed, err := config.Parse(after)
 	if err != nil {
 		w.setStatus("Invalid configuration: "+err.Error(), true)
@@ -329,6 +359,12 @@ func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte)
 	diff := configurationDiff(string(before), string(after))
 	if diff == "" {
 		w.setStatus("Configuration is unchanged", false)
+		if closeParent {
+			parent.Destroy()
+			glib.IdleAdd(func() { w.applyAppearanceConfig(&parsed) })
+		} else {
+			w.applyAppearanceConfig(&parsed)
+		}
 		return
 	}
 
@@ -372,8 +408,13 @@ func (w *mainWindow) reviewRawSettings(parent *gtk.Dialog, before, after []byte)
 			return
 		}
 		w.applyRuntimeSettings(saved)
+		if onSaved != nil {
+			onSaved(saved, after)
+		}
 		review.Destroy()
-		parent.Destroy()
+		if closeParent {
+			parent.Destroy()
+		}
 		w.setStatus("Configuration saved; previous version retained as config.yaml.bak", false)
 	})
 	review.Present()

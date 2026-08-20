@@ -404,6 +404,8 @@ type mainWindow struct {
 	terminalDockButton          *gtk.ToggleButton
 	settingsDialog              *gtk.Dialog
 	semanticStyleProvider       *gtk.CSSProvider
+	semanticPalette             semanticPalette
+	semanticPaletteReady        bool
 	savedLambdaSearchesLabel    *gtk.Label
 	savedLambdaSearchButtons    []*gtk.ToggleButton
 	activeSavedLog              string
@@ -2046,10 +2048,9 @@ func (w *mainWindow) newBreadcrumbArea() *gtk.DrawingArea {
 	area.SetHExpand(true)
 	area.AddCSSClass("breadcrumb")
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
-		style := area.StyleContext()
 		clearDrawingSurface(cr)
 
-		foreground := semanticPaletteFromStyle(style).foreground
+		foreground := w.currentSemanticPalette(area.StyleContext()).foreground
 		cr.SetSourceRGBA(
 			float64(foreground.Red()),
 			float64(foreground.Green()),

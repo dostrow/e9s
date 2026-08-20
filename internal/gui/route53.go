@@ -449,7 +449,7 @@ func (w *mainWindow) promptRoute53RecordEditor(title, initial string, original *
 	label.SetWrap(true)
 	content.Append(label)
 	editor := newSourceEditor(sourceDocument{Path: "route53-record.json", Language: "json"})
-	editor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	editor.ApplyPalette(w.currentSemanticPalette(w.window.StyleContext()))
 	editor.SetText(initial)
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetVExpand(true)

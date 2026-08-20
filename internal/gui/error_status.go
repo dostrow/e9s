@@ -85,7 +85,7 @@ func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter
 	expander := gtk.NewExpander("")
 	heading := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	heading.SetHExpand(true)
-	text := newModuleHeadingArea(label, expander.Expanded)
+	text := w.newModuleHeadingArea(label, expander.Expanded)
 	glyph := gtk.NewImageFromIconName("dialog-error-symbolic")
 	glyph.SetPixelSize(16)
 	glyph.SetTooltipText("This module has an error")
@@ -102,7 +102,7 @@ func (w *mainWindow) newModuleExpander(label, module string, child gtk.Widgetter
 	return expander
 }
 
-func newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
+func (w *mainWindow) newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
 	area := gtk.NewDrawingArea()
 	area.SetHExpand(true)
 	area.SetContentWidth(1)
@@ -110,10 +110,9 @@ func newModuleHeadingArea(label string, expanded func() bool) *gtk.DrawingArea {
 	area.SetOverflow(gtk.OverflowHidden)
 	area.AddCSSClass("module-heading-text")
 	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, width, height int) {
-		style := area.StyleContext()
 		clearDrawingSurface(cr)
 
-		foreground := semanticPaletteFromStyle(style).foreground
+		foreground := w.currentSemanticPalette(area.StyleContext()).foreground
 		cr.SetSourceRGBA(
 			float64(foreground.Red()),
 			float64(foreground.Green()),

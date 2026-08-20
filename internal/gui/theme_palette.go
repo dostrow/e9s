@@ -164,8 +164,9 @@ func rgbaHex(color gdk.RGBA) string {
 func semanticStyleCSS(palette semanticPalette) string {
 	return fmt.Sprintf(`
 .e9s-root, .e9s-root .inspector, .e9s-root .log-view { color: %s; }
-.e9s-table row:not(:selected) .table-cell { color: %s; }
-.e9s-table > header > button { color: %s; font-weight: 600; }
+.e9s-root .e9s-table row:not(:selected) .table-cell { color: %s; }
+.e9s-root .e9s-table > header > button,
+.e9s-root columnview > header > button { color: %s; font-weight: 600; }
 .saved-log-modified, .semantic-warning { color: %s; }
 .error, .semantic-error { color: %s; }
 .semantic-success { color: %s; }
@@ -179,25 +180,72 @@ func semanticStyleCSS(palette semanticPalette) string {
 func configuredAppearanceCSS(cfg *config.Config, palette semanticPalette, customPalette bool) string {
 	var css strings.Builder
 	if customPalette {
+		buttonBackground := blendRGBA(palette.surface, palette.foreground, 0.08)
+		buttonHoverBackground := blendRGBA(palette.surface, palette.foreground, 0.14)
 		fmt.Fprintf(&css, `
+window { color: %s; background-color: %s; }
+window label, window image, window checkbutton, window switch,
+window notebook, window notebook tab, window popover,
+window entry, window searchentry, window text,
+window button, window dropdown { color: %s; }
+popover, tooltip { color: %s; background-color: %s; }
+popover label, tooltip label { color: %s; }
 .e9s-root { color: %s; background-color: %s; }
 .e9s-root .toolbar, .e9s-root .status-bar { color: %s; background-color: %s; }
 .e9s-root .pane-card, .e9s-root .pane-card > viewport,
 .e9s-root .pane-card textview, .e9s-root .pane-card listview,
 .e9s-root .pane-card columnview { color: %s; background-color: %s; }
 .e9s-root row:selected { background-color: alpha(%s, 0.38); }
-.e9s-root entry, .e9s-root button, .e9s-root dropdown { color: %s; }
-`, palette.foreground.String(), palette.background.String(), palette.foreground.String(), palette.background.String(),
-			palette.foreground.String(), palette.surface.String(), palette.accent.String(), palette.foreground.String())
+window entry, window searchentry, window searchentry > text,
+window textview, window listview, window columnview,
+window dropdown, window popover { color: %s; background-color: %s; }
+window button { color: %s; background-color: %s; border-color: %s; }
+window button:hover { background-color: %s; }
+window button:checked, window button:active { background-color: alpha(%s, 0.38); }
+window notebook > header { color: %s; background-color: %s; border-color: %s; }
+window notebook > header tab { color: %s; background-color: %s; }
+window notebook > header tab:checked { color: %s; border-color: %s; }
+window checkbutton > check {
+  min-width: 14px; min-height: 14px;
+  color: %s; background-color: %s;
+  border: 1px solid %s; border-radius: 3px;
+}
+window checkbutton > check:checked { color: %s; background-color: %s; border-color: %s; }
+window checkbutton:disabled > check { opacity: 0.55; }
+window switch {
+  min-width: 38px; min-height: 20px;
+  color: %s; background-color: %s;
+  border: 1px solid %s; border-radius: 999px;
+}
+window switch:checked { background-color: %s; border-color: %s; }
+window switch > slider {
+  min-width: 16px; min-height: 16px;
+  background-color: %s; border-radius: 999px;
+}
+window columnview > header > button,
+window .e9s-table > header > button { color: %s; background-color: %s; }
+`, palette.foreground.String(), palette.background.String(), palette.foreground.String(),
+			palette.foreground.String(), palette.surface.String(), palette.foreground.String(),
+			palette.foreground.String(), palette.background.String(), palette.foreground.String(), palette.background.String(),
+			palette.foreground.String(), palette.surface.String(), palette.accent.String(),
+			palette.foreground.String(), palette.surface.String(),
+			palette.foreground.String(), buttonBackground.String(), palette.muted.String(),
+			buttonHoverBackground.String(), palette.accent.String(),
+			palette.foreground.String(), palette.background.String(), palette.muted.String(),
+			palette.muted.String(), palette.background.String(), palette.accent.String(), palette.accent.String(),
+			palette.foreground.String(), palette.surface.String(), palette.muted.String(),
+			palette.background.String(), palette.accent.String(), palette.accent.String(),
+			palette.foreground.String(), palette.surface.String(), palette.muted.String(), palette.accent.String(), palette.accent.String(),
+			palette.foreground.String(), palette.accent.String(), buttonBackground.String())
 	}
 	if cfg == nil {
 		return css.String()
 	}
 	if font := fontDescriptionCSS(cfg.GUI.Appearance.InterfaceFont); font != "" {
-		fmt.Fprintf(&css, ".e9s-root { %s }\n", font)
+		fmt.Fprintf(&css, ".e9s-root { %s }\nwindow, popover, tooltip { %s }\n", font, font)
 	}
 	if font := fontDescriptionCSS(cfg.GUI.Appearance.MonospaceFont); font != "" {
-		fmt.Fprintf(&css, ".e9s-root .inspector, .e9s-root .log-view, .e9s-root .code-font { %s }\n", font)
+		fmt.Fprintf(&css, ".e9s-root .inspector, .e9s-root .log-view, .e9s-root .code-font, window .inspector, window .log-view, window .code-font { %s }\n", font)
 	}
 	return css.String()
 }
@@ -253,10 +301,19 @@ func (w *mainWindow) applyAppearanceConfig(cfg *config.Config) {
 			custom = true
 		}
 	}
-	w.semanticStyleProvider.LoadFromString(semanticStyleCSS(palette) + configuredAppearanceCSS(cfg, palette, custom))
+	w.semanticPalette = palette
+	w.semanticPaletteReady = true
+	w.semanticStyleProvider.LoadFromString(configuredAppearanceCSS(cfg, palette, custom) + semanticStyleCSS(palette))
 	w.applySemanticPalette(palette)
 	w.applyConfiguredFonts(cfg)
 	w.window.QueueDraw()
+}
+
+func (w *mainWindow) currentSemanticPalette(style *gtk.StyleContext) semanticPalette {
+	if w.semanticPaletteReady {
+		return w.semanticPalette
+	}
+	return semanticPaletteFromStyle(style)
 }
 
 func (w *mainWindow) applyConfiguredFonts(cfg *config.Config) {
@@ -290,6 +347,9 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	}
 	if w.terminalDock != nil {
 		w.terminalDock.SetPalette(palette)
+	}
+	for _, chart := range w.metricsCharts {
+		chart.SetPalette(palette)
 	}
 }
 

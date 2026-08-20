@@ -515,6 +515,7 @@ func (w *mainWindow) setMetricCharts(snapshot *model.MetricSnapshot, specs []met
 			continue
 		}
 		chart := newMetricChart(spec.title, spec.unit, spec.minZero, spec.maxHint)
+		chart.SetPalette(w.currentSemanticPalette(chart.area.StyleContext()))
 		chart.SetUTC(w.metricsUTCTime)
 		chart.SetData(snapshot.StartTime, snapshot.EndTime, snapshot.Series, spec.ids...)
 		chart.SetExpanded(w.metricsFocusedTitle != "")

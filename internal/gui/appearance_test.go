@@ -35,12 +35,28 @@ func TestConfiguredAppearanceCSSUsesSeparateFontRoles(t *testing.T) {
 	css := configuredAppearanceCSS(&cfg, palette, true)
 	for _, fragment := range []string{
 		`.e9s-root { font-family: "Inter"`,
+		`window, popover, tooltip { font-family: "Inter"`,
 		`.e9s-root .inspector`,
 		`font-family: "JetBrainsMono Nerd Font"`,
+		`window checkbutton > check`,
+		`window switch > slider`,
+		`window searchentry > text`,
+		`window columnview > header > button`,
 		"background-color:",
 	} {
 		if !strings.Contains(css, fragment) {
 			t.Errorf("appearance CSS is missing %q:\n%s", fragment, css)
+		}
+	}
+}
+
+func TestSystemAppearanceDoesNotRestyleGTKWindows(t *testing.T) {
+	cfg := config.DefaultConfig()
+	palette, _ := configuredPreset("gruvbox-material-dark")
+	css := configuredAppearanceCSS(&cfg, palette, false)
+	for _, fragment := range []string{"window { color:", "window button", "window checkbutton", "background-color:"} {
+		if strings.Contains(css, fragment) {
+			t.Errorf("system appearance unexpectedly contains GTK override %q:\n%s", fragment, css)
 		}
 	}
 }

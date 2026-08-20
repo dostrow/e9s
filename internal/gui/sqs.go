@@ -521,7 +521,7 @@ func (w *mainWindow) promptSQSSendTemplate(queue model.SQSQueue, initial, title 
 	label.SetWrap(true)
 	content.Append(label)
 	editor := newSourceEditor(sourceDocument{Path: "sqs-message.json", Language: "json"})
-	editor.ApplyPalette(semanticPaletteFromStyle(w.window.StyleContext()))
+	editor.ApplyPalette(w.currentSemanticPalette(w.window.StyleContext()))
 	editor.SetText(initial)
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetVExpand(true)

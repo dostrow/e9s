@@ -766,7 +766,7 @@ func (w *mainWindow) ensureLogHighlightTags() {
 		}
 	}
 	styleContext := w.logView.StyleContext()
-	palette := semanticPaletteFromStyle(styleContext)
+	palette := w.currentSemanticPalette(styleContext)
 	colors := map[model.LogHighlightStyle]gdk.RGBA{
 		model.LogHighlightInfo:    palette.info,
 		model.LogHighlightSuccess: palette.success,
