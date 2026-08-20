@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/rdsdata"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -49,6 +50,7 @@ type Client struct {
 	ECR            *ecr.Client
 	ElastiCache    *elasticache.Client
 	RDS            *rds.Client
+	RDSData        *rdsdata.Client
 	Route53        *route53.Client
 	cfg            awscfg.Config
 	region         string
@@ -94,6 +96,7 @@ func NewClient(ctx context.Context, region, profile string) (*Client, error) {
 		ECR:            ecr.NewFromConfig(cfg),
 		ElastiCache:    elasticache.NewFromConfig(cfg),
 		RDS:            rds.NewFromConfig(cfg),
+		RDSData:        rdsdata.NewFromConfig(cfg),
 		Route53:        route53.NewFromConfig(cfg),
 		cfg:            cfg,
 		region:         cfg.Region,
@@ -144,6 +147,7 @@ func (c *Client) SwitchRegion(ctx context.Context, region string) error {
 	c.ECR = ecr.NewFromConfig(cfg)
 	c.ElastiCache = elasticache.NewFromConfig(cfg)
 	c.RDS = rds.NewFromConfig(cfg)
+	c.RDSData = rdsdata.NewFromConfig(cfg)
 	c.Route53 = route53.NewFromConfig(cfg)
 	c.cfg = cfg
 	c.region = region
