@@ -248,7 +248,7 @@ func (a App) exportSQLResult(path string) (App, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) saveSQLWorkbenchState() {
+func (a *App) saveSQLWorkbenchState() {
 	tabs := a.sqlWorkbenchView.Tabs()
 	for index := range tabs {
 		tabs[index].AllowWrites = false

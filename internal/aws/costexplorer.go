@@ -18,7 +18,7 @@ const costDateLayout = "2006-01-02"
 
 func (c *Client) FetchCostReport(ctx context.Context, query model.CostQuery, resources bool) (model.CostReport, error) {
 	if c.CostExplorer == nil {
-		return model.CostReport{}, fmt.Errorf("Cost Explorer client is unavailable")
+		return model.CostReport{}, fmt.Errorf("cost explorer client is unavailable")
 	}
 	metric := strings.TrimSpace(query.Metric)
 	if metric == "" {

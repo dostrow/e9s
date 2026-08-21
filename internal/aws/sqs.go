@@ -96,7 +96,6 @@ func (c *Client) ReceiveSQSMessages(ctx context.Context, queueURL string, maxMes
 		QueueUrl:                    &queueURL,
 		MaxNumberOfMessages:         max,
 		WaitTimeSeconds:             wait,
-		AttributeNames:              []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
 		MessageSystemAttributeNames: []sqstypes.MessageSystemAttributeName{sqstypes.MessageSystemAttributeNameAll},
 		MessageAttributeNames:       []string{"All"},
 	})

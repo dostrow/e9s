@@ -28,7 +28,7 @@ func (c *Client) BuildRDSAuthToken(ctx context.Context, endpoint, user string) (
 
 func (c *Client) ResolveSQLSecret(ctx context.Context, secretARN string) (model.SQLCredentials, error) {
 	if c.SM == nil {
-		return model.SQLCredentials{}, fmt.Errorf("Secrets Manager client is unavailable")
+		return model.SQLCredentials{}, fmt.Errorf("secrets manager client is unavailable")
 	}
 	output, err := c.SM.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: awssdk.String(strings.TrimSpace(secretARN))})
 	if err != nil {
