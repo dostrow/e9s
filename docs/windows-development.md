@@ -88,6 +88,45 @@ build and is also used for installer and shortcut metadata. The installer does
 not remove `%APPDATA%\e9s` or the per-user runtime cache during uninstall, so a
 user's AWS-oriented settings and saved work are preserved.
 
+## Release signing
+
+Release automation can Authenticode-sign both the application executable and
+the installer with a password-protected PFX. Configure these repository or
+environment secrets:
+
+- `WINDOWS_SIGNING_CERTIFICATE_BASE64`: the PFX encoded as one Base64 string;
+- `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`: the PFX password.
+
+The workflow decodes the PFX only into the hosted runner's temporary directory.
+It signs `e9s-gui.exe` before assembling the portable ZIP, then signs the final
+Inno Setup executable. Both signatures use SHA-256 and an RFC 3161 timestamp and
+are verified with Windows application policy before upload. The temporary PFX
+and any certificate temporarily imported into the current-user store are
+removed afterward.
+
+The helper follows Microsoft's
+[SignTool guidance](https://learn.microsoft.com/windows/win32/seccrypto/signtool)
+and [Authenticode timestamp recommendations](https://learn.microsoft.com/windows/win32/seccrypto/time-stamping-authenticode-signatures).
+GitHub documents the
+[Base64 secret pattern](https://docs.github.com/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets#storing-base64-binary-blobs-as-secrets);
+Base64 is only the transport encoding, while Actions secrets provide storage
+protection.
+
+For a local release build, invoke the same helper directly:
+
+```powershell
+./packaging/windows/sign-artifact.ps1 `
+  -Path ".\e9s-gui-windows-amd64.exe" `
+  -CertificatePath "C:\secure\e9s-signing.pfx" `
+  -CertificatePassword $env:E9S_SIGNING_PASSWORD
+```
+
+If the secrets are absent, release automation emits a warning and produces
+unsigned artifacts rather than silently implying that they are trusted. Such
+artifacts remain usable, but Windows SmartScreen may warn until the publisher
+has established reputation. `checksums.txt` is generated only after all signing
+and packaging steps, so it always describes the final downloadable bytes.
+
 ## CI boundary
 
 `.github/workflows/windows-gui.yml` performs the same build on a native Windows
@@ -98,3 +137,6 @@ and uploads both the archive and the raw compile artifact for inspection.
 
 VTE must not be added to the Windows build tags. GtkSourceView language
 definitions and style schemes are included in the portable runtime.
+
+The tested platform and feature boundary is recorded in the
+[`Windows support matrix`](windows-support.md).

@@ -115,8 +115,165 @@ jobs:
             dist/*.deb
             dist/*.AppImage
 
+  build-windows-desktop:
+    name: Windows GUI / UCRT64 / amd64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Preserve repository line endings
+        shell: powershell
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-gtksourceview5
+            mingw-w64-ucrt-x86_64-pkgconf
+            zip
+
+      - name: Test and build native Windows frontend
+        run: |
+          go test ./...
+          go test -tags "gui sourceview" ./internal/gui
+          make build-gui-windows-amd64 VERSION=${{ github.ref_name }}
+          ldd e9s-gui-windows-amd64.exe
+
+      - name: Prepare optional Authenticode certificate
+        id: signing
+        shell: powershell
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $hasCertificate = -not [string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:CERTIFICATE_PASSWORD)
+          if ($hasCertificate -ne $hasPassword) {
+            throw 'Both Windows signing secrets must be configured together'
+          }
+          if (-not $hasCertificate) {
+            Write-Warning 'Windows signing secrets are absent; release artifacts will be unsigned'
+            'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'e9s-signing.pfx'
+          [System.IO.File]::WriteAllBytes(
+            $certificatePath,
+            [System.Convert]::FromBase64String($env:CERTIFICATE_BASE64)
+          )
+          'enabled=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "certificate-path=$certificatePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Sign application executable
+        if: ${{ steps.signing.outputs.enabled == 'true' }}
+        shell: powershell
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          ./packaging/windows/sign-artifact.ps1 `
+            -Path "$PWD/e9s-gui-windows-amd64.exe" `
+            -CertificatePath '${{ steps.signing.outputs.certificate-path }}' `
+            -CertificatePassword $env:CERTIFICATE_PASSWORD
+
+      - name: Assemble portable application
+        run: >-
+          make package-windows-zip
+          VERSION=${{ github.ref_name }}
+          E9S_GUI_BINARY="$PWD/e9s-gui-windows-amd64.exe"
+
+      - name: Smoke test portable application without MSYS2
+        shell: powershell
+        run: |
+          $archive = (Get-ChildItem 'dist/e9s-gui-*-windows-amd64.zip').FullName
+          $destination = Join-Path $env:RUNNER_TEMP 'e9s-portable-release-smoke'
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $executable = (Get-ChildItem $destination -Recurse -Filter 'e9s-gui.exe').FullName
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          & $executable --self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "portable GTK runtime self-test failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Install pinned Inno Setup compiler
+        shell: powershell
+        run: choco install innosetup --version=6.7.1 --no-progress --yes
+
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $archive = (Get-ChildItem 'dist/e9s-gui-*-windows-amd64.zip').FullName
+          ./packaging/windows/build-installer.ps1 `
+            -Version '${{ github.ref_name }}' `
+            -Archive $archive `
+            -OutputDirectory "$PWD/dist"
+
+      - name: Sign Windows installer
+        if: ${{ steps.signing.outputs.enabled == 'true' }}
+        shell: powershell
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $installer = (Get-ChildItem 'dist/e9s-gui-*-windows-amd64-setup.exe').FullName
+          ./packaging/windows/sign-artifact.ps1 `
+            -Path $installer `
+            -CertificatePath '${{ steps.signing.outputs.certificate-path }}' `
+            -CertificatePassword $env:CERTIFICATE_PASSWORD
+
+      - name: Test installer and uninstaller
+        shell: powershell
+        run: |
+          $installer = (Get-ChildItem 'dist/e9s-gui-*-windows-amd64-setup.exe').FullName
+          $process = Start-Process -FilePath $installer -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "installer failed with exit code $($process.ExitCode)"
+          }
+          $installed = Join-Path $env:LOCALAPPDATA 'Programs\e9s\e9s-gui.exe'
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          & $installed --self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "installed GTK runtime self-test failed with exit code $LASTEXITCODE"
+          }
+          $uninstaller = Join-Path (Split-Path -Parent $installed) 'unins000.exe'
+          $process = Start-Process -FilePath $uninstaller -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "uninstaller failed with exit code $($process.ExitCode)"
+          }
+
+      - name: Remove temporary signing certificate
+        if: ${{ always() && steps.signing.outputs.enabled == 'true' }}
+        shell: powershell
+        run: Remove-Item -LiteralPath '${{ steps.signing.outputs.certificate-path }}' -Force -ErrorAction SilentlyContinue
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e9s-windows-desktop-amd64
+          path: |
+            dist/e9s-gui-*-windows-amd64.zip
+            dist/e9s-gui-*-windows-amd64-setup.exe
+          if-no-files-found: error
+
   release:
-    needs: [build-tui, build-linux-desktop]
+    needs: [build-tui, build-linux-desktop, build-windows-desktop]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
