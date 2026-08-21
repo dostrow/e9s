@@ -72,11 +72,11 @@ try {
     $artifactVersion = ($Version -replace '^v', '') -replace '[^0-9A-Za-z.+~-]', '-'
     $script = Join-Path $scriptDirectory 'installer.iss'
     $arguments = @(
-        "--define=AppVersion=$Version",
-        "--define=ArtifactVersion=$artifactVersion",
-        "--define=BundleDirectory=$bundle",
-        "--define=OutputDirectory=$output",
-        "--define=IconFile=$icon",
+        "/DAppVersion=$Version",
+        "/DArtifactVersion=$artifactVersion",
+        "/DBundleDirectory=$bundle",
+        "/DOutputDirectory=$output",
+        "/DIconFile=$icon",
         $script
     )
 
