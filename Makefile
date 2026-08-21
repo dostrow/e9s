@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 INSTALL ?= install
 
-.PHONY: build build-gui build-gui-basic install install-gui install-gui-assets package-deb package-appimage clean test
+.PHONY: build build-gui build-gui-basic build-gui-windows-amd64 install install-gui install-gui-assets package-deb package-appimage clean test
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) .
@@ -18,6 +18,12 @@ build-gui:
 
 build-gui-basic:
 	go build -tags gui $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui
+
+# Run this target from an MSYS2 UCRT64 shell with the GTK 4 development
+# packages installed. GtkSourceView is available natively on Windows; VTE is
+# intentionally omitted in favor of the terminal-unavailable fallback.
+build-gui-windows-amd64:
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -tags "gui sourceview" -ldflags "-s -w -H=windowsgui -X main.version=$(VERSION)" -o $(BINARY)-gui-windows-amd64.exe ./cmd/e9s-gui
 
 install:
 	go install $(LDFLAGS) .
