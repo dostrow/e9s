@@ -39,6 +39,19 @@
   opacity: 0.5;
 }
 
+.terminal-pane {
+  box-shadow: none;
+}
+
+.terminal-pane-active {
+  box-shadow: inset 0 0 0 1px alpha(currentColor, 0.58);
+}
+
+.terminal-pane-split > separator {
+  min-width: 6px;
+  min-height: 6px;
+}
+
 .section-title {
   font-size: 0.8em;
   font-weight: 700;

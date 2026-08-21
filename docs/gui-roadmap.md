@@ -117,13 +117,17 @@ explicit zero continues to mean never pause for inactivity.
 ## Local terminal tabs
 
 The GUI-only terminal dock owns independent VTE sessions behind a scrollable
-tab strip. A new tab inherits the active OpenTofu workspace directory when one
-is selected and otherwise starts in the e9s process directory. Hiding the dock
-does not stop its shells; closing a tab does and therefore requires
-confirmation while its shell is running. Font, palette, and zoom changes apply
-to every session. `Ctrl+Shift+T` opens a tab, `Ctrl+Shift+W` closes the active
-tab, and `Ctrl+PageUp`/`Ctrl+PageDown` move between tabs. Sessions are not
-restored after the application exits.
+tab strip. Each tab owns a nested split tree, so terminals can be split right
+or down repeatedly. A new tab inherits the active OpenTofu workspace directory
+when one is selected and otherwise starts in the e9s process directory. A split
+inherits the focused terminal's current directory when VTE knows it, falling
+back to that session's starting directory. Hiding the dock does not stop its
+shells; closing a pane or tab does and therefore requires confirmation while
+its shell is running. Font, palette, and zoom changes apply to every session.
+`Ctrl+Shift+T` opens a tab, `Ctrl+Shift+W` closes the focused pane,
+`Ctrl+PageUp`/`Ctrl+PageDown` move between tabs, `Ctrl+Alt+R` and `Ctrl+Alt+D`
+split right and down, and `Ctrl+Alt+Arrow` moves through panes in visual order.
+Sessions and layouts are not restored after the application exits.
 
 ## Shared metrics foundation
 

@@ -100,6 +100,14 @@ func (terminal *vteTerminal) WindowTitle() string {
 	return strings.TrimSpace(C.GoString(title))
 }
 
+func (terminal *vteTerminal) CurrentDirectory() string {
+	uri := C.e9s_vte_terminal_current_directory_uri((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
+	if uri == nil {
+		return ""
+	}
+	return terminalDirectoryFromURI(C.GoString(uri))
+}
+
 func (terminal *vteTerminal) ConnectWindowTitleChanged(f func()) {
 	terminal.widget.NotifyProperty("window-title", f)
 }

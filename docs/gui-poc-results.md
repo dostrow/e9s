@@ -524,10 +524,12 @@ validation, mutation, cancellation, and error behavior remain shared.
 The full GTK build also provides a GUI-only local Terminal Dock beneath the
 Browser and Workspace panes. It uses a VTE instance separate from operation
 terminals, inherits the active GTK-derived terminal palette, retains its shell
-when hidden or while modules change, and supports independent zoom. New shells
-start in an active OpenTofu workspace when applicable and otherwise inherit the
-e9s process directory. The TUI intentionally has no equivalent because it
-already runs inside a terminal.
+when hidden or while modules change, and supports independent zoom. Tabs own
+nested right/down split trees; new splits inherit the focused VTE session's
+current directory when available, and closing a pane collapses its divider
+without stopping sibling shells. New tabs start in an active OpenTofu workspace
+when applicable and otherwise inherit the e9s process directory. The TUI
+intentionally has no equivalent because it already runs inside a terminal.
 
 ### ECR module follow-up
 

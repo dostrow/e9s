@@ -2142,9 +2142,13 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "modes", []string{"<Control>p"}, w.showModulePicker)
 	w.addAction(app, "terminal-dock", []string{"<Control>grave", "F12"}, w.toggleTerminalDock)
 	w.addAction(app, "terminal-new-tab", []string{"<Control><Shift>t"}, w.openNewTerminalDockTab)
-	w.addAction(app, "terminal-close-tab", []string{"<Control><Shift>w"}, w.confirmCloseActiveTerminalDock)
+	w.addAction(app, "terminal-close-pane", []string{"<Control><Shift>w"}, w.confirmCloseActiveTerminalDock)
 	w.addAction(app, "terminal-previous-tab", []string{"<Control>Page_Up"}, func() { w.selectAdjacentTerminalDock(-1) })
 	w.addAction(app, "terminal-next-tab", []string{"<Control>Page_Down"}, func() { w.selectAdjacentTerminalDock(1) })
+	w.addAction(app, "terminal-split-right", []string{"<Control><Alt>r"}, func() { w.splitActiveTerminalDock(gtk.OrientationHorizontal) })
+	w.addAction(app, "terminal-split-down", []string{"<Control><Alt>d"}, func() { w.splitActiveTerminalDock(gtk.OrientationVertical) })
+	w.addAction(app, "terminal-previous-pane", []string{"<Control><Alt>Left", "<Control><Alt>Up"}, func() { w.selectAdjacentTerminalDockPane(-1) })
+	w.addAction(app, "terminal-next-pane", []string{"<Control><Alt>Right", "<Control><Alt>Down"}, func() { w.selectAdjacentTerminalDockPane(1) })
 	w.addAction(app, "settings", []string{"<Control>comma"}, w.showSettings)
 	w.addAction(app, "help", nil, func() {
 		if w.showingTerminal {
@@ -2155,7 +2159,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the active local terminal tab\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the focused terminal pane\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nCtrl+Alt+R     Split the focused terminal right\nCtrl+Alt+D     Split the focused terminal down\nCtrl+Alt+Arrow Focus the adjacent terminal pane\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", nil, w.openServiceLogs)

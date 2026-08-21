@@ -5,6 +5,7 @@ package gui
 import (
 	"fmt"
 	"html"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,10 +58,10 @@ func (w *mainWindow) buildTerminalDock() *gtk.Box {
 	newButton.SetTooltipText("Open another local terminal (Ctrl+Shift+T)")
 	newButton.ConnectClicked(func() { w.newTerminalDockTab() })
 	splitRightButton := gtk.NewButtonWithLabel("Split right")
-	splitRightButton.SetTooltipText("Split the active tab side by side")
+	splitRightButton.SetTooltipText("Split the focused pane to the right (Ctrl+Alt+R)")
 	splitRightButton.ConnectClicked(func() { w.splitActiveTerminalDock(gtk.OrientationHorizontal) })
 	splitDownButton := gtk.NewButtonWithLabel("Split down")
-	splitDownButton.SetTooltipText("Split the active tab into top and bottom panes")
+	splitDownButton.SetTooltipText("Split the focused pane downward (Ctrl+Alt+D)")
 	splitDownButton.ConnectClicked(func() { w.splitActiveTerminalDock(gtk.OrientationVertical) })
 	renameButton := gtk.NewButtonWithLabel("Rename tab…")
 	renameButton.SetTooltipText("Rename the active terminal tab")
@@ -190,6 +191,7 @@ func (w *mainWindow) spawnTerminalDock() (*terminalDockSession, error) {
 	session.tab = tab
 	session.node = node
 	w.bindTerminalDockSessionFocus(session)
+	w.setActiveTerminalDockSession(session)
 	tab.tabLabel.SetEllipsize(pango.EllipsizeMiddle)
 	tab.tabLabel.SetMaxWidthChars(terminalTabMaximumChars)
 	w.terminalDockTabs = append(w.terminalDockTabs, tab)
@@ -228,6 +230,7 @@ func (w *mainWindow) spawnTerminalDockSession(workingDirectory string) (*termina
 		cwd:       workingDirectory,
 		autoTitle: terminal.WindowTitle(),
 	}
+	gtk.BaseWidget(terminal.Widget()).AddCSSClass("terminal-pane")
 	terminal.ConnectWindowTitleChanged(func() {
 		session.autoTitle = terminal.WindowTitle()
 		w.updateTerminalDockSessionTitle(session)
@@ -257,10 +260,15 @@ func (w *mainWindow) bindTerminalDockSessionFocus(session *terminalDockSession) 
 }
 
 func (w *mainWindow) setActiveTerminalDockSession(session *terminalDockSession) {
-	if session == nil || session.tab == nil || session.tab.active == session {
+	if session == nil || session.tab == nil {
 		return
 	}
+	if previous := session.tab.active; previous != nil && previous != session {
+		gtk.BaseWidget(previous.terminal.Widget()).RemoveCSSClass("terminal-pane-active")
+	}
 	session.tab.active = session
+	activeTerminalDockDirectory(session)
+	gtk.BaseWidget(session.terminal.Widget()).AddCSSClass("terminal-pane-active")
 	w.updateTerminalDockSessionTitle(session)
 }
 
@@ -402,11 +410,14 @@ func (w *mainWindow) promptRenameActiveTerminalDock() {
 }
 
 func (w *mainWindow) splitActiveTerminalDock(orientation gtk.Orientation) {
+	if !w.terminalDockVisible {
+		return
+	}
 	active := w.activeTerminalDockSession()
 	if active == nil || active.node == nil || active.tab == nil {
 		return
 	}
-	workingDirectory := active.cwd
+	workingDirectory := activeTerminalDockDirectory(active)
 	session, err := w.spawnTerminalDockSession(workingDirectory)
 	if err != nil {
 		w.setStatus(err.Error(), true)
@@ -589,10 +600,10 @@ func (w *mainWindow) closeTerminalDockSession(session *terminalDockSession) {
 	w.attachTerminalDockNode(tab, sibling)
 	session.terminal.Stop()
 	w.terminalDockSessions = append(w.terminalDockSessions[:sessionIndex], w.terminalDockSessions[sessionIndex+1:]...)
-	tab.active = firstTerminalDockSession(sibling)
-	if tab.active != nil {
-		w.updateTerminalDockSessionTitle(tab.active)
-		glib.IdleAdd(tab.active.terminal.GrabFocus)
+	next := firstTerminalDockSession(sibling)
+	if next != nil {
+		w.setActiveTerminalDockSession(next)
+		glib.IdleAdd(next.terminal.GrabFocus)
 	}
 	w.updateTerminalDockTitle()
 	w.setStatus(fmt.Sprintf("Closed terminal pane %d", session.id), false)
@@ -640,6 +651,28 @@ func firstTerminalDockSession(node *terminalDockNode) *terminalDockSession {
 	return sessions[0]
 }
 
+func activeTerminalDockDirectory(session *terminalDockSession) string {
+	if session == nil {
+		return ""
+	}
+	if directory := strings.TrimSpace(session.terminal.CurrentDirectory()); directory != "" {
+		session.cwd = directory
+	}
+	return session.cwd
+}
+
+func terminalDirectoryFromURI(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "file" || (parsed.Host != "" && parsed.Host != "localhost") {
+		return ""
+	}
+	path, err := url.PathUnescape(parsed.EscapedPath())
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
 func (w *mainWindow) confirmRestartTerminalDock() {
 	session := w.activeTerminalDockSession()
 	if session == nil {
@@ -675,6 +708,7 @@ func (w *mainWindow) restartTerminalDock(session *terminalDockSession) {
 		w.setStatus(err.Error(), true)
 		return
 	}
+	session.cwd = activeTerminalDockDirectory(session)
 	session.terminal.Stop()
 	if err := session.terminal.SpawnInDirectory(shell, nil, session.cwd); err != nil {
 		w.setStatus("Restart local terminal: "+err.Error(), true)
@@ -682,6 +716,34 @@ func (w *mainWindow) restartTerminalDock(session *terminalDockSession) {
 	}
 	w.setStatus(fmt.Sprintf("Restarted local terminal %d", session.id), false)
 	glib.IdleAdd(session.terminal.GrabFocus)
+}
+
+func (w *mainWindow) selectAdjacentTerminalDockPane(direction int) {
+	if !w.terminalDockVisible {
+		return
+	}
+	tab := w.activeTerminalDockTab()
+	if tab == nil {
+		return
+	}
+	sessions := terminalDockNodeSessions(tab.root)
+	if len(sessions) < 2 {
+		return
+	}
+	index := 0
+	for candidate, session := range sessions {
+		if session == tab.active {
+			index = candidate
+			break
+		}
+	}
+	index = (index + direction) % len(sessions)
+	if index < 0 {
+		index += len(sessions)
+	}
+	next := sessions[index]
+	w.setActiveTerminalDockSession(next)
+	glib.IdleAdd(next.terminal.GrabFocus)
 }
 
 func (w *mainWindow) selectAdjacentTerminalDock(direction int) {

@@ -117,3 +117,19 @@ func TestTerminalDockNodeSessionsFollowVisualOrder(t *testing.T) {
 		t.Fatalf("first session = %v, want %v", got, first)
 	}
 }
+
+func TestTerminalDirectoryFromURI(t *testing.T) {
+	for _, test := range []struct {
+		uri  string
+		want string
+	}{
+		{uri: "file:///home/example/My%20Project", want: "/home/example/My Project"},
+		{uri: "file://localhost/tmp/e9s", want: "/tmp/e9s"},
+		{uri: "file://remote.example/tmp/e9s"},
+		{uri: "https://example.com/tmp/e9s"},
+	} {
+		if got := terminalDirectoryFromURI(test.uri); got != test.want {
+			t.Errorf("terminalDirectoryFromURI(%q) = %q, want %q", test.uri, got, test.want)
+		}
+	}
+}

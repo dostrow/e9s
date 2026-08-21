@@ -137,6 +137,10 @@ const char *e9s_vte_terminal_window_title(GtkWidget *widget) {
     return vte_terminal_get_window_title(VTE_TERMINAL(widget));
 }
 
+const char *e9s_vte_terminal_current_directory_uri(GtkWidget *widget) {
+    return vte_terminal_get_current_directory_uri(VTE_TERMINAL(widget));
+}
+
 void e9s_vte_terminal_reset(GtkWidget *widget) {
     vte_terminal_reset(VTE_TERMINAL(widget), TRUE, TRUE);
 }
