@@ -345,6 +345,19 @@ func (w *mainWindow) openSQSMessageAt(position uint) {
 	}
 }
 
+func (w *mainWindow) openOrPollSQSMessages() {
+	if w.currentPage == pageSQSQueues {
+		queue, found := findSQSQueue(w.allSQSQueues, w.selectedSQSQueue)
+		if found {
+			w.loadSQSMessages(queue, queue.URL, w.activeSavedSQSQueue)
+		}
+		return
+	}
+	if w.currentPage == pageSQSMessages {
+		w.promptPollSQSMessages()
+	}
+}
+
 func (w *mainWindow) promptPollSQSMessages() {
 	if w.currentPage != pageSQSMessages || w.options.SQS == nil || w.sqsActionPending || w.sqsMessageQueue.URL == "" {
 		return
