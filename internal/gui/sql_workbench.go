@@ -4,6 +4,7 @@ package gui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -288,6 +289,7 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	editorScroll.SetChild(editor.Widget())
 
 	resultTable := newStringTable(nil)
+	resultTable.view.SetTooltipText("Double-click a cell to inspect and copy its complete value")
 	resultScroll := gtk.NewScrolledWindow()
 	resultScroll.SetHExpand(true)
 	resultScroll.SetVExpand(true)
@@ -372,6 +374,9 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 		objectToolbar: objectToolbar, previewButton: previewButton, generateButton: generateButton,
 		copyObjectButton: copyObjectButton, definitionButton: definitionButton, refreshObjectButton: refreshObjectButton,
 		explorer: newSQLObjectExplorer(state.Explorer),
+	}
+	resultTable.cellActivated = func(position uint, field int) {
+		w.showSQLResultCell(tab, int(position), field)
 	}
 	previewButton.ConnectClicked(func() { w.previewSQLObject(tab) })
 	generateButton.ConnectClicked(func() { w.generateSQLSelect(tab) })
@@ -641,6 +646,70 @@ func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
 	}
 	tab.resultLabel.SetLabel(status)
 	tab.contextNotebook.SetCurrentPage(0)
+}
+
+func (w *mainWindow) showSQLResultCell(tab *sqlWorkbenchTab, row, field int) {
+	if tab == nil || len(tab.results) == 0 {
+		return
+	}
+	column, value, ok := sqlResultCell(tab.results[len(tab.results)-1], row, field)
+	if !ok {
+		return
+	}
+
+	dialog := gtk.NewDialogWithFlags("SQL result cell", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	dialog.SetDefaultSize(840, 560)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+
+	contextLabel := gtk.NewLabel(fmt.Sprintf("Column %s • row %d", column, row+1))
+	contextLabel.SetXAlign(0)
+	contextLabel.SetSelectable(true)
+	content.Append(contextLabel)
+
+	document := sourceDocument{Path: "result.txt"}
+	if json.Valid([]byte(value)) {
+		document = sourceDocument{Path: "result.json", Language: "json"}
+	}
+	editor := newSourceEditor(document)
+	editor.SetText(value)
+	editor.ApplyPalette(w.currentSemanticPalette(w.window.StyleContext()))
+	if view, ok := editor.Widget().(*gtk.TextView); ok {
+		view.SetEditable(false)
+		view.SetCursorVisible(true)
+		view.SetWrapMode(gtk.WrapWordChar)
+	}
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetHExpand(true)
+	scroll.SetVExpand(true)
+	scroll.SetPolicy(gtk.PolicyAutomatic, gtk.PolicyAutomatic)
+	scroll.SetChild(editor.Widget())
+	content.Append(scroll)
+
+	const copyAllResponse = 101
+	dialog.AddButton("Copy all", copyAllResponse)
+	dialog.AddButton("Close", int(gtk.ResponseClose))
+	dialog.ConnectResponse(func(response int) {
+		if response == copyAllResponse {
+			w.window.Clipboard().SetText(value)
+			w.setStatus(fmt.Sprintf("Copied SQL result cell from %s, row %d", column, row+1), false)
+			return
+		}
+		dialog.Destroy()
+	})
+	dialog.Present()
+}
+
+func sqlResultCell(result model.SQLQueryResult, row, field int) (string, string, bool) {
+	if row < 0 || row >= len(result.Rows) || field < 0 || field >= len(result.Columns) || field >= len(result.Rows[row]) {
+		return "", "", false
+	}
+	return result.Columns[field], result.Rows[row][field], true
 }
 
 func (w *mainWindow) reconnectActiveSQLTab() {
