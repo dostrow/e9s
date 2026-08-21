@@ -86,10 +86,9 @@ jobs:
           Expand-Archive -Path $archive -DestinationPath $destination
           $executable = (Get-ChildItem $destination -Recurse -Filter "e9s-gui.exe").FullName
           $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
-          & $executable --self-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "portable GTK runtime self-test failed with exit code $LASTEXITCODE"
-          }
+          ./packaging/windows/test-runtime.ps1 `
+            -Executable $executable `
+            -Description 'portable GTK runtime self-test'
 
       - name: Install pinned Inno Setup compiler
         shell: powershell
@@ -134,10 +133,9 @@ jobs:
             throw "Start Menu shortcut was not found: $shortcut"
           }
           $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
-          & $installed --self-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "installed GTK runtime self-test failed with exit code $LASTEXITCODE"
-          }
+          ./packaging/windows/test-runtime.ps1 `
+            -Executable $installed `
+            -Description 'installed GTK runtime self-test'
           $uninstaller = Join-Path (Split-Path -Parent $installed) 'unins000.exe'
           $process = Start-Process -FilePath $uninstaller -ArgumentList @(
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
