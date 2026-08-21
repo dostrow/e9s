@@ -2205,6 +2205,9 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
 		w.noteAWSActivity()
 		terminal := w.focusedVTETerminal()
+		if terminal != nil {
+			terminal.NoteKeyPressed()
+		}
 		modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
 		if modifiers == (gdk.ControlMask | gdk.ShiftMask) {
 			switch keyval {

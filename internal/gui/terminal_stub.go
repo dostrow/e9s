@@ -50,6 +50,8 @@ func (terminal *vteTerminal) HasSelection() bool { return false }
 
 func (terminal *vteTerminal) SelectAll() {}
 
+func (terminal *vteTerminal) NoteKeyPressed() {}
+
 func (terminal *vteTerminal) Stop() {}
 
 func (terminal *vteTerminal) Running() bool { return false }

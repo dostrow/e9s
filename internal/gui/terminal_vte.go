@@ -12,6 +12,7 @@ import "C"
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
@@ -20,9 +21,10 @@ import (
 )
 
 type vteTerminal struct {
-	widget      *gtk.Widget
-	contextMenu *gtk.Popover
-	contextCopy *gtk.Button
+	widget                   *gtk.Widget
+	contextMenu              *gtk.Popover
+	contextCopy              *gtk.Button
+	suppressMouseMotionUntil time.Time
 }
 
 func newVTETerminal() *vteTerminal {
@@ -39,6 +41,7 @@ func newVTETerminal() *vteTerminal {
 	widget.SetHExpand(true)
 	widget.SetVExpand(true)
 	terminal := &vteTerminal{widget: widget}
+	terminal.installSyntheticMotionGuard()
 	terminal.installContextMenu()
 	return terminal
 }
@@ -99,6 +102,28 @@ func (terminal *vteTerminal) HasSelection() bool {
 
 func (terminal *vteTerminal) SelectAll() {
 	C.e9s_vte_terminal_select_all((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
+}
+
+// NoteKeyPressed prevents a pointer motion synthesized by GTK during the
+// resulting terminal redraw from reaching a child that is in SGR mouse mode.
+// Without this, full-screen tools can exit on the key press and leave a queued
+// sequence such as CSI <35;x;yM for the shell to interpret as input.
+func (terminal *vteTerminal) NoteKeyPressed() {
+	terminal.suppressMouseMotionUntil = time.Now().Add(150 * time.Millisecond)
+}
+
+func (terminal *vteTerminal) installSyntheticMotionGuard() {
+	legacy := gtk.NewEventControllerLegacy()
+	legacy.SetPropagationPhase(gtk.PhaseCapture)
+	legacy.ConnectEvent(func(event gdk.Eventer) bool {
+		base := gdk.BaseEvent(event)
+		if base.EventType() != gdk.MotionNotify || !time.Now().Before(terminal.suppressMouseMotionUntil) {
+			return false
+		}
+		buttons := gdk.Button1Mask | gdk.Button2Mask | gdk.Button3Mask
+		return base.ModifierState()&buttons == 0
+	})
+	terminal.widget.AddController(legacy)
 }
 
 func (terminal *vteTerminal) installContextMenu() {
