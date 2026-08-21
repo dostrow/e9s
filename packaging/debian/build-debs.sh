@@ -19,7 +19,7 @@ work_dir=$(mktemp -d "${TMPDIR:-/tmp}/e9s-deb.XXXXXX")
 trap 'rm -rf -- "$work_dir"' EXIT HUP INT TERM
 tui_root=$work_dir/e9s
 gui_root=$work_dir/e9s-gui
-mkdir -p "$output_dir" "$tui_root/DEBIAN" "$tui_root/usr/bin" "$tui_root/usr/share/licenses/e9s" "$gui_root/DEBIAN" "$gui_root/usr/bin"
+mkdir -p "$output_dir" "$tui_root/DEBIAN" "$tui_root/usr/bin" "$tui_root/usr/share/doc/e9s" "$gui_root/DEBIAN" "$gui_root/usr/bin"
 
 ldflags="-s -w -X main.version=$input_version"
 if [ -n "${E9S_TUI_BINARY:-}" ]; then
@@ -33,7 +33,16 @@ else
   (cd "$repo_dir" && go build -trimpath -tags "gui vte sourceview" -ldflags "$ldflags" -o "$gui_root/usr/bin/e9s-gui" ./cmd/e9s-gui)
 fi
 (cd "$repo_dir" && make install-gui-assets DESTDIR="$gui_root" PREFIX=/usr)
-install -m 0644 "$repo_dir/LICENSE" "$tui_root/usr/share/licenses/e9s/LICENSE"
+install -m 0644 "$repo_dir/LICENSE" "$tui_root/usr/share/doc/e9s/copyright"
+
+# Debian packages must not share ordinary files unless they coordinate through
+# dpkg. Keep each package's licensing material under its own policy-standard
+# /usr/share/doc directory. The generic asset installer uses the cross-distro
+# /usr/share/licenses layout, so normalize its staged output here.
+mkdir -p "$gui_root/usr/share/doc"
+mv "$gui_root/usr/share/licenses/e9s" "$gui_root/usr/share/doc/e9s-gui"
+mv "$gui_root/usr/share/doc/e9s-gui/LICENSE" "$gui_root/usr/share/doc/e9s-gui/copyright"
+rmdir "$gui_root/usr/share/licenses"
 
 dependencies=$(cd "$repo_dir" && dpkg-shlibdeps -O -e"$gui_root/usr/bin/e9s-gui" | sed -n 's/^shlibs:Depends=//p')
 if [ -z "$dependencies" ]; then
