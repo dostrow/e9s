@@ -2227,11 +2227,17 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 			return false
 		}
 		terminal := w.focusedVTETerminal()
-		if terminal == nil || !terminal.SuppressSyntheticMouseMotion() {
+		if terminal == nil {
 			return false
 		}
 		buttons := gdk.Button1Mask | gdk.Button2Mask | gdk.Button3Mask
-		return base.ModifierState()&buttons == 0
+		x, y, positionOK := base.Position()
+		return terminal.SuppressSyntheticMouseMotion(
+			x,
+			y,
+			positionOK,
+			base.ModifierState()&buttons != 0,
+		)
 	})
 	w.window.AddController(mouse)
 

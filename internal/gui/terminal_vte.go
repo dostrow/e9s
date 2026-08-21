@@ -12,7 +12,6 @@ import "C"
 import (
 	"fmt"
 	"strings"
-	"time"
 	"unsafe"
 
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
@@ -21,10 +20,10 @@ import (
 )
 
 type vteTerminal struct {
-	widget                   *gtk.Widget
-	contextMenu              *gtk.Popover
-	contextCopy              *gtk.Button
-	suppressMouseMotionUntil time.Time
+	widget      *gtk.Widget
+	contextMenu *gtk.Popover
+	contextCopy *gtk.Button
+	motionGuard terminalMotionGuard
 }
 
 func newVTETerminal() *vteTerminal {
@@ -103,16 +102,19 @@ func (terminal *vteTerminal) SelectAll() {
 	C.e9s_vte_terminal_select_all((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
 }
 
-// NoteKeyPressed prevents a pointer motion synthesized by GTK during the
-// resulting terminal redraw from reaching a child that is in SGR mouse mode.
-// Without this, full-screen tools can exit on the key press and leave a queued
-// sequence such as CSI <35;x;yM for the shell to interpret as input.
+// NoteKeyPressed arms filtering for pointer motion synthesized by GTK during
+// the resulting terminal redraw. Without this, full-screen tools can exit on
+// the key press and leave a queued sequence such as CSI <35;x;yM for the shell
+// to interpret as input.
 func (terminal *vteTerminal) NoteKeyPressed() {
-	terminal.suppressMouseMotionUntil = time.Now().Add(250 * time.Millisecond)
+	terminal.motionGuard.noteKeyPressed()
 }
 
-func (terminal *vteTerminal) SuppressSyntheticMouseMotion() bool {
-	return time.Now().Before(terminal.suppressMouseMotionUntil)
+func (terminal *vteTerminal) SuppressSyntheticMouseMotion(
+	x, y float64,
+	positionOK, buttonsDown bool,
+) bool {
+	return terminal.motionGuard.filterMotion(x, y, positionOK, buttonsDown)
 }
 
 func (terminal *vteTerminal) installContextMenu() {
