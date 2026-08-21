@@ -154,6 +154,16 @@ while ((${#queue[@]})); do
 
   while IFS= read -r dependency; do
     [[ -n $dependency ]] || continue
+    # Cygwin/MSYS ldd can spell the same UCRT64 dependency as /ucrt64/bin,
+    # /d/.../ucrt64/bin, or a drive-qualified path depending on the runner.
+    # Resolve every reported DLL name through the known native prefix so the
+    # bundle closure does not depend on that presentation detail.
+    dependency=${dependency//\\//}
+    dependency_name=$(basename "$dependency")
+    prefix_dependency=$runtime_prefix/bin/$dependency_name
+    if [[ -f $prefix_dependency ]]; then
+      dependency=$prefix_dependency
+    fi
     case "$dependency" in
       "$runtime_prefix"/*)
         target=$bundle_dir/$(basename "$dependency")
@@ -169,7 +179,16 @@ while ((${#queue[@]})); do
         queue+=("$target")
         ;;
     esac
-  done < <(awk '$2 == "=>" { print $3 } $1 ~ /^\// && $2 != "=>" { print $1 }' <<<"$report" | sort -u)
+  done < <(
+    awk '
+      $2 == "=>" {
+        print $3
+        print $1
+        next
+      }
+      tolower($1) ~ /\.dll$/ { print $1 }
+    ' <<<"$report" | sort -u
+  )
 done
 
 for required_dll in libgtk-4-1.dll libgtksourceview-5-0.dll; do
