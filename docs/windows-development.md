@@ -56,15 +56,23 @@ make package-windows-zip
 The resulting `dist/e9s-gui-<version>-windows-amd64.zip` carries the native DLL
 closure, GTK and GLib schemas and data, GtkSourceView language definitions and
 styles, icon and MIME data, Fontconfig configuration, bundled application fonts,
-and the applicable license texts. It must be tested outside MSYS2 before it is
-treated as a release artifact; that clean-machine launch test is the next phase.
+and the applicable license texts.
+
+At startup, the portable build derives every data path from `e9s-gui.exe`,
+regenerates the GdkPixbuf loader cache beneath the current user's cache
+directory, and registers the bundled fonts privately with Pango. It does not
+install fonts or write GTK configuration globally. The internal `--self-test`
+flag initializes GTK, registers the fonts, loads GtkSourceView's SQL language
+definition, and exercises an editor buffer without loading AWS configuration.
+It is hidden because it is a packaging diagnostic rather than a user workflow.
 
 ## CI boundary
 
 `.github/workflows/windows-gui.yml` performs the same build on a native Windows
 runner using MSYS2 UCRT64. It runs the shared test suite, the GTK-tagged GUI
 tests, validates the executable's dynamic dependencies, assembles the portable
-ZIP, and uploads both it and the raw compile artifact for inspection.
+ZIP, extracts it, removes MSYS2 from `PATH`, runs the packaged runtime self-test,
+and uploads both the archive and the raw compile artifact for inspection.
 
 VTE must not be added to the Windows build tags. GtkSourceView language
 definitions and style schemes are included in the portable runtime.

@@ -20,7 +20,7 @@ func newVTETerminal() *vteTerminal {
 	box.SetVAlign(gtk.AlignCenter)
 	title := gtk.NewLabel("Embedded terminal support is not built")
 	title.AddCSSClass("app-title")
-	detail := gtk.NewLabel("Install the GTK 4 VTE development package and rebuild with the “gui vte” build tags.")
+	detail := gtk.NewLabel(terminalUnavailableDetail())
 	detail.SetWrap(true)
 	detail.AddCSSClass("muted")
 	box.Append(title)
@@ -31,11 +31,11 @@ func newVTETerminal() *vteTerminal {
 func (terminal *vteTerminal) Widget() gtk.Widgetter { return terminal.widget }
 
 func (terminal *vteTerminal) Spawn(string, []string) error {
-	return fmt.Errorf("embedded terminal unavailable: rebuild e9s-gui with GTK 4 VTE support")
+	return fmt.Errorf("embedded terminal unavailable: %s", terminalUnavailableDetail())
 }
 
 func (terminal *vteTerminal) SpawnInDirectory(string, []string, string) error {
-	return fmt.Errorf("embedded terminal unavailable: rebuild e9s-gui with GTK 4 VTE support")
+	return fmt.Errorf("embedded terminal unavailable: %s", terminalUnavailableDetail())
 }
 
 func (terminal *vteTerminal) GrabFocus() {}

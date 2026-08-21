@@ -1,4 +1,4 @@
-//go:build gui && linux
+//go:build gui
 
 package gui
 

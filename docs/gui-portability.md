@@ -118,6 +118,12 @@ Implementation now proceeds in five independently committed phases:
 The native setup and current build boundary are documented in
 [`windows-development.md`](windows-development.md).
 
+The first three phases are represented directly in the Windows workflow: it
+compiles natively, assembles the relocatable runtime, and launches an internal
+GTK/GtkSourceView self-test from the extracted archive with MSYS2 absent from
+`PATH`. The self-test is an early packaging gate; interactive acceptance testing
+on supported Windows versions remains necessary before publishing a release.
+
 ### Windows artifact
 
 1. Build the GTK-only GUI natively on a Windows CI runner without VTE.

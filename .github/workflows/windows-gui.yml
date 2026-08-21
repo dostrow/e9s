@@ -76,6 +76,19 @@ jobs:
           VERSION=${{ github.sha }}
           E9S_GUI_BINARY="$PWD/e9s-gui-windows-amd64.exe"
 
+      - name: Smoke test portable application without MSYS2
+        shell: powershell
+        run: |
+          $archive = (Get-ChildItem "dist/e9s-gui-*-windows-amd64.zip").FullName
+          $destination = Join-Path $env:RUNNER_TEMP "e9s-portable-smoke"
+          Expand-Archive -Path $archive -DestinationPath $destination
+          $executable = (Get-ChildItem $destination -Recurse -Filter "e9s-gui.exe").FullName
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          & $executable --self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "portable GTK runtime self-test failed with exit code $LASTEXITCODE"
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: e9s-windows-gui-portable-amd64

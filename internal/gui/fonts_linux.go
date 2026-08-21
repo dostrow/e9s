@@ -25,9 +25,6 @@ import "C"
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
 	"unsafe"
 )
 
@@ -42,30 +39,4 @@ func registerBundledFonts() (string, error) {
 		return "", fmt.Errorf("register bundled fonts from %s", directory)
 	}
 	return directory, nil
-}
-
-func bundledFontDirectory() string {
-	for _, candidate := range bundledFontCandidates() {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func bundledFontCandidates() []string {
-	var candidates []string
-	if dataDirectory := os.Getenv("E9S_DATA_DIR"); dataDirectory != "" {
-		candidates = append(candidates, filepath.Join(dataDirectory, "fonts"))
-	}
-	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Clean(filepath.Join(filepath.Dir(executable), "..", "share", "e9s", "fonts")))
-	}
-	if workingDirectory, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(workingDirectory, "assets", "fonts"))
-	}
-	if _, source, _, ok := runtime.Caller(0); ok {
-		candidates = append(candidates, filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", "assets", "fonts")))
-	}
-	return append(candidates, "/usr/local/share/e9s/fonts", "/usr/share/e9s/fonts")
 }

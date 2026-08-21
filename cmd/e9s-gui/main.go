@@ -19,10 +19,11 @@ var version = "dev"
 
 func main() {
 	var (
-		cluster string
-		region  string
-		profile string
-		refresh int
+		cluster  string
+		region   string
+		profile  string
+		refresh  int
+		selfTest bool
 	)
 
 	rootCmd := &cobra.Command{
@@ -30,6 +31,9 @@ func main() {
 		Short:   "Experimental GTK 4 frontend for e9s",
 		Version: version,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if selfTest {
+				return gui.RuntimeSelfTest()
+			}
 			cfg := config.Load()
 			if cluster == "" {
 				cluster = cfg.Defaults.Cluster
@@ -95,6 +99,8 @@ func main() {
 	rootCmd.Flags().StringVarP(&region, "region", "r", "", "AWS region")
 	rootCmd.Flags().StringVarP(&profile, "profile", "p", "", "AWS profile name")
 	rootCmd.Flags().IntVar(&refresh, "refresh", 5, "Auto-refresh interval in seconds")
+	rootCmd.Flags().BoolVar(&selfTest, "self-test", false, "validate the packaged GTK runtime")
+	_ = rootCmd.Flags().MarkHidden("self-test")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

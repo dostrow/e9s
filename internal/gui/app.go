@@ -5,6 +5,8 @@ package gui
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -251,6 +253,7 @@ type Options struct {
 
 // Run starts the experimental GTK application.
 func Run(options Options) error {
+	runtimeError := preparePlatformRuntime()
 	configureHyprlandRenderer()
 	app := gtk.NewApplication(applicationID, gio.ApplicationFlagsNone)
 	gtk.WindowSetDefaultIconName(applicationID)
@@ -267,8 +270,8 @@ func Run(options Options) error {
 		installStyles()
 		window = newMainWindow(ctx, app, options)
 		installSemanticStyles(window)
-		if fontError != nil {
-			window.setStatus(fontError.Error(), true)
+		if startupError := errors.Join(runtimeError, fontError); startupError != nil {
+			window.setStatus(startupError.Error(), true)
 		}
 		window.window.Present()
 		window.start()
@@ -277,6 +280,30 @@ func Run(options Options) error {
 
 	if code := app.Run(nil); code != 0 {
 		return &ExitError{Code: code}
+	}
+	return nil
+}
+
+// RuntimeSelfTest initializes the packaged GTK stack without loading AWS
+// configuration. It is used by Windows CI after extracting the portable ZIP
+// with the MSYS2 directories removed from PATH.
+func RuntimeSelfTest() error {
+	if err := preparePlatformRuntime(); err != nil {
+		return err
+	}
+	gtk.Init()
+	if _, err := registerBundledFonts(); err != nil {
+		return err
+	}
+	initializeSourceEditor()
+	document := sourceDocument{Path: "runtime-smoke-test.sql", Language: "sql"}
+	if sourceEditorAvailable() && sourceViewLanguageID(document) == "" {
+		return fmt.Errorf("GtkSourceView could not load the bundled SQL language definition")
+	}
+	editor := newSourceEditor(document)
+	editor.SetText("select 1;")
+	if editor.Text() != "select 1;" {
+		return fmt.Errorf("GtkSourceView editor buffer round trip failed")
 	}
 	return nil
 }
