@@ -63,6 +63,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,3 +92,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
+
+  package-release:
+    needs: auto-release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.auto-release.outputs.tag }}
+    secrets: inherit
