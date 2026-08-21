@@ -15,11 +15,14 @@ import (
 	"unsafe"
 
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
 type vteTerminal struct {
-	widget *gtk.Widget
+	widget      *gtk.Widget
+	contextMenu *gtk.Popover
+	contextCopy *gtk.Button
 }
 
 func newVTETerminal() *vteTerminal {
@@ -35,7 +38,9 @@ func newVTETerminal() *vteTerminal {
 	}
 	widget.SetHExpand(true)
 	widget.SetVExpand(true)
-	return &vteTerminal{widget: widget}
+	terminal := &vteTerminal{widget: widget}
+	terminal.installContextMenu()
+	return terminal
 }
 
 func (terminal *vteTerminal) Widget() gtk.Widgetter {
@@ -79,6 +84,76 @@ func (terminal *vteTerminal) SpawnInDirectory(executable string, args []string, 
 func (terminal *vteTerminal) GrabFocus() { terminal.widget.GrabFocus() }
 
 func (terminal *vteTerminal) HasFocus() bool { return terminal.widget.HasFocus() }
+
+func (terminal *vteTerminal) CopyClipboard() {
+	C.e9s_vte_terminal_copy_clipboard((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
+}
+
+func (terminal *vteTerminal) PasteClipboard() {
+	C.e9s_vte_terminal_paste_clipboard((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
+}
+
+func (terminal *vteTerminal) HasSelection() bool {
+	return C.e9s_vte_terminal_has_selection((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native()))) != 0
+}
+
+func (terminal *vteTerminal) SelectAll() {
+	C.e9s_vte_terminal_select_all((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))
+}
+
+func (terminal *vteTerminal) installContextMenu() {
+	menu := gtk.NewBox(gtk.OrientationVertical, 2)
+	menu.SetMarginTop(6)
+	menu.SetMarginBottom(6)
+	menu.SetMarginStart(6)
+	menu.SetMarginEnd(6)
+
+	copyButton := gtk.NewButtonWithLabel("Copy")
+	copyButton.AddCSSClass("flat")
+	copyButton.SetHAlign(gtk.AlignFill)
+	copyButton.ConnectClicked(func() {
+		terminal.CopyClipboard()
+		terminal.contextMenu.Popdown()
+	})
+	menu.Append(copyButton)
+
+	pasteButton := gtk.NewButtonWithLabel("Paste")
+	pasteButton.AddCSSClass("flat")
+	pasteButton.SetHAlign(gtk.AlignFill)
+	pasteButton.ConnectClicked(func() {
+		terminal.PasteClipboard()
+		terminal.contextMenu.Popdown()
+	})
+	menu.Append(pasteButton)
+
+	selectAllButton := gtk.NewButtonWithLabel("Select All")
+	selectAllButton.AddCSSClass("flat")
+	selectAllButton.SetHAlign(gtk.AlignFill)
+	selectAllButton.ConnectClicked(func() {
+		terminal.SelectAll()
+		terminal.contextMenu.Popdown()
+	})
+	menu.Append(selectAllButton)
+
+	popover := gtk.NewPopover()
+	popover.AddCSSClass("menu")
+	popover.SetChild(menu)
+	popover.SetParent(terminal.widget)
+	terminal.contextMenu = popover
+	terminal.contextCopy = copyButton
+
+	click := gtk.NewGestureClick()
+	click.SetButton(3)
+	click.SetPropagationPhase(gtk.PhaseCapture)
+	click.ConnectPressed(func(_ int, x, y float64) {
+		terminal.GrabFocus()
+		terminal.contextCopy.SetSensitive(terminal.HasSelection())
+		rectangle := gdk.NewRectangle(int(x), int(y), 1, 1)
+		terminal.contextMenu.SetPointingTo(&rectangle)
+		terminal.contextMenu.Popup()
+	})
+	terminal.widget.AddController(click)
+}
 
 func (terminal *vteTerminal) Stop() {
 	C.e9s_vte_terminal_stop((*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())))

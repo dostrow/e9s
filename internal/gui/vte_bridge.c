@@ -69,9 +69,10 @@ GtkWidget *e9s_vte_terminal_new(void) {
 #if VTE_CHECK_VERSION(0, 76, 0)
     /* GtkPaned allocates fractional character rows while its divider moves.
      * Filling that remainder stretches every row until another complete row
-     * fits, then snaps the grid back to its normal cell height. Keep the grid
-     * top-aligned but leave the sub-row remainder unused instead. */
-    vte_terminal_set_yalign(VTE_TERMINAL(widget), VTE_ALIGN_START);
+     * fits, then snaps the grid back to its normal cell height. Leave the
+     * sub-row remainder unused and anchor the grid to the drawer's fixed
+     * bottom edge so resizing reveals whole rows above the existing text. */
+    vte_terminal_set_yalign(VTE_TERMINAL(widget), VTE_ALIGN_END);
     vte_terminal_set_yfill(VTE_TERMINAL(widget), FALSE);
 #endif
     E9sVteState *state = g_new0(E9sVteState, 1);
@@ -82,6 +83,22 @@ GtkWidget *e9s_vte_terminal_new(void) {
     vte_terminal_set_scroll_on_keystroke(VTE_TERMINAL(widget), TRUE);
     vte_terminal_set_scroll_on_output(VTE_TERMINAL(widget), FALSE);
     return widget;
+}
+
+void e9s_vte_terminal_copy_clipboard(GtkWidget *widget) {
+    vte_terminal_copy_clipboard_format(VTE_TERMINAL(widget), VTE_FORMAT_TEXT);
+}
+
+void e9s_vte_terminal_paste_clipboard(GtkWidget *widget) {
+    vte_terminal_paste_clipboard(VTE_TERMINAL(widget));
+}
+
+gboolean e9s_vte_terminal_has_selection(GtkWidget *widget) {
+    return vte_terminal_get_has_selection(VTE_TERMINAL(widget));
+}
+
+void e9s_vte_terminal_select_all(GtkWidget *widget) {
+    vte_terminal_select_all(VTE_TERMINAL(widget));
 }
 
 void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory) {

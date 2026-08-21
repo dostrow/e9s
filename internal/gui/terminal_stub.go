@@ -42,6 +42,14 @@ func (terminal *vteTerminal) GrabFocus() {}
 
 func (terminal *vteTerminal) HasFocus() bool { return false }
 
+func (terminal *vteTerminal) CopyClipboard() {}
+
+func (terminal *vteTerminal) PasteClipboard() {}
+
+func (terminal *vteTerminal) HasSelection() bool { return false }
+
+func (terminal *vteTerminal) SelectAll() {}
+
 func (terminal *vteTerminal) Stop() {}
 
 func (terminal *vteTerminal) Running() bool { return false }

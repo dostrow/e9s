@@ -5,6 +5,10 @@
 #include <gtk/gtk.h>
 
 GtkWidget *e9s_vte_terminal_new(void);
+void e9s_vte_terminal_copy_clipboard(GtkWidget *widget);
+void e9s_vte_terminal_paste_clipboard(GtkWidget *widget);
+gboolean e9s_vte_terminal_has_selection(GtkWidget *widget);
+void e9s_vte_terminal_select_all(GtkWidget *widget);
 void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory);
 void e9s_vte_terminal_stop(GtkWidget *widget);
 gboolean e9s_vte_terminal_running(GtkWidget *widget);

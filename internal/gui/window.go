@@ -2183,7 +2183,9 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.cycleLogTimestamps()
 		}
 	})
-	w.addAction(app, "copy-logs", []string{"<Control><Shift>c"}, w.copyLogs)
+	// Ctrl+Shift+C is routed by the window key controller so a focused VTE can
+	// copy its selection without the application-level log action stealing it.
+	w.addAction(app, "copy-logs", nil, w.copyLogs)
 	w.addAction(app, "clear-logs", []string{"<Control>l"}, w.clearLogs)
 	w.addAction(app, "force-deploy", []string{"<Control><Shift>r"}, w.confirmForceDeployment)
 	w.addAction(app, "scale-service", []string{"<Control><Shift>s"}, w.promptScaleService)
@@ -2202,6 +2204,24 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
 		w.noteAWSActivity()
+		terminal := w.focusedVTETerminal()
+		modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
+		if modifiers == (gdk.ControlMask | gdk.ShiftMask) {
+			switch keyval {
+			case gdk.KEY_c, gdk.KEY_C:
+				if terminal != nil {
+					terminal.CopyClipboard()
+				} else {
+					app.ActivateAction("copy-logs", nil)
+				}
+				return true
+			case gdk.KEY_v, gdk.KEY_V:
+				if terminal != nil {
+					terminal.PasteClipboard()
+					return true
+				}
+			}
+		}
 		if keyval == gdk.KEY_Escape {
 			if w.terminalAcceptsKeyboardInput() {
 				return false
@@ -2279,7 +2299,19 @@ func (w *mainWindow) focusAcceptsTextInput() bool {
 }
 
 func (w *mainWindow) terminalAcceptsKeyboardInput() bool {
-	return w.showingTerminal || w.terminalDockHasFocus()
+	return w.focusedVTETerminal() != nil
+}
+
+func (w *mainWindow) focusedVTETerminal() *vteTerminal {
+	if w.showingTerminal && w.terminal != nil && w.terminal.HasFocus() {
+		return w.terminal
+	}
+	for _, session := range w.terminalDockSessions {
+		if session != nil && session.terminal != nil && session.terminal.HasFocus() {
+			return session.terminal
+		}
+	}
+	return nil
 }
 
 func (w *mainWindow) addAction(app *gtk.Application, name string, accels []string, run func()) {
