@@ -152,7 +152,7 @@ func (e *Executor) executeDataAPI(ctx context.Context, connection ResolvedConnec
 		return nil, fmt.Errorf("RDS Data API execution is unavailable")
 	}
 	if strings.TrimSpace(connection.Profile.ResourceARN) == "" || strings.TrimSpace(connection.Profile.SecretARN) == "" {
-		return nil, fmt.Errorf("Data API connections require resource_arn and secret_arn")
+		return nil, fmt.Errorf("data API connections require resource_arn and secret_arn")
 	}
 	results := make([]model.SQLQueryResult, 0, len(statements))
 	for _, statement := range statements {

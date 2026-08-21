@@ -52,7 +52,7 @@ func ResolveConnection(ctx context.Context, profile config.SQLConnection, global
 		return resolved, nil
 	case "secrets-manager":
 		if provider == nil {
-			return ResolvedConnection{}, fmt.Errorf("Secrets Manager authentication is unavailable")
+			return ResolvedConnection{}, fmt.Errorf("secrets manager authentication is unavailable")
 		}
 		credentials, err := provider.ResolveSQLSecret(ctx, profile.SecretARN)
 		if err != nil {

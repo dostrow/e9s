@@ -366,10 +366,6 @@ func (r *Runner) ApplyContext(ctx context.Context, planFile string) (string, err
 	return r.runContext(ctx, "apply", "-no-color", "-input=false", planFile)
 }
 
-func (r *Runner) run(args ...string) (string, error) {
-	return r.runContext(context.Background(), args...)
-}
-
 func (r *Runner) runContext(ctx context.Context, args ...string) (string, error) {
 	if r.runContextOverride != nil {
 		return r.runContextOverride(ctx, args...)

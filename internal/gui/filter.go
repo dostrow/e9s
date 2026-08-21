@@ -25,15 +25,6 @@ func filterClusters(clusters []model.Cluster, query string) []model.Cluster {
 	return filtered
 }
 
-func findCluster(clusters []model.Cluster, name string) (model.Cluster, bool) {
-	for _, cluster := range clusters {
-		if cluster.Name == name {
-			return cluster, true
-		}
-	}
-	return model.Cluster{}, false
-}
-
 func filterServices(services []model.Service, query string) []model.Service {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -109,10 +100,6 @@ func clusterSummary(cluster string, serviceCount int) string {
 		return "No ECS services found in " + cluster + "."
 	}
 	return fmt.Sprintf("%s\n\n%d services\n\nSelect a service and press Enter for deployments, tasks, and recent events.", cluster, serviceCount)
-}
-
-func clusterListSummary(clusterCount int) string {
-	return fmt.Sprintf("ECS CLUSTERS\n\n%d clusters loaded\n\nSelect a cluster to inspect it. Double-click or press Enter to browse its services.", clusterCount)
 }
 
 func formatClusterDetail(cluster model.Cluster) string {

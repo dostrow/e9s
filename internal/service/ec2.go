@@ -84,7 +84,7 @@ func SortEC2Instances(instances []model.EC2Instance) {
 		if ec2StateOrder(left.State) != ec2StateOrder(right.State) {
 			return ec2StateOrder(left.State) < ec2StateOrder(right.State)
 		}
-		if strings.ToLower(left.Name) != strings.ToLower(right.Name) {
+		if !strings.EqualFold(left.Name, right.Name) {
 			return strings.ToLower(left.Name) < strings.ToLower(right.Name)
 		}
 		return left.InstanceID < right.InstanceID

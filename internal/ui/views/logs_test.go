@@ -288,7 +288,7 @@ func TestLogHighlightManagerRequestsPersistence(t *testing.T) {
 		Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
 	}}).OpenHighlightManager()
 	var cmd tea.Cmd
-	m, cmd = m.Update(keyRune('w'))
+	_, cmd = m.Update(keyRune('w'))
 	if cmd == nil {
 		t.Fatal("save did not return a command")
 	}
