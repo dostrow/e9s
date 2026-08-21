@@ -866,9 +866,110 @@ when available and falls back to `terraform`.
 
 ## Deferred cross-cutting architecture
 
-The module expansion is complete, but three cross-cutting capabilities are
+The module expansion is complete, but four cross-cutting capabilities are
 intentionally documented before implementation so their safety boundaries do
 not emerge accidentally from frontend-specific code.
+
+### SQL Workbench multi-engine adapters
+
+The current SQL Workbench is deliberately PostgreSQL-specific, but its query
+tabs, editor, result tables, CSV export, cached tab state, reconnection flow,
+and GTK/TUI presentation are useful for other relational engines. Generalize
+those pieces behind an engine adapter before adding another database. Do not
+accumulate product checks throughout the frontends or reduce every engine to a
+lowest-common-denominator SQL dialect.
+
+Use capability-oriented UI-neutral interfaces along these lines:
+
+```go
+type Engine interface {
+	Connect(context.Context, ConnectionProfile) (Session, error)
+	Capabilities() Capabilities
+	SplitStatements(string) ([]Statement, error)
+	ValidateReadOnly(string) error
+	QuoteIdentifier(string) string
+	Catalog() Catalog
+}
+
+type Catalog interface {
+	ListSchemas(context.Context, Session) ([]Schema, error)
+	ListObjects(context.Context, Session, ObjectScope) ([]Object, error)
+	InspectObject(context.Context, Session, ObjectRef) (ObjectDetail, error)
+	Definition(context.Context, Session, ObjectRef) (string, error)
+	Preview(context.Context, Session, ObjectRef, int) (Result, error)
+}
+```
+
+The exact interface may be split further during implementation, but the
+boundary must keep these engine-specific concerns out of the shared Workbench:
+
+- connection-string construction, authentication, TLS, and session setup;
+- catalog/schema queries and object-definition retrieval;
+- identifier quoting, parameter placeholders, type decoding, and display;
+- statement boundaries such as SQL Server `GO`, MySQL client delimiters, and
+  Oracle `/` terminators;
+- read-only validation and transaction/session enforcement; and
+- optional capabilities such as query plans, materialized views, sequences,
+  routines, and server-side cancellation.
+
+`SELECT` must not be treated as universally safe merely because it is the first
+token: functions and stored routines can have side effects, and engines differ
+in both read-only transaction behavior and administrative syntax. Each adapter
+must implement conservative validation, use an engine-enforced read-only mode
+where one is available, and preserve the existing per-tab Break glass gate for
+anything not proven read-only. Unsupported features are hidden or explained
+through capability flags rather than exposed as non-working actions.
+
+Add an `engine` discriminator to saved connection profiles and show it in the
+connection manager and tab context. Existing profiles without it migrate to
+`postgres`, so current configuration and restored tabs remain compatible.
+Authentication settings must also be engine-scoped: `.pgpass` remains a
+PostgreSQL option and must not be generalized into a misleading universal
+password-file field. Passwords, tokens, wallets, and client secrets retain the
+current rule that they are never stored in tab state.
+
+Go's [`database/sql`](https://go.dev/doc/database/open-handle) is a useful
+common session substrate where the selected driver supports it, but it is not
+the Workbench's product abstraction. Keep `pgx` behind the PostgreSQL adapter
+unless replacing it has a concrete benefit, and allow adapters to use a native
+driver when that preserves cancellation, authentication, or type behavior.
+
+Implement and evaluate engines in this order:
+
+1. **PostgreSQL adapter refactor** — move the existing executor, catalog,
+   statement selection, safety checks, and authentication behind the new
+   contracts without changing visible behavior.
+2. **MySQL and MariaDB** — one adapter family with explicit capability and
+   version differences. The pure-Go
+   [`go-sql-driver/mysql`](https://github.com/go-sql-driver/mysql) supports both
+   and adds no native runtime dependency, making this the lowest-risk packaging
+   and RDS/Aurora expansion.
+3. **Microsoft SQL Server** — use Microsoft's pure-Go
+   [`go-mssqldb`](https://learn.microsoft.com/en-us/sql/connect/golang/microsoft-go-mssqldb-driver)
+   driver. Treat SQL authentication, Kerberos/NTLM, and Microsoft Entra flows as
+   separately testable capabilities, and account for T-SQL batches and catalog
+   semantics.
+4. **Oracle Database** — keep this optional until packaging and a realistic test
+   environment exist. The established
+   [`godror`](https://godror.github.io/godror/doc/installation.html) path needs
+   Oracle Client libraries at runtime, which materially affects Debian,
+   AppImage, Flatpak, and eventual Windows/macOS distribution. Evaluate a
+   pure-Go driver separately rather than silently trading away compatibility.
+5. **SAP/Sybase ASE** — implement only in response to demonstrated demand and
+   an available test system. Do not assume SQL Server compatibility merely
+   because both protocols descend from TDS; the supported SAP path is commonly
+   ODBC-based and introduces external driver-manager and client-library
+   dependencies.
+
+Every engine must pass the same adapter contract suite for connection and
+reconnection, cancellation, selected/current/all statement execution, object
+discovery, structure and definition loading, preview limits, representative
+type conversion, CSV export, and read-only enforcement. Run MySQL/MariaDB and
+SQL Server fixtures in disposable containers during development and CI. Do not
+declare an engine stable based on compilation or mocked catalog responses; mark
+new adapters experimental until exercised against supported server versions
+and authentication modes. Oracle and ASE remain deferred until equivalent
+integration coverage is practical.
 
 ### OpenTofu source freshness and plan provenance
 
