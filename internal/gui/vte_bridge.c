@@ -2,6 +2,7 @@
 
 #include "vte_bridge.h"
 
+#include <math.h>
 #include <signal.h>
 #define VTE_DISABLE_DEPRECATION_WARNINGS
 #include <vte/vte.h>
@@ -15,6 +16,9 @@ typedef struct {
     GtkEventController *motion_controller;
     gboolean motion_suppressed;
     guint motion_handler_blocks;
+    gboolean has_pointer_position;
+    double pointer_x;
+    double pointer_y;
 } E9sVteState;
 
 typedef struct {
@@ -133,6 +137,84 @@ static guint e9s_vte_block_motion_signal(GtkEventController *controller, const c
     );
 }
 
+static void e9s_vte_set_motion_suppressed(E9sVteState *state, gboolean suppressed) {
+    if (state == NULL || state->motion_controller == NULL || state->motion_suppressed == suppressed) {
+        return;
+    }
+
+    if (suppressed) {
+        state->motion_handler_blocks =
+            e9s_vte_block_motion_signal(state->motion_controller, "enter", TRUE) +
+            e9s_vte_block_motion_signal(state->motion_controller, "motion", TRUE);
+        state->motion_suppressed = state->motion_handler_blocks > 0;
+        return;
+    }
+
+    e9s_vte_block_motion_signal(state->motion_controller, "enter", FALSE);
+    e9s_vte_block_motion_signal(state->motion_controller, "motion", FALSE);
+    state->motion_handler_blocks = 0;
+    state->motion_suppressed = FALSE;
+}
+
+static void e9s_vte_pointer_motion(
+    GtkEventControllerMotion *controller,
+    double x,
+    double y,
+    gpointer user_data
+) {
+    E9sVteState *state = user_data;
+    gboolean moved = state->has_pointer_position &&
+        (fabs(x - state->pointer_x) >= 0.5 || fabs(y - state->pointer_y) >= 0.5);
+    state->pointer_x = x;
+    state->pointer_y = y;
+    state->has_pointer_position = TRUE;
+    if (moved) {
+        e9s_vte_set_motion_suppressed(state, FALSE);
+    }
+}
+
+static void e9s_vte_pointer_pressed(
+    GtkGestureClick *gesture,
+    int press_count,
+    double x,
+    double y,
+    gpointer user_data
+) {
+    E9sVteState *state = user_data;
+    state->pointer_x = x;
+    state->pointer_y = y;
+    state->has_pointer_position = TRUE;
+    e9s_vte_set_motion_suppressed(state, FALSE);
+}
+
+static gboolean e9s_vte_pointer_scrolled(
+    GtkEventControllerScroll *controller,
+    double dx,
+    double dy,
+    gpointer user_data
+) {
+    e9s_vte_set_motion_suppressed(user_data, FALSE);
+    return FALSE;
+}
+
+static void e9s_vte_install_pointer_observers(GtkWidget *widget, E9sVteState *state) {
+    GtkEventController *motion = gtk_event_controller_motion_new();
+    gtk_event_controller_set_propagation_phase(motion, GTK_PHASE_CAPTURE);
+    g_signal_connect(motion, "motion", G_CALLBACK(e9s_vte_pointer_motion), state);
+    gtk_widget_add_controller(widget, motion);
+
+    GtkGesture *click = gtk_gesture_click_new();
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 0);
+    g_signal_connect(click, "pressed", G_CALLBACK(e9s_vte_pointer_pressed), state);
+    gtk_widget_add_controller(widget, GTK_EVENT_CONTROLLER(click));
+
+    GtkEventController *scroll = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+    gtk_event_controller_set_propagation_phase(scroll, GTK_PHASE_CAPTURE);
+    g_signal_connect(scroll, "scroll", G_CALLBACK(e9s_vte_pointer_scrolled), state);
+    gtk_widget_add_controller(widget, scroll);
+}
+
 GtkWidget *e9s_vte_terminal_new(void) {
     GtkWidget *widget = vte_terminal_new();
 #if VTE_CHECK_VERSION(0, 76, 0)
@@ -146,6 +228,7 @@ GtkWidget *e9s_vte_terminal_new(void) {
 #endif
     E9sVteState *state = g_new0(E9sVteState, 1);
     state->motion_controller = e9s_vte_motion_controller(widget);
+    e9s_vte_install_pointer_observers(widget, state);
     /* Keep the tiny state allocation alive for any late async spawn callback. */
     g_object_set_data(G_OBJECT(widget), "e9s-vte-state", state);
     g_signal_connect(widget, "child-exited", G_CALLBACK(e9s_vte_child_exited), state);
@@ -183,25 +266,12 @@ gboolean e9s_vte_terminal_motion_suppression_active(GtkWidget *widget) {
 
 void e9s_vte_terminal_set_motion_suppressed(GtkWidget *widget, gboolean suppressed) {
     E9sVteState *state = e9s_vte_state(widget);
-    if (state == NULL || state->motion_controller == NULL || state->motion_suppressed == suppressed) {
-        return;
-    }
-
     /* VTE's GTK4 motion controller turns both its "enter" and "motion"
      * signals into terminal mouse reports. The enter signal has no underlying
-     * GdkEvent, so an ancestor legacy-event controller cannot consume it. */
-    if (suppressed) {
-        state->motion_handler_blocks =
-            e9s_vte_block_motion_signal(state->motion_controller, "enter", TRUE) +
-            e9s_vte_block_motion_signal(state->motion_controller, "motion", TRUE);
-        state->motion_suppressed = state->motion_handler_blocks > 0;
-        return;
-    }
-
-    e9s_vte_block_motion_signal(state->motion_controller, "enter", FALSE);
-    e9s_vte_block_motion_signal(state->motion_controller, "motion", FALSE);
-    state->motion_handler_blocks = 0;
-    state->motion_suppressed = FALSE;
+     * GdkEvent, so it must be blocked at its source. Capture-phase pointer
+     * controllers on the VTE widget restore the handlers on genuine activity
+     * without passing borrowed GDK event objects through cgo. */
+    e9s_vte_set_motion_suppressed(state, suppressed);
 }
 
 void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory) {
