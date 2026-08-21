@@ -133,3 +133,25 @@ func TestTerminalDirectoryFromURI(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminalDockPageAfterClose(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		current   int
+		closed    int
+		remaining int
+		want      int
+	}{
+		{name: "active middle selects prior", current: 2, closed: 2, remaining: 3, want: 1},
+		{name: "active first selects new first", current: 0, closed: 0, remaining: 2, want: 0},
+		{name: "background before active preserves active tab", current: 3, closed: 1, remaining: 3, want: 2},
+		{name: "background after active preserves active tab", current: 1, closed: 3, remaining: 3, want: 1},
+		{name: "final tab has no target", current: 0, closed: 0, remaining: 0, want: -1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := terminalDockPageAfterClose(test.current, test.closed, test.remaining); got != test.want {
+				t.Fatalf("terminalDockPageAfterClose(%d, %d, %d) = %d, want %d", test.current, test.closed, test.remaining, got, test.want)
+			}
+		})
+	}
+}
