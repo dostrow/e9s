@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -19,6 +20,7 @@ type SQSAPI interface {
 	DeleteSQSMessage(context.Context, string, string) error
 	SendSQSMessage(context.Context, string, model.SQSSendTemplate) (string, error)
 	GetQueueURL(context.Context, string) (string, error)
+	GetSQSMetrics(context.Context, string, time.Duration) (*model.MetricSnapshot, error)
 }
 
 type SQS struct{ api SQSAPI }
@@ -50,6 +52,24 @@ func (s *SQS) Queue(ctx context.Context, queueURL string) (*model.SQSQueueStats,
 		return nil, fmt.Errorf("read SQS queue %q: queue was not found", QueueNameFromURL(queueURL))
 	}
 	return stats, nil
+}
+
+func (s *SQS) Metrics(ctx context.Context, queue model.SQSQueue, window time.Duration) (*model.MetricSnapshot, error) {
+	queueName := strings.TrimSpace(queue.Name)
+	if queueName == "" {
+		queueName = QueueNameFromURL(queue.URL)
+	}
+	if queueName == "" {
+		return nil, fmt.Errorf("read SQS metrics: queue name is required")
+	}
+	if window <= 0 {
+		return nil, fmt.Errorf("read SQS metrics for %q: time range must be positive", queueName)
+	}
+	metrics, err := s.api.GetSQSMetrics(ctx, queueName, window)
+	if err != nil {
+		return nil, fmt.Errorf("read SQS metrics for %q: %w", queueName, err)
+	}
+	return metrics, nil
 }
 
 func (s *SQS) Messages(ctx context.Context, request model.SQSReceiveRequest) ([]model.SQSMessage, error) {

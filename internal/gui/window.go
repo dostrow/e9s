@@ -4120,10 +4120,11 @@ func (w *mainWindow) updateActionSensitivity() {
 	rdsClusterMetricsSelected := w.currentPage == pageRDSClusters && w.selectedRDSCluster != "" && w.rdsClusterDetail != nil
 	elastiCacheMetricsSelected := w.currentPage == pageElastiCache && w.selectedElastiCache != "" && w.elastiCacheDetail != nil
 	apiGatewayMetricsSelected := w.currentPage == pageAPIGateway && w.apiGatewayKind != model.APIGatewayDomain && w.selectedAPIGateway != "" && w.apiGatewayDetail != nil
-	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected || elastiCacheMetricsSelected || apiGatewayMetricsSelected)
+	_, _, sqsMetricsSelected := w.currentSQSQueueForAction()
+	w.metricsButton.SetVisible(serviceSelected || taskSelected || ec2MetricsSelected || rdsMetricsSelected || rdsClusterMetricsSelected || elastiCacheMetricsSelected || apiGatewayMetricsSelected || sqsMetricsSelected)
 	w.metricsButton.SetSensitive(serviceSelected || taskSelected || (ec2MetricsSelected && w.options.EC2 != nil) ||
 		((rdsMetricsSelected || rdsClusterMetricsSelected) && w.options.RDS != nil) || (elastiCacheMetricsSelected && w.options.ElastiCache != nil) ||
-		(apiGatewayMetricsSelected && w.options.APIGateway != nil))
+		(apiGatewayMetricsSelected && w.options.APIGateway != nil) || (sqsMetricsSelected && w.options.SQS != nil))
 	execEnabled := false
 	if taskSelected && vteAvailable() {
 		if task, found := findTask(w.allTasks, w.selectedTask); found {

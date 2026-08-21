@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -20,6 +21,9 @@ type fakeSQSAPI struct {
 	maxMessages int
 	waitSeconds int
 	sent        model.SQSSendTemplate
+	metrics     *model.MetricSnapshot
+	metricName  string
+	metricRange time.Duration
 }
 
 func (f *fakeSQSAPI) ListSQSQueues(context.Context, string) ([]model.SQSQueue, error) {
@@ -39,6 +43,10 @@ func (f *fakeSQSAPI) SendSQSMessage(_ context.Context, _ string, template model.
 }
 func (f *fakeSQSAPI) GetQueueURL(context.Context, string) (string, error) {
 	return f.queueURL, f.err
+}
+func (f *fakeSQSAPI) GetSQSMetrics(_ context.Context, queueName string, window time.Duration) (*model.MetricSnapshot, error) {
+	f.metricName, f.metricRange = queueName, window
+	return f.metrics, f.err
 }
 
 func TestSQSQueuesSortAndWrapErrors(t *testing.T) {
@@ -108,5 +116,34 @@ func TestQueueNameHelpers(t *testing.T) {
 	}
 	if got := QueueNameFromURL("https://sqs.us-east-1.amazonaws.com/123/my-queue/"); got != "my-queue" {
 		t.Fatalf("QueueNameFromURL() = %q", got)
+	}
+}
+
+func TestSQSMetricsUsesQueueNameAndWrapsErrors(t *testing.T) {
+	want := &model.MetricSnapshot{}
+	api := &fakeSQSAPI{metrics: want}
+	got, err := NewSQS(api).Metrics(context.Background(), model.SQSQueue{
+		URL: "https://sqs.us-east-1.amazonaws.com/123/jobs",
+	}, time.Hour)
+	if err != nil || got != want {
+		t.Fatalf("Metrics() = %#v, %v", got, err)
+	}
+	if api.metricName != "jobs" || api.metricRange != time.Hour {
+		t.Fatalf("metrics request = %q, %s", api.metricName, api.metricRange)
+	}
+
+	api.err = errors.New("denied")
+	if _, err := NewSQS(api).Metrics(context.Background(), model.SQSQueue{Name: "jobs"}, time.Hour); err == nil || !strings.Contains(err.Error(), "read SQS metrics for \"jobs\"") {
+		t.Fatalf("Metrics() error = %v", err)
+	}
+}
+
+func TestSQSMetricsValidatesInput(t *testing.T) {
+	sqs := NewSQS(&fakeSQSAPI{})
+	if _, err := sqs.Metrics(context.Background(), model.SQSQueue{}, time.Hour); err == nil {
+		t.Fatal("Metrics() accepted a queue without a name or URL")
+	}
+	if _, err := sqs.Metrics(context.Background(), model.SQSQueue{Name: "jobs"}, 0); err == nil {
+		t.Fatal("Metrics() accepted a non-positive time range")
 	}
 }

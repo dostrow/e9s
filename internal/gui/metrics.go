@@ -188,6 +188,14 @@ func (w *mainWindow) openMetrics() {
 		w.loadMetrics(true)
 		return
 	}
+	if w.currentPage == pageSQSQueues || w.currentPage == pageSQSMessages {
+		if _, _, found := w.currentSQSQueueForAction(); !found {
+			return
+		}
+		w.metricsKind = "sqs"
+		w.loadMetrics(true)
+		return
+	}
 	if w.selectedCluster == "" || (w.selectedService == "" && w.selectedTask == "") {
 		return
 	}
@@ -216,7 +224,66 @@ func (w *mainWindow) loadMetrics(foreground bool) {
 		w.loadEC2Metrics(foreground)
 		return
 	}
+	if w.metricsKind == "sqs" {
+		w.loadSQSMetrics(foreground)
+		return
+	}
 	w.loadECSMetrics(foreground)
+}
+
+func (w *mainWindow) loadSQSMetrics(foreground bool) {
+	queue, _, found := w.currentSQSQueueForAction()
+	if !found || w.options.SQS == nil {
+		return
+	}
+	opening := !w.showingMetrics
+	ctx, generation := w.startRefreshRequest("Loading metrics for SQS queue "+queue.Name+"…", foreground)
+	go func() {
+		snapshot, err := w.options.SQS.Metrics(ctx, queue, w.metricsWindow())
+		w.finishRequestResult(ctx, generation, err, "Metrics updated for SQS queue "+queue.Name, opening, foreground, func() {
+			current, _, stillSelected := w.currentSQSQueueForAction()
+			if !stillSelected || current.URL != queue.URL {
+				return
+			}
+			w.showingMetrics = true
+			w.metricsKind = "sqs"
+			w.metricsSnapshot = nil
+			w.metricsGenericSnapshot = snapshot
+			w.metricsTaskID = ""
+			w.renderSQSMetrics(queue)
+			w.detailStack.SetVisibleChildName("metrics")
+		})
+	}()
+}
+
+func (w *mainWindow) renderSQSMetrics(queue model.SQSQueue) {
+	snapshot := w.metricsGenericSnapshot
+	if snapshot == nil {
+		return
+	}
+	w.metricsTitle.SetLabel("SQS QUEUE METRICS — " + strings.ToUpper(w.metricsRangeLabel()))
+	w.metricsScope.SetLabel("SQS queue " + queue.Name)
+	w.metricsTimestamp.SetLabel(fmt.Sprintf("Updated %s • %s resolution", formatTime(snapshot.EndTime), formatMetricPeriod(snapshot.Period)))
+	w.metricsScaleButton.SetVisible(false)
+	w.metricsScaleLabel.SetVisible(false)
+	w.metricsAlarmSection.SetVisible(false)
+	w.metricsNotice.SetVisible(!metricSnapshotHasData(snapshot))
+	if !metricSnapshotHasData(snapshot) {
+		w.metricsNotice.SetLabel("No SQS datapoints were returned for the selected period.")
+	}
+	w.setMetricCharts(snapshot, sqsMetricChartSpecs())
+}
+
+func sqsMetricChartSpecs() []metricChartSpec {
+	return []metricChartSpec{
+		{title: "QUEUE DEPTH", unit: "count", minZero: true, ids: []string{"messages_visible", "messages_inflight", "messages_delayed"}},
+		{title: "MESSAGE TRAFFIC PER PERIOD", unit: "count", minZero: true, ids: []string{"messages_sent", "messages_received", "messages_deleted"}},
+		{title: "OLDEST MESSAGE AGE", unit: "seconds", minZero: true, ids: []string{"oldest_message_age"}},
+		{title: "EMPTY RECEIVES PER PERIOD", unit: "count", minZero: true, ids: []string{"empty_receives"}},
+		{title: "SENT MESSAGE SIZE", unit: "bytes", minZero: true, ids: []string{"sent_message_size"}},
+		{title: "FIFO ACTIVE MESSAGE GROUPS", unit: "count", minZero: true, ids: []string{"fifo_groups_inflight"}},
+		{title: "FIFO DEDUPLICATED SENDS PER PERIOD", unit: "count", minZero: true, ids: []string{"fifo_deduplicated_sent"}},
+	}
 }
 
 func (w *mainWindow) loadAPIGatewayMetrics(foreground bool) {
