@@ -866,7 +866,7 @@ when available and falls back to `terraform`.
 
 ## Deferred cross-cutting architecture
 
-The module expansion is complete, but four cross-cutting capabilities are
+The module expansion is complete, but five cross-cutting capabilities are
 intentionally documented before implementation so their safety boundaries do
 not emerge accidentally from frontend-specific code.
 
@@ -970,6 +970,66 @@ declare an engine stable based on compilation or mocked catalog responses; mark
 new adapters experimental until exercised against supported server versions
 and authentication modes. Oracle and ASE remain deferred until equivalent
 integration coverage is practical.
+
+### SQL Workbench catalog completion
+
+Useful SQL completion does not require a general LSP client. The Workbench
+already owns the active connection, cached catalog, query editor, and dialect
+adapter, so it can provide high-value schema completion while keeping full SQL
+semantic analysis deferred. Build completion on the multi-engine contracts
+above rather than making it a PostgreSQL-only GTK feature.
+
+Introduce a UI-neutral, connection-scoped completion service that returns
+typed proposals such as keyword, schema, table, view, column, routine, and
+snippet. Proposals carry their insertion text, display label, optional qualified
+name and detail, and the engine-specific quoting decision. The GTK frontend
+adapts those proposals to GtkSourceView 5's asynchronous
+[`GtkSourceCompletionProvider`](https://gnome.pages.gitlab.gnome.org/gtksourceview/gtksourceview5/iface.CompletionProvider.html)
+through the existing C bridge. Keep the service independent of GtkSourceView so
+the TUI can later expose an explicit completion picker without duplicating
+catalog and dialect logic.
+
+Deliver completion in these stages:
+
+1. **Cached lexical completion** — offer SQL keywords, common functions, and
+   schemas/objects/columns already present in the active connection's metadata
+   cache. `Ctrl+Space` is the initial explicit trigger. A qualified name such as
+   `schema.` may trigger automatically only when it can be resolved without an
+   I/O request.
+2. **Scoped catalog completion** — when explicitly requested, asynchronously
+   load only the missing metadata for the relevant schema or object. Cache the
+   result per connection and expose proposal kinds and brief details in the
+   popup. Do not enumerate every object's structure when a tab opens, while the
+   user scrolls the object browser, or on each keystroke.
+3. **Statement-aware completion** — add a lightweight dialect-aware parse of the
+   current statement so aliases such as `FROM patients p` make `p.` offer the
+   correct columns, unqualified columns come from the visible relation scope,
+   and clauses such as `FROM`, `JOIN`, and `ORDER BY` prioritize appropriate
+   proposal kinds. Syntax errors must degrade to lexical completion rather than
+   blocking editing.
+4. **Semantic/LSP evaluation** — consider diagnostics, inferred result types,
+   cross-statement symbols, rich function signatures, and refactoring only
+   after the first three stages are stable. These features require a substantially
+   deeper parser/type model or a managed language-server process and are not a
+   prerequisite for catalog completion.
+
+Completion requests must use the tab's active connection and engine, include a
+request generation, support cancellation, and discard results after reconnect,
+database/schema changes, tab closure, or navigation to another connection.
+Catalog cache entries record their connection identity, effective namespace or
+PostgreSQL `search_path`, and refresh generation. Manual metadata Refresh
+invalidates affected proposals. A disconnected tab may continue to offer
+clearly marked cached proposals but must not silently reconnect merely because
+the user typed.
+
+Use fuzzy filtering locally after a proposal set is available and cap the
+visible result count. Completion acceptance must replace only the token bounds
+identified for that request, preserve surrounding SQL and selection, and apply
+the engine adapter's quoting rules exactly once. Test quoted and mixed-case
+identifiers, duplicate names in different schemas, aliases, stale asynchronous
+results, disconnect/reconnect, manual cancellation, large catalogs, and GTK
+keyboard focus. In particular, regression tests must prove that typing,
+scrolling, and automatic popup filtering cannot cause unbounded catalog loads.
 
 ### OpenTofu source freshness and plan provenance
 
