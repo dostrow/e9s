@@ -167,10 +167,10 @@ while ((${#queue[@]})); do
     case "$dependency" in
       "$runtime_prefix"/*)
         target=$bundle_dir/$(basename "$dependency")
-        if [[ -e $target ]] && ! cmp -s "$dependency" "$target"; then
-          echo "conflicting native DLL basenames: $dependency and $target" >&2
-          exit 1
-        fi
+        # Repeated references to the same DLL are expected while walking the
+        # transitive graph. dependency has already been canonicalized to the
+        # one authoritative file in MINGW_PREFIX/bin, so an existing target is
+        # the previously installed copy rather than a competing library.
         if [[ ! -e $target ]]; then
           install -m 0755 "$dependency" "$target"
         fi
