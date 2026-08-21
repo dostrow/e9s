@@ -328,7 +328,9 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	definitionScroll.SetChild(definitionEditor.Widget())
 
 	contextNotebook := gtk.NewNotebook()
-	contextNotebook.AddCSSClass("e9s-terminal-notebook")
+	// Reuse the normalized SQL notebook surface so themes cannot draw their
+	// own segmented border between this contextual tab strip and its content.
+	contextNotebook.AddCSSClass("e9s-sql-notebook")
 	contextNotebook.AddCSSClass("e9s-sql-context-notebook")
 	contextNotebook.SetHExpand(true)
 	contextNotebook.SetVExpand(true)
