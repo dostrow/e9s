@@ -75,6 +75,9 @@ type sqlObjectExplorer struct {
 	detailGeneration  uint64
 	restoreScroll     bool
 	detailPending     bool
+	detailCancel      context.CancelFunc
+	catalogContext    context.Context
+	catalogCancel     context.CancelFunc
 }
 
 func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
@@ -438,6 +441,12 @@ func (w *mainWindow) closeSQLTab(tab *sqlWorkbenchTab) {
 	}
 	if index < 0 {
 		return
+	}
+	if tab.explorer.detailCancel != nil {
+		tab.explorer.detailCancel()
+	}
+	if tab.explorer.catalogCancel != nil {
+		tab.explorer.catalogCancel()
 	}
 	w.sqlNotebook.RemovePage(index)
 	w.sqlTabs = append(w.sqlTabs[:index], w.sqlTabs[index+1:]...)

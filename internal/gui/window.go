@@ -1046,7 +1046,6 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.elastiCacheTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectElastiCacheRow() })
 	w.apiGatewayTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAPIGatewayRow() })
 	w.sqlProfileTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQLProfileRow() })
-	w.sqlObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQLObjectRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })

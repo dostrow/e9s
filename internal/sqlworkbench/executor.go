@@ -91,6 +91,11 @@ func (e *Executor) Execute(ctx context.Context, profile config.SQLConnection, so
 	if err == nil {
 		return results, nil
 	}
+	// A superseded GUI catalog/inspection request is expected cancellation,
+	// not evidence that the shared PostgreSQL session is unhealthy.
+	if ctx.Err() != nil {
+		return results, ctx.Err()
+	}
 	if readOnlyErr != nil {
 		// Never automatically repeat a statement that may have changed data.
 		return results, err

@@ -74,7 +74,7 @@ func (w *mainWindow) loadSQLSchemas(tab *sqlWorkbenchTab) {
 	tab.explorer.loadingSchemas = true
 	generation := tab.explorer.requestGeneration
 	w.renderSQLObjectBrowser(tab)
-	ctx, cancel := context.WithTimeout(w.ctx, 45*time.Second)
+	ctx, cancel := context.WithTimeout(w.sqlCatalogContext(tab), 45*time.Second)
 	go func() {
 		defer cancel()
 		schemas, err := w.sqlExecutor.ListSchemas(ctx, profile)
@@ -115,7 +115,7 @@ func (w *mainWindow) loadSQLObjects(tab *sqlWorkbenchTab, schema string, kind sq
 	tab.explorer.loading[key] = true
 	generation := tab.explorer.requestGeneration
 	w.renderSQLObjectBrowser(tab)
-	ctx, cancel := context.WithTimeout(w.ctx, 45*time.Second)
+	ctx, cancel := context.WithTimeout(w.sqlCatalogContext(tab), 45*time.Second)
 	go func() {
 		defer cancel()
 		objects, err := w.sqlExecutor.ListObjects(ctx, profile, schema, kind)
@@ -243,6 +243,7 @@ func (w *mainWindow) activateSQLObjectAt(position uint) {
 		return
 	}
 	row := tab.explorer.rows[position]
+	tab.state.Explorer.Selected = row.key
 	switch row.kind {
 	case sqlObjectRowSchema:
 		tab.explorer.expanded[row.key] = !tab.explorer.expanded[row.key]
@@ -251,26 +252,13 @@ func (w *mainWindow) activateSQLObjectAt(position uint) {
 		if tab.explorer.expanded[row.key] {
 			w.loadSQLObjects(tab, row.schema, row.category)
 		}
+	case sqlObjectRowObject:
+		// GtkColumnView may move its selection while rows are virtualized during
+		// scrolling. Activation is the deliberate single click/keyboard action.
+		w.loadSQLObjectDetail(tab, row.object)
 	}
 	w.syncSQLExplorerState(tab)
 	w.renderSQLObjectBrowser(tab)
-}
-
-func (w *mainWindow) selectSQLObjectRow() {
-	tab := w.activeSQLTab()
-	if tab == nil {
-		return
-	}
-	position := w.sqlObjectTable.selection.Selected()
-	if position == gtk.InvalidListPosition || int(position) >= len(tab.explorer.rows) {
-		return
-	}
-	row := tab.explorer.rows[position]
-	tab.state.Explorer.Selected = row.key
-	w.scheduleSQLStateSave()
-	if row.kind == sqlObjectRowObject {
-		w.loadSQLObjectDetail(tab, row.object)
-	}
 }
 
 func (w *mainWindow) loadSQLObjectDetail(tab *sqlWorkbenchTab, object sqlworkbench.DatabaseObject) {
@@ -282,6 +270,9 @@ func (w *mainWindow) loadSQLObjectDetail(tab *sqlWorkbenchTab, object sqlworkben
 		return
 	}
 	selected := object
+	if tab.explorer.detailCancel != nil {
+		tab.explorer.detailCancel()
+	}
 	tab.explorer.selected = &selected
 	tab.explorer.detailGeneration++
 	tab.explorer.detailPending = true
@@ -292,6 +283,7 @@ func (w *mainWindow) loadSQLObjectDetail(tab *sqlWorkbenchTab, object sqlworkben
 	tab.definitionBuffer.SetText("Loading definition for " + object.QualifiedName() + "…")
 	tab.contextNotebook.SetCurrentPage(1)
 	ctx, cancel := context.WithTimeout(w.ctx, 45*time.Second)
+	tab.explorer.detailCancel = cancel
 	go func() {
 		defer cancel()
 		detail, err := w.sqlExecutor.InspectObject(ctx, profile, object)
@@ -299,6 +291,7 @@ func (w *mainWindow) loadSQLObjectDetail(tab *sqlWorkbenchTab, object sqlworkben
 			if generation != tab.explorer.detailGeneration {
 				return
 			}
+			tab.explorer.detailCancel = nil
 			tab.explorer.detailPending = false
 			w.updateSQLObjectControls(tab)
 			if err != nil {
@@ -399,6 +392,15 @@ func (w *mainWindow) refreshSQLObjectBrowser(foreground bool) {
 	}
 	tab.explorer.requestGeneration++
 	tab.explorer.detailGeneration++
+	if tab.explorer.catalogCancel != nil {
+		tab.explorer.catalogCancel()
+	}
+	if tab.explorer.detailCancel != nil {
+		tab.explorer.detailCancel()
+	}
+	tab.explorer.catalogContext = nil
+	tab.explorer.catalogCancel = nil
+	tab.explorer.detailCancel = nil
 	tab.explorer.schemas = nil
 	tab.explorer.objects = make(map[string][]sqlworkbench.DatabaseObject)
 	tab.explorer.loaded = make(map[string]bool)
@@ -411,6 +413,13 @@ func (w *mainWindow) refreshSQLObjectBrowser(foreground bool) {
 		w.setStatus("Refreshing PostgreSQL database objects…", false)
 	}
 	w.loadSQLSchemas(tab)
+}
+
+func (w *mainWindow) sqlCatalogContext(tab *sqlWorkbenchTab) context.Context {
+	if tab.explorer.catalogContext == nil {
+		tab.explorer.catalogContext, tab.explorer.catalogCancel = context.WithCancel(w.ctx)
+	}
+	return tab.explorer.catalogContext
 }
 
 func (w *mainWindow) updateSQLObjectControls(tab *sqlWorkbenchTab) {
