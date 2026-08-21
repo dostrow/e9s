@@ -66,6 +66,14 @@ static void e9s_vte_child_exited(VteTerminal *terminal, int status, gpointer use
 
 GtkWidget *e9s_vte_terminal_new(void) {
     GtkWidget *widget = vte_terminal_new();
+#if VTE_CHECK_VERSION(0, 76, 0)
+    /* GtkPaned allocates fractional character rows while its divider moves.
+     * Filling that remainder stretches every row until another complete row
+     * fits, then snaps the grid back to its normal cell height. Keep the grid
+     * top-aligned but leave the sub-row remainder unused instead. */
+    vte_terminal_set_yalign(VTE_TERMINAL(widget), VTE_ALIGN_START);
+    vte_terminal_set_yfill(VTE_TERMINAL(widget), FALSE);
+#endif
     E9sVteState *state = g_new0(E9sVteState, 1);
     /* Keep the tiny state allocation alive for any late async spawn callback. */
     g_object_set_data(G_OBJECT(widget), "e9s-vte-state", state);
@@ -158,6 +166,10 @@ void e9s_vte_terminal_set_font(GtkWidget *widget, const char *description) {
     if (font != NULL) {
         pango_font_description_free(font);
     }
+}
+
+void e9s_vte_terminal_set_scrollback_lines(GtkWidget *widget, long lines) {
+    vte_terminal_set_scrollback_lines(VTE_TERMINAL(widget), lines);
 }
 
 static GdkRGBA e9s_vte_color(const char *value) {

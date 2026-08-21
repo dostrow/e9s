@@ -15,6 +15,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
+	"github.com/dostrow/e9s/internal/config"
 )
 
 const (
@@ -217,6 +218,7 @@ func (w *mainWindow) spawnTerminalDockSession(workingDirectory string) (*termina
 		return nil, err
 	}
 	terminal := newVTETerminal()
+	terminal.SetScrollbackLines(w.configuredTerminalScrollbackLines())
 	terminal.SetFontScale(float64(w.terminalZoom) / 100)
 	if w.options.Config != nil {
 		terminal.SetFont(strings.TrimSpace(w.options.Config.GUI.Appearance.MonospaceFont))
@@ -238,6 +240,17 @@ func (w *mainWindow) spawnTerminalDockSession(workingDirectory string) (*termina
 		w.updateTerminalDockSessionTitle(session)
 	})
 	return session, nil
+}
+
+func (w *mainWindow) configuredTerminalScrollbackLines() int {
+	if w.options.Config == nil {
+		return config.DefaultTerminalScrollbackLines
+	}
+	lines := w.options.Config.GUI.TerminalScrollbackLines
+	if lines < 1 || lines > config.MaxTerminalScrollbackLines {
+		return config.DefaultTerminalScrollbackLines
+	}
+	return lines
 }
 
 func (w *mainWindow) terminalDockTabLabel(tab *terminalDockTab) *gtk.Box {

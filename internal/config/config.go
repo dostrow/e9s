@@ -16,6 +16,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	DefaultTerminalScrollbackLines = 10000
+	MaxTerminalScrollbackLines     = 1000000
+)
+
 // configPath is the resolved path to the config file.
 var (
 	configPath     string
@@ -137,8 +142,9 @@ type Config struct {
 		MaxLogLines     int    `yaml:"max_log_lines"`
 	} `yaml:"display"`
 	GUI struct {
-		TerminalShell string `yaml:"terminal_shell,omitempty"`
-		Appearance    struct {
+		TerminalShell           string `yaml:"terminal_shell,omitempty"`
+		TerminalScrollbackLines int    `yaml:"terminal_scrollback_lines,omitempty"`
+		Appearance              struct {
 			Preset        string `yaml:"preset,omitempty"`
 			InterfaceFont string `yaml:"interface_font,omitempty"`
 			MonospaceFont string `yaml:"monospace_font,omitempty"`
@@ -190,6 +196,7 @@ func DefaultConfig() Config {
 	c.Display.TimestampFormat = "relative"
 	c.Display.MaxEvents = 50
 	c.Display.MaxLogLines = 1000
+	c.GUI.TerminalScrollbackLines = DefaultTerminalScrollbackLines
 	return c
 }
 
@@ -313,6 +320,9 @@ func (c Config) Validate() error {
 	}
 	if c.Display.MaxEvents < 0 || c.Display.MaxLogLines < 0 {
 		return fmt.Errorf("display limits cannot be negative")
+	}
+	if c.GUI.TerminalScrollbackLines < 1 || c.GUI.TerminalScrollbackLines > MaxTerminalScrollbackLines {
+		return fmt.Errorf("gui.terminal_scrollback_lines must be between 1 and %d", MaxTerminalScrollbackLines)
 	}
 	for index, view := range c.CostViews {
 		if strings.TrimSpace(view.Name) == "" {

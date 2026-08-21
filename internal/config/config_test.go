@@ -33,6 +33,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Display.MaxLogLines != 1000 {
 		t.Errorf("MaxLogLines = %d, want 1000", cfg.Display.MaxLogLines)
 	}
+	if cfg.GUI.TerminalScrollbackLines != DefaultTerminalScrollbackLines {
+		t.Errorf("TerminalScrollbackLines = %d, want %d", cfg.GUI.TerminalScrollbackLines, DefaultTerminalScrollbackLines)
+	}
 }
 
 func TestValidateSQLConnections(t *testing.T) {
@@ -410,6 +413,7 @@ func TestSaveRawRejectsInvalidConfiguration(t *testing.T) {
 func TestGUIAppearanceRoundTrip(t *testing.T) {
 	cfg, err := Parse([]byte(`
 gui:
+  terminal_scrollback_lines: 25000
   appearance:
     preset: gruvbox-material-dark
     interface_font: Inter 11
@@ -420,6 +424,9 @@ gui:
 	}
 	if cfg.GUI.Appearance.Preset != "gruvbox-material-dark" || cfg.GUI.Appearance.InterfaceFont != "Inter 11" || cfg.GUI.Appearance.MonospaceFont != "JetBrainsMono Nerd Font 10" {
 		t.Fatalf("appearance did not round-trip through YAML: %+v", cfg.GUI.Appearance)
+	}
+	if cfg.GUI.TerminalScrollbackLines != 25000 {
+		t.Fatalf("terminal scrollback did not round-trip through YAML: %d", cfg.GUI.TerminalScrollbackLines)
 	}
 }
 

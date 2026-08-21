@@ -14,6 +14,7 @@ const char *e9s_vte_terminal_current_directory_uri(GtkWidget *widget);
 void e9s_vte_terminal_reset(GtkWidget *widget);
 void e9s_vte_terminal_set_font_scale(GtkWidget *widget, double scale);
 void e9s_vte_terminal_set_font(GtkWidget *widget, const char *description);
+void e9s_vte_terminal_set_scrollback_lines(GtkWidget *widget, long lines);
 void e9s_vte_terminal_set_palette(
     GtkWidget *widget,
     const char *foreground,

@@ -128,6 +128,13 @@ func (terminal *vteTerminal) SetFont(description string) {
 	)
 }
 
+func (terminal *vteTerminal) SetScrollbackLines(lines int) {
+	C.e9s_vte_terminal_set_scrollback_lines(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+		C.long(lines),
+	)
+}
+
 func (terminal *vteTerminal) SetPalette(palette semanticPalette) {
 	colors := []string{
 		rgbaHex(palette.foreground), rgbaHex(palette.surface), rgbaHex(palette.accent),

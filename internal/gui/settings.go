@@ -254,8 +254,11 @@ func (w *mainWindow) showSettings() {
 	terminalShell := gtk.NewEntry()
 	terminalShell.SetText(cfg.GUI.TerminalShell)
 	terminalShell.SetPlaceholderText("Use $SHELL")
+	terminalScrollback := gtk.NewSpinButtonWithRange(1, config.MaxTerminalScrollbackLines, 1000)
+	terminalScrollback.SetValue(float64(cfg.GUI.TerminalScrollbackLines))
 	editorPage.Append(settingsRow("Terminal shell", terminalShell))
-	editorPage.Append(settingsNote("The selected shell is used the next time the terminal dock starts. Editor keymaps remain in the standard GTK mode; Vim and Helix modes are documented future work."))
+	editorPage.Append(settingsRow("Terminal scrollback (lines)", terminalScrollback))
+	editorPage.Append(settingsNote("Scrollback changes apply immediately to open terminal panes. The selected shell is used the next time the terminal dock starts. Editor keymaps remain in the standard GTK mode; Vim and Helix modes are documented future work."))
 	notebook.AppendPage(editorPage, gtk.NewLabel("Editor & Terminal"))
 
 	safetyPage := settingsPage()
@@ -343,6 +346,7 @@ func (w *mainWindow) showSettings() {
 		updated.Display.MaxEvents = maxEvents.ValueAsInt()
 		updated.Display.MaxLogLines = maxLogLines.ValueAsInt()
 		updated.GUI.TerminalShell = strings.TrimSpace(terminalShell.Text())
+		updated.GUI.TerminalScrollbackLines = terminalScrollback.ValueAsInt()
 		appearance := appearanceDraft()
 		updated.GUI.Appearance = appearance.GUI.Appearance
 		if err := updated.Validate(); err != nil {
@@ -399,8 +403,21 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	w.options.DefaultCluster = updated.Defaults.Cluster
 	w.idleTimeoutSeconds.Store(int64(updated.Defaults.IdleTimeout))
 	w.applyAppearanceConfig(&updated)
+	w.applyTerminalScrollback(updated.GUI.TerminalScrollbackLines)
 	if w.sqlExecutor != nil {
 		w.sqlExecutor.SetPolicy(updated.SQL.AllowWrites, updated.SQL.PGPassFiles)
+	}
+}
+
+func (w *mainWindow) applyTerminalScrollback(lines int) {
+	if lines < 1 || lines > config.MaxTerminalScrollbackLines {
+		lines = config.DefaultTerminalScrollbackLines
+	}
+	if w.terminal != nil {
+		w.terminal.SetScrollbackLines(lines)
+	}
+	for _, session := range w.terminalDockSessions {
+		session.terminal.SetScrollbackLines(lines)
 	}
 }
 

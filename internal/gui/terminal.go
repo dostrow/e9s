@@ -24,6 +24,7 @@ func (w *mainWindow) buildTerminalPane() gtk.Widgetter {
 	toolbar.Append(w.terminalTitle)
 
 	w.terminal = newVTETerminal()
+	w.terminal.SetScrollbackLines(w.configuredTerminalScrollbackLines())
 	pane := gtk.NewBox(gtk.OrientationVertical, 0)
 	pane.Append(toolbar)
 	pane.Append(w.terminal.Widget())

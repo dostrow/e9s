@@ -605,6 +605,10 @@ display:
   max_events: 50
   max_log_lines: 1000
 
+gui:
+  # Local and embedded operation terminals; configurable up to 1,000,000 lines.
+  terminal_scrollback_lines: 10000
+
 # Enable/disable modules (all enabled by default)
 modules:
   ecs: true
