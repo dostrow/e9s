@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // SQSQueue identifies one queue returned by ListQueues.
 type SQSQueue struct {
 	Name string
@@ -33,6 +35,7 @@ type SQSMessage struct {
 	ReceiptHandle  string
 	Body           string
 	MD5            string
+	CapturedAt     time.Time
 	Attributes     map[string]string
 	UserAttributes map[string]SQSMessageAttribute
 }

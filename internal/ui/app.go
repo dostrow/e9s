@@ -179,6 +179,8 @@ type App struct {
 	sqsDetailView              views.SQSDetailModel
 	sqsMessagesView            views.SQSMessagesModel
 	sqsMsgDetailView           views.SQSMessageDetailModel
+	sqsPollMaxMessages         int
+	sqsPollWaitSeconds         int
 	alarmsView                 views.AlarmsModel
 	alarmDetailView            views.AlarmDetailModel
 	cbProjectsView             views.CBProjectsModel
@@ -1175,6 +1177,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(3 * time.Second)
 		return a, nil
 
+	case sqsMessageActionMsg:
+		a.loading = false
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.err = nil
+		a.sqsMessagesView = a.sqsMessagesView.RemoveMessage(msg.messageID)
+		if a.state == viewSQSMessageDetail {
+			a.state = viewSQSMessages
+		}
+		a.flashMessage = msg.message
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+
 	case sqsDLQResolvedMsg:
 		return a.openSQSDetail(msg.name, msg.url)
 
@@ -1683,6 +1700,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ConfirmDynamoClone:
 			return a, a.doDynamoClone()
 		case ConfirmSQSDelete:
+			a.loading = true
 			return a, a.doDeleteSQSMessage()
 		case ConfirmSQSSend:
 			if a.sqsSendTemplate != nil {
@@ -1830,6 +1848,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openSQSQueues(msg.Value)
 		case InputSQSSaveName:
 			return a.doSaveSQSQueue(msg.Value)
+		case InputSQSPollOptions:
+			return a.pollSQSMessagesWithOptions(msg.Value)
 		case InputSQLPassword:
 			profile := a.sqlPendingProfile
 			mode := a.sqlPendingRun
@@ -2403,6 +2423,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.pollSQSMessages()
 			case a.kb.DeleteMsg:
 				return a.deleteSQSMessage()
+			case a.kb.ReleaseMsg:
+				return a.releaseSQSMessage()
 			case a.kb.SendMessage:
 				return a.sendSQSMessage()
 			case "X":
@@ -2413,6 +2435,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case a.kb.DeleteMsg:
 				return a.deleteSQSMessage()
+			case a.kb.ReleaseMsg:
+				return a.releaseSQSMessage()
 			case a.kb.CloneSend:
 				return a.cloneSQSMessage()
 			}
@@ -3378,15 +3402,17 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewSQSMessages:
 		context = []kv{
 			{"enter", "Message detail"},
-			{kb.PollMessages, "Poll for messages"},
+			{kb.PollMessages, "Configure and poll for messages"},
 			{kb.SendMessage, "Send new message"},
-			{kb.DeleteMsg, "Delete message"},
-			{"X", "Clear message list"},
+			{kb.ReleaseMsg, "Release message now"},
+			{kb.DeleteMsg, "Acknowledge / delete message"},
+			{"X", "Clear local list (does not release)"},
 		}
 	case viewSQSMessageDetail:
 		context = []kv{
 			{kb.CloneSend, "Clone & send"},
-			{kb.DeleteMsg, "Delete message"},
+			{kb.ReleaseMsg, "Release message now"},
+			{kb.DeleteMsg, "Acknowledge / delete message"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}

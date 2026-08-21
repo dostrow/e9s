@@ -218,6 +218,11 @@ type sqsStatsLoadedMsg struct {
 	metricsWarning string
 }
 type sqsMessagesReceivedMsg struct{ messages []model.SQSMessage }
+type sqsMessageActionMsg struct {
+	messageID string
+	message   string
+	err       error
+}
 type sqsDLQResolvedMsg struct {
 	name string
 	url  string
