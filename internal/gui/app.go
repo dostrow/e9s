@@ -182,6 +182,7 @@ type DynamoDBService interface {
 type SQSService interface {
 	Queues(context.Context, string) ([]model.SQSQueue, error)
 	Queue(context.Context, string) (*model.SQSQueueStats, error)
+	Metrics(context.Context, model.SQSQueue, time.Duration) (*model.MetricSnapshot, error)
 	Messages(context.Context, model.SQSReceiveRequest) ([]model.SQSMessage, error)
 	ResolveQueueURL(context.Context, string) (string, error)
 	DeleteMessage(context.Context, string, string) error

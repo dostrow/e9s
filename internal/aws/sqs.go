@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -18,6 +19,45 @@ type SQSQueueStats = model.SQSQueueStats
 type SQSMessage = model.SQSMessage
 type SQSSendTemplate = model.SQSSendTemplate
 type SQSAttr = model.SQSAttr
+
+// GetSQSMetrics returns the queue's standard CloudWatch time series. Metrics
+// that only apply to FIFO queues remain in the request; CloudWatch returns
+// empty series for standard queues and the presentation layer omits them.
+func (c *Client) GetSQSMetrics(ctx context.Context, queueName string, window time.Duration) (*model.MetricSnapshot, error) {
+	if window <= 0 {
+		window = 15 * time.Minute
+	}
+	end := time.Now()
+	return c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: end.Add(-window),
+		EndTime:   end,
+		MaxPoints: defaultMetricMaxPoints,
+		Queries:   sqsMetricQueries(queueName),
+	})
+}
+
+func sqsMetricQueries(queueName string) []model.MetricQuery {
+	dimensions := []model.MetricDimension{{Name: "QueueName", Value: queueName}}
+	metric := func(id, label, name, statistic, unit string) model.MetricQuery {
+		return model.MetricQuery{
+			ID: id, Label: label, Namespace: "AWS/SQS", MetricName: name,
+			Dimensions: dimensions, Statistic: statistic, Unit: unit, Scale: 1,
+		}
+	}
+	return []model.MetricQuery{
+		metric("messages_visible", "Available", "ApproximateNumberOfMessagesVisible", "Average", "count"),
+		metric("messages_inflight", "In flight", "ApproximateNumberOfMessagesNotVisible", "Average", "count"),
+		metric("messages_delayed", "Delayed", "ApproximateNumberOfMessagesDelayed", "Average", "count"),
+		metric("messages_sent", "Sent", "NumberOfMessagesSent", "Sum", "count"),
+		metric("messages_received", "Received", "NumberOfMessagesReceived", "Sum", "count"),
+		metric("messages_deleted", "Deleted", "NumberOfMessagesDeleted", "Sum", "count"),
+		metric("oldest_message_age", "Oldest message", "ApproximateAgeOfOldestMessage", "Maximum", "seconds"),
+		metric("empty_receives", "Empty receives", "NumberOfEmptyReceives", "Sum", "count"),
+		metric("sent_message_size", "Average sent size", "SentMessageSize", "Average", "bytes"),
+		metric("fifo_groups_inflight", "Groups with in-flight messages", "ApproximateNumberOfGroupsWithInflightMessages", "Average", "count"),
+		metric("fifo_deduplicated_sent", "Deduplicated sends", "NumberOfDeduplicatedSentMessages", "Sum", "count"),
+	}
+}
 
 // ListSQSQueues returns SQS queues. The SQS API only supports prefix matching,
 // so for substring searches we fetch all queues and filter client-side.

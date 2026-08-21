@@ -146,3 +146,16 @@ func TestChartTimeTicksAlwaysIncludeEndpoints(t *testing.T) {
 		t.Fatalf("chartTimeTicks() = %#v", ticks)
 	}
 }
+
+func TestSQSMetricChartSpecsKeepDepthAndTrafficDistinct(t *testing.T) {
+	specs := sqsMetricChartSpecs()
+	if len(specs) != 7 {
+		t.Fatalf("len(sqsMetricChartSpecs()) = %d, want 7", len(specs))
+	}
+	if specs[0].title != "QUEUE DEPTH" || strings.Join(specs[0].ids, ",") != "messages_visible,messages_inflight,messages_delayed" {
+		t.Fatalf("queue depth spec = %#v", specs[0])
+	}
+	if specs[1].title != "MESSAGE TRAFFIC PER PERIOD" || strings.Join(specs[1].ids, ",") != "messages_sent,messages_received,messages_deleted" {
+		t.Fatalf("message traffic spec = %#v", specs[1])
+	}
+}

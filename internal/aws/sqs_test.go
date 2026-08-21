@@ -25,3 +25,29 @@ func TestAtoi(t *testing.T) {
 		}
 	}
 }
+
+func TestSQSMetricQueries(t *testing.T) {
+	queries := sqsMetricQueries("jobs.fifo")
+	if len(queries) != 11 {
+		t.Fatalf("len(sqsMetricQueries()) = %d, want 11", len(queries))
+	}
+	seen := make(map[string]struct{}, len(queries))
+	for _, query := range queries {
+		if query.Namespace != "AWS/SQS" {
+			t.Fatalf("query %q namespace = %q", query.ID, query.Namespace)
+		}
+		if len(query.Dimensions) != 1 || query.Dimensions[0].Name != "QueueName" || query.Dimensions[0].Value != "jobs.fifo" {
+			t.Fatalf("query %q dimensions = %#v", query.ID, query.Dimensions)
+		}
+		if _, exists := seen[query.ID]; exists {
+			t.Fatalf("duplicate query ID %q", query.ID)
+		}
+		seen[query.ID] = struct{}{}
+	}
+	if queries[0].MetricName != "ApproximateNumberOfMessagesVisible" || queries[0].Statistic != "Average" {
+		t.Fatalf("queue depth query = %#v", queries[0])
+	}
+	if queries[3].MetricName != "NumberOfMessagesSent" || queries[3].Statistic != "Sum" {
+		t.Fatalf("traffic query = %#v", queries[3])
+	}
+}
