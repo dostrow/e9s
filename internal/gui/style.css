@@ -1,0 +1,278 @@
+.toolbar {
+  border-bottom: 1px solid alpha(currentColor, 0.14);
+  padding: 10px 14px;
+}
+
+.breadcrumb {
+  font-weight: 600;
+}
+
+.app-title {
+  font-size: 1.35em;
+  font-weight: 700;
+}
+
+.table-cell {
+  padding: 5px 8px;
+}
+
+.mode-sidebar {
+  padding: 14px 10px;
+}
+
+/* Major application regions sit on softly separated surfaces. The small
+ * gutters are applied by the widget layout so the rounded corners remain
+ * visible even while GtkPaned resizes adjacent regions. */
+.pane-card {
+  border: 1px solid alpha(currentColor, 0.14);
+  border-radius: 10px;
+}
+
+.pane-split > separator {
+  min-width: 6px;
+  min-height: 6px;
+  opacity: 0.16;
+}
+
+.pane-split > separator:hover,
+.pane-split > separator:focus {
+  opacity: 0.5;
+}
+
+.terminal-pane {
+  box-shadow: none;
+}
+
+.terminal-pane-active {
+  box-shadow: inset 0 0 0 1px alpha(currentColor, 0.58);
+}
+
+.terminal-pane-split > separator {
+  min-width: 6px;
+  min-height: 6px;
+}
+
+.section-title {
+  font-size: 0.8em;
+  font-weight: 700;
+  margin-bottom: 8px;
+  opacity: 0.65;
+}
+
+.module-heading {
+  font-weight: 700;
+}
+
+/* GtkExpander reserves and paints a theme-owned arrow before its label. e9s
+ * paints a palette-aware chevron in the label widget instead. */
+.module-heading > box > title > expander {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  -gtk-icon-source: none;
+}
+
+.module-heading-text {
+  font-weight: 700;
+}
+
+.module-subitems {
+  /* Keep child navigation visually subordinate to the module heading. The
+   * heading includes its own chevron, so a shallow indent makes its children
+   * appear to start to the left of the heading text. */
+  margin-left: 30px;
+}
+
+.module-subitem {
+  padding-left: 12px;
+}
+
+.module-saved-section {
+  /* Saved-section headings are peers of the module's built-in sub-items. */
+  margin-left: 14px;
+}
+
+.module-saved-item {
+  /* User-defined entries are children of the saved-section heading. */
+  padding-left: 28px;
+}
+
+.muted {
+  opacity: 0.7;
+}
+
+.saved-log-modified {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.resource-pane {
+  padding: 10px;
+}
+
+.resource-search {
+  margin-bottom: 2px;
+}
+
+.settings-host {
+  margin: 6px;
+}
+
+.e9s-settings-page {
+  border: 1px solid alpha(currentColor, 0.14);
+  border-radius: 10px;
+}
+
+/* GtkNotebook otherwise draws a second framed surface inside the rounded
+ * Settings card. Keep the tab strip and content on the card's one surface. */
+.e9s-settings-page notebook.e9s-settings-notebook,
+.e9s-settings-page notebook.e9s-settings-notebook > header,
+.e9s-settings-page notebook.e9s-settings-notebook > header > tabs,
+.e9s-settings-page notebook.e9s-settings-notebook > stack {
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+.e9s-settings-page notebook.e9s-settings-notebook > header > tabs > tab {
+  border: 0;
+  box-shadow: none;
+}
+
+.e9s-settings-page notebook.e9s-settings-notebook > header > tabs > tab:checked {
+  box-shadow: inset 0 -2px currentColor;
+}
+
+/* The terminal drawer is already framed by its containing pane. Suppress the
+ * notebook's theme-owned inner frame and use one continuous active-tab mark. */
+.terminal-dock notebook.e9s-terminal-notebook,
+.terminal-dock notebook.e9s-terminal-notebook > header,
+.terminal-dock notebook.e9s-terminal-notebook > header > tabs,
+.terminal-dock notebook.e9s-terminal-notebook > stack {
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+.terminal-dock notebook.e9s-terminal-notebook > header > tabs > tab {
+  border: 0;
+  box-shadow: none;
+}
+
+.terminal-dock notebook.e9s-terminal-notebook > header > tabs > tab:checked {
+  box-shadow: inset 0 -2px currentColor;
+}
+
+/* SQL tabs share the terminal drawer's notebook geometry, but live in the
+ * Workspace Pane rather than beneath .terminal-dock. Normalize that surface
+ * explicitly so theme-owned tab borders cannot leave stale underline pixels. */
+.e9s-sql-pane notebook.e9s-sql-notebook,
+.e9s-sql-pane notebook.e9s-sql-notebook > header,
+.e9s-sql-pane notebook.e9s-sql-notebook > header > tabs,
+.e9s-sql-pane notebook.e9s-sql-notebook > stack {
+  border: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+.e9s-sql-pane notebook.e9s-sql-notebook > header > tabs > tab {
+  border: 0;
+  box-shadow: none;
+}
+
+.e9s-sql-pane notebook.e9s-sql-notebook > header > tabs > tab:checked {
+  box-shadow: inset 0 -2px currentColor;
+}
+
+/* Some GtkTextView context menus use a plain popover instead of the .menu
+ * variant. Preserve the theme's disabled color while making the state
+ * unmistakable in themes whose disabled foreground is close to normal text. */
+popover.background button:disabled {
+  opacity: 0.52;
+}
+
+/* Some GTK themes implement a Material ripple by allocating a large circular
+ * check node around a theme-private SVG. Keep e9s controls compact and use a
+ * standard symbolic glyph while retaining the active theme's currentColor. */
+checkbutton.e9s-check > check {
+  min-width: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid alpha(currentColor, 0.7);
+  border-radius: 3px;
+  background-image: none;
+  box-shadow: none;
+  -gtk-icon-source: none;
+}
+
+checkbutton.e9s-check:checked > check,
+checkbutton.e9s-check > check:checked {
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+
+checkbutton.e9s-check:disabled > check,
+checkbutton.e9s-check > check:disabled {
+  opacity: 0.55;
+}
+
+.settings-actions {
+  border-top: 1px solid alpha(currentColor, 0.14);
+  padding: 10px 12px;
+}
+
+.inspector {
+  font-family: monospace;
+  font-size: 0.95em;
+  padding: 14px;
+}
+
+.log-view {
+  font-family: monospace;
+  font-size: 0.95em;
+}
+
+.log-toolbar {
+  border-bottom: 1px solid alpha(currentColor, 0.14);
+  padding: 8px;
+}
+
+.workspace-busy {
+  border-bottom: 1px solid alpha(currentColor, 0.14);
+  padding: 8px 12px;
+}
+
+/* GTK dialog action areas are linked button boxes in several themes. Keep
+ * ordinary actions visually distinct with the same eight-pixel gap used by
+ * application-owned button groups. */
+.dialog-action-area > button {
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+.status-bar {
+  border-top: 1px solid alpha(currentColor, 0.14);
+  padding: 7px 12px;
+}
+
+.error {
+  font-weight: 600;
+}
+
+.e9s-zoom-70  { font-size: 0.7em; }
+.e9s-zoom-80  { font-size: 0.8em; }
+.e9s-zoom-90  { font-size: 0.9em; }
+.e9s-zoom-100 { font-size: 1em; }
+.e9s-zoom-110 { font-size: 1.1em; }
+.e9s-zoom-120 { font-size: 1.2em; }
+.e9s-zoom-130 { font-size: 1.3em; }
+.e9s-zoom-140 { font-size: 1.4em; }
+.e9s-zoom-150 { font-size: 1.5em; }
+.e9s-zoom-160 { font-size: 1.6em; }
+.e9s-zoom-170 { font-size: 1.7em; }
+.e9s-zoom-180 { font-size: 1.8em; }
+.e9s-zoom-190 { font-size: 1.9em; }
+.e9s-zoom-200 { font-size: 2em; }

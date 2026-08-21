@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -16,7 +16,7 @@ import (
 type R53RecordsModel struct {
 	zoneName    string
 	zoneID      string
-	records     []aws.R53Record
+	records     []model.Route53Record
 	cursor      int
 	filter      string
 	filtering   bool
@@ -145,7 +145,7 @@ func recordTypeStyle(t string) lipgloss.Style {
 	}
 }
 
-func recordSummaryValue(r aws.R53Record) string {
+func recordSummaryValue(r model.Route53Record) string {
 	if r.AliasTarget != "" {
 		return "ALIAS → " + r.AliasTarget
 	}
@@ -166,12 +166,12 @@ func recordSummaryValue(r aws.R53Record) string {
 	return fmt.Sprintf("%s (+%d more)", first, len(r.Values)-1)
 }
 
-func (m R53RecordsModel) filteredRecords() []aws.R53Record {
+func (m R53RecordsModel) filteredRecords() []model.Route53Record {
 	if m.filter == "" {
 		return m.records
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.R53Record
+	var out []model.Route53Record
 	for _, r := range m.records {
 		if strings.Contains(strings.ToLower(r.Name), lf) ||
 			strings.Contains(strings.ToLower(r.Type), lf) ||
@@ -182,7 +182,7 @@ func (m R53RecordsModel) filteredRecords() []aws.R53Record {
 	return out
 }
 
-func (m R53RecordsModel) SetRecords(records []aws.R53Record) R53RecordsModel {
+func (m R53RecordsModel) SetRecords(records []model.Route53Record) R53RecordsModel {
 	m.records = records
 	m.loaded = true
 	filtered := m.filteredRecords()
@@ -192,7 +192,7 @@ func (m R53RecordsModel) SetRecords(records []aws.R53Record) R53RecordsModel {
 	return m
 }
 
-func (m R53RecordsModel) SelectedRecord() *aws.R53Record {
+func (m R53RecordsModel) SelectedRecord() *model.Route53Record {
 	filtered := m.filteredRecords()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
@@ -201,9 +201,9 @@ func (m R53RecordsModel) SelectedRecord() *aws.R53Record {
 	return &r
 }
 
-func (m R53RecordsModel) ZoneName() string    { return m.zoneName }
-func (m R53RecordsModel) ZoneID() string      { return m.zoneID }
-func (m R53RecordsModel) IsFiltering() bool   { return m.filtering }
+func (m R53RecordsModel) ZoneName() string  { return m.zoneName }
+func (m R53RecordsModel) ZoneID() string    { return m.zoneID }
+func (m R53RecordsModel) IsFiltering() bool { return m.filtering }
 
 func (m R53RecordsModel) visibleRows() int {
 	overhead := 9

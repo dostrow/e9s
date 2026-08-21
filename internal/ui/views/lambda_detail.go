@@ -5,17 +5,17 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type LambdaDetailModel struct {
-	fn     *aws.LambdaFunction
+	fn     *model.LambdaFunction
 	width  int
 	height int
 }
 
-func NewLambdaDetail(fn *aws.LambdaFunction) LambdaDetailModel {
+func NewLambdaDetail(fn *model.LambdaFunction) LambdaDetailModel {
 	return LambdaDetailModel{fn: fn}
 }
 
@@ -78,7 +78,7 @@ func formatBytesLambda(b int64) string {
 	}
 }
 
-func (m LambdaDetailModel) Function() *aws.LambdaFunction {
+func (m LambdaDetailModel) Function() *model.LambdaFunction {
 	return m.fn
 }
 

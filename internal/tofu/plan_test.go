@@ -1,6 +1,7 @@
 package tofu
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -182,6 +183,15 @@ func TestFormatValue(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("formatValue(%v) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestFormatValueDoesNotTruncatePlanDetails(t *testing.T) {
+	t.Parallel()
+
+	value := strings.Repeat("configuration-", 20)
+	if got := formatValue(value); got != value {
+		t.Fatalf("formatValue truncated detail: got %d bytes, want %d", len(got), len(value))
 	}
 }
 

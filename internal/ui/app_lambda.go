@@ -1,13 +1,12 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -35,9 +34,10 @@ func (a App) openLambdaList(filter string) (App, tea.Cmd) {
 	a.lambdaListView = views.NewLambdaList(filter)
 	a.lambdaListView = a.lambdaListView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	lambdaService := a.lambda
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		functions, err := client.ListLambdaFunctions(context.Background(), filter)
+		functions, err := lambdaService.List(ctx, filter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -105,14 +105,21 @@ func (a App) showLambdaEnvVars() (App, tea.Cmd) {
 		return a, nil
 	}
 	a.prevState = viewLambdaDetail
-	client := a.client
+	lambdaService := a.lambda
+	ctx := a.ctx
+	name := fn.Name
 
 	// Resolve any SSM/SM references
 	return a, func() tea.Msg {
-		resolved := client.ResolveEnvVars(context.Background(), fn.EnvVars)
+		resolved, err := lambdaService.Environment(ctx, name, true)
+		if err != nil {
+			return errMsg{err}
+		}
 		return envVarsReadyMsg{
-			title:   fmt.Sprintf("λ %s", fn.Name),
-			envVars: resolved,
+			title:       fmt.Sprintf("λ %s", name),
+			envVars:     resolved,
+			resolved:    true,
+			returnState: viewLambdaDetail,
 		}
 	}
 }
@@ -147,11 +154,12 @@ func (a App) editLambdaCode() (App, tea.Cmd) {
 		return a, nil
 	}
 	a.loading = true
-	client := a.client
+	lambdaService := a.lambda
+	ctx := a.ctx
 	name := fn.Name
 	return a, func() tea.Msg {
 		// Check package type
-		pkgType, err := client.LambdaPackageType(context.Background(), name)
+		pkgType, err := lambdaService.PackageType(ctx, name)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -159,7 +167,7 @@ func (a App) editLambdaCode() (App, tea.Cmd) {
 			return errMsg{fmt.Errorf("cannot edit container image functions — only ZIP deployments are supported")}
 		}
 
-		dir, err := client.DownloadLambdaCode(context.Background(), name)
+		dir, err := lambdaService.DownloadCode(ctx, name)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -179,7 +187,7 @@ func (a App) handleLambdaCodeReady(msg lambdaCodeReadyMsg) (App, tea.Cmd) {
 			return errMsg{err}
 		}
 		// Repackage the directory
-		zipData, err := aws.ZipDirectory(msg.dir)
+		zipData, err := service.ZipDirectory(msg.dir)
 		os.RemoveAll(msg.dir)
 		if err != nil {
 			return errMsg{fmt.Errorf("failed to create zip: %w", err)}
@@ -192,11 +200,12 @@ func (a App) handleLambdaCodeReady(msg lambdaCodeReadyMsg) (App, tea.Cmd) {
 }
 
 func (a App) doLambdaCodeUpdate() tea.Cmd {
-	client := a.client
+	lambdaService := a.lambda
+	ctx := a.ctx
 	name := a.lambdaEditFunc
 	data := a.lambdaEditZip
 	return func() tea.Msg {
-		err := client.UpdateLambdaCode(context.Background(), name, data)
+		err := lambdaService.UpdateCode(ctx, name, data)
 		if err != nil {
 			return errMsg{err}
 		}

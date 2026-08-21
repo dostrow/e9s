@@ -6,34 +6,6 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
-func TestStateOrder(t *testing.T) {
-	tests := []struct {
-		state string
-		want  int
-	}{
-		{"running", 0},
-		{"pending", 1},
-		{"stopping", 2},
-		{"stopped", 3},
-		{"shutting-down", 4},
-		{"terminated", 5},
-		{"unknown-state", 9},
-		{"", 9},
-	}
-	for _, tt := range tests {
-		got := stateOrder(tt.state)
-		if got != tt.want {
-			t.Errorf("stateOrder(%q) = %d, want %d", tt.state, got, tt.want)
-		}
-	}
-}
-
-func TestStateOrder_RunningBeforeStopped(t *testing.T) {
-	if stateOrder("running") >= stateOrder("stopped") {
-		t.Error("running should sort before stopped")
-	}
-}
-
 func TestSgRulesFromPerm_BasicInbound(t *testing.T) {
 	from := int32(80)
 	to := int32(80)

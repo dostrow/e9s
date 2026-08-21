@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -15,7 +15,7 @@ import (
 type SQSMessagesModel struct {
 	queueName string
 	queueURL  string
-	messages  []aws.SQSMessage
+	messages  []model.SQSMessage
 	cursor    int
 	width     int
 	height    int
@@ -92,7 +92,7 @@ func (m SQSMessagesModel) View() string {
 	return b.String()
 }
 
-func (m SQSMessagesModel) SetMessages(messages []aws.SQSMessage) SQSMessagesModel {
+func (m SQSMessagesModel) SetMessages(messages []model.SQSMessage) SQSMessagesModel {
 	m.messages = append(m.messages, messages...)
 	return m
 }
@@ -103,7 +103,7 @@ func (m SQSMessagesModel) ClearMessages() SQSMessagesModel {
 	return m
 }
 
-func (m SQSMessagesModel) SelectedMessage() *aws.SQSMessage {
+func (m SQSMessagesModel) SelectedMessage() *model.SQSMessage {
 	if len(m.messages) == 0 || m.cursor >= len(m.messages) {
 		return nil
 	}

@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,9 @@ import (
 	e9saws "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/refreshpolicy"
+	"github.com/dostrow/e9s/internal/service"
+	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/ui/theme"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -35,6 +39,10 @@ const (
 	modeTofu
 	modeRoute53
 	modeRDS
+	modeCostExplorer
+	modeElastiCache
+	modeAPIGateway
+	modeSQLWorkbench
 )
 
 type viewState int
@@ -78,6 +86,18 @@ const (
 	viewEC2Instances
 	viewEC2Detail
 	viewEC2Console
+	viewEC2SecurityGroups
+	viewEC2SecurityGroupDetail
+	viewEC2VPCs
+	viewEC2VPCDetail
+	viewEC2Subnets
+	viewEC2SubnetDetail
+	viewEC2Volumes
+	viewEC2VolumeDetail
+	viewEC2LoadBalancers
+	viewEC2LoadBalancerDetail
+	viewEC2TargetGroups
+	viewEC2TargetGroupDetail
 	viewECRRepos
 	viewECRImages
 	viewECRFindings
@@ -88,127 +108,232 @@ const (
 	viewR53Zones
 	viewR53Records
 	viewR53RecordDetail
+	viewRDSClusters
 	viewRDSInstances
 	viewRDSDetail
+	viewCostExplorer
+	viewElastiCache
+	viewElastiCacheDetail
+	viewAPIGateway
+	viewAPIGatewayDetail
+	viewSQLConnections
+	viewSQLWorkbench
 )
 
 type App struct {
-	client              *e9saws.Client
-	cfg                 *config.Config
-	mode                topMode
-	state               viewState
-	prevState           viewState
-	clusterView         views.ClusterListModel
-	serviceView         views.ServiceListModel
-	taskView            views.TaskListModel
-	detailView          views.TaskDetailModel
-	taskDefsView        views.TaskDefsModel
-	taskDefDetailView   views.TaskDefDetailModel
-	serviceDetailView   views.ServiceDetailModel
-	logView             views.LogViewerModel
-	standaloneView      views.StandaloneTasksModel
-	diffView            views.TaskDefDiffModel
-	metricsView         views.MetricsModel
-	envVarsView         views.EnvVarsModel
-	logGroupsView       views.LogGroupsModel
-	logStreamsView      views.LogStreamsModel
-	logSearchView       views.LogSearchModel
-	ssmView             views.SSMModel
-	secretsView         views.SecretsModel
-	secretValueView     views.SecretValueModel
-	s3BucketsView       views.S3BucketsModel
-	s3ObjectsView       views.S3ObjectsModel
-	s3DetailView        views.S3DetailModel
-	lambdaListView      views.LambdaListModel
-	lambdaDetailView    views.LambdaDetailModel
-	dynamoTablesView    views.DynamoTablesModel
-	dynamoItemsView     views.DynamoItemsModel
-	dynamoDetailView    views.DynamoItemDetailModel
-	sqsQueuesView       views.SQSQueuesModel
-	sqsDetailView       views.SQSDetailModel
-	sqsMessagesView     views.SQSMessagesModel
-	sqsMsgDetailView    views.SQSMessageDetailModel
-	alarmsView          views.AlarmsModel
-	alarmDetailView     views.AlarmDetailModel
-	cbProjectsView      views.CBProjectsModel
-	cbBuildsView        views.CBBuildsModel
-	cbBuildDetailView   views.CBBuildDetailModel
-	ec2InstancesView    views.EC2InstancesModel
-	ec2DetailView       views.EC2DetailModel
-	ec2ConsoleView      views.EC2ConsoleModel
-	ecrReposView        views.ECRReposModel
-	ecrImagesView       views.ECRImagesModel
-	ecrFindingsView     views.ECRFindingsModel
-	tofuResourcesView   views.TofuResourcesModel
-	tofuStateDetailView views.TofuStateDetailModel
-	tofuPlanView        views.TofuPlanModel
-	tofuPlanDetailView  views.TofuPlanDetailModel
-	r53ZonesView        views.R53ZonesModel
-	r53RecordsView      views.R53RecordsModel
-	r53DetailView       views.R53RecordDetailModel
-	rdsInstancesView    views.RDSInstancesModel
-	rdsDetailView       views.RDSDetailModel
-	regionPicker        views.RegionPickerModel
+	client                     *e9saws.Client
+	ecs                        *service.ECS
+	logs                       *service.Logs
+	alarms                     *service.Alarms
+	ssm                        *service.SSM
+	secrets                    *service.Secrets
+	lambda                     *service.Lambda
+	codeBuild                  *service.CodeBuild
+	ec2                        *service.EC2
+	rds                        *service.RDS
+	ec2Network                 *service.EC2Network
+	ebs                        *service.EBS
+	loadBalancing              *service.LoadBalancing
+	ecr                        *service.ECR
+	s3                         *service.S3
+	dynamoDB                   *service.DynamoDB
+	sqs                        *service.SQS
+	route53                    *service.Route53
+	tofu                       *service.Tofu
+	costExplorer               *service.CostExplorer
+	elastiCache                *service.ElastiCache
+	apiGateway                 *service.APIGateway
+	ctx                        context.Context
+	cancel                     context.CancelFunc
+	cfg                        *config.Config
+	mode                       topMode
+	state                      viewState
+	prevState                  viewState
+	clusterView                views.ClusterListModel
+	serviceView                views.ServiceListModel
+	taskView                   views.TaskListModel
+	detailView                 views.TaskDetailModel
+	taskDefsView               views.TaskDefsModel
+	taskDefDetailView          views.TaskDefDetailModel
+	serviceDetailView          views.ServiceDetailModel
+	logView                    views.LogViewerModel
+	standaloneView             views.StandaloneTasksModel
+	diffView                   views.TaskDefDiffModel
+	metricsView                views.MetricsModel
+	envVarsView                views.EnvVarsModel
+	logGroupsView              views.LogGroupsModel
+	logStreamsView             views.LogStreamsModel
+	logSearchView              views.LogSearchModel
+	ssmView                    views.SSMModel
+	secretsView                views.SecretsModel
+	secretValueView            views.SecretValueModel
+	s3BucketsView              views.S3BucketsModel
+	s3ObjectsView              views.S3ObjectsModel
+	s3DetailView               views.S3DetailModel
+	lambdaListView             views.LambdaListModel
+	lambdaDetailView           views.LambdaDetailModel
+	dynamoTablesView           views.DynamoTablesModel
+	dynamoItemsView            views.DynamoItemsModel
+	dynamoDetailView           views.DynamoItemDetailModel
+	sqsQueuesView              views.SQSQueuesModel
+	sqsDetailView              views.SQSDetailModel
+	sqsMessagesView            views.SQSMessagesModel
+	sqsMsgDetailView           views.SQSMessageDetailModel
+	alarmsView                 views.AlarmsModel
+	alarmDetailView            views.AlarmDetailModel
+	cbProjectsView             views.CBProjectsModel
+	cbBuildsView               views.CBBuildsModel
+	cbBuildDetailView          views.CBBuildDetailModel
+	ec2InstancesView           views.EC2InstancesModel
+	ec2DetailView              views.EC2DetailModel
+	ec2ConsoleView             views.EC2ConsoleModel
+	ec2SecurityGroupsView      views.EC2SecurityGroupsModel
+	ec2SecurityGroupDetailView views.EC2SecurityGroupDetailModel
+	ec2ResourceListView        views.EC2ResourceListModel
+	ec2ResourceDetailView      views.EC2ResourceDetailModel
+	ec2VPCs                    []model.EC2VPC
+	ec2VPCDetail               *model.EC2VPC
+	ec2Subnets                 []model.EC2Subnet
+	ec2SubnetDetail            *model.EC2Subnet
+	ec2SubnetVPCFilter         string
+	ec2Volumes                 []model.EC2Volume
+	ec2VolumeDetail            *model.EC2Volume
+	ec2LoadBalancers           []model.EC2LoadBalancer
+	ec2LoadBalancerDetail      *model.EC2LoadBalancer
+	ec2TargetGroups            []model.EC2TargetGroup
+	ec2TargetGroupDetail       *model.EC2TargetGroup
+	ecrReposView               views.ECRReposModel
+	ecrImagesView              views.ECRImagesModel
+	ecrFindingsView            views.ECRFindingsModel
+	tofuResourcesView          views.TofuResourcesModel
+	tofuStateDetailView        views.TofuStateDetailModel
+	tofuPlanView               views.TofuPlanModel
+	tofuPlanDetailView         views.TofuPlanDetailModel
+	r53ZonesView               views.R53ZonesModel
+	r53RecordsView             views.R53RecordsModel
+	r53DetailView              views.R53RecordDetailModel
+	rdsInstancesView           views.RDSInstancesModel
+	rdsClustersView            views.RDSClustersModel
+	rdsDetailView              views.RDSDetailModel
+	costView                   views.EC2ResourceListModel
+	costReport                 model.CostReport
+	costAnomalyReport          model.CostAnomalyReport
+	costCacheStatus            model.CostCacheStatus
+	costQuery                  model.CostQuery
+	costSubview                string
+	costResources              bool
+	costForecast               bool
+	elastiCacheView            views.EC2ResourceListModel
+	elastiCacheDetailView      views.EC2ResourceDetailModel
+	elastiCacheKind            model.ElastiCacheKind
+	elastiCacheResources       []model.ElastiCacheResource
+	selectedElastiCache        *model.ElastiCacheResource
+	apiGatewayView             views.EC2ResourceListModel
+	apiGatewayDetailView       views.EC2ResourceDetailModel
+	apiGatewayKind             model.APIGatewayKind
+	apiGatewayResources        []model.APIGatewayAPI
+	selectedAPIGateway         *model.APIGatewayAPI
+	sqlExecutor                *sqlworkbench.Executor
+	sqlPasswords               *sqlPasswordCache
+	sqlProfiles                []config.SQLConnection
+	sqlConnectionsView         views.EC2ResourceListModel
+	sqlWorkbenchView           views.SQLWorkbenchModel
+	sqlStatePath               string
+	sqlPending                 bool
+	sqlPendingRun              sqlTUIRunMode
+	sqlPendingProfile          string
+	regionPicker               views.RegionPickerModel
 
 	// Navigation context
-	selectedCluster       *model.Cluster
-	selectedService       *model.Service
-	selectedTask          *model.Task
-	selectedTaskDef       string
-	execContainerName     string
-	scaleInCluster        string
-	scaleInService        string
-	scaleInCurrentState   bool
-	logSearchGroup        string
-	logSearchGroups       []string // multi-group search
-	logSearchStreams      []string
-	logSearchStartMs      int64
-	logSearchEndMs        int64
-	logSearchFilter       string // quoted/processed filter pattern for CW API
-	logCorrelationActive  bool
-	logCorrelationTS      int64
-	logCorrelationPattern string
-	logCorrelationGroups  []string
-	logCorrelationStreams []string
-	logSaveGroup          string
-	logSaveStream         string
-	ssmEditName           string
-	ssmEditValue          string
-	smEditName            string
-	smEditValue           string
-	smCloneName           string
-	smCloneValue          string
-	s3DownloadBucket      string
-	s3DownloadKey         string
-	s3DownloadIsPrefix    bool
-	dynamoKeyNames        []string
-	dynamoLastKey         any // stores map[string]dbtypes.AttributeValue for pagination
-	dynamoFilterAttr      string
-	dynamoFilterOp        string
-	dynamoFilterExpr      bool
-	dynamoLastPartiQL     string
-	sqsSendQueueURL       string
-	sqsSendTemplate       *e9saws.SQSSendTemplate
-	cbTriggerProject      string
-	pathInput             *PathInput
-	tofuDir               string
-	tofuPlanFile          string
-	r53EditZoneID         string
-	r53EditRecord         *e9saws.R53Record
-	r53EditOriginal       *e9saws.R53Record
-	lambdaEditDir         string
-	lambdaEditFunc        string
-	lambdaEditZip         []byte
-	dynamoEditField       string
-	dynamoEditValue       string
-	dynamoEditItem        *e9saws.DynamoItem
-	dynamoCloneItem       *e9saws.DynamoItem
+	selectedCluster          *model.Cluster
+	selectedService          *model.Service
+	selectedTask             *model.Task
+	selectedTaskDef          string
+	taskScopeStopped         bool
+	taskNextToken            string
+	taskDetailReturnState    viewState
+	serviceDetailReturnState viewState
+	taskDefsReturnState      viewState
+	standaloneReturnState    viewState
+	standaloneReturnService  *model.Service
+	standaloneReturnTask     *model.Task
+	metricsReturnState       viewState
+	metricsTaskScope         bool
+	metricsServiceName       string
+	rdsClusterContext        string
+	diffReturnState          viewState
+	envTaskDefinition        string
+	envContainer             string
+	envTitle                 string
+	envSecretsResolved       bool
+	taskDefinitionDocument   string
+	execContainerName        string
+	scaleInCluster           string
+	scaleInService           string
+	scaleInCurrentState      bool
+	logSearchGroup           string
+	logSearchGroups          []string // multi-group search
+	logSearchStreams         []string
+	logSearchStartMs         int64
+	logSearchEndMs           int64
+	logSearchFilter          string // quoted/processed filter pattern for CW API
+	logSearchHighlightRules  []model.LogHighlightRule
+	logSearchHiddenStreams   []string
+	logSearchSavedPath       string
+	logBrowseHighlightRules  []model.LogHighlightRule
+	logBrowseHiddenStreams   []string
+	logBrowseSavedPath       string
+	activeLogPathName        string
+	logCorrelationActive     bool
+	logCorrelationTS         int64
+	logCorrelationPattern    string
+	logCorrelationRules      []model.LogHighlightRule
+	logCorrelationEntry      *model.LogEntry
+	logCorrelationGroups     []string
+	logCorrelationStreams    []string
+	logSaveGroup             string
+	logSaveStream            string
+	ssmEditName              string
+	ssmEditValue             string
+	smEditName               string
+	smEditValue              string
+	smCloneName              string
+	smCloneValue             string
+	s3DownloadBucket         string
+	s3DownloadKey            string
+	s3DownloadIsPrefix       bool
+	dynamoKeyNames           []string
+	dynamoLastKey            string
+	dynamoFilterAttr         string
+	dynamoFilterOp           string
+	dynamoFilterExpr         bool
+	dynamoLastPartiQL        string
+	sqsSendQueueURL          string
+	sqsSendTemplate          *model.SQSSendTemplate
+	cbTriggerProject         string
+	pathInput                *PathInput
+	runTaskForm              RunTaskFormModel
+	tofuDir                  string
+	tofuPlanFile             string
+	r53EditZoneID            string
+	r53EditRecord            *model.Route53Record
+	r53EditOriginal          *model.Route53Record
+	lambdaEditDir            string
+	lambdaEditFunc           string
+	lambdaEditZip            []byte
+	dynamoEditField          string
+	dynamoEditValue          string
+	dynamoEditItem           *model.DynamoItem
+	dynamoCloneItem          *model.DynamoItem
+	resourceLinks            []model.ResourceRef
+	resourceHistory          []model.ResourceRef
 
 	// Modal dialogs
 	confirm      ConfirmModel
 	input        InputModel
 	picker       PickerModel
 	help         HelpModel
+	errorDetails ErrorDetailsModel
 	modeSwitcher ModeSwitcherModel
 
 	// Mode tabs (built from config)
@@ -231,19 +356,58 @@ type App struct {
 	height        int
 }
 
-func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
-	idleTimeout := 5 * time.Minute
-	if cfg.Defaults.IdleTimeout > 0 {
-		idleTimeout = time.Duration(cfg.Defaults.IdleTimeout) * time.Second
+func (a App) autoRefreshClass() refreshpolicy.Class {
+	switch a.state {
+	case viewLogs, viewLogSearch, viewDynamoItems, viewDynamoItemDetail, viewCostExplorer, viewSQLConnections, viewSQLWorkbench,
+		viewTofuResources, viewTofuStateDetail, viewTofuPlan, viewTofuPlanDetail:
+		return refreshpolicy.Manual
+	case viewMetrics:
+		return refreshpolicy.Metrics
+	case viewS3Buckets, viewS3Objects, viewS3Detail, viewSQSQueues, viewSQSDetail,
+		viewSQSMessages, viewSQSMessageDetail, viewSecrets, viewSecretValue, viewSSM:
+		return refreshpolicy.Metered
+	case viewClusters, viewServices, viewTasks, viewTaskDetail, viewServiceDetail,
+		viewStandaloneTasks, viewCBProjects, viewCBBuilds, viewCBBuildDetail:
+		return refreshpolicy.Operational
+	default:
+		return refreshpolicy.Inventory
 	}
+}
+
+func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
+	ctx, cancel := context.WithCancel(context.Background())
+	idleTimeout := time.Duration(cfg.Defaults.IdleTimeout) * time.Second
 
 	app := App{
-		client:       client,
-		cfg:          cfg,
-		state:        viewClusters,
-		clusterView:  views.NewClusterList(),
-		refreshSec:   refreshSec,
-		lastActivity: time.Now(),
+		client:        client,
+		ecs:           service.NewECS(client),
+		logs:          service.NewLogs(client),
+		alarms:        service.NewAlarms(client),
+		ssm:           service.NewSSM(client),
+		secrets:       service.NewSecrets(client),
+		lambda:        service.NewLambda(client),
+		codeBuild:     service.NewCodeBuild(client),
+		ec2:           service.NewEC2(client),
+		rds:           service.NewRDS(client),
+		ec2Network:    service.NewEC2Network(client),
+		ebs:           service.NewEBS(client),
+		loadBalancing: service.NewLoadBalancing(client),
+		ecr:           service.NewECR(client),
+		s3:            service.NewS3(client),
+		dynamoDB:      service.NewDynamoDB(client),
+		sqs:           service.NewSQS(client),
+		route53:       service.NewRoute53(client),
+		tofu:          service.NewTofu(),
+		costExplorer:  service.NewCostExplorer(client),
+		elastiCache:   service.NewElastiCache(client),
+		apiGateway:    service.NewAPIGateway(client),
+		ctx:           ctx,
+		cancel:        cancel,
+		cfg:           cfg,
+		state:         viewClusters,
+		clusterView:   views.NewClusterList(),
+		refreshSec:    refreshSec,
+		lastActivity:  time.Now(),
 		kb: func() KeyBindings {
 			kb := NewKeyBindings()
 			kb.ApplyOverrides(cfg.KeyBindings)
@@ -251,6 +415,20 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		}(),
 		idleTimeout: idleTimeout,
 	}
+	passwords := newSQLPasswordCache()
+	sqlState, _ := sqlworkbench.LoadState("")
+	sqlStatePath, _ := sqlworkbench.DefaultStatePath()
+	for index := range sqlState.Tabs {
+		sqlState.Tabs[index].AllowWrites = false
+	}
+	app.sqlPasswords = passwords
+	app.sqlStatePath = sqlStatePath
+	app.sqlWorkbenchView = views.NewSQLWorkbench(sqlState.Tabs, sqlState.ActiveTabID)
+	app.sqlExecutor = sqlworkbench.NewExecutor(sqlworkbench.ExecutorOptions{
+		AuthProvider: client, DataAPI: client, Prompt: sqlPasswordPrompt(passwords),
+		PGPassFiles: cfg.SQL.PGPassFiles, AllowWrites: cfg.SQL.AllowWrites,
+		AWSProfile: cfg.Defaults.Profile, AWSRegion: client.Region(),
+	})
 
 	allModes := []struct {
 		mode    topMode
@@ -272,6 +450,10 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeTofu, "TF", cfg.ModuleTofu()},
 		{modeRoute53, "R53", cfg.ModuleRoute53()},
 		{modeRDS, "RDS", cfg.ModuleRDS()},
+		{modeCostExplorer, "COST", cfg.ModuleCostExplorer()},
+		{modeElastiCache, "CACHE", cfg.ModuleElastiCache()},
+		{modeAPIGateway, "APIGW", cfg.ModuleAPIGateway()},
+		{modeSQLWorkbench, "SQL", cfg.ModuleSQLWorkbench()},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -322,6 +504,10 @@ func resolveDefaultMode(s string) *topMode {
 		"Tofu": modeTofu, "tofu": modeTofu, "TF": modeTofu, "tf": modeTofu, "terraform": modeTofu, "opentofu": modeTofu,
 		"Route53": modeRoute53, "route53": modeRoute53, "R53": modeRoute53, "r53": modeRoute53, "dns": modeRoute53,
 		"RDS": modeRDS, "rds": modeRDS,
+		"Cost Explorer": modeCostExplorer, "cost explorer": modeCostExplorer, "cost": modeCostExplorer, "CE": modeCostExplorer, "ce": modeCostExplorer,
+		"ElastiCache": modeElastiCache, "elasticache": modeElastiCache, "CACHE": modeElastiCache, "cache": modeElastiCache,
+		"API Gateway": modeAPIGateway, "api gateway": modeAPIGateway, "apigateway": modeAPIGateway, "APIGW": modeAPIGateway,
+		"SQL Workbench": modeSQLWorkbench, "sql workbench": modeSQLWorkbench, "sql": modeSQLWorkbench, "postgres": modeSQLWorkbench, "postgresql": modeSQLWorkbench,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -395,6 +581,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ec2InstancesView = a.ec2InstancesView.SetSize(w, h)
 		a.ec2DetailView = a.ec2DetailView.SetSize(w, h)
 		a.ec2ConsoleView = a.ec2ConsoleView.SetSize(w, h)
+		a.ec2SecurityGroupsView = a.ec2SecurityGroupsView.SetSize(w, h)
+		a.ec2SecurityGroupDetailView = a.ec2SecurityGroupDetailView.SetSize(w, h)
+		a.ec2ResourceListView = a.ec2ResourceListView.SetSize(w, h)
+		a.ec2ResourceDetailView = a.ec2ResourceDetailView.SetSize(w, h)
 		a.ecrReposView = a.ecrReposView.SetSize(w, h)
 		a.ecrImagesView = a.ecrImagesView.SetSize(w, h)
 		a.ecrFindingsView = a.ecrFindingsView.SetSize(w, h)
@@ -406,15 +596,35 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.r53RecordsView = a.r53RecordsView.SetSize(w, h)
 		a.r53DetailView = a.r53DetailView.SetSize(w, h)
 		a.rdsInstancesView = a.rdsInstancesView.SetSize(w, h)
+		a.rdsClustersView = a.rdsClustersView.SetSize(w, h)
 		a.rdsDetailView = a.rdsDetailView.SetSize(w, h)
+		a.costView = a.costView.SetSize(w, h)
+		a.elastiCacheView = a.elastiCacheView.SetSize(w, h)
+		a.elastiCacheDetailView = a.elastiCacheDetailView.SetSize(w, h)
+		a.apiGatewayView = a.apiGatewayView.SetSize(w, h)
+		a.apiGatewayDetailView = a.apiGatewayDetailView.SetSize(w, h)
+		a.sqlConnectionsView = a.sqlConnectionsView.SetSize(w, h)
+		a.sqlWorkbenchView = a.sqlWorkbenchView.SetSize(w, h)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
 		a.logSearchView = a.logSearchView.SetSize(w, h)
+		a.errorDetails = a.errorDetails.SetSize(wsm.Width, wsm.Height)
 		return a, nil
 	}
 
 	// Handle overlays — these consume all input when active
+	if a.errorDetails.Active {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			if km.String() == "d" || km.String() == "D" {
+				a.err = nil
+				a.errorDetails = ErrorDetailsModel{}
+				return a, nil
+			}
+			a.errorDetails = a.errorDetails.Update(km)
+		}
+		return a, nil
+	}
 	if a.help.Active {
 		if _, ok := msg.(tea.KeyMsg); ok {
 			a.help.Active = false
@@ -463,6 +673,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.input, cmd = a.input.Update(msg)
 		return a, cmd
 	}
+	if a.runTaskForm.Active {
+		switch msg.(type) {
+		case RunTaskSubmitMsg, RunTaskCancelMsg:
+			// Let form results pass through to the main handler.
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			a.runTaskForm, cmd = a.runTaskForm.Update(msg)
+			return a, cmd
+		default:
+			return a, nil
+		}
+	}
 	if a.pathInput != nil {
 		// Let result/cancel messages pass through to the main handler
 		switch msg.(type) {
@@ -489,6 +711,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// --- ECS data messages ---
 	case clustersLoadedMsg:
+		if a.state != viewClusters {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -496,6 +721,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case servicesLoadedMsg:
+		if (a.state != viewServices && a.state != viewServiceDetail) || msg.cluster != a.selectedClusterName() {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -512,22 +740,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tasksLoadedMsg:
+		if a.state != viewTasks || msg.cluster != a.selectedClusterName() ||
+			msg.service != a.selectedServiceName() || msg.stopped != a.taskScopeStopped {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
-		a.taskView = a.taskView.SetTasks(msg.tasks)
+		a.taskNextToken = msg.nextToken
+		if msg.append {
+			a.taskView = a.taskView.AppendTasks(msg.tasks)
+		} else {
+			a.taskView = a.taskView.SetTasks(msg.tasks)
+		}
+		a.taskView = a.taskView.SetHasMore(msg.nextToken != "")
 		return a, nil
 
 	case taskDetailRefreshedMsg:
+		if a.state != viewTaskDetail || a.selectedTask == nil || msg.taskARN != a.selectedTask.TaskARN {
+			return a, nil
+		}
 		if msg.task != nil {
 			a.selectedTask = msg.task
-			a.detailView = views.NewTaskDetail(msg.task)
+			a.detailView = a.newTaskDetail(msg.task)
 			a.detailView = a.detailView.SetSize(a.width, a.height-3)
 			a.lastRefresh = time.Now()
 		}
 		return a, nil
 
 	case taskDefsLoadedMsg:
+		if a.state != viewTaskDefs && a.state != viewTaskDefDetail {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -535,6 +779,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case taskDefLoadedMsg:
+		if a.state != viewTaskDefs && a.state != viewTaskDefDetail {
+			return a, nil
+		}
+		if msg.def != nil && fmt.Sprintf("%s:%d", msg.def.Family, msg.def.Revision) != a.selectedTaskDef {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
@@ -547,10 +797,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case standaloneTasksLoadedMsg:
+		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() || msg.stopped != a.taskScopeStopped {
+			return a, nil
+		}
 		a.loading = false
 		a.lastRefresh = time.Now()
 		a.err = nil
-		a.standaloneView = a.standaloneView.SetTasks(msg.tasks)
+		a.taskNextToken = msg.nextToken
+		if msg.append {
+			a.standaloneView = a.standaloneView.AppendTasks(msg.tasks)
+		} else {
+			a.standaloneView = a.standaloneView.SetTasks(msg.tasks)
+		}
+		a.standaloneView = a.standaloneView.SetHasMore(msg.nextToken != "")
 		return a, nil
 
 	case errMsg:
@@ -560,9 +819,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- Log messages ---
 	case logReadyMsg:
+		if msg.ecsGuard {
+			if a.state != msg.returnState || msg.cluster != a.selectedClusterName() {
+				return a, nil
+			}
+			if msg.taskARN != "" {
+				task := a.taskForCurrentView()
+				if task == nil || task.TaskARN != msg.taskARN || msg.service != a.selectedServiceName() {
+					return a, nil
+				}
+			} else {
+				service := a.serviceView.SelectedService()
+				if service == nil || service.Name != msg.service {
+					return a, nil
+				}
+			}
+			a.prevState = msg.returnState
+		}
 		a.state = viewLogs
+		a.activeLogPathName = msg.savedLogPath
 		follow := true
-		lookback := 10 * time.Second
+		lookback := 15 * time.Minute
 		if msg.follow != nil {
 			follow = *msg.follow
 		}
@@ -571,15 +848,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.startMs > 0 || msg.endMs > 0 {
 			if len(msg.logGroups) > 1 {
-				a.logView = views.NewMultiGroupLogViewerInRange(msg.title, a.client, msg.logGroups, msg.startMs, msg.endMs, msg.search)
+				a.logView = views.NewMultiGroupLogViewerInRange(msg.title, a.logs, msg.logGroups, msg.startMs, msg.endMs, msg.search)
 			} else {
-				a.logView = views.NewLogViewerInRange(msg.title, a.client, msg.logGroup, msg.streams, msg.startMs, msg.endMs, msg.search)
+				a.logView = views.NewLogViewerInRange(msg.title, a.logs, msg.logGroup, msg.streams, msg.startMs, msg.endMs, msg.search)
 			}
 		} else if msg.search != "" {
-			a.logView = views.NewLogViewerWithSearch(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback, msg.search)
+			a.logView = views.NewLogViewerWithSearch(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback, msg.search)
 		} else {
-			a.logView = views.NewLogViewerWithOptions(msg.title, a.client, msg.logGroup, msg.streams, follow, lookback)
+			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
+		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
+		if msg.anchor != nil {
+			a.logView = a.logView.WithJumpTarget(*msg.anchor)
+		}
+		a.logView = a.logView.WithContext(a.ctx)
+		a.logView = a.logView.SetHighlightRules(msg.highlightRules)
+		a.logView = a.logView.SetHiddenStreams(msg.hiddenStreams)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -594,7 +878,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.prevState = viewLogSearch
 		a.state = viewLogs
-		a.logView = views.NewLogViewerAtTimestamp(title, a.client, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
+		a.logView = a.logView.WithJumpTarget(msg.Entry)
+		a.activeLogPathName = a.logSearchSavedPath
+		a.logView = a.logView.WithContext(a.ctx)
+		a.logView = a.logView.SetHighlightRules(a.logSearchHighlightRules)
+		a.logView = a.logView.SetHiddenStreams(a.logSearchHiddenStreams)
 		a.logView = a.logView.SetSize(a.width, a.height-3)
 		return a, a.logView.Init()
 
@@ -606,44 +896,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case views.LogHighlightSaveMsg:
+		return a.saveActiveLogHighlights(msg.Rules)
+
 	case views.LogSearchResultsMsg, views.LogSearchErrorMsg:
 		if a.state == viewLogSearch {
 			var cmd tea.Cmd
 			a.logSearchView, cmd = a.logSearchView.Update(msg)
 			return a, cmd
-		}
-		return a, nil
-
-	case views.LogSearchPartialMsg:
-		if a.state == viewLogSearch {
-			var viewCmd tea.Cmd
-			a.logSearchView, viewCmd = a.logSearchView.Update(msg)
-
-			// Chain the next group search if multi-group and not done
-			if !msg.Done && len(a.logSearchGroups) > 1 {
-				// Find which group just completed and chain the next
-				nextIdx := -1
-				for i, g := range a.logSearchGroups {
-					if g == msg.Source {
-						nextIdx = i + 1
-						break
-					}
-				}
-				if nextIdx > 0 && nextIdx < len(a.logSearchGroups) {
-					nextCmd := searchNextGroup(a.client, a.logSearchGroups, nextIdx,
-						a.logSearchFilter, a.logSearchStreams,
-						a.logSearchStartMs, a.logSearchEndMs)
-					return a, tea.Batch(viewCmd, nextCmd)
-				}
-			}
-			// For single-group paginated search, chain next page if not done
-			if !msg.Done && len(a.logSearchGroups) <= 1 && msg.NextToken != nil {
-				nextCmd := searchGroupPaginated(a.client, msg.Source, a.logSearchStreams,
-					a.logSearchFilter, a.logSearchStartMs, a.logSearchEndMs,
-					msg.NextToken, msg.Remaining)
-				return a, tea.Batch(viewCmd, nextCmd)
-			}
-			return a, viewCmd
 		}
 		return a, nil
 
@@ -661,20 +921,68 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- ECS detail messages ---
 	case envVarsReadyMsg:
+		if (!msg.resolved && a.state != msg.returnState) ||
+			(msg.resolved && (a.state != viewEnvVars || msg.taskDefinition != a.envTaskDefinition || msg.container != a.envContainer)) {
+			return a, nil
+		}
+		a.prevState = msg.returnState
+		a.envTaskDefinition = msg.taskDefinition
+		a.envContainer = msg.container
+		a.envTitle = msg.title
+		a.envSecretsResolved = msg.resolved
 		a.state = viewEnvVars
-		a.envVarsView = views.NewEnvVars(msg.title, msg.envVars)
+		a.envVarsView = views.NewEnvVars(msg.title, msg.envVars, msg.resolved)
 		a.envVarsView = a.envVarsView.SetSize(a.width, a.height-3)
 		return a, nil
 
 	case taskDefDiffReadyMsg:
+		if a.state != msg.returnState {
+			return a, nil
+		}
 		a.state = viewTaskDefDiff
 		a.diffView = views.NewTaskDefDiff(msg.title, msg.diff)
 		a.diffView = a.diffView.SetSize(a.width, a.height-3)
 		return a, nil
 
+	case taskDefinitionEditedMsg:
+		a.taskDefinitionDocument = msg.document
+		definition := a.taskDefDetailView.TaskDef()
+		name := "this task definition"
+		if definition != nil {
+			name = fmt.Sprintf("%s:%d", definition.Family, definition.Revision)
+		}
+		a.confirm = NewConfirm(ConfirmRegisterTaskDefinition,
+			"Register a new revision from the edited JSON for "+name+"?")
+		return a, nil
+
+	case taskDefinitionRegisteredMsg:
+		if a.state != viewTaskDefDetail || msg.baseDefinition != a.selectedTaskDef {
+			return a, nil
+		}
+		a.loading = false
+		a.taskDefinitionDocument = ""
+		if msg.definition == nil {
+			a.err = fmt.Errorf("task definition registration returned no definition")
+			return a, nil
+		}
+		a.state = viewTaskDefDetail
+		a.selectedTaskDef = fmt.Sprintf("%s:%d", msg.definition.Family, msg.definition.Revision)
+		a.taskDefDetailView = views.NewTaskDefDetail(msg.definition).SetSize(a.width, a.height-3)
+		a.flashMessage = fmt.Sprintf("Registered %s:%d", msg.definition.Family, msg.definition.Revision)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, a.loadTaskDefinitions()
+
 	case metricsLoadedMsg:
+		if a.state != viewMetrics || msg.cluster != a.selectedClusterName() ||
+			msg.service != a.metricsServiceName ||
+			(a.metricsTaskScope && (a.selectedTask == nil || msg.taskARN != a.selectedTask.TaskARN)) {
+			return a, nil
+		}
 		a.metricsView = a.metricsView.SetMetrics(msg.metrics)
 		a.metricsView = a.metricsView.SetAlarms(msg.alarms)
+		a.metricsView = a.metricsView.SetScaleIn(msg.scaleKnown, msg.scaleSuspended)
+		a.metricsView = a.metricsView.SetWarnings(msg.warnings)
+		a.scaleInCurrentState = msg.scaleSuspended
 		a.loading = false
 		return a, nil
 
@@ -713,6 +1021,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ssmView = a.ssmView.SetParams(msg.params)
 		a.loading = false
 		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ssmValueReadyMsg:
+		a.err = nil
+		a.flashMessage = fmt.Sprintf("%s = %s", msg.name, msg.value)
+		a.flashExpiry = time.Now().Add(10 * time.Second)
 		return a, nil
 
 	case ssmEditReadyMsg:
@@ -999,6 +1313,105 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ec2ActionDoneMsg:
 		return a.handleEC2Action(msg)
 
+	case ec2SecurityGroupsLoadedMsg:
+		if a.state != viewEC2SecurityGroups {
+			return a, nil
+		}
+		a.ec2SecurityGroupsView = a.ec2SecurityGroupsView.SetGroups(msg.groups)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ec2SecurityGroupLoadedMsg:
+		if a.state != viewEC2SecurityGroupDetail {
+			return a, nil
+		}
+		a.ec2SecurityGroupDetailView = views.NewEC2SecurityGroupDetail(msg.group).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case ec2VPCsLoadedMsg:
+		if a.state != viewEC2VPCs {
+			return a, nil
+		}
+		a.ec2VPCs = msg.vpcs
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2VPCRows(msg.vpcs))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2VPCLoadedMsg:
+		if a.state != viewEC2VPCDetail {
+			return a, nil
+		}
+		a.ec2VPCDetail = msg.vpc
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2VPC(*msg.vpc)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case ec2SubnetsLoadedMsg:
+		if a.state != viewEC2Subnets {
+			return a, nil
+		}
+		a.ec2Subnets = msg.subnets
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2SubnetRows(msg.subnets))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2SubnetLoadedMsg:
+		if a.state != viewEC2SubnetDetail {
+			return a, nil
+		}
+		a.ec2SubnetDetail = msg.subnet
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2Subnet(*msg.subnet)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case ec2VolumesLoadedMsg:
+		if a.state != viewEC2Volumes {
+			return a, nil
+		}
+		a.ec2Volumes = msg.volumes
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2VolumeRows(msg.volumes))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2VolumeLoadedMsg:
+		if a.state != viewEC2VolumeDetail {
+			return a, nil
+		}
+		a.ec2VolumeDetail = msg.volume
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2Volume(*msg.volume)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case ec2LoadBalancersLoadedMsg:
+		if a.state != viewEC2LoadBalancers {
+			return a, nil
+		}
+		a.ec2LoadBalancers = msg.loadBalancers
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2LoadBalancerRows(msg.loadBalancers))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2LoadBalancerLoadedMsg:
+		if a.state != viewEC2LoadBalancerDetail {
+			return a, nil
+		}
+		a.ec2LoadBalancerDetail = msg.loadBalancer
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2LoadBalancer(*msg.loadBalancer)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+	case ec2TargetGroupsLoadedMsg:
+		if a.state != viewEC2TargetGroups {
+			return a, nil
+		}
+		a.ec2TargetGroups = msg.targetGroups
+		a.ec2ResourceListView = a.ec2ResourceListView.SetRows(ec2TargetGroupRows(msg.targetGroups))
+		a.loading, a.lastRefresh = false, time.Now()
+		return a, nil
+	case ec2TargetGroupLoadedMsg:
+		if a.state != viewEC2TargetGroupDetail {
+			return a, nil
+		}
+		a.ec2TargetGroupDetail = msg.targetGroup
+		a.ec2ResourceDetailView = views.NewEC2ResourceDetail(formatTUIEC2TargetGroup(*msg.targetGroup)).SetSize(a.width-3, a.height-6)
+		a.loading = false
+		return a, nil
+
 	// --- ECR messages ---
 	case ecrReposLoadedMsg:
 		a.ecrReposView = a.ecrReposView.SetRepos(msg.repos)
@@ -1013,7 +1426,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case ecrFindingsLoadedMsg:
-		a.ecrFindingsView = a.ecrFindingsView.SetFindings(msg.findings)
+		a.ecrFindingsView = a.ecrFindingsView.SetFindings(msg.scan.Findings)
+		a.ecrImagesView = a.ecrImagesView.SetSelectedScan(msg.scan)
 		a.loading = false
 		return a, nil
 
@@ -1061,6 +1475,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastRefresh = time.Now()
 		return a, nil
 
+	case rdsClustersLoadedMsg:
+		a.rdsClustersView = a.rdsClustersView.SetClusters(msg.clusters)
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
 	case rdsDetailLoadedMsg:
 		if msg.detail != nil {
 			a.rdsDetailView = views.NewRDSDetail(msg.detail)
@@ -1068,6 +1488,52 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.state = viewRDSDetail
 		a.loading = false
+		return a, nil
+
+	case elastiCacheLoadedMsg:
+		if a.mode != modeElastiCache || a.elastiCacheKind != msg.kind {
+			return a, nil
+		}
+		a.elastiCacheResources = msg.resources
+		a.elastiCacheView = a.elastiCacheView.SetRows(elastiCacheTUIRows(msg.resources))
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case elastiCacheDetailLoadedMsg:
+		if msg.resource != nil {
+			a.selectedElastiCache = msg.resource
+			a.elastiCacheDetailView = views.NewEC2ResourceDetail(formatTUIElastiCache(*msg.resource, msg.metrics)).SetSize(a.width-3, a.height-6)
+			a.state = viewElastiCacheDetail
+		}
+		a.loading = false
+		return a, nil
+
+	case apiGatewayLoadedMsg:
+		if a.mode != modeAPIGateway || a.apiGatewayKind != msg.kind {
+			return a, nil
+		}
+		a.apiGatewayResources = msg.resources
+		a.apiGatewayView = a.apiGatewayView.SetRows(apiGatewayTUIRows(msg.resources))
+		a.loading = false
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case apiGatewayDetailLoadedMsg:
+		if msg.resource != nil {
+			a.selectedAPIGateway = msg.resource
+			a.apiGatewayDetailView = views.NewEC2ResourceDetail(formatTUIAPIGateway(*msg.resource, msg.metrics)).SetSize(a.width-3, a.height-6)
+			a.state = viewAPIGatewayDetail
+		}
+		a.loading = false
+		return a, nil
+
+	case costReportLoadedMsg:
+		a = a.setCostReport(msg.report, msg.status)
+		return a, nil
+
+	case costAnomaliesLoadedMsg:
+		a = a.setCostAnomalies(msg.report, msg.status)
 		return a, nil
 
 	// --- Route53 messages ---
@@ -1137,13 +1603,60 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.switchRegion(msg.Region)
 
 	case actionSuccessMsg:
+		a.err = nil
 		a.flashMessage = msg.message
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, a.refreshCurrentView()
 
+	case sqlExecutedMsg:
+		a.sqlPending = false
+		a.loading = false
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.sqlWorkbenchView.SetResultsFor(msg.tabID, msg.results)
+		a.lastRefresh = time.Now()
+		return a, nil
+
+	case sqlReconnectedMsg:
+		a.sqlPending = false
+		a.loading = false
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.flashMessage = "Connected to " + msg.profile
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+
+	case runTaskStartedMsg:
+		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() {
+			return a, nil
+		}
+		a.flashMessage = fmt.Sprintf("Started %d task(s) from %s", msg.count, msg.taskDefinition)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		a.taskScopeStopped = false
+		a.taskNextToken = ""
+		a.standaloneView = a.standaloneView.SetScope(false)
+		a.loading = true
+		return a, a.loadStandaloneTasks()
+
+	case RunTaskSubmitMsg:
+		a.runTaskForm.Active = false
+		a.loading = true
+		return a, a.runStandaloneTask(msg.Request)
+
+	case RunTaskCancelMsg:
+		a.runTaskForm.Active = false
+		return a, nil
+
 	// --- Dialog results ---
 	case ConfirmResultMsg:
 		if !msg.Confirmed {
+			if msg.Action == ConfirmRegisterTaskDefinition {
+				a.taskDefinitionDocument = ""
+			}
 			return a, nil
 		}
 		switch msg.Action {
@@ -1153,6 +1666,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doStopTask()
 		case ConfirmScaleInToggle:
 			return a, a.doToggleScaleIn()
+		case ConfirmRevealSecrets:
+			a.loading = true
+			return a, a.loadResolvedEnvSecrets()
+		case ConfirmRegisterTaskDefinition:
+			a.loading = true
+			return a, a.registerEditedTaskDefinition()
 		case ConfirmSSMUpdate:
 			return a, a.doSSMUpdate()
 		case ConfirmSMClone:
@@ -1191,6 +1710,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.doDeleteR53Record()
 		case ConfirmEC2Terminate:
 			return a, a.doTerminateEC2()
+		case ConfirmTofuInit:
+			return a.runTofuInit()
+		case ConfirmTofuApply:
+			return a.runTofuApply()
+		case ConfirmCostRefresh:
+			a.loading = true
+			return a, a.loadCostExplorer(true)
+		case ConfirmSQLWrites:
+			a.sqlWorkbenchView.ToggleWrites()
+			a.saveSQLWorkbenchState()
+			return a, nil
 		}
 		return a, nil
 
@@ -1208,6 +1738,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case InputResultMsg:
 		if msg.Canceled {
+			if msg.Action == InputSQLPassword {
+				a.sqlPendingRun = sqlTUIRunNone
+				a.sqlPendingProfile = ""
+			}
 			return a, nil
 		}
 		switch msg.Action {
@@ -1296,6 +1830,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openSQSQueues(msg.Value)
 		case InputSQSSaveName:
 			return a.doSaveSQSQueue(msg.Value)
+		case InputSQLPassword:
+			profile := a.sqlPendingProfile
+			mode := a.sqlPendingRun
+			a.sqlPendingProfile = ""
+			a.sqlPendingRun = sqlTUIRunNone
+			if profile == "" || strings.TrimSpace(msg.Value) == "" {
+				a.err = fmt.Errorf("database password cannot be empty")
+				return a, nil
+			}
+			a.sqlPasswords.Set(profile, msg.Value)
+			if mode == sqlTUIRunNone {
+				return a.reconnectSQL()
+			}
+			return a.runSQL(mode)
+		case InputSQLExport:
+			return a.exportSQLResult(msg.Value)
+		case InputSQLRename:
+			a.sqlWorkbenchView.Rename(msg.Value)
+			a.saveSQLWorkbenchState()
+			return a, nil
 		}
 		return a, nil
 
@@ -1369,19 +1923,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			lp := a.cfg.LogPaths[msg.Index]
-			if len(lp.LogGroups) > 1 {
-				// Multi-group saved entry — go straight to search
-				a.prevState = viewLogGroups
-				a.logSearchGroups = lp.LogGroups
-				a.logSearchGroup = lp.LogGroups[0]
-				a.logSearchStreams = nil
-				return a.promptLogSearchTimeRange()
-			}
-			if lp.Stream != "" {
-				return a, a.startLogTail(lp.LogGroup, []string{lp.Stream},
-					fmt.Sprintf("%s / %s", lp.LogGroup, lp.Stream))
-			}
-			return a.openLogStreams(lp.LogGroup)
+			return a.openSavedLogDestination(lp)
 		case PickerLogSearchTimeRange:
 			return a.handleTimeRangePick(msg.Value)
 		case PickerLogCorrelationWindow:
@@ -1399,6 +1941,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.openTofuResources(td.Dir)
 		case PickerSetAlarmState:
 			return a.handleSetAlarmStatePick(msg.Value)
+		case PickerResourceLink:
+			if msg.Index >= 0 && msg.Index < len(a.resourceLinks) {
+				return a.navigateEC2Resource(a.resourceLinks[msg.Index], true)
+			}
+		case PickerCostView:
+			return a.selectCostView(msg.Index)
 		}
 		return a, nil
 
@@ -1418,6 +1966,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			if a.sqlExecutor != nil {
+				a.sqlExecutor.SetPolicy(newCfg.SQL.AllowWrites, newCfg.SQL.PGPassFiles)
+			}
+			a.idleTimeout = time.Duration(newCfg.Defaults.IdleTimeout) * time.Second
 			a.configModTime = modTime
 			a.flashMessage = "Config reloaded (file changed)"
 			a.flashExpiry = time.Now().Add(3 * time.Second)
@@ -1434,14 +1986,29 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			a.idleTimeout = time.Duration(newCfg.Defaults.IdleTimeout) * time.Second
 			a.configModTime = modTime
 			a.flashMessage = "Config reloaded"
 			a.flashExpiry = time.Now().Add(3 * time.Second)
+		}
+		if a.cfg.Defaults.CostGuardUSD > 0 {
+			snapshot := a.client.RequestSnapshot()
+			if snapshot.EstimatedCostUSD >= a.cfg.Defaults.CostGuardUSD {
+				a.paused = true
+				a.manualPause = true
+				a.flashMessage = fmt.Sprintf("Polling paused: known session cost $%.2f reached guard $%.2f; manual refresh remains available", snapshot.EstimatedCostUSD, a.cfg.Defaults.CostGuardUSD)
+				a.flashExpiry = time.Now().Add(8 * time.Second)
+				return a, a.tick()
+			}
 		}
 		// Pause refresh when idle or manually paused
 		if a.paused || (a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout) {
 			a.paused = true
 			return a, a.tick() // keep ticking for flash/config but skip refresh
+		}
+		base := time.Duration(a.refreshSec) * time.Second
+		if !refreshpolicy.Due(a.lastRefresh, time.Now(), base, a.autoRefreshClass()) {
+			return a, a.tick()
 		}
 		return a, tea.Batch(a.refreshCurrentView(), a.tick())
 
@@ -1449,6 +2016,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Reset idle timer on any keypress
 		a.lastActivity = time.Now()
+		if a.state == viewSQLWorkbench && a.sqlWorkbenchView.Editing() {
+			if msg.String() == "esc" {
+				a.sqlWorkbenchView.StopEditing()
+				a.saveSQLWorkbenchState()
+				return a, nil
+			}
+			var cmd tea.Cmd
+			a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
+			return a, cmd
+		}
 
 		// Toggle manual pause
 		if msg.String() == a.kb.PauseResume {
@@ -1476,14 +2053,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global keys
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
+			if a.cancel != nil {
+				a.cancel()
+			}
+			a.saveSQLWorkbenchState()
+			if a.sqlExecutor != nil {
+				a.sqlExecutor.Close()
+			}
 			return a, tea.Quit
 		case key.Matches(msg, theme.Keys.Back):
 			return a.goBack()
 		case key.Matches(msg, theme.Keys.Refresh):
+			a.err = nil
 			a.loading = true
 			return a, a.refreshCurrentView()
+		case msg.String() == a.kb.ErrorDetails && a.err != nil:
+			a.errorDetails = NewErrorDetails(a.err.Error(), a.width, a.height)
+			return a, nil
 		case key.Matches(msg, theme.Keys.Enter):
 			if a.state != viewLogSearch {
+				a.err = nil
 				return a.drillDown()
 			}
 		case key.Matches(msg, theme.Keys.Help):
@@ -1519,6 +2108,84 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Context-specific keys (configurable via keybindings)
 		k := msg.String()
+		if a.mode == modeElastiCache && a.state == viewElastiCache && !a.isFiltering() {
+			switch k {
+			case "1":
+				return a.openElastiCache(model.ElastiCacheReplicationGroup)
+			case "2":
+				return a.openElastiCache(model.ElastiCacheCluster)
+			case "3":
+				return a.openElastiCache(model.ElastiCacheServerless)
+			}
+		}
+		if a.mode == modeAPIGateway && a.state == viewAPIGateway && !a.isFiltering() {
+			switch k {
+			case "1":
+				return a.openAPIGateway(model.APIGatewayREST)
+			case "2":
+				return a.openAPIGateway(model.APIGatewayHTTP)
+			case "3":
+				return a.openAPIGateway(model.APIGatewayWebSocket)
+			case "4":
+				return a.openAPIGateway(model.APIGatewayDomain)
+			}
+		}
+		if a.mode == modeSQLWorkbench && !a.isFiltering() {
+			switch a.state {
+			case viewSQLConnections:
+				if k == "t" {
+					return a.showSQLWorkbench()
+				}
+			case viewSQLWorkbench:
+				switch k {
+				case "e":
+					return a, a.sqlWorkbenchView.BeginEditing()
+				case "r":
+					return a.runSQL(sqlTUIRunAll)
+				case "c":
+					return a.runSQL(sqlTUIRunCurrent)
+				case "R":
+					return a.reconnectSQL()
+				case "[":
+					a.sqlWorkbenchView.Switch(-1)
+					a.saveSQLWorkbenchState()
+					return a, nil
+				case "]":
+					a.sqlWorkbenchView.Switch(1)
+					a.saveSQLWorkbenchState()
+					return a, nil
+				case "n":
+					return a.openSQLConnections()
+				case "d":
+					return a.closeSQLTab()
+				case "t":
+					if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
+						a.input = NewInput(InputSQLRename, "SQL tab title (blank follows connection name)", tab.Title)
+					}
+					return a, nil
+				case "x":
+					return a.promptSQLExport()
+				case "w":
+					return a.toggleSQLWrites()
+				}
+			}
+		}
+		if a.mode == modeEC2 {
+			if k == a.kb.EC2Resource {
+				return a.switchEC2Resource()
+			}
+		}
+		if k == a.kb.OpenResource && (a.mode == modeEC2 || a.state == viewServiceDetail || a.state == viewTaskDetail || a.state == viewRDSDetail) {
+			return a.openEC2ResourcePicker()
+		}
+		if k == "tab" && !a.isFiltering() {
+			switch a.state {
+			case viewRDSInstances:
+				return a.openRDSClusters()
+			case viewRDSClusters:
+				return a.openRDSInstances()
+			}
+		}
 		switch a.state {
 		case viewClusters:
 			switch k {
@@ -1546,22 +2213,52 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewTasks:
 			switch k {
+			case a.kb.ServiceDetail:
+				return a.showServiceDetail()
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
+			case a.kb.TaskScope:
+				return a.toggleTaskScope()
+			case a.kb.LoadMore:
+				return a.loadMoreStoppedTasks()
 			case a.kb.StopTask:
 				return a.promptStopTask()
 			case a.kb.TaskLogs:
 				return a.openTaskLogs()
 			case a.kb.ECSExec:
 				return a.execIntoTask()
+			case a.kb.Metrics:
+				return a.showMetrics()
 			}
 		case viewTaskDetail:
 			switch k {
+			case a.kb.ServiceDetail:
+				if a.selectedService != nil {
+					return a.showServiceDetail()
+				}
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
 			case a.kb.EnvVars:
 				return a.showEnvVars()
+			case a.kb.TaskLogs:
+				return a.openTaskLogs()
+			case a.kb.ECSExec:
+				return a.execIntoTask()
+			case a.kb.Metrics:
+				return a.showMetrics()
 			}
 		case viewTaskDefDetail:
 			switch k {
 			case a.kb.EnvVars:
 				return a.showTaskDefEnvVars()
+			case a.kb.TaskDefDiff:
+				return a.showSelectedTaskDefDiff()
+			case a.kb.TaskDefEdit:
+				return a.editSelectedTaskDefinition()
 			}
 		case viewTaskDefs:
 			switch k {
@@ -1576,6 +2273,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a.copyLogBufferToClipboard()
 			case a.kb.LogOpenEditor:
 				return a.openLogBufferInEditor()
+			case a.kb.LogHighlights:
+				a.logView = a.logView.OpenHighlightManager()
+				return a, nil
+			case a.kb.LogStreams:
+				a.logView = a.logView.OpenStreamManager()
+				return a, nil
 			}
 		case viewLogSearch:
 			switch k {
@@ -1584,15 +2287,41 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case viewStandaloneTasks:
 			switch k {
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
+			case a.kb.TaskScope:
+				return a.toggleTaskScope()
+			case a.kb.LoadMore:
+				return a.loadMoreStoppedTasks()
 			case a.kb.TaskLogs:
 				return a.openStandaloneTaskLogs()
 			case a.kb.StopTask:
 				return a.promptStopStandaloneTask()
+			case a.kb.ECSExec:
+				return a.execIntoTask()
+			case a.kb.Metrics:
+				return a.showMetrics()
+			case a.kb.RunTask:
+				return a.promptRunTask()
 			}
 		case viewServiceDetail:
 			switch k {
-			case a.kb.Download:
+			case a.kb.StandaloneTasks:
+				return a.showStandaloneTasks()
+			case a.kb.TaskDefinitions:
+				return a.openTaskDefinitions()
+			case a.kb.TaskDefDiff:
 				return a.showTaskDefDiff()
+			}
+		case viewMetrics:
+			if k == a.kb.ToggleScaleIn {
+				return a.toggleScaleIn()
+			}
+		case viewEnvVars:
+			if k == a.kb.RevealSecrets && !a.envVarsView.SecretsResolved() {
+				return a.confirmRevealEnvSecrets()
 			}
 		case viewSSM:
 			switch k {
@@ -1777,16 +2506,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case a.kb.RunPlan:
 				return a.runTofuPlan()
 			case a.kb.RunApply:
-				return a.runTofuApply()
+				return a.confirmTofuApply()
 			case a.kb.RunInit:
-				return a.runTofuInit()
+				return a.confirmTofuInit()
 			case a.kb.Save:
 				return a.saveTofuDir()
 			}
 		case viewTofuPlan:
 			switch k {
 			case a.kb.RunApply:
-				return a.runTofuApply()
+				return a.confirmTofuApply()
 			}
 		case viewECRImages:
 			switch k {
@@ -1825,6 +2554,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case a.kb.TermInstance:
 				return a.terminateEC2Instance()
 			}
+		case viewCostExplorer:
+			switch k {
+			case "v":
+				return a.promptCostView()
+			case "R":
+				return a.confirmCostRefresh()
+			}
 		}
 
 		return a.delegateToActiveView(msg)
@@ -1844,6 +2580,8 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.serviceView, cmd = a.serviceView.Update(msg)
 	case viewTasks:
 		a.taskView, cmd = a.taskView.Update(msg)
+	case viewTaskDetail:
+		a.detailView, cmd = a.detailView.Update(msg)
 	case viewServiceDetail:
 		a.serviceDetailView, cmd = a.serviceDetailView.Update(msg)
 	case viewTaskDefs:
@@ -1920,6 +2658,8 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.r53DetailView, cmd = a.r53DetailView.Update(msg)
 	case viewRDSInstances:
 		a.rdsInstancesView, cmd = a.rdsInstancesView.Update(msg)
+	case viewRDSClusters:
+		a.rdsClustersView, cmd = a.rdsClustersView.Update(msg)
 	case viewRDSDetail:
 		a.rdsDetailView, cmd = a.rdsDetailView.Update(msg)
 	case viewEC2Instances:
@@ -1928,6 +2668,28 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.ec2DetailView, cmd = a.ec2DetailView.Update(msg)
 	case viewEC2Console:
 		a.ec2ConsoleView, cmd = a.ec2ConsoleView.Update(msg)
+	case viewEC2SecurityGroups:
+		a.ec2SecurityGroupsView, cmd = a.ec2SecurityGroupsView.Update(msg)
+	case viewEC2SecurityGroupDetail:
+		a.ec2SecurityGroupDetailView, cmd = a.ec2SecurityGroupDetailView.Update(msg)
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes, viewEC2LoadBalancers, viewEC2TargetGroups:
+		a.ec2ResourceListView, cmd = a.ec2ResourceListView.Update(msg)
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail, viewEC2LoadBalancerDetail, viewEC2TargetGroupDetail:
+		a.ec2ResourceDetailView, cmd = a.ec2ResourceDetailView.Update(msg)
+	case viewCostExplorer:
+		a.costView, cmd = a.costView.Update(msg)
+	case viewElastiCache:
+		a.elastiCacheView, cmd = a.elastiCacheView.Update(msg)
+	case viewElastiCacheDetail:
+		a.elastiCacheDetailView, cmd = a.elastiCacheDetailView.Update(msg)
+	case viewAPIGateway:
+		a.apiGatewayView, cmd = a.apiGatewayView.Update(msg)
+	case viewAPIGatewayDetail:
+		a.apiGatewayDetailView, cmd = a.apiGatewayDetailView.Update(msg)
+	case viewSQLConnections:
+		a.sqlConnectionsView, cmd = a.sqlConnectionsView.Update(msg)
+	case viewSQLWorkbench:
+		a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
 	}
 	return a, cmd
 }
@@ -1972,6 +2734,10 @@ func (a App) isFiltering() bool {
 		return a.cbProjectsView.IsFiltering()
 	case viewEC2Instances:
 		return a.ec2InstancesView.IsFiltering()
+	case viewEC2SecurityGroups:
+		return a.ec2SecurityGroupsView.IsFiltering()
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes, viewEC2LoadBalancers, viewEC2TargetGroups:
+		return a.ec2ResourceListView.IsFiltering()
 	case viewTofuResources:
 		return a.tofuResourcesView.IsFiltering()
 	case viewTofuPlan:
@@ -1988,6 +2754,16 @@ func (a App) isFiltering() bool {
 		return a.r53RecordsView.IsFiltering()
 	case viewRDSInstances:
 		return a.rdsInstancesView.IsFiltering()
+	case viewRDSClusters:
+		return a.rdsClustersView.IsFiltering()
+	case viewCostExplorer:
+		return a.costView.IsFiltering()
+	case viewElastiCache:
+		return a.elastiCacheView.IsFiltering()
+	case viewAPIGateway:
+		return a.apiGatewayView.IsFiltering()
+	case viewSQLConnections:
+		return a.sqlConnectionsView.IsFiltering()
 	}
 	return false
 }
@@ -1995,6 +2771,19 @@ func (a App) isFiltering() bool {
 // --- View ---
 
 func (a App) buildBreadcrumbs() []string {
+	if a.state == viewSQLConnections {
+		return []string{"SQL Workbench", "Connections"}
+	}
+	if a.state == viewSQLWorkbench {
+		crumbs := []string{"SQL Workbench"}
+		if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
+			crumbs = append(crumbs, tab.ProfileName)
+		}
+		return crumbs
+	}
+	if a.state == viewCostExplorer {
+		return []string{"Cost Explorer", a.costSubview}
+	}
 	if a.state == viewTaskDefs || a.state == viewTaskDefDetail {
 		crumbs := []string{"Task Definitions"}
 		if a.selectedTaskDef != "" {
@@ -2022,7 +2811,7 @@ func (a App) buildBreadcrumbs() []string {
 func (a App) View() string {
 	breadcrumbs := a.buildBreadcrumbs()
 	infoBar := buildInfoBar(breadcrumbs, a.client.Region(), a.lastRefresh,
-		a.paused, a.flashMessage, a.flashExpiry, a.err)
+		a.paused, a.flashMessage, a.flashExpiry, a.err, a.kb.ErrorDetails)
 
 	var content string
 	switch a.state {
@@ -2118,14 +2907,38 @@ func (a App) View() string {
 		content = a.r53DetailView.View()
 	case viewRDSInstances:
 		content = a.rdsInstancesView.View()
+	case viewRDSClusters:
+		content = a.rdsClustersView.View()
 	case viewRDSDetail:
 		content = a.rdsDetailView.View()
+	case viewCostExplorer:
+		content = a.costView.View()
+	case viewElastiCache:
+		content = a.elastiCacheView.View()
+	case viewElastiCacheDetail:
+		content = a.elastiCacheDetailView.View()
+	case viewAPIGateway:
+		content = a.apiGatewayView.View()
+	case viewAPIGatewayDetail:
+		content = a.apiGatewayDetailView.View()
+	case viewSQLConnections:
+		content = a.sqlConnectionsView.View()
+	case viewSQLWorkbench:
+		content = a.sqlWorkbenchView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
 		content = a.ec2DetailView.View()
 	case viewEC2Console:
 		content = a.ec2ConsoleView.View()
+	case viewEC2SecurityGroups:
+		content = a.ec2SecurityGroupsView.View()
+	case viewEC2SecurityGroupDetail:
+		content = a.ec2SecurityGroupDetailView.View()
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes, viewEC2LoadBalancers, viewEC2TargetGroups:
+		content = a.ec2ResourceListView.View()
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail, viewEC2LoadBalancerDetail, viewEC2TargetGroupDetail:
+		content = a.ec2ResourceDetailView.View()
 	}
 
 	helpLine := a.helpText()
@@ -2139,6 +2952,9 @@ func (a App) View() string {
 	if a.help.Active {
 		helpContent := RenderHelp(a.contextHelpLines(), a.width-10)
 		return renderOverlay(fullView, helpContent, a.width, a.height)
+	}
+	if a.errorDetails.Active {
+		return renderOverlay(fullView, a.errorDetails.View(), a.width, a.height)
 	}
 	if a.modeSwitcher.Active {
 		return renderOverlay(fullView, a.modeSwitcher.View(), a.width, a.height)
@@ -2157,6 +2973,9 @@ func (a App) View() string {
 	}
 	if a.pathInput != nil {
 		return renderOverlay(fullView, a.pathInput.View(), a.width, a.height)
+	}
+	if a.runTaskForm.Active {
+		return renderOverlay(fullView, a.runTaskForm.View(), a.width, a.height)
 	}
 
 	return fullView
@@ -2215,13 +3034,13 @@ func (a App) helpText() string {
 	case viewTasks, viewStandaloneTasks:
 		primary = "[enter] detail"
 	case viewTaskDetail:
-		primary = "[E] env vars"
+		primary = "[E] env vars  [o] linked resources"
 	case viewTaskDefs:
 		primary = "[enter] detail"
 	case viewTaskDefDetail:
 		primary = "[tab] switch tab"
 	case viewServiceDetail:
-		primary = "[tab] switch tab"
+		primary = "[tab] switch tab  [o] linked resources"
 	case viewLogs:
 		primary = "[f] follow"
 	case viewTaskDefDiff, viewSecretValue:
@@ -2249,7 +3068,11 @@ func (a App) helpText() string {
 	case viewSQSMessageDetail:
 		primary = "[c] clone & send"
 	case viewEnvVars:
-		primary = "[a] toggle ARNs"
+		if a.envVarsView.HasSecrets() && !a.envVarsView.SecretsResolved() {
+			primary = fmt.Sprintf("[%s] reveal secrets", a.kb.RevealSecrets)
+		} else if a.envVarsView.HasSecrets() {
+			primary = "[a] toggle references/values"
+		}
 	case viewLogStreams:
 		primary = "[enter] peek"
 	case viewLogSearch:
@@ -2285,15 +3108,39 @@ func (a App) helpText() string {
 	case viewR53RecordDetail:
 		primary = "[t] test DNS"
 	case viewRDSInstances:
-		primary = "[enter] detail"
+		primary = "[enter] detail  [tab] clusters"
+	case viewRDSClusters:
+		primary = "[enter] member instances  [tab] all instances"
 	case viewRDSDetail:
+		primary = "[o] linked resources"
+	case viewCostExplorer:
+		primary = "[v] views  [R] force paid refresh  [/] filter"
+	case viewElastiCache:
+		primary = "[enter] detail  [1/2/3] resource type"
+	case viewElastiCacheDetail:
 		primary = "[j/k] scroll"
+	case viewAPIGateway:
+		primary = "[enter] detail  [1/2/3/4] resource type"
+	case viewAPIGatewayDetail:
+		primary = "[j/k] scroll"
+	case viewSQLConnections:
+		primary = "[enter] new tab  [t] open tabs  [/] filter"
+	case viewSQLWorkbench:
+		primary = "[e] edit  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
 		primary = "[e] SSM session"
 	case viewEC2Console:
 		primary = "[j/k] scroll"
+	case viewEC2SecurityGroups:
+		primary = "[enter] detail"
+	case viewEC2SecurityGroupDetail:
+		primary = "[o] linked resources"
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes, viewEC2LoadBalancers, viewEC2TargetGroups:
+		primary = "[enter] detail"
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail, viewEC2LoadBalancerDetail, viewEC2TargetGroupDetail:
+		primary = "[o] linked resources"
 	}
 	if primary != "" {
 		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
@@ -2307,6 +3154,7 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	type kv = struct{ key, desc string }
 
 	global := []kv{
+		{a.kb.ErrorDetails, "Show the full error (when present)"},
 		{a.kb.SwitchMode, "Switch mode"},
 		{a.kb.ReopenPicker, "Reopen mode picker"},
 		{a.kb.PauseResume, "Pause/resume polling"},
@@ -2345,13 +3193,34 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewTasks:
 		context = []kv{
 			{"enter", "Task detail"},
+			{kb.ServiceDetail, "Service detail"},
+			{kb.StandaloneTasks, "Toggle standalone tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.TaskLogs, "Tail logs"},
-			{kb.StopTask, "Stop task"},
-			{kb.ECSExec, "ECS Exec (shell into container)"},
+			{kb.TaskScope, "Switch Active/Recently stopped"},
+		}
+		if a.taskScopeStopped {
+			if a.taskNextToken != "" {
+				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
+			}
+		} else {
+			context = append(context,
+				kv{kb.StopTask, "Stop task"},
+				kv{kb.ECSExec, "ECS Exec (shell into container)"},
+				kv{kb.Metrics, "Task CPU/memory metrics"},
+			)
 		}
 	case viewTaskDetail:
 		context = []kv{
+			{kb.ServiceDetail, "Service detail"},
+			{kb.StandaloneTasks, "Toggle standalone tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.EnvVars, "View environment variables"},
+			{kb.TaskLogs, "Tail logs"},
+			{kb.Metrics, "Task CPU/memory metrics"},
+			{kb.OpenResource, "Open linked resource"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
 		}
 	case viewTaskDefs:
 		context = []kv{
@@ -2362,13 +3231,18 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{
 			{"tab", "Switch Summary/JSON"},
 			{kb.EnvVars, "View environment variables"},
+			{kb.TaskDefDiff, "Diff against previous active revision"},
+			{kb.TaskDefEdit, "Edit in $EDITOR and register revision"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
 	case viewServiceDetail:
 		context = []kv{
 			{"tab", "Switch between Deployments and Events"},
-			{kb.Download, "Task definition diff"},
+			{kb.OpenResource, "Open linked resource"},
+			{kb.StandaloneTasks, "Toggle standalone tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
+			{kb.TaskDefDiff, "Task definition deployment diff"},
 			{"j/k", "Scroll"},
 		}
 	case viewLogs:
@@ -2381,14 +3255,30 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.LogSave, "Save buffer to file"},
 			{kb.LogCopy, "Copy buffer to clipboard"},
 			{kb.LogOpenEditor, "Open buffer in $EDITOR"},
+			{kb.LogHighlights, "Manage highlight rules"},
+			{kb.LogStreams, "Show/hide buffered streams"},
 			{"g/G", "Jump to top/bottom"},
 			{"PgUp/PgDn", "Scroll by page"},
 		}
 	case viewStandaloneTasks:
 		context = []kv{
 			{"enter", "Task detail"},
+			{kb.StandaloneTasks, "Return to services/tasks"},
+			{kb.TaskDefinitions, "Task definitions explorer"},
 			{kb.TaskLogs, "Tail logs"},
-			{kb.StopTask, "Stop task"},
+			{kb.TaskScope, "Switch Active/Recently stopped"},
+			{kb.RunTask, "Run standalone task"},
+		}
+		if a.taskScopeStopped {
+			if a.taskNextToken != "" {
+				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
+			}
+		} else {
+			context = append(context,
+				kv{kb.StopTask, "Stop task"},
+				kv{kb.ECSExec, "ECS Exec (shell into container)"},
+				kv{kb.Metrics, "Task CPU/memory metrics"},
+			)
 		}
 	case viewTaskDefDiff:
 		context = []kv{
@@ -2398,6 +3288,9 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 	case viewMetrics:
 		context = []kv{
 			{"R", "Refresh metrics"},
+		}
+		if !a.metricsTaskScope {
+			context = append(context, kv{kb.ToggleScaleIn, "Toggle scale-in suspension"})
 		}
 	case viewSSM:
 		context = []kv{
@@ -2498,8 +3391,12 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"g/G", "Top/bottom"},
 		}
 	case viewEnvVars:
-		context = []kv{
-			{"a", "Toggle ARN/resolved values"},
+		if a.envVarsView.HasSecrets() {
+			if a.envVarsView.SecretsResolved() {
+				context = []kv{{"a", "Toggle secret references/values"}}
+			} else {
+				context = []kv{{kb.RevealSecrets, "Resolve and reveal secret values"}}
+			}
 		}
 	case viewLogGroups:
 		context = []kv{
@@ -2632,15 +3529,46 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"/", "Filter instances"},
 			{"T", "Toggle relative/absolute timestamps"},
 		}
+	case viewRDSClusters:
+		context = []kv{
+			{"enter", "Browse member instances"},
+			{"tab", "Switch to all instances"},
+			{"/", "Filter clusters"},
+		}
 	case viewRDSDetail:
 		context = []kv{
+			{kb.OpenResource, "Open linked EC2 resource"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
+		}
+	case viewCostExplorer:
+		context = []kv{
+			{"v", "Select overview, breakdown, anomalies, resources, or a saved view"},
+			{"R", "Force paid refresh (confirmation required)"},
+			{"/", "Filter current rows"},
+		}
+	case viewElastiCache:
+		context = []kv{{"enter", "View cache details and current metrics"}, {"1/2/3", "Replication groups / cache clusters / serverless caches"}, {"/", "Filter resources"}}
+	case viewElastiCacheDetail:
+		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
+	case viewAPIGateway:
+		context = []kv{{"enter", "View stages, routes, integrations, mappings, and metrics"}, {"1/2/3/4", "REST / HTTP / WebSocket APIs / custom domains"}, {"/", "Filter resources"}}
+	case viewAPIGatewayDetail:
+		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
+	case viewSQLConnections:
+		context = []kv{{"enter", "Open a new query tab for selected connection"}, {"t", "Return to open tabs"}, {"/", "Filter connections"}}
+	case viewSQLWorkbench:
+		context = []kv{
+			{"e", "Edit query (Esc returns to commands)"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
+			{"R", "Reconnect"}, {"[/]", "Previous/next tab"}, {"n", "Connection browser / new tab"},
+			{"t", "Rename tab"}, {"d", "Close tab"}, {"x", "Export latest result as CSV"}, {"w", "Toggle per-tab write break-glass"},
+			{"j/k", "Scroll result rows"},
 		}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
 			{"/", "Filter instances"},
+			{kb.EC2Resource, "Switch EC2 resource"},
 		}
 	case viewEC2Detail:
 		context = []kv{
@@ -2650,6 +3578,8 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{kb.StopInstance, "Stop instance"},
 			{kb.RebootInstance, "Reboot instance"},
 			{kb.TermInstance, "Terminate instance"},
+			{kb.OpenResource, "Open linked resource"},
+			{kb.EC2Resource, "Switch EC2 resource"},
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
@@ -2658,6 +3588,23 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"j/k", "Scroll"},
 			{"g/G", "Top/bottom"},
 		}
+	case viewEC2SecurityGroups:
+		context = []kv{
+			{"enter", "View security group detail"},
+			{"/", "Filter security groups"},
+			{kb.EC2Resource, "Switch EC2 resource"},
+		}
+	case viewEC2SecurityGroupDetail:
+		context = []kv{
+			{kb.OpenResource, "Open linked resource"},
+			{kb.EC2Resource, "Switch EC2 resource"},
+			{"j/k", "Scroll"},
+			{"g/G", "Top/bottom"},
+		}
+	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes, viewEC2LoadBalancers, viewEC2TargetGroups:
+		context = []kv{{"enter", "View detail"}, {"/", "Filter resources"}, {kb.EC2Resource, "Switch EC2 resource"}}
+	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail, viewEC2LoadBalancerDetail, viewEC2TargetGroupDetail:
+		context = []kv{{kb.OpenResource, "Open linked resource"}, {kb.EC2Resource, "Switch EC2 resource"}, {"j/k", "Scroll"}}
 	}
 
 	// Combine: context first, then separator, then global
@@ -2686,15 +3633,18 @@ func (a App) drillDown() (App, tea.Cmd) {
 		if s := a.serviceView.SelectedService(); s != nil {
 			a.selectedService = s
 			a.state = viewTasks
-			a.taskView = views.NewTaskList(s.Name)
+			a.taskScopeStopped = false
+			a.taskNextToken = ""
+			a.taskView = views.NewTaskList(s.Name).SetScope(false)
 			a.loading = true
 			return a, a.loadTasks()
 		}
 	case viewTasks:
 		if t := a.taskView.SelectedTask(); t != nil {
 			a.selectedTask = t
+			a.taskDetailReturnState = viewTasks
 			a.state = viewTaskDetail
-			a.detailView = views.NewTaskDetail(t)
+			a.detailView = a.newTaskDetail(t)
 			return a, nil
 		}
 	case viewTaskDefs:
@@ -2702,16 +3652,13 @@ func (a App) drillDown() (App, tea.Cmd) {
 	case viewStandaloneTasks:
 		if t := a.standaloneView.SelectedTask(); t != nil {
 			a.selectedTask = t
+			a.taskDetailReturnState = viewStandaloneTasks
 			a.state = viewTaskDetail
-			a.detailView = views.NewTaskDetail(t)
+			a.detailView = a.newTaskDetail(t)
 			return a, nil
 		}
 	case viewSSM:
-		if p := a.ssmView.SelectedParam(); p != nil {
-			a.flashMessage = fmt.Sprintf("%s = %s", p.Name, p.Value)
-			a.flashExpiry = time.Now().Add(10 * time.Second)
-			return a, nil
-		}
+		return a.viewSSMParam()
 	case viewSecrets:
 		if s := a.secretsView.SelectedSecret(); s != nil {
 			return a, a.fetchSecretValue(s.Name, s.Tags)
@@ -2787,6 +3734,16 @@ func (a App) drillDown() (App, tea.Cmd) {
 		if inst := a.rdsInstancesView.SelectedInstance(); inst != nil {
 			return a.openRDSDetail(inst.Identifier)
 		}
+	case viewRDSClusters:
+		if cluster := a.rdsClustersView.SelectedCluster(); cluster != nil {
+			return a.openRDSInstancesForCluster(cluster.Identifier)
+		}
+	case viewElastiCache:
+		return a.openElastiCacheDetail()
+	case viewAPIGateway:
+		return a.openAPIGatewayDetail()
+	case viewSQLConnections:
+		return a.openSelectedSQLConnection()
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -2795,12 +3752,36 @@ func (a App) drillDown() (App, tea.Cmd) {
 		return a.openR53RecordDetail()
 	case viewEC2Instances:
 		return a.openEC2Detail()
+	case viewEC2SecurityGroups:
+		return a.openEC2SecurityGroupDetail()
+	case viewEC2VPCs:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2VPCDetail(id)
+		}
+	case viewEC2Subnets:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2SubnetDetail(id)
+		}
+	case viewEC2Volumes:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2VolumeDetail(id)
+		}
+	case viewEC2LoadBalancers:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2LoadBalancerDetail(id)
+		}
+	case viewEC2TargetGroups:
+		if id := a.ec2ResourceListView.SelectedID(); id != "" {
+			return a.loadEC2TargetGroupDetail(id)
+		}
 	}
 	return a, nil
 }
 
 // reopenModePicker re-launches the current mode's entry picker/prompt.
 func (a App) reopenModePicker() (App, tea.Cmd) {
+	a.err = nil
+	a.errorDetails = ErrorDetailsModel{}
 	switch a.mode {
 	case modeECS:
 		a.state = viewClusters
@@ -2837,15 +3818,22 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 	case modeRoute53:
 		return a.openR53Zones()
 	case modeRDS:
-		return a.openRDSInstances()
+		return a.openRDSClusters()
+	case modeCostExplorer:
+		return a.openCostExplorer("overview", nil)
+	case modeElastiCache:
+		return a.openElastiCache(model.ElastiCacheReplicationGroup)
+	case modeAPIGateway:
+		return a.openAPIGateway(model.APIGatewayREST)
+	case modeSQLWorkbench:
+		return a.openSQLConnections()
 	}
 	return a, nil
 }
 
 func (a App) switchMode(mode topMode) (App, tea.Cmd) {
-	if mode == a.mode {
-		return a, nil
-	}
+	a.err = nil
+	a.errorDetails = ErrorDetailsModel{}
 	a.mode = mode
 	switch mode {
 	case modeECS:
@@ -2883,7 +3871,15 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 	case modeRoute53:
 		return a.openR53Zones()
 	case modeRDS:
-		return a.openRDSInstances()
+		return a.openRDSClusters()
+	case modeCostExplorer:
+		return a.openCostExplorer("overview", nil)
+	case modeElastiCache:
+		return a.openElastiCache(model.ElastiCacheReplicationGroup)
+	case modeAPIGateway:
+		return a.openAPIGateway(model.APIGatewayREST)
+	case modeSQLWorkbench:
+		return a.openSQLConnections()
 	}
 	return a, nil
 }
@@ -2894,6 +3890,8 @@ func (a App) showModePicker() (App, tea.Cmd) {
 }
 
 func (a App) goBack() (App, tea.Cmd) {
+	a.err = nil
+	a.errorDetails = ErrorDetailsModel{}
 	switch a.state {
 	case viewClusters:
 		// Root of ECS — show mode picker
@@ -2909,31 +3907,36 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.loading = true
 		return a, a.loadServices()
 	case viewTaskDetail:
-		if a.prevState == viewStandaloneTasks {
+		if a.taskDetailReturnState == viewStandaloneTasks {
 			a.state = viewStandaloneTasks
 		} else {
 			a.state = viewTasks
 		}
 		a.selectedTask = nil
+		a.loading = false
 		return a, nil
 	case viewTaskDefs:
 		a.selectedTaskDef = ""
-		if a.prevState == viewServices {
-			a.state = viewServices
-			return a, nil
-		}
-		if a.prevState == viewClusters {
-			a.state = viewClusters
+		switch a.taskDefsReturnState {
+		case viewClusters, viewServices, viewTasks, viewTaskDetail, viewStandaloneTasks, viewServiceDetail:
+			a.state = a.taskDefsReturnState
+			a.loading = false
 			return a, nil
 		}
 		return a.showModePicker()
 	case viewTaskDefDetail:
 		a.state = viewTaskDefs
 		a.selectedTaskDef = ""
+		a.loading = false
 		return a, nil
 	case viewServiceDetail:
-		a.state = viewServices
-		a.selectedService = nil
+		if a.serviceDetailReturnState == viewTasks || a.serviceDetailReturnState == viewTaskDetail {
+			a.state = a.serviceDetailReturnState
+		} else {
+			a.state = viewServices
+			a.selectedService = nil
+		}
+		a.loading = false
 		return a, nil
 	case viewLogs:
 		if a.prevState == viewLogSearch {
@@ -2961,9 +3964,12 @@ func (a App) goBack() (App, tea.Cmd) {
 			return a, nil
 		}
 		if a.selectedTask != nil {
-			if a.prevState == viewStandaloneTasks {
+			switch a.prevState {
+			case viewTaskDetail:
+				a.state = viewTaskDetail
+			case viewStandaloneTasks:
 				a.state = viewStandaloneTasks
-			} else {
+			default:
 				a.state = viewTasks
 			}
 			return a, nil
@@ -2971,13 +3977,12 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewServices
 		return a, nil
 	case viewStandaloneTasks:
-		a.state = viewServices
-		return a, nil
+		return a.returnFromStandaloneTasks()
 	case viewTaskDefDiff:
-		a.state = viewServiceDetail
+		a.state = a.diffReturnState
 		return a, nil
 	case viewMetrics:
-		a.state = viewServices
+		a.state = a.metricsReturnState
 		return a, nil
 	case viewSSM:
 		return a.showModePicker()
@@ -3109,17 +4114,116 @@ func (a App) goBack() (App, tea.Cmd) {
 		a.state = viewR53Records
 		return a, nil
 	case viewRDSInstances:
+		if a.rdsClusterContext != "" {
+			return a.openRDSClusters()
+		}
+		return a.showModePicker()
+	case viewRDSClusters:
 		return a.showModePicker()
 	case viewRDSDetail:
 		a.state = viewRDSInstances
 		return a, nil
+	case viewCostExplorer:
+		return a.showModePicker()
+	case viewElastiCache:
+		return a.showModePicker()
+	case viewElastiCacheDetail:
+		a.state = viewElastiCache
+		return a, nil
+	case viewAPIGateway:
+		return a.showModePicker()
+	case viewAPIGatewayDetail:
+		a.state = viewAPIGateway
+		return a, nil
+	case viewSQLConnections:
+		return a.showModePicker()
+	case viewSQLWorkbench:
+		return a.openSQLConnections()
 	case viewEC2Instances:
 		return a.showModePicker()
 	case viewEC2Detail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
 		a.state = viewEC2Instances
 		return a, nil
 	case viewEC2Console:
 		a.state = viewEC2Detail
+		return a, nil
+	case viewEC2SecurityGroups:
+		return a.showModePicker()
+	case viewEC2SecurityGroupDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2SecurityGroups
+		return a, nil
+	case viewEC2VPCs:
+		return a.showModePicker()
+	case viewEC2Subnets:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		return a.showModePicker()
+	case viewEC2VPCDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2VPCs
+		return a, nil
+	case viewEC2SubnetDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2Subnets
+		return a, nil
+	case viewEC2Volumes:
+		return a.showModePicker()
+	case viewEC2VolumeDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2Volumes
+		return a, nil
+	case viewEC2LoadBalancers:
+		return a.showModePicker()
+	case viewEC2LoadBalancerDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2LoadBalancers
+		return a, nil
+	case viewEC2TargetGroups:
+		return a.showModePicker()
+	case viewEC2TargetGroupDetail:
+		if len(a.resourceHistory) > 0 {
+			last := len(a.resourceHistory) - 1
+			ref := a.resourceHistory[last]
+			a.resourceHistory = a.resourceHistory[:last]
+			return a.navigateEC2Resource(ref, false)
+		}
+		a.state = viewEC2TargetGroups
 		return a, nil
 	}
 	return a, nil

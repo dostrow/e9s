@@ -149,7 +149,7 @@ func (m RDSDetailModel) View() string {
 	lines = append(lines, "")
 
 	// CloudWatch metrics
-	lines = append(lines, theme.TitleStyle.Render("  Metrics (last 5 min, avg)"))
+	lines = append(lines, theme.TitleStyle.Render("  Metrics (last 15 min, avg)"))
 	lines = append(lines, "")
 	if !d.MetricsLoaded {
 		lines = append(lines, theme.HelpStyle.Render("  Loading metrics..."))
@@ -159,6 +159,14 @@ func (m RDSDetailModel) View() string {
 		lines = append(lines, fmt.Sprintf("  %-24s %.1f GiB", "Free Storage:", d.FreeStorageGB))
 		lines = append(lines, fmt.Sprintf("  %-24s %.1f / %.1f", "Read/Write IOPS:", d.ReadIOPS, d.WriteIOPS))
 		lines = append(lines, fmt.Sprintf("  %-24s %.2f ms / %.2f ms", "Read/Write Latency:", d.ReadLatencyMs, d.WriteLatencyMs))
+		if d.Metrics != nil {
+			trendWidth := max(12, min(48, m.width-30))
+			lines = append(lines,
+				strings.TrimSuffix(renderMetricHistoryUnit(d.Metrics.Series, "cpu", "  CPU trend:              ", trendWidth, theme.ColorCyan, "%"), "\n"),
+				strings.TrimSuffix(renderMetricHistoryUnit(d.Metrics.Series, "connections", "  Connections trend:      ", trendWidth, theme.ColorBlue, ""), "\n"),
+				strings.TrimSuffix(renderMetricHistoryUnit(d.Metrics.Series, "free_storage", "  Free storage trend:      ", trendWidth, theme.ColorGreen, " GiB"), "\n"),
+			)
+		}
 	}
 
 	// Tags
@@ -244,6 +252,8 @@ func (m RDSDetailModel) InstanceID() string {
 	}
 	return m.detail.Identifier
 }
+
+func (m RDSDetailModel) Detail() *aws.RDSInstanceDetail { return m.detail }
 
 func (m RDSDetailModel) visibleRows() int {
 	rows := m.height - 6

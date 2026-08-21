@@ -2,115 +2,185 @@ package aws
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type ServiceMetrics struct {
-	CPUAvg    float64
-	CPUMax    float64
-	MemAvg    float64
-	MemMax    float64
-	Timestamp time.Time
-}
+type ServiceMetrics = model.ServiceMetrics
+type AlarmState = model.AlarmState
 
-type AlarmState struct {
-	Name       string
-	State      string // OK, ALARM, INSUFFICIENT_DATA
-	MetricName string
-	UpdatedAt  time.Time
+// GetEC2Metrics fetches the core instance utilization, network, disk, and
+// status-check histories used by the shared metrics dashboard.
+func (c *Client) GetEC2Metrics(ctx context.Context, instanceID string, window time.Duration) (*model.MetricSnapshot, error) {
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return nil, fmt.Errorf("instance ID is required")
+	}
+	end := time.Now()
+	dimensions := []model.MetricDimension{{Name: "InstanceId", Value: instanceID}}
+	metric := func(id, label, name, statistic, unit string) model.MetricQuery {
+		return model.MetricQuery{
+			ID: id, Label: label, Namespace: "AWS/EC2", MetricName: name,
+			Dimensions: dimensions, Statistic: statistic, Unit: unit,
+		}
+	}
+	return c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: end.Add(-window), EndTime: end, MaxPoints: defaultMetricMaxPoints,
+		Queries: []model.MetricQuery{
+			metric("cpu_avg", "Average", "CPUUtilization", "Average", "%"),
+			metric("cpu_max", "Maximum", "CPUUtilization", "Maximum", "%"),
+			metric("network_in", "Inbound", "NetworkIn", "Sum", "bytes"),
+			metric("network_out", "Outbound", "NetworkOut", "Sum", "bytes"),
+			metric("disk_read", "Read", "DiskReadBytes", "Sum", "bytes"),
+			metric("disk_write", "Write", "DiskWriteBytes", "Sum", "bytes"),
+			metric("status_failed", "Failed checks", "StatusCheckFailed", "Maximum", "count"),
+		},
+	})
 }
 
 // GetServiceMetrics fetches CPU and memory utilization for an ECS service.
 func (c *Client) GetServiceMetrics(ctx context.Context, clusterName, serviceName string, period time.Duration) (*ServiceMetrics, error) {
-	now := time.Now()
-	start := now.Add(-period)
-	periodSec := int32(60)
-
 	dims := []cwtypes.Dimension{
 		{Name: aws.String("ClusterName"), Value: aws.String(clusterName)},
 		{Name: aws.String("ServiceName"), Value: aws.String(serviceName)},
 	}
+	return c.getUtilizationMetrics(ctx, period, "AWS/ECS", "CPUUtilization", "MemoryUtilization", dims)
+}
 
-	out, err := c.CW.GetMetricData(ctx, &cloudwatch.GetMetricDataInput{
-		StartTime: &start,
-		EndTime:   &now,
-		MetricDataQueries: []cwtypes.MetricDataQuery{
-			{
-				Id: aws.String("cpu_avg"),
-				MetricStat: &cwtypes.MetricStat{
-					Metric: &cwtypes.Metric{
-						Namespace:  aws.String("AWS/ECS"),
-						MetricName: aws.String("CPUUtilization"),
-						Dimensions: dims,
-					},
-					Period: &periodSec,
-					Stat:   aws.String("Average"),
-				},
-			},
-			{
-				Id: aws.String("cpu_max"),
-				MetricStat: &cwtypes.MetricStat{
-					Metric: &cwtypes.Metric{
-						Namespace:  aws.String("AWS/ECS"),
-						MetricName: aws.String("CPUUtilization"),
-						Dimensions: dims,
-					},
-					Period: &periodSec,
-					Stat:   aws.String("Maximum"),
-				},
-			},
-			{
-				Id: aws.String("mem_avg"),
-				MetricStat: &cwtypes.MetricStat{
-					Metric: &cwtypes.Metric{
-						Namespace:  aws.String("AWS/ECS"),
-						MetricName: aws.String("MemoryUtilization"),
-						Dimensions: dims,
-					},
-					Period: &periodSec,
-					Stat:   aws.String("Average"),
-				},
-			},
-			{
-				Id: aws.String("mem_max"),
-				MetricStat: &cwtypes.MetricStat{
-					Metric: &cwtypes.Metric{
-						Namespace:  aws.String("AWS/ECS"),
-						MetricName: aws.String("MemoryUtilization"),
-						Dimensions: dims,
-					},
-					Period: &periodSec,
-					Stat:   aws.String("Maximum"),
-				},
-			},
-		},
+// GetTaskMetrics fetches task-level CPU and memory utilization from ECS
+// Container Insights with enhanced observability.
+func (c *Client) GetTaskMetrics(ctx context.Context, clusterName, serviceName, taskID, taskDefinition string, period time.Duration) (*ServiceMetrics, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("task ID is required")
+	}
+	dims := []cwtypes.Dimension{
+		{Name: aws.String("ClusterName"), Value: aws.String(clusterName)},
+	}
+	if serviceName != "" {
+		dims = append(dims,
+			cwtypes.Dimension{Name: aws.String("ServiceName"), Value: aws.String(serviceName)},
+			cwtypes.Dimension{Name: aws.String("TaskId"), Value: aws.String(taskID)},
+		)
+	} else {
+		family := taskDefinitionFamily(taskDefinition)
+		if family == "" {
+			return nil, fmt.Errorf("task definition family is required for standalone task metrics")
+		}
+		dims = append(dims,
+			cwtypes.Dimension{Name: aws.String("TaskDefinitionFamily"), Value: aws.String(family)},
+			cwtypes.Dimension{Name: aws.String("TaskId"), Value: aws.String(taskID)},
+		)
+	}
+	return c.getUtilizationMetrics(ctx, period, "ECS/ContainerInsights", "TaskCpuUtilization", "TaskMemoryUtilization", dims)
+}
+
+func (c *Client) getUtilizationMetrics(ctx context.Context, period time.Duration, namespace, cpuMetric, memoryMetric string, dims []cwtypes.Dimension) (*ServiceMetrics, error) {
+	now := time.Now()
+	start := now.Add(-period)
+	queries := utilizationMetricQueries(namespace, cpuMetric, memoryMetric, dims)
+	snapshot, err := c.GetMetricSeries(ctx, model.MetricRequest{
+		StartTime: start,
+		EndTime:   now,
+		MaxPoints: defaultMetricMaxPoints,
+		Queries:   queries,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	m := &ServiceMetrics{Timestamp: now}
-	for _, r := range out.MetricDataResults {
-		if r.Id == nil || len(r.Values) == 0 {
+	m := &ServiceMetrics{
+		Timestamp: now,
+		StartTime: snapshot.StartTime,
+		EndTime:   snapshot.EndTime,
+		Period:    snapshot.Period,
+		Series:    snapshot.Series,
+	}
+	for _, series := range snapshot.Series {
+		val, ok := latestSeriesValue(series)
+		if !ok {
 			continue
 		}
-		val := r.Values[len(r.Values)-1] // most recent
-		switch *r.Id {
+		switch series.ID {
 		case "cpu_avg":
 			m.CPUAvg = val
+			m.CPUAvgAvailable = true
 		case "cpu_max":
 			m.CPUMax = val
+			m.CPUMaxAvailable = true
 		case "mem_avg":
 			m.MemAvg = val
+			m.MemAvgAvailable = true
 		case "mem_max":
 			m.MemMax = val
+			m.MemMaxAvailable = true
 		}
 	}
 	return m, nil
+}
+
+func utilizationMetricQueries(namespace, cpuMetric, memoryMetric string, dims []cwtypes.Dimension) []model.MetricQuery {
+	dimensions := make([]model.MetricDimension, 0, len(dims))
+	for _, dimension := range dims {
+		dimensions = append(dimensions, model.MetricDimension{
+			Name: aws.ToString(dimension.Name), Value: aws.ToString(dimension.Value),
+		})
+	}
+	specs := []struct {
+		id, label, metric, stat string
+	}{
+		{"cpu_avg", "CPU average", cpuMetric, "Average"},
+		{"cpu_max", "CPU maximum", cpuMetric, "Maximum"},
+		{"mem_avg", "Memory average", memoryMetric, "Average"},
+		{"mem_max", "Memory maximum", memoryMetric, "Maximum"},
+	}
+	queries := make([]model.MetricQuery, 0, len(specs))
+	for _, spec := range specs {
+		queries = append(queries, model.MetricQuery{
+			ID: spec.id, Label: spec.label, Namespace: namespace, MetricName: spec.metric,
+			Dimensions: dimensions, Statistic: spec.stat, Unit: "%",
+		})
+	}
+	return queries
+}
+
+func latestSeriesValue(series model.MetricSeries) (float64, bool) {
+	if len(series.Points) == 0 {
+		return 0, false
+	}
+	return series.Points[len(series.Points)-1].Value, true
+}
+
+func taskDefinitionFamily(taskDefinition string) string {
+	value := strings.TrimSpace(taskDefinition)
+	if slash := strings.LastIndex(value, "/"); slash >= 0 {
+		value = value[slash+1:]
+	}
+	if colon := strings.LastIndex(value, ":"); colon > 0 {
+		value = value[:colon]
+	}
+	return value
+}
+
+func latestMetricValue(result cwtypes.MetricDataResult) (float64, bool) {
+	if len(result.Values) == 0 {
+		return 0, false
+	}
+	if len(result.Timestamps) != len(result.Values) {
+		return result.Values[0], true
+	}
+	latest := 0
+	for i := 1; i < len(result.Timestamps); i++ {
+		if result.Timestamps[i].After(result.Timestamps[latest]) {
+			latest = i
+		}
+	}
+	return result.Values[latest], true
 }
 
 // ListAlarms returns CloudWatch alarms that match the given ECS service dimensions.
@@ -118,22 +188,24 @@ func (c *Client) ListAlarms(ctx context.Context, clusterName, serviceName string
 	// Search for alarms on the ECS namespace with matching dimensions.
 	// CloudWatch doesn't provide a direct filter by dimension, so we list
 	// alarms for the ECS namespace and filter client-side.
-	out, err := c.CW.DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{})
-	if err != nil {
-		return nil, err
-	}
-
 	var alarms []AlarmState
-	for _, a := range out.MetricAlarms {
-		if !matchesDimensions(a.Dimensions, clusterName, serviceName) {
-			continue
+	paginator := cloudwatch.NewDescribeAlarmsPaginator(c.CW, &cloudwatch.DescribeAlarmsInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
 		}
-		alarms = append(alarms, AlarmState{
-			Name:       derefStrAws(a.AlarmName),
-			State:      string(a.StateValue),
-			MetricName: derefStrAws(a.MetricName),
-			UpdatedAt:  derefTimeAws(a.StateUpdatedTimestamp),
-		})
+		for _, a := range page.MetricAlarms {
+			if !matchesDimensions(a.Dimensions, clusterName, serviceName) {
+				continue
+			}
+			alarms = append(alarms, AlarmState{
+				Name:       derefStrAws(a.AlarmName),
+				State:      string(a.StateValue),
+				MetricName: derefStrAws(a.MetricName),
+				UpdatedAt:  derefTimeAws(a.StateUpdatedTimestamp),
+			})
+		}
 	}
 	return alarms, nil
 }

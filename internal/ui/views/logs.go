@@ -3,21 +3,29 @@ package views
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/dostrow/e9s/internal/highlight"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
-const maxLogLines = 1000
+const (
+	defaultLogPageSize = 50
+	maxLogLines        = 1000
+	logPollOverlap     = 30 * time.Second
+)
 
 // LogsLoadedMsg is sent when new log entries arrive.
 type LogsLoadedMsg struct {
-	Entries []aws.LogEntry
+	Entries []model.LogEntry
 	LastTS  int64
 }
 
@@ -26,17 +34,25 @@ type LogsErrorMsg struct{ Err error }
 
 // LogsPrependedMsg is sent when older logs are loaded (backward fetch).
 type LogsPrependedMsg struct {
-	Entries []aws.LogEntry
+	Entries []model.LogEntry
+}
+
+// LogHighlightSaveMsg asks the owning frontend to persist the current rules
+// with the active saved CloudWatch search, when one exists.
+type LogHighlightSaveMsg struct {
+	Rules []model.LogHighlightRule
 }
 
 type LogViewerModel struct {
 	title     string
-	client    *aws.Client
+	logs      *service.Logs
+	ctx       context.Context
 	logGroup  string
 	logGroups []string
 	streams   []string
 
 	lines    []logLine
+	seen     map[model.LogEntryKey]struct{}
 	scroll   int
 	follow   bool // auto-scroll to bottom
 	tailMode bool // true if opened for live tailing; false for historical/jump
@@ -49,37 +65,55 @@ type LogViewerModel struct {
 	searching    bool
 	searchInput  textinput.Model
 
+	highlightRules   []model.LogHighlightRule
+	highlighter      *highlight.Matcher
+	highlightManager bool
+	highlightCursor  int
+	highlightEditing bool
+	highlightInput   textinput.Model
+	highlightEditIdx int
+	highlightError   string
+	hiddenStreams    map[string]struct{}
+	streamManager    bool
+	streamCursor     int
+
 	jumpTargetTS  int64 // if > 0, scroll to nearest line after first load
-	initialLoaded bool  // whether first batch has loaded
+	jumpTarget    *model.LogEntry
+	initialLoaded bool // whether first batch has loaded
+	initialFetch  bool // whether the recent-window/fallback request completed
 
 	firstTS      int64 // earliest timestamp in buffer (for backward fetch)
 	lastTS       int64
 	rangeStartTS int64
 	endTS        int64
 	showStreams  bool
+	pageSize     int
+	bufferLines  int
 	width        int
 	height       int
 }
 
 type logLine struct {
+	entryKey  model.LogEntryKey
 	timestamp int64
 	stream    string
 	message   string
 }
 
-func NewLogViewer(title string, client *aws.Client, logGroup string, streams []string) LogViewerModel {
-	return NewLogViewerWithOptions(title, client, logGroup, streams, true, 5*time.Minute)
+func NewLogViewer(title string, logs *service.Logs, logGroup string, streams []string) LogViewerModel {
+	return NewLogViewerWithOptions(title, logs, logGroup, streams, true, 15*time.Minute)
 }
 
-func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, streams []string, follow bool, lookback time.Duration) LogViewerModel {
-	startTS := int64(0)
-	if !follow {
-		startTS = time.Now().Add(-lookback).UnixMilli()
+func NewLogViewerWithOptions(title string, logs *service.Logs, logGroup string, streams []string, follow bool, lookback time.Duration) LogViewerModel {
+	if lookback <= 0 {
+		lookback = 15 * time.Minute
 	}
+	startTS := time.Now().Add(-lookback).UnixMilli()
 
 	return LogViewerModel{
 		title:        title,
-		client:       client,
+		logs:         logs,
+		ctx:          context.Background(),
 		logGroup:     logGroup,
 		logGroups:    []string{logGroup},
 		streams:      streams,
@@ -91,23 +125,24 @@ func NewLogViewerWithOptions(title string, client *aws.Client, logGroup string, 
 	}
 }
 
-func NewLogViewerWithSearch(title string, client *aws.Client, logGroup string, streams []string, follow bool, lookback time.Duration, search string) LogViewerModel {
-	m := NewLogViewerWithOptions(title, client, logGroup, streams, follow, lookback)
+func NewLogViewerWithSearch(title string, logs *service.Logs, logGroup string, streams []string, follow bool, lookback time.Duration, search string) LogViewerModel {
+	m := NewLogViewerWithOptions(title, logs, logGroup, streams, follow, lookback)
 	m.search = search
 	return m
 }
 
 // NewLogViewerAtTimestamp creates a log viewer starting at an absolute timestamp.
 // Used for jump-from-search: loads a window around the timestamp, paused, with search highlighted.
-func NewLogViewerAtTimestamp(title string, client *aws.Client, logGroup string, streams []string, timestampMs int64, search string) LogViewerModel {
-	return NewLogViewerInRange(title, client, logGroup, streams, timestampMs-30*1000, timestampMs+30*1000, search)
+func NewLogViewerAtTimestamp(title string, logs *service.Logs, logGroup string, streams []string, timestampMs int64, search string) LogViewerModel {
+	return NewLogViewerInRange(title, logs, logGroup, streams, timestampMs-30*1000, timestampMs+30*1000, search)
 }
 
 // NewLogViewerInRange creates a paused viewer for a fixed time range.
-func NewLogViewerInRange(title string, client *aws.Client, logGroup string, streams []string, startMs, endMs int64, search string) LogViewerModel {
+func NewLogViewerInRange(title string, logs *service.Logs, logGroup string, streams []string, startMs, endMs int64, search string) LogViewerModel {
 	return LogViewerModel{
 		title:        title,
-		client:       client,
+		logs:         logs,
+		ctx:          context.Background(),
 		logGroup:     logGroup,
 		logGroups:    []string{logGroup},
 		streams:      streams,
@@ -122,10 +157,11 @@ func NewLogViewerInRange(title string, client *aws.Client, logGroup string, stre
 }
 
 // NewMultiGroupLogViewerInRange creates a paused viewer for a fixed time range across multiple groups.
-func NewMultiGroupLogViewerInRange(title string, client *aws.Client, logGroups []string, startMs, endMs int64, search string) LogViewerModel {
+func NewMultiGroupLogViewerInRange(title string, logs *service.Logs, logGroups []string, startMs, endMs int64, search string) LogViewerModel {
 	return LogViewerModel{
 		title:        title,
-		client:       client,
+		logs:         logs,
+		ctx:          context.Background(),
 		logGroup:     firstString(logGroups),
 		logGroups:    append([]string(nil), logGroups...),
 		follow:       false,
@@ -142,48 +178,128 @@ func (m LogViewerModel) Init() tea.Cmd {
 	return m.fetchLogs()
 }
 
+// WithContext binds log requests to the owning frontend lifecycle.
+func (m LogViewerModel) WithContext(ctx context.Context) LogViewerModel {
+	if ctx != nil {
+		m.ctx = ctx
+	}
+	return m
+}
+
+// WithLimits snapshots the display configuration for this viewer. Subsequent
+// configuration changes intentionally affect only newly opened viewers.
+func (m LogViewerModel) WithLimits(pageSize, bufferLines int) LogViewerModel {
+	if pageSize <= 0 {
+		pageSize = defaultLogPageSize
+	}
+	if bufferLines <= 0 {
+		bufferLines = maxLogLines
+	}
+	m.pageSize = pageSize
+	m.bufferLines = bufferLines
+	return m
+}
+
+func (m LogViewerModel) configuredPageSize() int {
+	if m.pageSize <= 0 {
+		return defaultLogPageSize
+	}
+	return m.pageSize
+}
+
+func (m LogViewerModel) configuredBufferLines() int {
+	if m.bufferLines <= 0 {
+		return maxLogLines
+	}
+	return m.bufferLines
+}
+
+// WithJumpTarget anchors the initial bounded range to an exact search result.
+func (m LogViewerModel) WithJumpTarget(entry model.LogEntry) LogViewerModel {
+	if entry.ID == "" && entry.Timestamp == 0 && entry.Message == "" && entry.Stream == "" {
+		return m
+	}
+	anchor := entry
+	m.jumpTarget = &anchor
+	m.jumpTargetTS = entry.Timestamp
+	return m
+}
+
 func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
+	if m.streamManager {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.handleStreamManager(keyMsg)
+		}
+	}
+	if m.highlightManager {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			return m.handleHighlightManager(keyMsg)
+		}
+	}
 	switch msg := msg.(type) {
 	case LogsLoadedMsg:
-		for _, e := range msg.Entries {
+		m.initialFetch = true
+		entries := msg.Entries
+		if m.jumpTarget != nil && !m.initialLoaded {
+			entries = model.CenterLogEntries(entries, *m.jumpTarget, m.configuredBufferLines())
+		}
+		if m.seen == nil {
+			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(entries))
+		}
+		added := 0
+		for _, e := range entries {
+			if _, exists := m.seen[e.Key()]; exists {
+				continue
+			}
+			m.seen[e.Key()] = struct{}{}
 			m.lines = append(m.lines, logLine{
+				entryKey:  e.Key(),
 				timestamp: e.Timestamp,
 				stream:    e.Stream,
 				message:   sanitizeLogMessage(e.Message),
 			})
+			added++
 		}
-		if len(m.lines) > maxLogLines {
-			trimmed := len(m.lines) - maxLogLines
+		if added > 0 {
+			sort.SliceStable(m.lines, func(i, j int) bool {
+				return m.lines[i].timestamp < m.lines[j].timestamp
+			})
+		}
+		bufferLines := m.configuredBufferLines()
+		if len(m.lines) > bufferLines {
+			trimmed := len(m.lines) - bufferLines
+			visibleTrimmed := m.visibleCount(m.lines[:trimmed])
+			for _, line := range m.lines[:trimmed] {
+				delete(m.seen, line.key())
+			}
 			m.lines = m.lines[trimmed:]
 			// Adjust scroll position so viewport doesn't drift
 			if !m.follow {
-				m.scroll -= trimmed
+				m.scroll -= visibleTrimmed
 				m.scroll = max(0, m.scroll)
 			}
 			m.rebuildMatchIndices()
 		}
 		// Track earliest timestamp in buffer
-		if len(m.lines) > 0 && (m.firstTS == 0 || m.lines[0].timestamp < m.firstTS) {
+		if len(m.lines) > 0 {
 			m.firstTS = m.lines[0].timestamp
 		}
 		if msg.LastTS > m.lastTS {
-			m.lastTS = msg.LastTS + 1
+			m.lastTS = msg.LastTS
 		}
-		// Update match indices for new lines
+		// Rebuild matches because an overlapping poll may insert a late event
+		// before lines that are already buffered.
 		if m.search != "" {
-			lowerSearch := strings.ToLower(m.search)
-			startIdx := len(m.lines) - len(msg.Entries)
-			startIdx = max(0, startIdx)
-			for i := startIdx; i < len(m.lines); i++ {
-				if strings.Contains(strings.ToLower(m.lines[i].message), lowerSearch) {
-					m.matchIndices = append(m.matchIndices, i)
-				}
-			}
+			m.rebuildMatchIndices()
 		}
 		// On first load with a jump target, scroll to the target timestamp
 		if m.jumpTargetTS > 0 && !m.initialLoaded {
 			m.initialLoaded = true
-			m.scrollToTimestamp(m.jumpTargetTS)
+			if m.jumpTarget != nil {
+				m.scrollToEntry(*m.jumpTarget)
+			} else {
+				m.scrollToTimestamp(m.jumpTargetTS)
+			}
 			// If we have a search, also set the searchIdx to the nearest match
 			if len(m.matchIndices) > 0 {
 				m.searchIdx = 0
@@ -206,9 +322,17 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		if len(msg.Entries) == 0 {
 			return m, nil
 		}
+		if m.seen == nil {
+			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(msg.Entries))
+		}
 		var older []logLine
 		for _, e := range msg.Entries {
+			if _, exists := m.seen[e.Key()]; exists {
+				continue
+			}
+			m.seen[e.Key()] = struct{}{}
 			older = append(older, logLine{
+				entryKey:  e.Key(),
 				timestamp: e.Timestamp,
 				stream:    e.Stream,
 				message:   sanitizeLogMessage(e.Message),
@@ -216,16 +340,19 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		}
 		// Prepend and adjust scroll so viewport stays on the same content
 		m.lines = append(older, m.lines...)
-		m.scroll += len(older)
+		m.scroll += m.visibleCount(older)
 		// Update firstTS
 		if len(m.lines) > 0 {
 			m.firstTS = m.lines[0].timestamp
 		}
 		// Cap buffer from the end if needed
-		if len(m.lines) > maxLogLines {
-			excess := len(m.lines) - maxLogLines
-			m.lines = m.lines[:maxLogLines]
-			_ = excess // trimmed from end, no scroll adjust needed
+		bufferLines := m.configuredBufferLines()
+		if len(m.lines) > bufferLines {
+			excess := len(m.lines) - bufferLines
+			for _, line := range m.lines[len(m.lines)-excess:] {
+				delete(m.seen, line.key())
+			}
+			m.lines = m.lines[:bufferLines]
 		}
 		m.rebuildMatchIndices()
 		return m, nil
@@ -254,7 +381,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			}
 		case key.Matches(msg, theme.Keys.Down):
 			visible := m.visibleLines()
-			maxScroll := len(m.lines) - visible
+			maxScroll := len(m.displayIndices()) - visible
 			maxScroll = max(0, maxScroll)
 			m.scroll++
 			if m.scroll >= maxScroll {
@@ -270,7 +397,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			m.scroll = max(0, m.scroll)
 		case msg.String() == "pgdown":
 			visible := m.visibleLines()
-			maxScroll := len(m.lines) - visible
+			maxScroll := len(m.displayIndices()) - visible
 			maxScroll = max(0, maxScroll)
 			m.scroll += visible
 			if m.scroll >= maxScroll {
@@ -350,7 +477,7 @@ func (m LogViewerModel) handleSearchInput(msg tea.KeyMsg) (LogViewerModel, tea.C
 			m.searchIdx = 0
 			// Find the first match visible from current scroll
 			for i, idx := range m.matchIndices {
-				if idx >= m.scroll {
+				if m.displayPosition(idx) >= m.scroll {
 					m.searchIdx = i
 					break
 				}
@@ -374,7 +501,7 @@ func (m *LogViewerModel) rebuildMatchIndices() {
 	}
 	lowerSearch := strings.ToLower(m.search)
 	for i, l := range m.lines {
-		if strings.Contains(strings.ToLower(l.message), lowerSearch) {
+		if !m.streamHidden(l.stream) && strings.Contains(strings.ToLower(l.message), lowerSearch) {
 			m.matchIndices = append(m.matchIndices, i)
 		}
 	}
@@ -406,10 +533,12 @@ func (m *LogViewerModel) jumpToPrevMatch() {
 
 func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 	// Find the first line at or after the target timestamp
-	targetLine := len(m.lines) - 1
-	for i, l := range m.lines {
+	display := m.displayIndices()
+	targetLine := len(display) - 1
+	for position, index := range display {
+		l := m.lines[index]
 		if l.timestamp >= ts {
-			targetLine = i
+			targetLine = position
 			break
 		}
 	}
@@ -417,26 +546,51 @@ func (m *LogViewerModel) scrollToTimestamp(ts int64) {
 	// Center the target in the viewport
 	m.scroll = targetLine - visible/2
 	m.scroll = max(0, m.scroll)
-	maxScroll := len(m.lines) - visible
+	maxScroll := len(display) - visible
 	maxScroll = max(0, maxScroll)
 	m.scroll = min(m.scroll, maxScroll)
+}
+
+func (m *LogViewerModel) scrollToEntry(entry model.LogEntry) {
+	targetLine := -1
+	key := entry.Key()
+	for position, index := range m.displayIndices() {
+		line := m.lines[index]
+		if line.key() == key {
+			targetLine = position
+			break
+		}
+	}
+	if targetLine < 0 {
+		m.scrollToTimestamp(entry.Timestamp)
+		return
+	}
+	visible := m.visibleLines()
+	m.scroll = max(0, targetLine-visible/2)
+	m.scroll = min(m.scroll, max(0, len(m.displayIndices())-visible))
 }
 
 func (m *LogViewerModel) scrollToMatch(matchIdx int) {
 	if matchIdx < 0 || matchIdx >= len(m.matchIndices) {
 		return
 	}
-	lineIdx := m.matchIndices[matchIdx]
+	lineIdx := m.displayPosition(m.matchIndices[matchIdx])
 	visible := m.visibleLines()
 	// Center the match in the viewport
 	m.scroll = lineIdx - visible/2
 	m.scroll = max(0, m.scroll)
-	maxScroll := len(m.lines) - visible
+	maxScroll := len(m.displayIndices()) - visible
 	maxScroll = max(0, maxScroll)
 	m.scroll = min(m.scroll, maxScroll)
 }
 
 func (m LogViewerModel) View() string {
+	if m.streamManager {
+		return m.streamManagerView()
+	}
+	if m.highlightManager {
+		return m.highlightManagerView()
+	}
 	var b strings.Builder
 
 	// Title line
@@ -460,7 +614,12 @@ func (m LogViewerModel) View() string {
 		}
 		b.WriteString(theme.HelpStyle.Render(matchInfo))
 	}
-	fmt.Fprintf(&b, "  [%d lines]", len(m.lines))
+	display := m.displayIndices()
+	if len(display) == len(m.lines) {
+		fmt.Fprintf(&b, "  [%d lines]", len(m.lines))
+	} else {
+		fmt.Fprintf(&b, "  [%d/%d lines shown]", len(display), len(m.lines))
+	}
 	b.WriteString("\n\n")
 
 	if m.searching {
@@ -469,11 +628,13 @@ func (m LogViewerModel) View() string {
 
 	visible := m.visibleLines()
 
-	start := max(0, min(m.scroll, len(m.lines)-visible))
-	end := min(start+visible, len(m.lines))
+	start := max(0, min(m.scroll, len(display)-visible))
+	end := min(start+visible, len(display))
 
 	if len(m.lines) == 0 {
 		b.WriteString(theme.HelpStyle.Render("  Waiting for logs..."))
+	} else if len(display) == 0 {
+		b.WriteString(theme.HelpStyle.Render("  All buffered streams are hidden. Open stream visibility to show logs."))
 	}
 
 	// Build a set of match line indices for quick lookup
@@ -498,7 +659,8 @@ func (m LogViewerModel) View() string {
 		msgWidth = 20
 	}
 
-	for i := start; i < end; i++ {
+	for position := start; position < end; position++ {
+		i := display[position]
 		line := m.lines[i]
 		ts := m.formatTimestamp(line.timestamp)
 		tsStr := theme.HelpStyle.Render(ts)
@@ -518,9 +680,7 @@ func (m LogViewerModel) View() string {
 		for li, msgLine := range msgLines {
 			wrapped := wrapPlainText(msgLine, msgWidth)
 			for wi, wLine := range wrapped {
-				if m.search != "" {
-					wLine = highlightSearch(wLine, m.search)
-				}
+				wLine = m.highlightText(wLine)
 				if li == 0 && wi == 0 {
 					fmt.Fprintf(&b, "%s%s  %s%s\n", marker, tsStr, sourceLabel, wLine)
 				} else {
@@ -533,27 +693,48 @@ func (m LogViewerModel) View() string {
 	return b.String()
 }
 
-func highlightSearch(msg, pattern string) string {
-	if pattern == "" {
-		return msg
+func (m LogViewerModel) highlightText(text string) string {
+	rules := m.highlightRules
+	matcher := m.highlighter
+	if m.search != "" {
+		rules = append([]model.LogHighlightRule{{
+			Pattern: m.search, Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+		}}, rules...)
+		var err error
+		matcher, err = highlight.Compile(rules)
+		if err != nil {
+			return text
+		}
 	}
-	lower := strings.ToLower(msg)
-	lowerPat := strings.ToLower(pattern)
-
+	spans := matcher.Spans(text)
+	if len(spans) == 0 {
+		return text
+	}
+	runes := []rune(text)
 	var result strings.Builder
 	pos := 0
-	for {
-		idx := strings.Index(lower[pos:], lowerPat)
-		if idx == -1 {
-			result.WriteString(msg[pos:])
-			break
-		}
-		result.WriteString(msg[pos : pos+idx])
-		matchEnd := pos + idx + len(pattern)
-		result.WriteString(theme.ErrorStyle.Render(msg[pos+idx : matchEnd]))
-		pos = matchEnd
+	for _, span := range spans {
+		result.WriteString(string(runes[pos:span.Start]))
+		result.WriteString(logHighlightStyle(span.Style).Render(string(runes[span.Start:span.End])))
+		pos = span.End
 	}
+	result.WriteString(string(runes[pos:]))
 	return result.String()
+}
+
+func logHighlightStyle(style model.LogHighlightStyle) lipgloss.Style {
+	switch style {
+	case model.LogHighlightInfo:
+		return lipgloss.NewStyle().Foreground(theme.ColorBlue).Bold(true)
+	case model.LogHighlightSuccess:
+		return lipgloss.NewStyle().Foreground(theme.ColorGreen).Bold(true)
+	case model.LogHighlightWarning:
+		return lipgloss.NewStyle().Foreground(theme.ColorYellow).Bold(true)
+	case model.LogHighlightError:
+		return theme.ErrorStyle
+	default:
+		return lipgloss.NewStyle().Reverse(true).Bold(true)
+	}
 }
 
 func (m LogViewerModel) visibleLines() int {
@@ -569,8 +750,47 @@ func (m LogViewerModel) visibleLines() int {
 
 func (m *LogViewerModel) scrollToBottom() {
 	visible := m.visibleLines()
-	m.scroll = len(m.lines) - visible
+	m.scroll = len(m.displayIndices()) - visible
 	m.scroll = max(0, m.scroll)
+}
+
+func (m LogViewerModel) streamHidden(stream string) bool {
+	_, hidden := m.hiddenStreams[stream]
+	return hidden
+}
+
+func (m LogViewerModel) visibleCount(lines []logLine) int {
+	count := 0
+	for _, line := range lines {
+		if !m.streamHidden(line.stream) {
+			count++
+		}
+	}
+	return count
+}
+
+func (m LogViewerModel) displayIndices() []int {
+	indices := make([]int, 0, len(m.lines))
+	for i, line := range m.lines {
+		if !m.streamHidden(line.stream) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+func (m LogViewerModel) displayPosition(lineIndex int) int {
+	position := 0
+	for i, line := range m.lines {
+		if m.streamHidden(line.stream) {
+			continue
+		}
+		if i >= lineIndex {
+			return position
+		}
+		position++
+	}
+	return position
 }
 
 const tsWidth = 24
@@ -620,90 +840,55 @@ func (m LogViewerModel) scheduleRefresh() tea.Cmd {
 
 func (m LogViewerModel) fetchLogs() tea.Cmd {
 	startTime := m.lastTS
-	limit := 100
-	if m.tailMode {
-		limit = maxLogLines
+	if m.initialFetch && m.endTS == 0 {
+		startTime = max(int64(0), startTime-logPollOverlap.Milliseconds())
+	}
+	limit := m.configuredPageSize()
+	if m.jumpTarget != nil && !m.initialFetch {
+		// Correlation is the one deliberate exception to normal paging: load a
+		// full bounded window so the selected event can remain centered.
+		limit = m.configuredBufferLines()
+	}
+	fallbackLimit := 0
+	if !m.initialFetch {
+		fallbackLimit = 10
 	}
 
 	return func() tea.Msg {
-		var entries []aws.LogEntry
-		var lastTS int64
-		var err error
-
-		if m.endTS > 0 {
-			entries, err = m.fetchRangeEntries(startTime, m.endTS)
-			if len(entries) > 0 {
-				lastTS = entries[len(entries)-1].Timestamp
-			} else {
-				lastTS = startTime
-			}
-		} else if m.tailMode {
-			client := m.client
-			logGroup := m.logGroup
-			streams := m.streams
-			if len(streams) == 1 {
-				entries, lastTS, err = client.TailLogs(
-					context.Background(), logGroup, streams[0], startTime, limit)
-			} else if len(streams) > 1 {
-				entries, lastTS, err = client.TailMultiStreamLogs(
-					context.Background(), logGroup, streams, startTime, limit)
-			} else {
-				entries, lastTS, err = client.TailLogGroup(
-					context.Background(), logGroup, startTime, limit)
-			}
-		} else {
-			client := m.client
-			logGroup := m.logGroup
-			streams := m.streams
-			if len(streams) == 1 {
-				entries, lastTS, err = client.FetchLogs(
-					context.Background(), logGroup, streams[0], startTime, limit)
-			} else if len(streams) > 1 {
-				entries, lastTS, err = client.FetchMultiStreamLogs(
-					context.Background(), logGroup, streams, startTime, limit)
-			} else {
-				entries, lastTS, err = client.FetchLogGroup(
-					context.Background(), logGroup, startTime, limit)
-			}
+		query := model.LogQuery{
+			Groups:        append([]string(nil), m.logGroups...),
+			Streams:       append([]string(nil), m.streams...),
+			StartTime:     startTime,
+			EndTime:       m.endTS,
+			Limit:         limit,
+			Tail:          m.endTS == 0,
+			FallbackLimit: fallbackLimit,
 		}
-
+		page, err := m.logs.Fetch(m.ctx, m.logGroup, query)
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
-		return LogsLoadedMsg{Entries: entries, LastTS: lastTS}
+		return LogsLoadedMsg{Entries: page.Entries, LastTS: page.LastTimestamp}
 	}
 }
 
 func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
-	client := m.client
 	logGroup := m.logGroup
-	streams := m.streams
-	// Fetch 30 seconds before the earliest line
+	streams := append([]string(nil), m.streams...)
 	endTime := m.firstTS
-	startTime := endTime - 30*1000
-	startTime = max(0, startTime)
 
 	return func() tea.Msg {
-		var entries []aws.LogEntry
-		var err error
-
-		if len(streams) == 1 {
-			entries, _, err = client.FetchLogs(
-				context.Background(), logGroup, streams[0], startTime, 100)
-		} else if len(streams) > 1 {
-			entries, _, err = client.FetchMultiStreamLogs(
-				context.Background(), logGroup, streams, startTime, 100)
-		} else {
-			entries, _, err = client.FetchLogGroup(
-				context.Background(), logGroup, startTime, 100)
-		}
-
+		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
+			Streams:    streams,
+			BeforeTime: endTime,
+			Limit:      m.configuredPageSize(),
+		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
 		// Filter to only entries before our current earliest
-		var older []aws.LogEntry
-		for _, e := range entries {
+		var older []model.LogEntry
+		for _, e := range page.Entries {
 			if e.Timestamp < endTime {
 				older = append(older, e)
 			}
@@ -723,7 +908,7 @@ func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) t
 			if cutoff == 0 {
 				cutoff = endTime
 			}
-			var older []aws.LogEntry
+			var older []model.LogEntry
 			for _, e := range entries {
 				if e.Timestamp < cutoff {
 					older = append(older, e)
@@ -732,7 +917,7 @@ func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) t
 			return LogsPrependedMsg{Entries: older}
 		}
 		cutoff := m.lastTS
-		var newer []aws.LogEntry
+		var newer []model.LogEntry
 		for _, e := range entries {
 			if e.Timestamp >= cutoff {
 				newer = append(newer, e)
@@ -747,56 +932,403 @@ func (m LogViewerModel) fetchRangeLogs(startTime, endTime int64, prepend bool) t
 }
 
 func (m LogViewerModel) fetchNewerLogs() tea.Cmd {
-	client := m.client
 	logGroup := m.logGroup
 	streams := m.streams
 	startTime := m.lastTS
 
 	return func() tea.Msg {
-		var entries []aws.LogEntry
-		var lastTS int64
-		var err error
-
-		if len(streams) == 1 {
-			entries, lastTS, err = client.FetchLogs(
-				context.Background(), logGroup, streams[0], startTime, 100)
-		} else if len(streams) > 1 {
-			entries, lastTS, err = client.FetchMultiStreamLogs(
-				context.Background(), logGroup, streams, startTime, 100)
-		} else {
-			entries, lastTS, err = client.FetchLogGroup(
-				context.Background(), logGroup, startTime, 100)
-		}
-
+		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
+			Streams:   streams,
+			StartTime: startTime,
+			Limit:     m.configuredPageSize(),
+			Tail:      true,
+		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}
 		}
-		return LogsLoadedMsg{Entries: entries, LastTS: lastTS}
+		return LogsLoadedMsg{Entries: page.Entries, LastTS: page.LastTimestamp}
 	}
 }
 
-func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]aws.LogEntry, error) {
-	client := m.client
-	logGroup := m.logGroup
-	logGroups := m.logGroups
-	streams := m.streams
+func (l logLine) key() model.LogEntryKey {
+	return l.entryKey
+}
 
-	if len(logGroups) > 1 {
-		return client.FetchMultiGroupRange(context.Background(), logGroups, startTime, endTime, maxLogLines)
-	}
-	if len(streams) == 1 {
-		return client.FetchLogsRange(context.Background(), logGroup, streams[0], startTime, endTime, maxLogLines)
-	}
-	if len(streams) > 1 {
-		return client.FetchMultiStreamLogsRange(context.Background(), logGroup, streams, startTime, endTime, maxLogLines)
-	}
-	return client.FetchLogGroupRange(context.Background(), logGroup, startTime, endTime, maxLogLines)
+func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]model.LogEntry, error) {
+	page, err := m.logs.Fetch(m.ctx, m.logGroup, model.LogQuery{
+		Groups:    append([]string(nil), m.logGroups...),
+		Streams:   append([]string(nil), m.streams...),
+		StartTime: startTime,
+		EndTime:   endTime,
+		Limit:     m.configuredPageSize(),
+	})
+	return page.Entries, err
 }
 
 func (m LogViewerModel) SetSearch(pattern string) LogViewerModel {
 	m.search = pattern
 	// Match indices will be built as lines arrive
 	return m
+}
+
+// SetHighlightRules replaces the current presentation-only highlight rules.
+func (m LogViewerModel) SetHighlightRules(rules []model.LogHighlightRule) LogViewerModel {
+	matcher, err := highlight.Compile(rules)
+	if err != nil {
+		m.highlightError = err.Error()
+		return m
+	}
+	m.highlightRules = append([]model.LogHighlightRule(nil), rules...)
+	m.highlighter = matcher
+	m.highlightError = ""
+	return m
+}
+
+// HighlightRules returns a copy safe for config persistence.
+func (m LogViewerModel) HighlightRules() []model.LogHighlightRule {
+	return append([]model.LogHighlightRule(nil), m.highlightRules...)
+}
+
+// SetHiddenStreams replaces the presentation-only set of streams omitted from
+// the rendered buffer. The underlying events remain available for later use.
+func (m LogViewerModel) SetHiddenStreams(streams []string) LogViewerModel {
+	if len(streams) == 0 {
+		m.hiddenStreams = nil
+	} else {
+		m.hiddenStreams = make(map[string]struct{}, len(streams))
+		for _, stream := range streams {
+			if stream != "" {
+				m.hiddenStreams[stream] = struct{}{}
+			}
+		}
+	}
+	m.visibilityChanged()
+	return m
+}
+
+// HiddenStreams returns a stable copy safe for config persistence.
+func (m LogViewerModel) HiddenStreams() []string {
+	streams := make([]string, 0, len(m.hiddenStreams))
+	for stream := range m.hiddenStreams {
+		streams = append(streams, stream)
+	}
+	sort.Strings(streams)
+	return streams
+}
+
+// OpenStreamManager opens the presentation-only stream visibility selector.
+func (m LogViewerModel) OpenStreamManager() LogViewerModel {
+	if m.streamManager {
+		m.streamManager = false
+		return m
+	}
+	streams := m.availableStreams()
+	if len(streams) <= 1 {
+		return m
+	}
+	m.highlightManager = false
+	m.streamManager = true
+	if m.streamCursor >= len(streams) {
+		m.streamCursor = len(streams) - 1
+	}
+	return m
+}
+
+func (m LogViewerModel) availableStreams() []string {
+	seen := make(map[string]struct{})
+	for _, line := range m.lines {
+		if line.stream != "" {
+			seen[line.stream] = struct{}{}
+		}
+	}
+	streams := make([]string, 0, len(seen))
+	for stream := range seen {
+		streams = append(streams, stream)
+	}
+	sort.Strings(streams)
+	return streams
+}
+
+func (m LogViewerModel) handleStreamManager(msg tea.KeyMsg) (LogViewerModel, tea.Cmd) {
+	streams := m.availableStreams()
+	if len(streams) <= 1 {
+		m.streamManager = false
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc", "q", "v":
+		m.streamManager = false
+	case "j", "down":
+		if m.streamCursor < len(streams)-1 {
+			m.streamCursor++
+		}
+	case "k", "up":
+		if m.streamCursor > 0 {
+			m.streamCursor--
+		}
+	case " ", "enter":
+		if m.hiddenStreams == nil {
+			m.hiddenStreams = make(map[string]struct{})
+		}
+		stream := streams[m.streamCursor]
+		if _, hidden := m.hiddenStreams[stream]; hidden {
+			delete(m.hiddenStreams, stream)
+		} else {
+			m.hiddenStreams[stream] = struct{}{}
+		}
+		m.visibilityChanged()
+	case "a":
+		m.hiddenStreams = nil
+		m.visibilityChanged()
+	case "x":
+		m.hiddenStreams = make(map[string]struct{}, len(streams))
+		for _, stream := range streams {
+			m.hiddenStreams[stream] = struct{}{}
+		}
+		m.visibilityChanged()
+	}
+	return m, nil
+}
+
+func (m *LogViewerModel) visibilityChanged() {
+	m.rebuildMatchIndices()
+	if m.searchIdx >= len(m.matchIndices) {
+		m.searchIdx = max(0, len(m.matchIndices)-1)
+	}
+	m.scroll = min(m.scroll, max(0, len(m.displayIndices())-m.visibleLines()))
+}
+
+func (m LogViewerModel) streamManagerView() string {
+	streams := m.availableStreams()
+	var b strings.Builder
+	b.WriteString("Visible log streams\n\n")
+	visibleRows := max(5, m.height-10)
+	start := max(0, m.streamCursor-visibleRows+1)
+	end := min(len(streams), start+visibleRows)
+	for i := start; i < end; i++ {
+		marker := "  "
+		style := lipgloss.NewStyle()
+		if i == m.streamCursor {
+			marker = "► "
+			style = theme.SelectedRowStyle
+		}
+		checked := "x"
+		if m.streamHidden(streams[i]) {
+			checked = " "
+		}
+		b.WriteString(style.Render(fmt.Sprintf("%s[%s] %s", marker, checked, formatLogSource(streams[i]))))
+		b.WriteString("\n")
+	}
+	if len(streams) > visibleRows {
+		fmt.Fprintf(&b, "\n%d–%d of %d streams\n", start+1, end, len(streams))
+	}
+	b.WriteString("\n[j/k] move  [space/enter] toggle  [a] show all  [x] hide all  [esc] close")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ColorCyan).
+		Padding(1, 3).
+		Render(b.String())
+}
+
+// OpenHighlightManager opens the log viewer's compact rule manager.
+func (m LogViewerModel) OpenHighlightManager() LogViewerModel {
+	m.streamManager = false
+	m.highlightManager = true
+	m.highlightEditing = false
+	m.highlightError = ""
+	if len(m.highlightRules) == 0 {
+		m.highlightCursor = 0
+	} else if m.highlightCursor >= len(m.highlightRules) {
+		m.highlightCursor = len(m.highlightRules) - 1
+	}
+	return m
+}
+
+func (m LogViewerModel) handleHighlightManager(msg tea.KeyMsg) (LogViewerModel, tea.Cmd) {
+	if m.highlightEditing {
+		switch msg.String() {
+		case "enter":
+			pattern := m.highlightInput.Value()
+			rules := append([]model.LogHighlightRule(nil), m.highlightRules...)
+			if m.highlightEditIdx < 0 {
+				rules = append(rules, model.LogHighlightRule{
+					Pattern: pattern, Match: model.LogHighlightLiteral, Style: model.LogHighlightDefault,
+				})
+			} else {
+				rules[m.highlightEditIdx].Pattern = pattern
+			}
+			if matcher, err := highlight.Compile(rules); err != nil {
+				m.highlightError = err.Error()
+				return m, nil
+			} else {
+				m.highlightRules, m.highlighter = rules, matcher
+				m.highlightEditing = false
+				m.highlightError = ""
+				m.highlightCursor = len(rules) - 1
+				if m.highlightEditIdx >= 0 {
+					m.highlightCursor = m.highlightEditIdx
+				}
+				return m, nil
+			}
+		case "esc":
+			m.highlightEditing = false
+			m.highlightError = ""
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.highlightInput, cmd = m.highlightInput.Update(msg)
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "esc", "q", "h":
+		m.highlightManager = false
+		m.highlightError = ""
+	case "j", "down":
+		if m.highlightCursor < len(m.highlightRules)-1 {
+			m.highlightCursor++
+		}
+	case "k", "up":
+		if m.highlightCursor > 0 {
+			m.highlightCursor--
+		}
+	case "a":
+		m.beginHighlightEdit(-1)
+		return m, m.highlightInput.Focus()
+	case "e", "enter":
+		if len(m.highlightRules) > 0 {
+			m.beginHighlightEdit(m.highlightCursor)
+			return m, m.highlightInput.Focus()
+		}
+	case "d", "delete", "backspace":
+		if len(m.highlightRules) > 0 {
+			rules := append([]model.LogHighlightRule(nil), m.highlightRules...)
+			rules = append(rules[:m.highlightCursor], rules[m.highlightCursor+1:]...)
+			m.highlightRules = rules
+			m.highlighter, _ = highlight.Compile(rules)
+			if m.highlightCursor >= len(rules) && m.highlightCursor > 0 {
+				m.highlightCursor--
+			}
+		}
+	case "m":
+		m.cycleHighlightMatch()
+	case "s":
+		m.cycleHighlightStyle()
+	case "J":
+		m.moveHighlightRule(1)
+	case "K":
+		m.moveHighlightRule(-1)
+	case "w":
+		rules := m.HighlightRules()
+		return m, func() tea.Msg { return LogHighlightSaveMsg{Rules: rules} }
+	}
+	return m, nil
+}
+
+func (m *LogViewerModel) beginHighlightEdit(index int) {
+	m.highlightEditing = true
+	m.highlightEditIdx = index
+	m.highlightError = ""
+	m.highlightInput = textinput.New()
+	m.highlightInput.Placeholder = "pattern"
+	m.highlightInput.CharLimit = 500
+	m.highlightInput.Width = 60
+	if index >= 0 {
+		m.highlightInput.SetValue(m.highlightRules[index].Pattern)
+		m.highlightInput.CursorEnd()
+	}
+	m.highlightInput.Focus()
+}
+
+func (m *LogViewerModel) cycleHighlightMatch() {
+	if len(m.highlightRules) == 0 {
+		return
+	}
+	rules := append([]model.LogHighlightRule(nil), m.highlightRules...)
+	rule := &rules[m.highlightCursor]
+	switch rule.Match {
+	case model.LogHighlightLiteral:
+		rule.Match = model.LogHighlightLiteralCI
+	case model.LogHighlightLiteralCI:
+		rule.Match = model.LogHighlightRegex
+	default:
+		rule.Match = model.LogHighlightLiteral
+	}
+	matcher, err := highlight.Compile(rules)
+	if err != nil {
+		m.highlightError = err.Error()
+		return
+	}
+	m.highlightRules, m.highlighter = rules, matcher
+	m.highlightError = ""
+}
+
+func (m *LogViewerModel) cycleHighlightStyle() {
+	if len(m.highlightRules) == 0 {
+		return
+	}
+	styles := []model.LogHighlightStyle{
+		model.LogHighlightDefault, model.LogHighlightInfo, model.LogHighlightSuccess,
+		model.LogHighlightWarning, model.LogHighlightError,
+	}
+	rule := &m.highlightRules[m.highlightCursor]
+	for i, style := range styles {
+		if rule.Style == style {
+			rule.Style = styles[(i+1)%len(styles)]
+			break
+		}
+	}
+	m.highlighter, _ = highlight.Compile(m.highlightRules)
+	m.highlightError = ""
+}
+
+func (m *LogViewerModel) moveHighlightRule(direction int) {
+	to := m.highlightCursor + direction
+	if m.highlightCursor < 0 || to < 0 || to >= len(m.highlightRules) {
+		return
+	}
+	m.highlightRules[m.highlightCursor], m.highlightRules[to] = m.highlightRules[to], m.highlightRules[m.highlightCursor]
+	m.highlightCursor = to
+	m.highlighter, _ = highlight.Compile(m.highlightRules)
+}
+
+func (m LogViewerModel) highlightManagerView() string {
+	var b strings.Builder
+	b.WriteString("Log highlight rules\n\n")
+	if len(m.highlightRules) == 0 {
+		b.WriteString(theme.HelpStyle.Render("No rules. Press a to add one."))
+		b.WriteString("\n")
+	}
+	for i, rule := range m.highlightRules {
+		marker := "  "
+		style := lipgloss.NewStyle()
+		if i == m.highlightCursor {
+			marker = "► "
+			style = theme.SelectedRowStyle
+		}
+		line := fmt.Sprintf("%s%-10s %-9s %s", marker, rule.Match, rule.Style, rule.Pattern)
+		b.WriteString(style.Render(line))
+		b.WriteString("\n")
+	}
+	if m.highlightEditing {
+		label := "Add pattern"
+		if m.highlightEditIdx >= 0 {
+			label = "Edit pattern"
+		}
+		b.WriteString("\n" + label + ": " + m.highlightInput.View() + "\n")
+		b.WriteString(theme.HelpStyle.Render("[enter] apply  [esc] cancel"))
+	} else {
+		b.WriteString("\n[a] add  [e] edit  [d] delete  [m] match type  [s] style\n")
+		b.WriteString("[J/K] reorder  [w] save with active search  [esc] close")
+	}
+	if m.highlightError != "" {
+		b.WriteString("\n\n" + theme.ErrorStyle.Render(m.highlightError))
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ColorCyan).
+		Padding(1, 3).
+		Render(b.String())
 }
 
 // ExportLines returns all buffered log lines formatted for file output.
@@ -853,7 +1385,7 @@ func wrapPlainText(s string, maxWidth int) []string {
 }
 
 func (m LogViewerModel) IsFiltering() bool {
-	return m.searching
+	return m.searching || m.highlightManager
 }
 
 func (m LogViewerModel) SetSize(w, h int) LogViewerModel {

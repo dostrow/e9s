@@ -33,6 +33,12 @@ const (
 	ConfirmR53Update
 	ConfirmR53Delete
 	ConfirmECRDelete
+	ConfirmRevealSecrets
+	ConfirmRegisterTaskDefinition
+	ConfirmTofuInit
+	ConfirmTofuApply
+	ConfirmCostRefresh
+	ConfirmSQLWrites
 )
 
 type ConfirmModel struct {

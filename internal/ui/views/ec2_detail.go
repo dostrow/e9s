@@ -9,19 +9,19 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type EC2DetailModel struct {
-	detail *aws.EC2InstanceDetail
+	detail *model.EC2InstanceDetail
 	scroll int
 	width  int
 	height int
 }
 
-func NewEC2Detail(detail *aws.EC2InstanceDetail) EC2DetailModel {
+func NewEC2Detail(detail *model.EC2InstanceDetail) EC2DetailModel {
 	return EC2DetailModel{detail: detail}
 }
 
@@ -181,7 +181,7 @@ func (m EC2DetailModel) View() string {
 	return strings.Join(visible, "\n")
 }
 
-func (m EC2DetailModel) Detail() *aws.EC2InstanceDetail { return m.detail }
+func (m EC2DetailModel) Detail() *model.EC2InstanceDetail { return m.detail }
 func (m EC2DetailModel) InstanceID() string {
 	if m.detail != nil {
 		return m.detail.InstanceID

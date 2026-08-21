@@ -1,45 +1,36 @@
 package ui
 
 import (
-	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/dostrow/e9s/internal/tofu"
+	"github.com/dostrow/e9s/internal/ui/views"
 )
 
-func TestTofuApplyArgs_UsesSavedPlanFromPlanView(t *testing.T) {
+func TestConfirmTofuApplyUsesReviewedPlanSummary(t *testing.T) {
 	t.Parallel()
 
 	app := App{
 		state:        viewTofuPlan,
-		tofuPlanFile: "/tmp/test-plan.tfplan",
+		tofuDir:      "/infra/prod",
+		tofuPlanFile: "/tmp/reviewed.tfplan",
+		tofuPlanView: views.NewTofuPlan("/infra/prod").SetPlan(&tofu.PlanResult{CreateCount: 2, DeleteCount: 1}),
 	}
-
-	got := app.tofuApplyArgs("/work/tofu")
-	want := []string{
-		"-chdir=/work/tofu",
-		"apply",
-		"-no-color",
-		"/tmp/test-plan.tfplan",
+	updated, _ := app.confirmTofuApply()
+	if !updated.confirm.Active || updated.confirm.Action != ConfirmTofuApply {
+		t.Fatalf("confirm = %+v", updated.confirm)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("tofuApplyArgs() = %#v, want %#v", got, want)
+	if !strings.Contains(updated.confirm.Message, "2 to create, 1 to delete") {
+		t.Fatalf("confirmation missing plan summary: %q", updated.confirm.Message)
 	}
 }
 
-func TestTofuApplyArgs_DoesNotUseSavedPlanOutsidePlanView(t *testing.T) {
+func TestConfirmTofuInitDescribesWorkspaceEffects(t *testing.T) {
 	t.Parallel()
 
-	app := App{
-		state:        viewTofuResources,
-		tofuPlanFile: "/tmp/test-plan.tfplan",
-	}
-
-	got := app.tofuApplyArgs("/work/tofu")
-	want := []string{
-		"-chdir=/work/tofu",
-		"apply",
-		"-no-color",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("tofuApplyArgs() = %#v, want %#v", got, want)
+	updated, _ := (App{tofuDir: "/infra/prod"}).confirmTofuInit()
+	if updated.confirm.Action != ConfirmTofuInit || !strings.Contains(updated.confirm.Message, "dependency lock file") {
+		t.Fatalf("confirm = %+v", updated.confirm)
 	}
 }

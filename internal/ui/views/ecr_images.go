@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -16,7 +16,7 @@ import (
 type ECRImagesModel struct {
 	repoName    string
 	repoURI     string
-	images      []aws.ECRImage
+	images      []model.ECRImage
 	cursor      int
 	filter      string
 	filtering   bool
@@ -157,7 +157,7 @@ func scanStatusCell(status string) components.Cell {
 }
 
 func vulnSummaryCell(counts map[string]int32) components.Cell {
-	if len(counts) == 0 {
+	if counts == nil {
 		return components.Plain("-")
 	}
 	var parts []string
@@ -188,12 +188,12 @@ func formatImageSize(bytes int64) string {
 	return fmt.Sprintf("%.1f MB", mb)
 }
 
-func (m ECRImagesModel) filteredImages() []aws.ECRImage {
+func (m ECRImagesModel) filteredImages() []model.ECRImage {
 	if m.filter == "" {
 		return m.images
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.ECRImage
+	var out []model.ECRImage
 	for _, img := range m.images {
 		if strings.Contains(strings.ToLower(img.Digest), lf) ||
 			strings.Contains(strings.ToLower(strings.Join(img.Tags, " ")), lf) {
@@ -203,7 +203,19 @@ func (m ECRImagesModel) filteredImages() []aws.ECRImage {
 	return out
 }
 
-func (m ECRImagesModel) SetImages(images []aws.ECRImage) ECRImagesModel {
+func (m ECRImagesModel) SetImages(images []model.ECRImage) ECRImagesModel {
+	known := make(map[string]model.ECRImage, len(m.images))
+	for _, image := range m.images {
+		if image.ScanSeverity != nil {
+			known[image.Digest] = image
+		}
+	}
+	for index, image := range images {
+		if previous, found := known[image.Digest]; found && image.ScanSeverity == nil {
+			images[index].ScanStatus = previous.ScanStatus
+			images[index].ScanSeverity = cloneECRScanSeverity(previous.ScanSeverity)
+		}
+	}
 	m.images = images
 	m.loaded = true
 	filtered := m.filteredImages()
@@ -213,13 +225,38 @@ func (m ECRImagesModel) SetImages(images []aws.ECRImage) ECRImagesModel {
 	return m
 }
 
-func (m ECRImagesModel) SelectedImage() *aws.ECRImage {
+func (m ECRImagesModel) SelectedImage() *model.ECRImage {
 	filtered := m.filteredImages()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil
 	}
 	img := filtered[m.cursor]
 	return &img
+}
+
+// SetSelectedScan enriches the selected image after its on-demand scan request.
+// Enhanced scan metadata is not included in ECR DescribeImages responses.
+func (m ECRImagesModel) SetSelectedScan(scan model.ECRScan) ECRImagesModel {
+	selected := m.SelectedImage()
+	if selected == nil {
+		return m
+	}
+	for index := range m.images {
+		if m.images[index].Digest == selected.Digest {
+			m.images[index].ScanStatus = scan.Status
+			m.images[index].ScanSeverity = cloneECRScanSeverity(scan.Severity)
+			break
+		}
+	}
+	return m
+}
+
+func cloneECRScanSeverity(counts map[string]int32) map[string]int32 {
+	cloned := make(map[string]int32, len(counts))
+	for severity, count := range counts {
+		cloned[severity] = count
+	}
+	return cloned
 }
 
 func (m ECRImagesModel) RepoName() string  { return m.repoName }

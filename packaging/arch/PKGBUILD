@@ -1,0 +1,57 @@
+# Maintainer: Daniel Ostrow <dostrow@users.noreply.github.com>
+pkgbase=e9s-git
+pkgname=(e9s-git e9s-gui-git)
+pkgver=0.9.0.r185.g255e95a
+pkgrel=1
+pkgdesc='Keyboard-oriented AWS operations workspace'
+arch=(x86_64 aarch64)
+url='https://github.com/dostrow/e9s'
+license=(MIT)
+makedepends=(git go pkgconf)
+source=('e9s::git+https://github.com/dostrow/e9s.git')
+sha256sums=(SKIP)
+
+pkgver() {
+  cd e9s
+  git describe --long --tags --always | sed -e 's/^v//' -e 's/\([^-]*-g\)/r\1/' -e 's/-/./g'
+}
+
+prepare() {
+  cd e9s
+  go mod download
+}
+
+build() {
+  cd e9s
+  local version
+  version=$(git describe --tags --always)
+  export CGO_CPPFLAGS="${CPPFLAGS}"
+  export CGO_CFLAGS="${CFLAGS}"
+  export CGO_CXXFLAGS="${CXXFLAGS}"
+  export CGO_LDFLAGS="${LDFLAGS}"
+  export GOFLAGS='-buildmode=pie -trimpath -mod=readonly -modcacherw'
+  CGO_ENABLED=0 go build -ldflags "-X main.version=$version" -o e9s-bin .
+  go build -tags 'gui vte sourceview' -ldflags "-linkmode=external -X main.version=$version" -o e9s-gui-bin ./cmd/e9s-gui
+}
+
+package_e9s-git() {
+  pkgdesc='Terminal workspace for operating AWS resources (development version)'
+  provides=(e9s)
+  conflicts=(e9s)
+
+  cd e9s
+  install -Dm755 e9s-bin "$pkgdir/usr/bin/e9s"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/e9s/LICENSE"
+}
+
+package_e9s-gui-git() {
+  pkgdesc='Native GTK workspace for operating AWS resources (development version)'
+  depends=(fontconfig gtk4 gtksourceview5 vte4)
+  optdepends=('e9s: terminal frontend')
+  provides=(e9s-gui)
+  conflicts=(e9s-gui)
+
+  cd e9s
+  make install-gui-assets DESTDIR="$pkgdir" PREFIX=/usr
+  install -Dm755 e9s-gui-bin "$pkgdir/usr/bin/e9s-gui"
+}

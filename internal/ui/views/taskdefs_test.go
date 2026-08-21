@@ -33,3 +33,24 @@ func TestTaskDefsFilterMatchesFamilyAndARN(t *testing.T) {
 		t.Fatalf("filtered task definitions = %#v", filtered)
 	}
 }
+
+func TestTaskDefsPreviousRevision(t *testing.T) {
+	m := NewTaskDefs().SetTaskDefs([]aws.TaskDefRef{
+		{ARN: "arn:api:5", Family: "api", Revision: 5},
+		{ARN: "arn:worker:4", Family: "worker", Revision: 4},
+		{ARN: "arn:api:3", Family: "api", Revision: 3},
+		{ARN: "arn:api:2", Family: "api", Revision: 2},
+	})
+
+	previous := m.PreviousRevision("api", 5)
+	if previous == nil {
+		t.Fatal("expected a previous task-definition revision")
+	}
+	if previous.Family != "api" || previous.Revision != 3 {
+		t.Fatalf("previous revision = %#v, want api:3", previous)
+	}
+
+	if oldest := m.PreviousRevision("api", 2); oldest != nil {
+		t.Fatalf("oldest revision unexpectedly had predecessor %#v", oldest)
+	}
+}

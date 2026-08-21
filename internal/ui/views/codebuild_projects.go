@@ -7,13 +7,13 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type CBProjectsModel struct {
-	projects    []aws.CBProject
+	projects    []model.CodeBuildProject
 	cursor      int
 	filter      string
 	filtering   bool
@@ -117,12 +117,12 @@ func (m CBProjectsModel) View() string {
 	return b.String()
 }
 
-func (m CBProjectsModel) filteredProjects() []aws.CBProject {
+func (m CBProjectsModel) filteredProjects() []model.CodeBuildProject {
 	if m.filter == "" {
 		return m.projects
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.CBProject
+	var out []model.CodeBuildProject
 	for _, p := range m.projects {
 		if strings.Contains(strings.ToLower(p.Name), lf) ||
 			strings.Contains(strings.ToLower(p.Description), lf) {
@@ -132,7 +132,7 @@ func (m CBProjectsModel) filteredProjects() []aws.CBProject {
 	return out
 }
 
-func (m CBProjectsModel) SetProjects(projects []aws.CBProject) CBProjectsModel {
+func (m CBProjectsModel) SetProjects(projects []model.CodeBuildProject) CBProjectsModel {
 	m.projects = projects
 	m.loaded = true
 	filtered := m.filteredProjects()
@@ -142,7 +142,7 @@ func (m CBProjectsModel) SetProjects(projects []aws.CBProject) CBProjectsModel {
 	return m
 }
 
-func (m CBProjectsModel) SelectedProject() *aws.CBProject {
+func (m CBProjectsModel) SelectedProject() *model.CodeBuildProject {
 	filtered := m.filteredProjects()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

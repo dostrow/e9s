@@ -73,6 +73,16 @@ func TestTransformService(t *testing.T) {
 				CreatedAt:      timePtr(now),
 			},
 		},
+		LoadBalancers: []types.LoadBalancer{{
+			TargetGroupArn: strPtr("arn:target-group:primary"),
+			AdvancedConfiguration: &types.AdvancedConfiguration{
+				AlternateTargetGroupArn: strPtr("arn:target-group:alternate"),
+			},
+		}},
+		TaskSets: []types.TaskSet{{LoadBalancers: []types.LoadBalancer{
+			{TargetGroupArn: strPtr("arn:target-group:task-set")},
+			{TargetGroupArn: strPtr("arn:target-group:primary")},
+		}}},
 	}
 
 	result := TransformService(s)
@@ -91,6 +101,14 @@ func TestTransformService(t *testing.T) {
 	}
 	if result.Deployments[0].Status != "PRIMARY" {
 		t.Errorf("Deployment Status = %q, want %q", result.Deployments[0].Status, "PRIMARY")
+	}
+	if got, want := len(result.TargetGroups), 3; got != want {
+		t.Fatalf("TargetGroups count = %d, want %d: %#v", got, want, result.TargetGroups)
+	}
+	for index, want := range []string{"arn:target-group:primary", "arn:target-group:alternate", "arn:target-group:task-set"} {
+		if result.TargetGroups[index].ID != want {
+			t.Errorf("TargetGroups[%d] = %q, want %q", index, result.TargetGroups[index].ID, want)
+		}
 	}
 }
 
@@ -146,15 +164,19 @@ func TestComputeServiceHealth(t *testing.T) {
 func TestTransformTask(t *testing.T) {
 	now := time.Now()
 	task := types.Task{
-		TaskArn:           strPtr("arn:aws:ecs:us-east-1:123456:task/cluster/abc123def456"),
-		TaskDefinitionArn: strPtr("arn:aws:ecs:us-east-1:123456:task-definition/my-task:5"),
-		AvailabilityZone:  strPtr("us-east-1a"),
-		LastStatus:        strPtr("RUNNING"),
-		DesiredStatus:     strPtr("RUNNING"),
-		HealthStatus:      types.HealthStatusHealthy,
-		LaunchType:        types.LaunchTypeFargate,
-		StartedAt:         timePtr(now),
-		Group:             strPtr("service:my-service"),
+		TaskArn:              strPtr("arn:aws:ecs:us-east-1:123456:task/cluster/abc123def456"),
+		TaskDefinitionArn:    strPtr("arn:aws:ecs:us-east-1:123456:task-definition/my-task:5"),
+		AvailabilityZone:     strPtr("us-east-1a"),
+		LastStatus:           strPtr("RUNNING"),
+		DesiredStatus:        strPtr("RUNNING"),
+		HealthStatus:         types.HealthStatusHealthy,
+		LaunchType:           types.LaunchTypeFargate,
+		StartedAt:            timePtr(now),
+		StoppedAt:            timePtr(now.Add(time.Minute)),
+		StopCode:             types.TaskStopCodeEssentialContainerExited,
+		StoppedReason:        strPtr("essential container exited"),
+		Group:                strPtr("service:my-service"),
+		ContainerInstanceArn: strPtr("arn:container-instance/ci-1"),
 		Containers: []types.Container{
 			{
 				Name:         strPtr("app"),
@@ -168,8 +190,11 @@ func TestTransformTask(t *testing.T) {
 				Type: strPtr("ElasticNetworkInterface"),
 				Details: []types.KeyValuePair{
 					{Name: strPtr("privateIPv4Address"), Value: strPtr("10.0.1.42")},
+					{Name: strPtr("networkInterfaceId"), Value: strPtr("eni-1")},
+					{Name: strPtr("subnetId"), Value: strPtr("subnet-1")},
 				},
 			},
+			{Type: strPtr("AmazonElasticBlockStorage"), Details: []types.KeyValuePair{{Name: strPtr("volumeId"), Value: strPtr("vol-1")}}},
 		},
 	}
 
@@ -184,8 +209,17 @@ func TestTransformTask(t *testing.T) {
 	if result.Status != "RUNNING" {
 		t.Errorf("Status = %q, want %q", result.Status, "RUNNING")
 	}
+	if result.StopCode != "EssentialContainerExited" || result.StoppedReason != "essential container exited" {
+		t.Errorf("stop details = %q, %q", result.StopCode, result.StoppedReason)
+	}
 	if result.PrivateIP != "10.0.1.42" {
 		t.Errorf("PrivateIP = %q, want %q", result.PrivateIP, "10.0.1.42")
+	}
+	if result.NetworkInterfaceID != "eni-1" || result.SubnetID != "subnet-1" || result.ContainerInstanceARN != "arn:container-instance/ci-1" {
+		t.Errorf("task resources = eni %q, subnet %q, container instance %q", result.NetworkInterfaceID, result.SubnetID, result.ContainerInstanceARN)
+	}
+	if len(result.VolumeIDs) != 1 || result.VolumeIDs[0] != "vol-1" {
+		t.Errorf("VolumeIDs = %#v", result.VolumeIDs)
 	}
 	if result.AvailabilityZone != "us-east-1a" {
 		t.Errorf("AvailabilityZone = %q, want %q", result.AvailabilityZone, "us-east-1a")

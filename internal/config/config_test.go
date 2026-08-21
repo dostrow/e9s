@@ -3,9 +3,13 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dostrow/e9s/internal/model"
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -13,6 +17,12 @@ func TestDefaultConfig(t *testing.T) {
 
 	if cfg.Defaults.RefreshInterval != 5 {
 		t.Errorf("RefreshInterval = %d, want 5", cfg.Defaults.RefreshInterval)
+	}
+	if cfg.Defaults.IdleTimeout != 300 {
+		t.Errorf("IdleTimeout = %d, want 300", cfg.Defaults.IdleTimeout)
+	}
+	if cfg.Defaults.CostGuardUSD != 1 {
+		t.Errorf("CostGuardUSD = %v, want 1", cfg.Defaults.CostGuardUSD)
 	}
 	if cfg.Display.TimestampFormat != "relative" {
 		t.Errorf("TimestampFormat = %q, want %q", cfg.Display.TimestampFormat, "relative")
@@ -22,6 +32,54 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.Display.MaxLogLines != 1000 {
 		t.Errorf("MaxLogLines = %d, want 1000", cfg.Display.MaxLogLines)
+	}
+	if cfg.GUI.TerminalScrollbackLines != DefaultTerminalScrollbackLines {
+		t.Errorf("TerminalScrollbackLines = %d, want %d", cfg.GUI.TerminalScrollbackLines, DefaultTerminalScrollbackLines)
+	}
+}
+
+func TestLogDisplayLimitsUseConfiguredValuesAndSafeDefaults(t *testing.T) {
+	var missing *Config
+	if got := missing.LogEventPageSize(); got != DefaultEventPageSize {
+		t.Fatalf("nil config event page size = %d, want %d", got, DefaultEventPageSize)
+	}
+	if got := missing.LogBufferLines(); got != DefaultMaxLogLines {
+		t.Fatalf("nil config log buffer = %d, want %d", got, DefaultMaxLogLines)
+	}
+
+	cfg := DefaultConfig()
+	cfg.Display.MaxEvents = 75
+	cfg.Display.MaxLogLines = 2500
+	if got := cfg.LogEventPageSize(); got != 75 {
+		t.Fatalf("event page size = %d, want 75", got)
+	}
+	if got := cfg.LogBufferLines(); got != 2500 {
+		t.Fatalf("log buffer = %d, want 2500", got)
+	}
+
+	cfg.Display.MaxEvents = MaxEventPageSize + 1
+	cfg.Display.MaxLogLines = MaxBufferedLogLines + 1
+	if got := cfg.LogEventPageSize(); got != DefaultEventPageSize {
+		t.Fatalf("invalid event page size = %d, want default %d", got, DefaultEventPageSize)
+	}
+	if got := cfg.LogBufferLines(); got != DefaultMaxLogLines {
+		t.Fatalf("invalid log buffer = %d, want default %d", got, DefaultMaxLogLines)
+	}
+}
+
+func TestValidateSQLConnections(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SQL.Connections = []SQLConnection{{Name: "production", Database: "app", Auth: "secrets-manager"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected a Secrets Manager profile without secret_arn to fail")
+	}
+	cfg.SQL.Connections[0].SecretARN = "arn:aws:secretsmanager:us-east-2:123:secret:db"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid SQL connection, got %v", err)
+	}
+	cfg.SQL.Connections = append(cfg.SQL.Connections, cfg.SQL.Connections[0])
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected duplicate SQL profile names to fail")
 	}
 }
 
@@ -51,6 +109,27 @@ func TestModuleDefaults(t *testing.T) {
 	}
 	if !cfg.ModuleDynamoDB() {
 		t.Error("ModuleDynamoDB should default to true")
+	}
+	if !cfg.ModuleCostExplorer() {
+		t.Error("ModuleCostExplorer should default to true")
+	}
+	if !cfg.ModuleElastiCache() {
+		t.Error("ModuleElastiCache should default to true")
+	}
+	if !cfg.ModuleAPIGateway() {
+		t.Error("ModuleAPIGateway should default to true")
+	}
+}
+
+func TestCostViewValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.CostViews = []CostView{{Name: "", Days: 30}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected empty Cost Explorer saved-view name to fail validation")
+	}
+	cfg.CostViews = []CostView{{Name: "services", Days: -1}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected negative Cost Explorer saved-view days to fail validation")
 	}
 }
 
@@ -129,6 +208,65 @@ func TestLogPathCRUD(t *testing.T) {
 	cfg.RemoveLogPath("api")
 	if len(cfg.LogPaths) != 0 {
 		t.Errorf("LogPaths count = %d, want 0", len(cfg.LogPaths))
+	}
+}
+
+func TestCompleteLogPathCRUD(t *testing.T) {
+	cfg := DefaultConfig()
+	entry := LogPathEntry{
+		Name: "errors", LogGroup: "/aws/ecs/api", LogGroups: []string{"/aws/ecs/api"},
+		Streams: []string{"api/one", "api/two"}, Filter: `"error"`, Lookback: "1h",
+		HighlightRules: []model.LogHighlightRule{{Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError}},
+		HiddenStreams:  []string{"api/noisy"},
+	}
+	if !cfg.UpsertLogPath(entry) {
+		t.Fatal("UpsertLogPath() new = false")
+	}
+	entry.Streams[0] = "mutated"
+	entry.HighlightRules[0].Pattern = "mutated"
+	entry.HiddenStreams[0] = "mutated"
+	if cfg.LogPaths[0].Streams[0] != "api/one" {
+		t.Fatal("UpsertLogPath() retained caller slice")
+	}
+	if cfg.LogPaths[0].HighlightRules[0].Pattern != "ERROR" {
+		t.Fatal("UpsertLogPath() retained caller highlight rules")
+	}
+	if cfg.LogPaths[0].HiddenStreams[0] != "api/noisy" {
+		t.Fatal("UpsertLogPath() retained caller hidden streams")
+	}
+	if !cfg.RenameLogPath("errors", "API errors") {
+		t.Fatal("RenameLogPath() = false")
+	}
+	cfg.UpsertLogPath(LogPathEntry{Name: "deployments", LogGroup: "/aws/ecs/api"})
+	if !cfg.MoveLogPath("deployments", -1) || cfg.LogPaths[0].Name != "deployments" {
+		t.Fatalf("MoveLogPath() paths = %#v", cfg.LogPaths)
+	}
+	if cfg.RenameLogPath("deployments", "API errors") {
+		t.Fatal("RenameLogPath() allowed a duplicate name")
+	}
+}
+
+func TestLogHighlightRulesYAMLCompatibility(t *testing.T) {
+	var legacy Config
+	if err := yaml.Unmarshal([]byte("log_paths:\n  - name: api\n    log_group: /aws/ecs/api\n"), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if got := legacy.LogPaths[0].HighlightRules; len(got) != 0 {
+		t.Fatalf("legacy highlight rules = %#v, want none", got)
+	}
+
+	want := []model.LogHighlightRule{{Pattern: "timeout", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightWarning}}
+	cfg := Config{LogPaths: []LogPathEntry{{Name: "api", LogGroup: "/aws/ecs/api", HighlightRules: want}}}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTrip Config
+	if err := yaml.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(roundTrip.LogPaths[0].HighlightRules, want) {
+		t.Fatalf("round-trip highlight rules = %#v, want %#v", roundTrip.LogPaths[0].HighlightRules, want)
 	}
 }
 
@@ -228,6 +366,96 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if len(loaded.SSMPrefixes) != 1 {
 		t.Fatalf("Loaded SSMPrefixes count = %d, want 1", len(loaded.SSMPrefixes))
+	}
+}
+
+func TestSavePreservesUnknownKeysAndComments(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
+
+	path := filepath.Join(tmpDir, "e9s", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	original := "# operator notes\ndefaults:\n  # keep this explanation\n  region: us-east-1\ncustom_plugin:\n  enabled: true\n"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	cfg.Defaults.Region = "us-west-2"
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, fragment := range []string{"# operator notes", "# keep this explanation", "custom_plugin:", "enabled: true", "region: us-west-2"} {
+		if !strings.Contains(text, fragment) {
+			t.Errorf("saved configuration is missing %q:\n%s", fragment, text)
+		}
+	}
+	backup, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backup) != original {
+		t.Fatalf("backup changed:\n%s", backup)
+	}
+}
+
+func TestSaveRawRejectsInvalidConfiguration(t *testing.T) {
+	tmpDir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	resetConfigPath()
+	defer resetConfigPath()
+
+	cfg := DefaultConfig()
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(tmpDir, "e9s", "config.yaml")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveRaw([]byte("display:\n  timestamp_format: sometimes\n")); err == nil {
+		t.Fatal("SaveRaw accepted an invalid timestamp format")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("invalid raw save changed the active configuration")
+	}
+}
+
+func TestGUIAppearanceRoundTrip(t *testing.T) {
+	cfg, err := Parse([]byte(`
+gui:
+  terminal_scrollback_lines: 25000
+  appearance:
+    preset: gruvbox-material-dark
+    interface_font: Inter 11
+    monospace_font: JetBrainsMono Nerd Font 10
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GUI.Appearance.Preset != "gruvbox-material-dark" || cfg.GUI.Appearance.InterfaceFont != "Inter 11" || cfg.GUI.Appearance.MonospaceFont != "JetBrainsMono Nerd Font 10" {
+		t.Fatalf("appearance did not round-trip through YAML: %+v", cfg.GUI.Appearance)
+	}
+	if cfg.GUI.TerminalScrollbackLines != 25000 {
+		t.Fatalf("terminal scrollback did not round-trip through YAML: %d", cfg.GUI.TerminalScrollbackLines)
 	}
 }
 

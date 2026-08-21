@@ -9,24 +9,24 @@ import (
 
 // PlanResult represents a parsed tofu plan.
 type PlanResult struct {
-	Changes     []ResourceChange
-	CreateCount int
-	UpdateCount int
-	DeleteCount int
+	Changes      []ResourceChange
+	CreateCount  int
+	UpdateCount  int
+	DeleteCount  int
 	ReplaceCount int
-	NoOpCount   int
+	NoOpCount    int
 }
 
 // ResourceChange represents a single resource change from a plan.
 type ResourceChange struct {
-	Address    string // e.g. "aws_ecs_service.api"
-	Module     string // e.g. "module.vpc"
-	Type       string // e.g. "aws_ecs_service"
-	Name       string // e.g. "api"
-	Action     string // "create", "update", "delete", "replace", "read", "no-op"
-	Before     map[string]any
-	After      map[string]any
-	Diffs      []AttrDiff // only changed attributes
+	Address string // e.g. "aws_ecs_service.api"
+	Module  string // e.g. "module.vpc"
+	Type    string // e.g. "aws_ecs_service"
+	Name    string // e.g. "api"
+	Action  string // "create", "update", "delete", "replace", "read", "no-op"
+	Before  map[string]any
+	After   map[string]any
+	Diffs   []AttrDiff // only changed attributes
 }
 
 // AttrDiff represents a single attribute change.
@@ -39,16 +39,16 @@ type AttrDiff struct {
 
 // planJSON is the top-level structure of `tofu show -json planfile`
 type planJSON struct {
-	ResourceChanges []resourceChangeJSON `json:"resource_changes"`
+	ResourceChanges []resourceChangeJSON        `json:"resource_changes"`
 	OutputChanges   map[string]outputChangeJSON `json:"output_changes"`
 }
 
 type resourceChangeJSON struct {
-	Address      string `json:"address"`
-	ModuleAddress string `json:"module_address"`
-	Type         string `json:"type"`
-	Name         string `json:"name"`
-	Change       changeJSON `json:"change"`
+	Address       string     `json:"address"`
+	ModuleAddress string     `json:"module_address"`
+	Type          string     `json:"type"`
+	Name          string     `json:"name"`
+	Change        changeJSON `json:"change"`
 }
 
 type changeJSON struct {
@@ -225,9 +225,6 @@ func formatValue(v any) string {
 	}
 	switch val := v.(type) {
 	case string:
-		if len(val) > 80 {
-			return val[:77] + "..."
-		}
 		return val
 	case float64:
 		if val == float64(int64(val)) {
@@ -238,18 +235,10 @@ func formatValue(v any) string {
 		return fmt.Sprintf("%t", val)
 	case map[string]any:
 		b, _ := json.Marshal(val)
-		s := string(b)
-		if len(s) > 80 {
-			return s[:77] + "..."
-		}
-		return s
+		return string(b)
 	case []any:
 		b, _ := json.Marshal(val)
-		s := string(b)
-		if len(s) > 80 {
-			return s[:77] + "..."
-		}
-		return s
+		return string(b)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

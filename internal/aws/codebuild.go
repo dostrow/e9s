@@ -7,62 +7,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-// CBProject represents a CodeBuild project summary.
-type CBProject struct {
-	Name         string
-	Description  string
-	Source       string // source type (CODECOMMIT, GITHUB, etc.)
-	LastModified time.Time
-}
-
-// CBBuild represents a CodeBuild build summary.
-type CBBuild struct {
-	ID            string
-	BuildNumber   int64
-	Status        string // SUCCEEDED, FAILED, IN_PROGRESS, STOPPED, TIMED_OUT, FAULT
-	StartTime     time.Time
-	EndTime       time.Time
-	Duration      time.Duration
-	Initiator     string
-	SourceVersion string
-	CurrentPhase  string
-}
-
-// CBBuildDetail holds extended build information.
-type CBBuildDetail struct {
-	CBBuild
-	ProjectName   string
-	Arn           string
-	Source        CBSource
-	Phases        []CBBuildPhase
-	LogGroupName  string
-	LogStreamName string
-	Environment   []CBEnvVar
-}
-
-// CBSource describes the build source.
-type CBSource struct {
-	Type     string
-	Location string
-	Version  string
-}
-
-// CBBuildPhase represents a build phase.
-type CBBuildPhase struct {
-	Name     string
-	Status   string
-	Duration time.Duration
-	Contexts []string // error messages
-}
-
-// CBEnvVar represents a build environment variable.
-type CBEnvVar struct {
-	Name  string
-	Value string
-	Type  string // PLAINTEXT, PARAMETER_STORE, SECRETS_MANAGER
-}
+type CBProject = model.CodeBuildProject
+type CBBuild = model.CodeBuildBuild
+type CBBuildDetail = model.CodeBuildDetail
+type CBSource = model.CodeBuildSource
+type CBBuildPhase = model.CodeBuildPhase
+type CBEnvVar = model.CodeBuildEnvVar
 
 // ListCBProjects returns all CodeBuild projects with summary info.
 func (c *Client) ListCBProjects(ctx context.Context) ([]CBProject, error) {
@@ -151,9 +104,9 @@ func (c *Client) GetCBBuildDetail(ctx context.Context, buildID string) (*CBBuild
 
 	b := out.Builds[0]
 	detail := &CBBuildDetail{
-		CBBuild:     buildFromSDK(b),
-		ProjectName: derefStrAws(b.ProjectName),
-		Arn:         derefStrAws(b.Arn),
+		CodeBuildBuild: buildFromSDK(b),
+		ProjectName:    derefStrAws(b.ProjectName),
+		ARN:            derefStrAws(b.Arn),
 	}
 
 	if b.Source != nil {

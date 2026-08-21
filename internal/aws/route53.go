@@ -2,48 +2,16 @@ package aws
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	r53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-// R53Zone represents a Route53 hosted zone.
-type R53Zone struct {
-	ID          string
-	Name        string
-	Private     bool
-	RecordCount int64
-	Comment     string
-}
-
-// R53Record represents a Route53 resource record set.
-type R53Record struct {
-	Name          string
-	Type          string
-	TTL           int64
-	Values        []string
-	AliasTarget   string // DNS name of alias target, empty if not an alias
-	AliasZoneID   string
-	RoutingPolicy string // Simple, Weighted, Latency, Failover, Geolocation, MultiValue
-	SetIdentifier string
-	Weight        int64
-	Region        string
-	Failover      string
-	HealthCheckID string
-}
-
-// R53DNSAnswer represents the result of a TestDNSAnswer call.
-type R53DNSAnswer struct {
-	RecordName   string
-	RecordType   string
-	ResponseCode string
-	Nameserver   string
-	Protocol     string
-	RecordData   []string
-}
+type R53Zone = model.Route53Zone
+type R53Record = model.Route53Record
+type R53DNSAnswer = model.Route53DNSAnswer
 
 // ListR53Zones returns all hosted zones, optionally filtered by name.
 func (c *Client) ListR53Zones(ctx context.Context, filter string) ([]R53Zone, error) {
@@ -139,69 +107,6 @@ func (c *Client) DeleteR53Record(ctx context.Context, zoneID string, record R53R
 	return err
 }
 
-// R53RecordTemplate represents the JSON structure for editing records in $EDITOR.
-type R53RecordTemplate struct {
-	Name   string   `json:"name"`
-	Type   string   `json:"type"`
-	TTL    int64    `json:"ttl,omitempty"`
-	Values []string `json:"values,omitempty"`
-	Alias  *struct {
-		DNSName    string `json:"dnsName"`
-		HostedZone string `json:"hostedZoneId"`
-	} `json:"alias,omitempty"`
-}
-
-// BuildR53RecordTemplate creates a JSON template for creating/editing a record.
-func BuildR53RecordTemplate(record *R53Record) string {
-	tmpl := R53RecordTemplate{
-		Type: "A",
-		TTL:  300,
-	}
-	if record != nil {
-		tmpl.Name = record.Name
-		tmpl.Type = record.Type
-		tmpl.TTL = record.TTL
-		tmpl.Values = record.Values
-		if record.AliasTarget != "" {
-			tmpl.Alias = &struct {
-				DNSName    string `json:"dnsName"`
-				HostedZone string `json:"hostedZoneId"`
-			}{
-				DNSName:    record.AliasTarget,
-				HostedZone: record.AliasZoneID,
-			}
-			tmpl.TTL = 0
-		}
-	}
-	b, _ := json.MarshalIndent(tmpl, "", "  ")
-	return string(b)
-}
-
-// ParseR53RecordTemplate parses the edited JSON template back into a record.
-func ParseR53RecordTemplate(data string) (*R53Record, error) {
-	var tmpl R53RecordTemplate
-	if err := json.Unmarshal([]byte(data), &tmpl); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if tmpl.Name == "" {
-		return nil, fmt.Errorf("name is required")
-	}
-	if tmpl.Type == "" {
-		return nil, fmt.Errorf("type is required")
-	}
-	r := &R53Record{
-		Name:   tmpl.Name,
-		Type:   tmpl.Type,
-		TTL:    tmpl.TTL,
-		Values: tmpl.Values,
-	}
-	if tmpl.Alias != nil && tmpl.Alias.DNSName != "" {
-		r.AliasTarget = tmpl.Alias.DNSName
-		r.AliasZoneID = tmpl.Alias.HostedZone
-	}
-	return r, nil
-}
-
 func buildChange(action r53types.ChangeAction, record R53Record) r53types.Change {
 	rrType := r53types.RRType(record.Type)
 	rrs := &r53types.ResourceRecordSet{
@@ -210,11 +115,10 @@ func buildChange(action r53types.ChangeAction, record R53Record) r53types.Change
 	}
 
 	if record.AliasTarget != "" {
-		evalTarget := false
 		rrs.AliasTarget = &r53types.AliasTarget{
 			DNSName:              &record.AliasTarget,
 			HostedZoneId:         &record.AliasZoneID,
-			EvaluateTargetHealth: evalTarget,
+			EvaluateTargetHealth: record.EvaluateTargetHealth,
 		}
 	} else {
 		if record.TTL > 0 {
@@ -231,6 +135,25 @@ func buildChange(action r53types.ChangeAction, record R53Record) r53types.Change
 	}
 	if record.Weight > 0 {
 		rrs.Weight = &record.Weight
+	}
+	if record.Region != "" {
+		rrs.Region = r53types.ResourceRecordSetRegion(record.Region)
+	}
+	if record.Failover != "" {
+		rrs.Failover = r53types.ResourceRecordSetFailover(record.Failover)
+	}
+	if record.GeoContinentCode != "" || record.GeoCountryCode != "" || record.GeoSubdivisionCode != "" {
+		rrs.GeoLocation = &r53types.GeoLocation{
+			ContinentCode:   optionalString(record.GeoContinentCode),
+			CountryCode:     optionalString(record.GeoCountryCode),
+			SubdivisionCode: optionalString(record.GeoSubdivisionCode),
+		}
+	}
+	if record.MultiValue {
+		rrs.MultiValueAnswer = &record.MultiValue
+	}
+	if record.HealthCheckID != "" {
+		rrs.HealthCheckId = &record.HealthCheckID
 	}
 
 	return r53types.Change{
@@ -276,6 +199,7 @@ func recordFromSDK(r r53types.ResourceRecordSet) R53Record {
 	if r.AliasTarget != nil {
 		rec.AliasTarget = derefStrAws(r.AliasTarget.DNSName)
 		rec.AliasZoneID = derefStrAws(r.AliasTarget.HostedZoneId)
+		rec.EvaluateTargetHealth = r.AliasTarget.EvaluateTargetHealth
 	}
 
 	// Determine routing policy
@@ -294,10 +218,21 @@ func recordFromSDK(r r53types.ResourceRecordSet) R53Record {
 	}
 	if r.GeoLocation != nil {
 		rec.RoutingPolicy = "Geolocation"
+		rec.GeoContinentCode = derefStrAws(r.GeoLocation.ContinentCode)
+		rec.GeoCountryCode = derefStrAws(r.GeoLocation.CountryCode)
+		rec.GeoSubdivisionCode = derefStrAws(r.GeoLocation.SubdivisionCode)
 	}
 	if r.MultiValueAnswer != nil && *r.MultiValueAnswer {
 		rec.RoutingPolicy = "MultiValue"
+		rec.MultiValue = true
 	}
 
 	return rec
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

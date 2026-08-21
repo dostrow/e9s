@@ -3,6 +3,8 @@ package views
 import (
 	"strings"
 	"testing"
+
+	"github.com/dostrow/e9s/internal/model"
 )
 
 func TestFormatImageSize(t *testing.T) {
@@ -36,8 +38,24 @@ func TestVulnSummaryCell_Empty(t *testing.T) {
 
 func TestVulnSummaryCell_EmptyMap(t *testing.T) {
 	cell := vulnSummaryCell(map[string]int32{})
-	if cell.Content != "-" {
-		t.Errorf("empty map: Content = %q, want %q", cell.Content, "-")
+	if !strings.Contains(cell.Content, "clean") {
+		t.Errorf("loaded empty map: Content = %q, want clean", cell.Content)
+	}
+}
+
+func TestECRImageScanEnrichmentSurvivesRefresh(t *testing.T) {
+	images := NewECRImages("repo", "registry/repo").SetImages([]model.ECRImage{{Digest: "sha256:one"}})
+	images = images.SetSelectedScan(model.ECRScan{
+		Status: "ACTIVE", Severity: map[string]int32{"CRITICAL": 2, "HIGH": 5},
+	})
+	selected := images.SelectedImage()
+	if selected == nil || selected.ScanStatus != "ACTIVE" || selected.ScanSeverity["CRITICAL"] != 2 {
+		t.Fatalf("enriched image = %#v", selected)
+	}
+	images = images.SetImages([]model.ECRImage{{Digest: "sha256:one"}})
+	selected = images.SelectedImage()
+	if selected == nil || selected.ScanStatus != "ACTIVE" || selected.ScanSeverity["HIGH"] != 5 {
+		t.Fatalf("refreshed image lost scan metadata: %#v", selected)
 	}
 }
 

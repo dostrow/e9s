@@ -2,48 +2,17 @@ package aws
 
 import (
 	"context"
-	"time"
 
 	awslib "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-// CWAlarm represents a CloudWatch alarm summary for list views.
-type CWAlarm struct {
-	Name            string
-	State           string // OK, ALARM, INSUFFICIENT_DATA
-	StateReason     string
-	StateUpdatedAt  time.Time
-	MetricName      string
-	Namespace       string
-	ActionsEnabled  bool
-	AlarmARN        string
-}
-
-// CWAlarmDetail holds extended alarm information.
-type CWAlarmDetail struct {
-	CWAlarm
-	Description       string
-	ComparisonOp      string
-	Threshold         float64
-	EvalPeriods       int
-	Period            int
-	Statistic         string
-	TreatMissing      string
-	Dimensions        map[string]string
-	AlarmActions      []string
-	OKActions         []string
-	InsufficientActions []string
-	History           []CWAlarmHistoryItem
-}
-
-// CWAlarmHistoryItem represents one alarm history entry.
-type CWAlarmHistoryItem struct {
-	Timestamp time.Time
-	Type      string
-	Summary   string
-}
+// Backward-compatible aliases for callers migrating to the UI-neutral model.
+type CWAlarm = model.Alarm
+type CWAlarmDetail = model.AlarmDetail
+type CWAlarmHistoryItem = model.AlarmHistoryItem
 
 // ListCWAlarms returns all CloudWatch metric alarms, optionally filtered by state.
 func (c *Client) ListCWAlarms(ctx context.Context, stateFilter string) ([]CWAlarm, error) {
@@ -83,11 +52,11 @@ func (c *Client) DescribeCWAlarm(ctx context.Context, alarmName string) (*CWAlar
 
 	a := out.MetricAlarms[0]
 	detail := &CWAlarmDetail{
-		CWAlarm:     cwAlarmFromMetric(a),
-		Description: derefStrAws(a.AlarmDescription),
-		Threshold:   derefFloat64(a.Threshold),
-		EvalPeriods: int(derefInt32(a.EvaluationPeriods)),
-		Period:      int(derefInt32(a.Period)),
+		Alarm:        cwAlarmFromMetric(a),
+		Description:  derefStrAws(a.AlarmDescription),
+		Threshold:    derefFloat64(a.Threshold),
+		EvalPeriods:  int(derefInt32(a.EvaluationPeriods)),
+		Period:       int(derefInt32(a.Period)),
 		TreatMissing: derefStrAws(a.TreatMissingData),
 	}
 	if a.ComparisonOperator != "" {
@@ -159,7 +128,7 @@ func cwAlarmFromMetric(a cwtypes.MetricAlarm) CWAlarm {
 		MetricName:     derefStrAws(a.MetricName),
 		Namespace:      derefStrAws(a.Namespace),
 		ActionsEnabled: a.ActionsEnabled != nil && *a.ActionsEnabled,
-		AlarmARN:       derefStrAws(a.AlarmArn),
+		ARN:            derefStrAws(a.AlarmArn),
 	}
 }
 

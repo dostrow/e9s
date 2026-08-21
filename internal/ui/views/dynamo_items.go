@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -17,7 +17,7 @@ import (
 type DynamoItemsModel struct {
 	tableName string
 	keyNames  []string // partition key, then sort key (for column ordering)
-	items     []aws.DynamoItem
+	items     []model.DynamoItem
 	columns   []string // discovered attribute names
 	cursor    int
 	hasMore   bool // whether there are more pages
@@ -99,7 +99,7 @@ func (m DynamoItemsModel) View() string {
 	return b.String()
 }
 
-func discoverColumns(items []aws.DynamoItem, keyNames []string) []string {
+func discoverColumns(items []model.DynamoItem, keyNames []string) []string {
 	seen := map[string]bool{}
 	var rest []string
 	for _, item := range items {
@@ -161,7 +161,7 @@ func formatDynamoValue(v interface{}) string {
 	}
 }
 
-func (m DynamoItemsModel) SetItems(items []aws.DynamoItem, hasMore bool) DynamoItemsModel {
+func (m DynamoItemsModel) SetItems(items []model.DynamoItem, hasMore bool) DynamoItemsModel {
 	m.items = items
 	m.loaded = true
 	m.hasMore = hasMore
@@ -172,14 +172,14 @@ func (m DynamoItemsModel) SetItems(items []aws.DynamoItem, hasMore bool) DynamoI
 	return m
 }
 
-func (m DynamoItemsModel) AppendItems(items []aws.DynamoItem, hasMore bool) DynamoItemsModel {
+func (m DynamoItemsModel) AppendItems(items []model.DynamoItem, hasMore bool) DynamoItemsModel {
 	m.items = append(m.items, items...)
 	m.hasMore = hasMore
 	m.columns = discoverColumns(m.items, m.keyNames)
 	return m
 }
 
-func (m DynamoItemsModel) SelectedItem() *aws.DynamoItem {
+func (m DynamoItemsModel) SelectedItem() *model.DynamoItem {
 	if len(m.items) == 0 || m.cursor >= len(m.items) {
 		return nil
 	}

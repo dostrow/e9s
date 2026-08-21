@@ -209,6 +209,44 @@ func TestParseTaskDefARN(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskDefinitionJSONRemovesReadOnlyFields(t *testing.T) {
+	raw := `{
+  "Family": "api",
+  "Revision": 42,
+  "Status": "ACTIVE",
+  "Compatibilities": ["EC2", "FARGATE"],
+  "TaskDefinitionArn": "arn:task-definition/api:42",
+  "ContainerDefinitions": [{"Name":"api","Image":"example/api:42"}]
+}`
+	input, document, err := prepareTaskDefinitionInput(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Family == nil || *input.Family != "api" || len(input.ContainerDefinitions) != 1 {
+		t.Fatalf("input = %#v", input)
+	}
+	for _, field := range []string{"Revision", "Status", "TaskDefinitionArn", "Compatibilities"} {
+		if strings.Contains(document, `"`+field+`"`) {
+			t.Fatalf("editable document retained %s:\n%s", field, document)
+		}
+	}
+}
+
+func TestPrepareTaskDefinitionJSONValidatesRequiredFields(t *testing.T) {
+	for name, raw := range map[string]string{
+		"json":       `{`,
+		"object":     `null`,
+		"family":     `{"ContainerDefinitions":[{"Name":"api"}]}`,
+		"containers": `{"Family":"api"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := PrepareTaskDefinitionJSON(raw); err == nil {
+				t.Fatal("PrepareTaskDefinitionJSON() succeeded, want error")
+			}
+		})
+	}
+}
+
 func TestDynamoItemToJSON(t *testing.T) {
 	item := DynamoItem{
 		"name": "test",

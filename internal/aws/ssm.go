@@ -2,23 +2,15 @@ package aws
 
 import (
 	"context"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type Parameter struct {
-	Name         string
-	Value        string
-	Type         string // String, StringList, SecureString
-	Version      int64
-	LastModified time.Time
-}
-
 // ListParameters fetches SSM parameters matching a path prefix.
-func (c *Client) ListParameters(ctx context.Context, pathPrefix string) ([]Parameter, error) {
-	var params []Parameter
+func (c *Client) ListParameters(ctx context.Context, pathPrefix string) ([]model.Parameter, error) {
+	var params []model.Parameter
 	paginator := ssm.NewGetParametersByPathPaginator(c.SSM, &ssm.GetParametersByPathInput{
 		Path:           &pathPrefix,
 		Recursive:      aws.Bool(true),
@@ -31,7 +23,7 @@ func (c *Client) ListParameters(ctx context.Context, pathPrefix string) ([]Param
 			return nil, err
 		}
 		for _, p := range page.Parameters {
-			params = append(params, Parameter{
+			params = append(params, model.Parameter{
 				Name:         derefStrAws(p.Name),
 				Value:        derefStrAws(p.Value),
 				Type:         string(p.Type),
@@ -44,7 +36,7 @@ func (c *Client) ListParameters(ctx context.Context, pathPrefix string) ([]Param
 }
 
 // GetParameter fetches a single parameter with decryption.
-func (c *Client) GetParameter(ctx context.Context, name string) (*Parameter, error) {
+func (c *Client) GetParameter(ctx context.Context, name string) (*model.Parameter, error) {
 	out, err := c.SSM.GetParameter(ctx, &ssm.GetParameterInput{
 		Name:           &name,
 		WithDecryption: aws.Bool(true),
@@ -53,7 +45,7 @@ func (c *Client) GetParameter(ctx context.Context, name string) (*Parameter, err
 		return nil, err
 	}
 	p := out.Parameter
-	return &Parameter{
+	return &model.Parameter{
 		Name:         derefStrAws(p.Name),
 		Value:        derefStrAws(p.Value),
 		Type:         string(p.Type),

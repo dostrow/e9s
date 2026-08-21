@@ -48,6 +48,7 @@ Browse log groups (by prefix or substring search), drill into log streams, and i
 - **Log Search** — search across a time range (relative presets or custom UTC timestamps) using CloudWatch filter syntax; plain text is auto-quoted for literal matching
 - **Multi-Group Search** — select multiple log groups with `space`, search across all of them, and save the selection for future use
 - **Backward/Forward Fetch** — press `[`/`]` to load older or newer log chunks
+- **Quiet-stream fallback** — peeks and follows start with the prior 15 minutes; when that window is empty, the newest 10 lines are shown and become the scrollback/follow anchor
 - **Timestamp Modes** — cycle through relative, local, and UTC timestamps with `t`
 - **Copy/Edit** — copy log buffer to clipboard (`y`) or open in `$EDITOR` (`o`)
 - **Save to File** — export the current log buffer with `w`
@@ -76,7 +77,7 @@ Browse S3 buckets (search by name), navigate object keys as a file browser with 
 
 ### Lambda
 
-Browse Lambda functions with runtime, state, memory, and timeout info. View environment variables with SSM/Secrets Manager resolution (same as ECS), tail CloudWatch logs, and search logs with the full CW Logs search flow.
+Browse Lambda functions with runtime, state, memory, and timeout info. View environment variables with SSM/Secrets Manager resolution (same as ECS), tail CloudWatch logs, and search logs with the full CW Logs search flow. ZIP deployments can be edited and uploaded with confirmation; container-image functions remain read-only.
 
 ### DynamoDB
 
@@ -85,7 +86,9 @@ Browse DynamoDB tables, scan items with pagination (press `]` to load more), and
 - **Filter Scan** — filter by attribute with operators (=, <>, contains, begins_with, etc.)
 - **PartiQL** — run arbitrary PartiQL queries with saved query support
 - **Edit Fields** — edit individual field values via `$EDITOR` with type inference
-- **Clone Items** — clone and modify items via `$EDITOR` for creating new entries
+  and a conditional write that detects concurrent changes
+- **Clone Items** — clone and modify items via `$EDITOR`; same or existing keys
+  are rejected instead of replacing an item
 
 ### SQS
 
@@ -119,15 +122,17 @@ Browse ECR repositories, view images with vulnerability scan summaries, and dril
 
 ### RDS
 
-Browse RDS DB instances and Aurora cluster members with engine, instance class, status, role, availability zone, and endpoint. Filter by identifier, engine, status, role, or cluster ID.
+Browse RDS DB clusters and instances with engine, status, role, availability zone, endpoints, and membership. Clusters is the default landing view. The GUI exposes separate Clusters and Instances sub-items; in the TUI, press `tab` to switch between them. Activating a cluster drills into its member instances.
 
 - **Instance Detail** — full metadata: engine version, class, AZ, Multi-AZ, created date, CA certificate
 - **Network** — endpoint with port, VPC, subnet group, and security groups
 - **Storage** — allocated storage (GiB), storage type, encryption, and deletion protection status
 - **Backup & Maintenance** — backup retention period, backup window, latest restorable time, maintenance window, parameter groups, and replica source
-- **CloudWatch Metrics** — live CPU utilization (color-coded), active connections, free storage, read/write IOPS, and read/write latency (last 5 min average)
+- **CloudWatch Metrics** — selectable 15-minute through 30-day histories for CPU, connections, memory, storage, IOPS, latency, throughput, disk queue, networking, burst balance, replica lag, and aggregate DB Load when published for the instance
 - **Tags** — all instance tags
 - **Aurora cluster awareness** — writer/reader roles derived from cluster membership, with failover priority for readers
+- **Cluster detail** — writer and reader endpoints, members and promotion tiers, network/security configuration, backup settings, and tags
+- **Cluster metrics** — the standard CloudWatch monitoring charts overlay one labeled series per member instance, matching the cluster-level comparison workflow in the AWS console
 
 ### Route53
 
@@ -150,9 +155,12 @@ Manage infrastructure-as-code workspaces directly from e9s. Point at any directo
   - Summary header with counts: `+3 ~1 -1`
   - Drill into individual changes to see before->after attribute diffs with add/change/remove color coding
   - Changes sorted: deletes first, then replaces, updates, creates
-- **Apply** — runs `tofu apply` interactively (terminal handoff, same as ECS Exec)
-- **Init** — runs `tofu init` with `i`
+- **Apply** — explicitly confirms and applies the exact saved plan shown in the plan browser; direct TUI apply remains interactive
+- **Init** — confirms backend/provider/module effects before running `tofu init` with `i`
 - **Save Workspaces** — bookmark directories for quick access with `W`
+- **Workspace Variables** — the GUI opens, creates, and saves `terraform.tfvars`
+  in the theme-aware built-in editor, rejects stale on-disk overwrites, and
+  invalidates any plan made from the previous variables
 - Auto-detects `tofu` vs `terraform` in PATH
 
 ## Installation
@@ -176,6 +184,39 @@ Or install directly to your `$GOPATH/bin`:
 ```bash
 go install github.com/dostrow/e9s@latest
 ```
+
+### Experimental GTK 4 GUI
+
+The `poc/gtk4-gui` branch includes an experimental native-Wayland GTK frontend
+for ECS, CloudWatch Logs, CloudWatch Alarms, SSM Parameter Store, Secrets Manager,
+Lambda, CodeBuild, EC2, ECR, RDS, S3, DynamoDB, SQS, Route53, and
+OpenTofu/Terraform. It shares
+connection, query, mutation, and log services with the TUI while remaining a
+separate, build-tagged executable.
+
+```bash
+# Requires GTK 4, GtkSourceView 5, VTE development files, a C compiler, and pkg-config
+make build-gui
+GDK_BACKEND=wayland ./e9s-gui
+```
+
+The full GUI build uses GtkSourceView 5 for highlighted source editors and GTK 4
+VTE for embedded ECS Exec, Session Manager, OpenTofu operation terminals, and a
+persistent local Terminal Dock. Toggle the dock with the Header Bar button,
+Ctrl+backtick, or `F12`; hiding it preserves the running shell. When opened from an
+active OpenTofu workspace, a new dock shell starts in that workspace directory.
+Tabs support nested Split Right and Split Down terminal panes. Use `Ctrl+Alt+R`
+or `Ctrl+Alt+D` to split the focused pane and `Ctrl+Alt+Arrow` to move focus
+through the tab's panes. Exited shells are removed automatically, and exiting
+the final shell hides the empty drawer.
+On Ubuntu or Debian, install
+`libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
+prerequisites; AWS's `session-manager-plugin` is required at runtime.
+
+See the [GUI development guide](docs/gui-development.md) for distro packages and
+the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
+decision. Deferred Git provenance, OpenTofu ownership indexing, and configurable
+editor-mode designs are recorded in the [GUI expansion roadmap](docs/gui-roadmap.md#deferred-cross-cutting-architecture).
 
 ### Cross-compile
 
@@ -371,6 +412,7 @@ e9s -m SQS -r eu-west-1
 | `l` | Tail function logs |
 | `s` | Search function logs |
 | `E` | View environment variables (from detail) |
+| `c` | Edit and upload ZIP function code (from detail) |
 | `W` | Save search |
 
 ### DynamoDB — Items
@@ -446,7 +488,10 @@ e9s -m SQS -r eu-west-1
 | --- | --- |
 | `Enter` | View instance detail |
 | `/` | Filter instances |
+| `Tab` | Switch between all instances and clusters |
 | `g`/`G` | Jump to top/bottom of detail |
+
+From the Clusters view, `Enter` drills into the selected cluster's member instances.
 
 ### ECR — Images
 
@@ -478,8 +523,8 @@ e9s -m SQS -r eu-west-1
 | --- | --- |
 | `Enter` | View resource state detail |
 | `p` | Run plan (parsed view) |
-| `a` | Run apply (interactive) |
-| `i` | Run init |
+| `a` | Confirm and run apply (interactive outside the plan view) |
+| `i` | Confirm and run init |
 | `W` | Save workspace |
 
 ### OpenTofu — Plan
@@ -487,13 +532,63 @@ e9s -m SQS -r eu-west-1
 | Key | Action |
 | --- | --- |
 | `Enter` | View change detail (before/after diff) |
-| `a` | Run apply (interactive) |
+| `a` | Confirm and apply the exact reviewed plan |
 
 ### All Pickers (saved items)
 
 | Key | Action |
 | --- | --- |
 | `d` | Delete selected saved entry |
+
+### Cost Explorer
+
+| Key | Action |
+| --- | --- |
+| `v` | Choose Overview, Breakdown, Anomalies, Resources, or a saved view |
+| `R` | Confirm and force a paid cache refresh |
+| `/` | Filter the current result rows |
+
+### ElastiCache
+
+The ElastiCache module browses replication groups, cache clusters, and
+serverless caches. Select a resource to inspect topology, endpoints,
+encryption and network configuration, tags, and recent CloudWatch metrics.
+In the TUI, use `1`, `2`, and `3` to switch resource types.
+
+### API Gateway
+
+The API Gateway module covers REST, HTTP, and WebSocket APIs plus custom
+domains. Details include stages and invoke URLs, routes/resources,
+integrations, access-log destinations, domain mappings, tags, and recent
+request, latency, and error metrics. In the TUI, use `1` through `4` to switch
+between the four resource scopes.
+
+### SQL Workbench
+
+SQL Workbench provides connection-scoped PostgreSQL query tabs in both the GTK
+and terminal frontends. Query text and tab names are restored after restart;
+results and credentials remain process-local. The GUI can run the selected
+text, the statement at the cursor, or the full tab. The TUI supports the latter
+two operations from its inline multiline editor. Both frontends can reconnect
+lost sessions and export the latest result to CSV.
+
+The GTK Browser Pane becomes a lazy PostgreSQL object explorer for the active
+query tab. Expand schemas and then tables, views, materialized views,
+sequences, or functions; selecting an object exposes Structure and Definition
+beside query Results. Object actions can preview 100 rows, generate a quoted
+`SELECT`, copy the qualified name, or refresh metadata. Expansion, selection,
+filter, and scroll position are retained independently for each connection tab.
+
+Connections support PostgreSQL password files, ephemeral password prompts,
+RDS IAM tokens, Secrets Manager, the RDS Data API, and optional SSM port
+forwarding. A per-connection `pgpass_file` is tried before the ordered global
+`sql.pgpass_files` list and the platform default. Files must be private (`0600`
+on Unix). Passwords and generated IAM tokens are never written to e9s config or
+tab state.
+
+Queries are read-only by default. Data-changing SQL requires both the global
+`sql.allow_writes` setting and a separately confirmed, per-tab break-glass
+control. The tab control always returns to locked when e9s starts.
 
 ## Configuration
 
@@ -505,13 +600,21 @@ defaults:
   region: us-east-2
   profile: ""
   refresh_interval: 5
+  # Pause automatic polling after inactivity; 0 disables the idle pause.
+  idle_timeout: 300
+  # Pause automatic polling at this conservative known session cost; 0 disables.
+  cost_guard_usd: 1
   default_mode: ""        # start in this mode (e.g. "ECS", "CWL", "SQS")
   save_dir: ~/Downloads   # default directory for file saves
 
 display:
   timestamp_format: relative  # "relative" or "absolute"
-  max_events: 50
-  max_log_lines: 1000
+  max_events: 50              # events fetched by a normal log-viewer request
+  max_log_lines: 1000         # entries retained by each newly opened log viewer
+
+gui:
+  # Local and embedded operation terminals; configurable up to 1,000,000 lines.
+  terminal_scrollback_lines: 10000
 
 # Enable/disable modules (all enabled by default)
 modules:
@@ -530,6 +633,10 @@ modules:
   rds: true
   route53: true
   tofu: true
+  cost_explorer: true
+  elasticache: true
+  api_gateway: true
+  sql_workbench: true
 
 # Saved bookmarks (managed via W/d keys in the TUI)
 ssm_prefixes: []
@@ -540,6 +647,28 @@ log_paths: []
 dynamo_tables: []
 dynamo_queries: []
 sqs_queues: []
+cost_views:
+  - name: Service spend — 30 days
+    days: 30
+    metric: UnblendedCost
+    group_by: SERVICE
+
+# SQL Workbench connection metadata. Passwords and IAM tokens are never saved.
+sql:
+  allow_writes: false
+  pgpass_files:
+    - ~/.pgpass
+  connections:
+    - name: Production reporting
+      resource_kind: rds-cluster
+      resource_id: reporting-prod
+      host: reporting.cluster-example.us-east-2.rds.amazonaws.com
+      port: 5432
+      database: reporting
+      user: analyst
+      auth: pgpass # pgpass, iam, secrets-manager, password, or data-api
+      pgpass_file: ~/.pgpass-reporting # optional per-profile first choice
+      sslmode: verify-full
 
 exclude_services: []
 ```
@@ -552,7 +681,7 @@ Your IAM identity needs permissions for whichever modules you use:
 
 | Module | API Calls |
 | --- | --- |
-| ECS browse | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` |
+| ECS browse | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:DescribeContainerInstances` (EC2-backed task links) |
 | ECS operations | `ecs:UpdateService`, `ecs:StopTask` |
 | ECS Exec | `ecs:ExecuteCommand`, `ssmmessages:*` |
 | Task definitions | `ecs:DescribeTaskDefinition` |
@@ -560,14 +689,18 @@ Your IAM identity needs permissions for whichever modules you use:
 | CloudWatch Alarms | `cloudwatch:DescribeAlarms`, `cloudwatch:DescribeAlarmHistory`, `cloudwatch:EnableAlarmActions`, `cloudwatch:DisableAlarmActions`, `cloudwatch:SetAlarmState` |
 | CloudWatch Metrics | `cloudwatch:GetMetricData` |
 | SSM parameters | `ssm:GetParametersByPath`, `ssm:GetParameter`, `ssm:GetParameters`, `ssm:PutParameter` |
-| Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue` |
+| Secrets Manager | `secretsmanager:ListSecrets`, `secretsmanager:GetSecretValue`, `secretsmanager:PutSecretValue`, `secretsmanager:CreateSecret` |
 | S3 | `s3:ListBuckets`, `s3:ListObjectsV2`, `s3:HeadObject`, `s3:GetObject`, `s3:GetObjectTagging` |
-| Lambda | `lambda:ListFunctions`, `lambda:GetFunction` |
+| Lambda | `lambda:ListFunctions`, `lambda:GetFunction`, `lambda:UpdateFunctionCode` (code editing only) |
 | DynamoDB | `dynamodb:ListTables`, `dynamodb:DescribeTable`, `dynamodb:Scan`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:PutItem`, `dynamodb:ExecuteStatement` |
 | SQS | `sqs:ListQueues`, `sqs:GetQueueAttributes`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:SendMessage` |
 | CodeBuild | `codebuild:ListProjects`, `codebuild:BatchGetProjects`, `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codebuild:StartBuild`, `codebuild:StopBuild` |
 | RDS browse | `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `cloudwatch:GetMetricData` |
-| EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeVolumes`, `ec2:DescribeSecurityGroups`, `ec2:GetConsoleOutput` |
+| Cost Explorer | `ce:GetCostAndUsage`, `ce:GetCostForecast`, `ce:GetAnomalies`; resource view also uses `ce:GetCostAndUsageWithResources` |
+| ElastiCache | `elasticache:DescribeReplicationGroups`, `elasticache:DescribeCacheClusters`, `elasticache:DescribeServerlessCaches`, `elasticache:ListTagsForResource`, `cloudwatch:GetMetricData` |
+| API Gateway | `apigateway:GET` for REST/HTTP/WebSocket APIs, stages, routes/resources, integrations, domains, and mappings; `cloudwatch:GetMetricData` |
+| SQL Workbench | Direct PostgreSQL uses no AWS API unless IAM (`rds-db:connect`), Secrets Manager (`secretsmanager:GetSecretValue`), or SSM tunneling (`ssm:StartSession`) is selected. Data API profiles use `rds-data:ExecuteStatement` plus secret access. |
+| EC2 browse | `ec2:DescribeInstances`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSecurityGroups`, `ec2:DescribeSecurityGroupRules`, `ec2:DescribeVpcs`, `ec2:DescribeSubnets`, `ec2:DescribeVolumes`, `ec2:GetConsoleOutput`, `elasticloadbalancing:DescribeLoadBalancers`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeTargetGroups`, `elasticloadbalancing:DescribeTargetHealth` |
 | EC2 operations | `ec2:StartInstances`, `ec2:StopInstances`, `ec2:RebootInstances`, `ec2:TerminateInstances` |
 | EC2 SSM session | `ssm:StartSession`, `ssmmessages:*` |
 | ECR browse | `ecr:DescribeRepositories`, `ecr:DescribeImages`, `ecr:DescribeImageScanFindings` |

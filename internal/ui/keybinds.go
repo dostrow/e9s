@@ -10,6 +10,7 @@ type KeyBindings struct {
 	PauseResume  string
 	EditConfig   string
 	SwitchRegion string
+	ErrorDetails string
 
 	// ECS
 	ForceRedeploy   string
@@ -24,6 +25,12 @@ type KeyBindings struct {
 	ECSExec         string
 	EnvVars         string
 	ToggleScaleIn   string
+	TaskScope       string
+	LoadMore        string
+	RunTask         string
+	TaskDefDiff     string
+	TaskDefEdit     string
+	RevealSecrets   string
 
 	// Log viewer
 	LogFollow     string
@@ -34,6 +41,8 @@ type KeyBindings struct {
 	LogOpenEditor string
 	LogSave       string
 	LogCorrelate  string
+	LogHighlights string
+	LogStreams    string
 
 	// CloudWatch Logs
 	TailStream    string
@@ -83,6 +92,7 @@ type KeyBindings struct {
 	StopInstance   string
 	RebootInstance string
 	TermInstance   string
+	EC2Resource    string
 
 	// Route53
 	TestDNS      string
@@ -101,9 +111,10 @@ type KeyBindings struct {
 	RunInit  string
 
 	// Shared
-	Save      string // W — save/bookmark
-	Search    string // s — general search/find
-	Timestamp string // t — toggle timestamps
+	Save         string // W — save/bookmark
+	Search       string // s — general search/find
+	Timestamp    string // t — toggle timestamps
+	OpenResource string // o — open a linked resource
 }
 
 // NewKeyBindings returns KeyBindings with all defaults.
@@ -115,6 +126,7 @@ func NewKeyBindings() KeyBindings {
 		PauseResume:  "ctrl+s",
 		EditConfig:   "ctrl+e",
 		SwitchRegion: "ctrl+r",
+		ErrorDetails: "!",
 
 		// ECS
 		ForceRedeploy:   "r",
@@ -129,6 +141,12 @@ func NewKeyBindings() KeyBindings {
 		ECSExec:         "e",
 		EnvVars:         "E",
 		ToggleScaleIn:   "I",
+		TaskScope:       "tab",
+		LoadMore:        "]",
+		RunTask:         "a",
+		TaskDefDiff:     "d",
+		TaskDefEdit:     "e",
+		RevealSecrets:   "a",
 
 		// Log viewer
 		LogFollow:     "f",
@@ -139,6 +157,8 @@ func NewKeyBindings() KeyBindings {
 		LogOpenEditor: "o",
 		LogSave:       "w",
 		LogCorrelate:  "c",
+		LogHighlights: "h",
+		LogStreams:    "v",
 
 		// CW Logs
 		TailStream:    "l",
@@ -188,6 +208,7 @@ func NewKeyBindings() KeyBindings {
 		StopInstance:   "X",
 		RebootInstance: "r",
 		TermInstance:   "T",
+		EC2Resource:    "tab",
 
 		// Route53
 		TestDNS:      "t",
@@ -206,9 +227,10 @@ func NewKeyBindings() KeyBindings {
 		RunInit:  "i",
 
 		// Shared
-		Save:      "W",
-		Search:    "s",
-		Timestamp: "t",
+		Save:         "W",
+		Search:       "s",
+		Timestamp:    "t",
+		OpenResource: "o",
 	}
 }
 
@@ -230,6 +252,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.EditConfig = key
 		case "switch_region":
 			kb.SwitchRegion = key
+		case "error_details":
+			kb.ErrorDetails = key
 
 		// ECS
 		case "force_redeploy":
@@ -256,6 +280,18 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.EnvVars = key
 		case "toggle_scale_in":
 			kb.ToggleScaleIn = key
+		case "task_scope":
+			kb.TaskScope = key
+		case "load_more":
+			kb.LoadMore = key
+		case "run_task":
+			kb.RunTask = key
+		case "task_definition_diff":
+			kb.TaskDefDiff = key
+		case "task_definition_edit":
+			kb.TaskDefEdit = key
+		case "reveal_secrets":
+			kb.RevealSecrets = key
 
 		// Log viewer
 		case "log_follow":
@@ -274,6 +310,10 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.LogSave = key
 		case "log_correlate":
 			kb.LogCorrelate = key
+		case "log_highlights":
+			kb.LogHighlights = key
+		case "log_streams":
+			kb.LogStreams = key
 
 		// CW
 		case "tail_stream":
@@ -358,6 +398,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.RebootInstance = key
 		case "terminate_instance":
 			kb.TermInstance = key
+		case "ec2_resource":
+			kb.EC2Resource = key
 
 		// Route53
 		case "test_dns":
@@ -392,6 +434,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.Search = key
 		case "timestamp":
 			kb.Timestamp = key
+		case "open_resource":
+			kb.OpenResource = key
 		}
 	}
 }

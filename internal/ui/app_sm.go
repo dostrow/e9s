@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
@@ -36,9 +35,10 @@ func (a App) openSecrets(nameFilter string) (App, tea.Cmd) {
 	a.secretsView = views.NewSecrets(nameFilter)
 	a.secretsView = a.secretsView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	secretsService := a.secrets
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		secrets, err := client.ListSecrets(context.Background(), nameFilter)
+		secrets, err := secretsService.List(ctx, nameFilter)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -47,9 +47,10 @@ func (a App) openSecrets(nameFilter string) (App, tea.Cmd) {
 }
 
 func (a App) fetchSecretValue(name string, tags map[string]string) tea.Cmd {
-	client := a.client
+	secretsService := a.secrets
+	ctx := a.ctx
 	return func() tea.Msg {
-		sv, err := client.GetSecretValueByName(context.Background(), name)
+		sv, err := secretsService.Detail(ctx, name)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -82,9 +83,10 @@ func (a App) editSecret() (App, tea.Cmd) {
 		return a, nil
 	}
 	a.smEditName = s.Name
-	client := a.client
+	secretsService := a.secrets
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		sv, err := client.GetSecretValueByName(context.Background(), s.Name)
+		sv, err := secretsService.Detail(ctx, s.Name)
 		if err != nil {
 			return errMsg{fmt.Errorf("failed to read current value: %w", err)}
 		}
@@ -138,10 +140,11 @@ func (a App) cloneSecret() (App, tea.Cmd) {
 		return a, nil
 	}
 	// Fetch current value, then prompt for new name
-	client := a.client
+	secretsService := a.secrets
+	ctx := a.ctx
 	name := s.Name
 	return a, func() tea.Msg {
-		sv, err := client.GetSecretValueByName(context.Background(), name)
+		sv, err := secretsService.Detail(ctx, name)
 		if err != nil {
 			return errMsg{fmt.Errorf("failed to read secret: %w", err)}
 		}
@@ -183,16 +186,17 @@ func (a App) handleCloneName(newName string) (App, tea.Cmd) {
 }
 
 func (a App) doCreateClonedSecret() tea.Cmd {
-	client := a.client
+	secretsService := a.secrets
+	ctx := a.ctx
 	name := a.smCloneName
 	value := a.smCloneValue
 	nameFilter := a.secretsView.NameFilter()
 	return func() tea.Msg {
-		err := client.CreateSecret(context.Background(), name, value, "")
+		err := secretsService.Create(ctx, name, value, "")
 		if err != nil {
 			return errMsg{err}
 		}
-		secrets, err := client.ListSecrets(context.Background(), nameFilter)
+		secrets, err := secretsService.List(ctx, nameFilter)
 		if err != nil {
 			return actionSuccessMsg{fmt.Sprintf("Created %q (reload failed: %v)", name, err)}
 		}
@@ -208,16 +212,17 @@ func (a App) confirmSMUpdate(newValue string) (App, tea.Cmd) {
 }
 
 func (a App) doSMUpdate() tea.Cmd {
-	client := a.client
+	secretsService := a.secrets
+	ctx := a.ctx
 	name := a.smEditName
 	value := a.smEditValue
 	nameFilter := a.secretsView.NameFilter()
 	return func() tea.Msg {
-		err := client.PutSecretValue(context.Background(), name, value)
+		err := secretsService.Update(ctx, name, value)
 		if err != nil {
 			return errMsg{err}
 		}
-		secrets, err := client.ListSecrets(context.Background(), nameFilter)
+		secrets, err := secretsService.List(ctx, nameFilter)
 		if err != nil {
 			return actionSuccessMsg{fmt.Sprintf("Updated %q (reload failed: %v)", name, err)}
 		}

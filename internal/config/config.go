@@ -4,12 +4,25 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/dostrow/e9s/internal/model"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	DefaultEventPageSize           = 50
+	DefaultMaxLogLines             = 1000
+	MaxEventPageSize               = 10000
+	MaxBufferedLogLines            = 1000000
+	DefaultTerminalScrollbackLines = 10000
+	MaxTerminalScrollbackLines     = 1000000
 )
 
 // configPath is the resolved path to the config file.
@@ -19,10 +32,17 @@ var (
 )
 
 type LogPathEntry struct {
-	Name      string   `yaml:"name"`
-	LogGroup  string   `yaml:"log_group"`
-	LogGroups []string `yaml:"log_groups,omitempty"` // multi-group search
-	Stream    string   `yaml:"stream,omitempty"`     // optional — empty means all streams
+	Name           string                   `yaml:"name"`
+	LogGroup       string                   `yaml:"log_group"`
+	LogGroups      []string                 `yaml:"log_groups,omitempty"` // multi-group search
+	Stream         string                   `yaml:"stream,omitempty"`     // legacy single-stream scope
+	Streams        []string                 `yaml:"streams,omitempty"`
+	Filter         string                   `yaml:"filter,omitempty"`
+	Lookback       string                   `yaml:"lookback,omitempty"`
+	StartTime      int64                    `yaml:"start_time,omitempty"`
+	EndTime        int64                    `yaml:"end_time,omitempty"`
+	HighlightRules []model.LogHighlightRule `yaml:"highlight_rules,omitempty"`
+	HiddenStreams  []string                 `yaml:"hidden_streams,omitempty"`
 }
 
 type SQSQueueEntry struct {
@@ -33,6 +53,50 @@ type SQSQueueEntry struct {
 type TofuDirEntry struct {
 	Name string `yaml:"name"`
 	Dir  string `yaml:"dir"`
+}
+
+// SQLConnection describes a saved database target without storing credentials.
+// Passwords are resolved at connection time from an ephemeral prompt, .pgpass,
+// Secrets Manager, IAM authentication, or the RDS Data API.
+type SQLConnection struct {
+	Name         string     `yaml:"name"`
+	ResourceKind string     `yaml:"resource_kind,omitempty"` // rds-instance or rds-cluster
+	ResourceID   string     `yaml:"resource_id,omitempty"`
+	Host         string     `yaml:"host,omitempty"`
+	Port         int        `yaml:"port,omitempty"`
+	Database     string     `yaml:"database"`
+	User         string     `yaml:"user,omitempty"`
+	Auth         string     `yaml:"auth,omitempty"` // pgpass, iam, secrets-manager, password, or data-api
+	PGPassFile   string     `yaml:"pgpass_file,omitempty"`
+	SecretARN    string     `yaml:"secret_arn,omitempty"`
+	ResourceARN  string     `yaml:"resource_arn,omitempty"` // Data API cluster ARN
+	SSLMode      string     `yaml:"sslmode,omitempty"`
+	ConnectSecs  int        `yaml:"connect_timeout_seconds,omitempty"`
+	SSMTunnel    *SSMTunnel `yaml:"ssm_tunnel,omitempty"`
+}
+
+type SSMTunnel struct {
+	InstanceID string `yaml:"instance_id"`
+	RemoteHost string `yaml:"remote_host,omitempty"`
+	RemotePort int    `yaml:"remote_port,omitempty"`
+	LocalPort  int    `yaml:"local_port,omitempty"`
+}
+
+type SQLConfig struct {
+	AllowWrites bool            `yaml:"allow_writes,omitempty"`
+	PGPassFiles []string        `yaml:"pgpass_files,omitempty"`
+	Connections []SQLConnection `yaml:"connections,omitempty"`
+}
+
+// CostView is a reusable Cost Explorer query exposed beneath the module's
+// Saved Views section in both frontends.
+type CostView struct {
+	Name          string `yaml:"name"`
+	Days          int    `yaml:"days,omitempty"`
+	Metric        string `yaml:"metric,omitempty"`
+	GroupBy       string `yaml:"group_by,omitempty"`
+	ServiceFilter string `yaml:"service_filter,omitempty"`
+	BillingView   string `yaml:"billing_view,omitempty"`
 }
 
 type DynamoTable struct {
@@ -67,58 +131,95 @@ type SSMPrefix struct {
 
 type Config struct {
 	Defaults struct {
-		Cluster         string `yaml:"cluster"`
-		Region          string `yaml:"region"`
-		Profile         string `yaml:"profile"`
-		RefreshInterval int    `yaml:"refresh_interval"`
-		IdleTimeout     int    `yaml:"idle_timeout"`      // seconds of inactivity before pausing refresh (0 = never, default 300)
-		DefaultMode     string `yaml:"default_mode"`      // ECS, CW, SSM, SM, S3, Lambda, DynamoDB, or "" for picker
-		SaveDirectory   string `yaml:"save_directory"`    // default directory for file save dialogs
+		Cluster         string  `yaml:"cluster"`
+		Region          string  `yaml:"region"`
+		Profile         string  `yaml:"profile"`
+		RefreshInterval int     `yaml:"refresh_interval"`
+		IdleTimeout     int     `yaml:"idle_timeout"`   // seconds of inactivity before pausing refresh (0 = never, default 300)
+		CostGuardUSD    float64 `yaml:"cost_guard_usd"` // pause automatic AWS polling at this known session cost (0 = disabled)
+		DefaultMode     string  `yaml:"default_mode"`   // module name/alias, or "" for picker
+		SaveDirectory   string  `yaml:"save_directory"` // default directory for file save dialogs
 	} `yaml:"defaults"`
 	Display struct {
 		TimestampFormat string `yaml:"timestamp_format"` // "relative" or "absolute"
 		MaxEvents       int    `yaml:"max_events"`
 		MaxLogLines     int    `yaml:"max_log_lines"`
 	} `yaml:"display"`
+	GUI struct {
+		TerminalShell           string `yaml:"terminal_shell,omitempty"`
+		TerminalScrollbackLines int    `yaml:"terminal_scrollback_lines,omitempty"`
+		Appearance              struct {
+			Preset        string `yaml:"preset,omitempty"`
+			InterfaceFont string `yaml:"interface_font,omitempty"`
+			MonospaceFont string `yaml:"monospace_font,omitempty"`
+		} `yaml:"appearance,omitempty"`
+	} `yaml:"gui,omitempty"`
 	Modules struct {
-		ECS             *bool `yaml:"ecs"`
-		CloudWatch      *bool `yaml:"cloudwatch"`       // legacy: maps to CWLogs
-		CWLogs          *bool `yaml:"cloudwatch_logs"`
-		CWAlarms        *bool `yaml:"cloudwatch_alarms"`
-		SSM             *bool `yaml:"ssm"`
-		SM              *bool `yaml:"sm"`
-		S3              *bool `yaml:"s3"`
-		Lambda          *bool `yaml:"lambda"`
-		DynamoDB        *bool `yaml:"dynamodb"`
-		SQS             *bool `yaml:"sqs"`
-		CodeBuild       *bool `yaml:"codebuild"`
-		EC2             *bool `yaml:"ec2_instances"`
-		ECR             *bool `yaml:"ecr"`
-		RDS             *bool `yaml:"rds"`
-		Route53         *bool `yaml:"route53"`
-		Tofu            *bool `yaml:"tofu"`
+		ECS          *bool `yaml:"ecs"`
+		CloudWatch   *bool `yaml:"cloudwatch"` // legacy: maps to CWLogs
+		CWLogs       *bool `yaml:"cloudwatch_logs"`
+		CWAlarms     *bool `yaml:"cloudwatch_alarms"`
+		SSM          *bool `yaml:"ssm"`
+		SM           *bool `yaml:"sm"`
+		S3           *bool `yaml:"s3"`
+		Lambda       *bool `yaml:"lambda"`
+		DynamoDB     *bool `yaml:"dynamodb"`
+		SQS          *bool `yaml:"sqs"`
+		CodeBuild    *bool `yaml:"codebuild"`
+		EC2          *bool `yaml:"ec2_instances"`
+		ECR          *bool `yaml:"ecr"`
+		RDS          *bool `yaml:"rds"`
+		Route53      *bool `yaml:"route53"`
+		Tofu         *bool `yaml:"tofu"`
+		CostExplorer *bool `yaml:"cost_explorer"`
+		ElastiCache  *bool `yaml:"elasticache"`
+		APIGateway   *bool `yaml:"api_gateway"`
+		SQLWorkbench *bool `yaml:"sql_workbench"`
 	} `yaml:"modules"`
-	KeyBindings map[string]string `yaml:"keybindings"` // action → key override
-	ExcludeServices []string `yaml:"exclude_services"`
-	SSMPrefixes     []SSMPrefix    `yaml:"ssm_prefixes"`
-	SMFilters       []SMFilter     `yaml:"sm_filters"`
-	S3Searches      []S3Search     `yaml:"s3_searches"`
-	LambdaSearches  []LambdaSearch `yaml:"lambda_searches"`
-	DynamoTables    []DynamoTable  `yaml:"dynamo_tables"`
-	DynamoQueries   []DynamoQuery  `yaml:"dynamo_queries"`
-	SQSQueues       []SQSQueueEntry `yaml:"sqs_queues"`
-	LogPaths        []LogPathEntry `yaml:"log_paths"`
-	TofuDirs        []TofuDirEntry `yaml:"tofu_dirs"`
+	KeyBindings     map[string]string `yaml:"keybindings"` // action → key override
+	ExcludeServices []string          `yaml:"exclude_services"`
+	SSMPrefixes     []SSMPrefix       `yaml:"ssm_prefixes"`
+	SMFilters       []SMFilter        `yaml:"sm_filters"`
+	S3Searches      []S3Search        `yaml:"s3_searches"`
+	LambdaSearches  []LambdaSearch    `yaml:"lambda_searches"`
+	DynamoTables    []DynamoTable     `yaml:"dynamo_tables"`
+	DynamoQueries   []DynamoQuery     `yaml:"dynamo_queries"`
+	SQSQueues       []SQSQueueEntry   `yaml:"sqs_queues"`
+	LogPaths        []LogPathEntry    `yaml:"log_paths"`
+	TofuDirs        []TofuDirEntry    `yaml:"tofu_dirs"`
+	CostViews       []CostView        `yaml:"cost_views,omitempty"`
+	SQL             SQLConfig         `yaml:"sql,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	c := Config{}
 	c.Defaults.RefreshInterval = 5
+	c.Defaults.IdleTimeout = 300
+	c.Defaults.CostGuardUSD = 1
 	c.Display.TimestampFormat = "relative"
-	c.Display.MaxEvents = 50
-	c.Display.MaxLogLines = 1000
+	c.Display.MaxEvents = DefaultEventPageSize
+	c.Display.MaxLogLines = DefaultMaxLogLines
+	c.GUI.TerminalScrollbackLines = DefaultTerminalScrollbackLines
 	return c
+}
+
+// LogEventPageSize returns the configured number of events fetched by each
+// normal log-viewer request, with a safe default for incomplete configurations.
+func (c *Config) LogEventPageSize() int {
+	if c == nil || c.Display.MaxEvents < 1 || c.Display.MaxEvents > MaxEventPageSize {
+		return DefaultEventPageSize
+	}
+	return c.Display.MaxEvents
+}
+
+// LogBufferLines returns the maximum number of entries retained by a newly
+// opened log viewer, with a safe default for incomplete configurations.
+func (c *Config) LogBufferLines() int {
+	if c == nil || c.Display.MaxLogLines < 1 || c.Display.MaxLogLines > MaxBufferedLogLines {
+		return DefaultMaxLogLines
+	}
+	return c.Display.MaxLogLines
 }
 
 // resolveConfigPath determines the config file path using XDG conventions.
@@ -209,6 +310,101 @@ func Load() Config {
 	return cfg
 }
 
+// Parse validates YAML configuration data and applies the same defaults as a
+// normal on-disk load. It is used by the GUI's reviewed advanced editor.
+func Parse(data []byte) (Config, error) {
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, err
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// Validate checks values whose invalid forms would otherwise make the two
+// frontends behave differently.
+func (c Config) Validate() error {
+	timestamp := strings.ToLower(strings.TrimSpace(c.Display.TimestampFormat))
+	if timestamp != "" && timestamp != "relative" && timestamp != "absolute" {
+		return fmt.Errorf("display.timestamp_format must be relative or absolute")
+	}
+	if c.Defaults.RefreshInterval < 0 {
+		return fmt.Errorf("defaults.refresh_interval cannot be negative")
+	}
+	if c.Defaults.IdleTimeout < 0 {
+		return fmt.Errorf("defaults.idle_timeout cannot be negative")
+	}
+	if c.Defaults.CostGuardUSD < 0 {
+		return fmt.Errorf("defaults.cost_guard_usd cannot be negative")
+	}
+	if c.Display.MaxEvents < 0 || c.Display.MaxLogLines < 0 {
+		return fmt.Errorf("display limits cannot be negative")
+	}
+	if c.Display.MaxEvents > MaxEventPageSize {
+		return fmt.Errorf("display.max_events cannot exceed %d", MaxEventPageSize)
+	}
+	if c.Display.MaxLogLines > MaxBufferedLogLines {
+		return fmt.Errorf("display.max_log_lines cannot exceed %d", MaxBufferedLogLines)
+	}
+	if c.GUI.TerminalScrollbackLines < 1 || c.GUI.TerminalScrollbackLines > MaxTerminalScrollbackLines {
+		return fmt.Errorf("gui.terminal_scrollback_lines must be between 1 and %d", MaxTerminalScrollbackLines)
+	}
+	for index, view := range c.CostViews {
+		if strings.TrimSpace(view.Name) == "" {
+			return fmt.Errorf("cost_views[%d].name cannot be empty", index)
+		}
+		if view.Days < 0 {
+			return fmt.Errorf("cost_views[%d].days cannot be negative", index)
+		}
+	}
+	connectionNames := make(map[string]struct{}, len(c.SQL.Connections))
+	for index, connection := range c.SQL.Connections {
+		name := strings.TrimSpace(connection.Name)
+		if name == "" {
+			return fmt.Errorf("sql.connections[%d].name cannot be empty", index)
+		}
+		if _, exists := connectionNames[strings.ToLower(name)]; exists {
+			return fmt.Errorf("sql.connections[%d].name %q is duplicated", index, name)
+		}
+		connectionNames[strings.ToLower(name)] = struct{}{}
+		if strings.TrimSpace(connection.Database) == "" {
+			return fmt.Errorf("sql.connections[%d].database cannot be empty", index)
+		}
+		if connection.Port < 0 || connection.Port > 65535 {
+			return fmt.Errorf("sql.connections[%d].port must be between 1 and 65535", index)
+		}
+		auth := strings.ToLower(strings.TrimSpace(connection.Auth))
+		switch auth {
+		case "", "pgpass", "iam", "secrets-manager", "password", "data-api":
+		default:
+			return fmt.Errorf("sql.connections[%d].auth %q is unsupported", index, connection.Auth)
+		}
+		if auth == "secrets-manager" && strings.TrimSpace(connection.SecretARN) == "" {
+			return fmt.Errorf("sql.connections[%d].secret_arn is required for Secrets Manager authentication", index)
+		}
+		if auth == "data-api" && (strings.TrimSpace(connection.SecretARN) == "" || strings.TrimSpace(connection.ResourceARN) == "") {
+			return fmt.Errorf("sql.connections[%d] requires secret_arn and resource_arn for Data API authentication", index)
+		}
+		if connection.ConnectSecs < 0 {
+			return fmt.Errorf("sql.connections[%d].connect_timeout_seconds cannot be negative", index)
+		}
+		if connection.SSMTunnel != nil {
+			if strings.TrimSpace(connection.SSMTunnel.InstanceID) == "" {
+				return fmt.Errorf("sql.connections[%d].ssm_tunnel.instance_id cannot be empty", index)
+			}
+			for field, port := range map[string]int{"remote_port": connection.SSMTunnel.RemotePort, "local_port": connection.SSMTunnel.LocalPort} {
+				if port < 0 || port > 65535 {
+					return fmt.Errorf("sql.connections[%d].ssm_tunnel.%s must be between 1 and 65535", index, field)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Reload re-reads the config file from disk, returning a fresh Config.
 func Reload() Config {
 	// Reset the path cache to pick up any changes
@@ -255,12 +451,125 @@ func (c *Config) Save() error {
 		return err
 	}
 
-	data, err := yaml.Marshal(c)
+	freshData, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
+	data := freshData
+	if existingData, readErr := os.ReadFile(path); readErr == nil {
+		var existing, fresh yaml.Node
+		if yaml.Unmarshal(existingData, &existing) == nil && yaml.Unmarshal(freshData, &fresh) == nil &&
+			len(existing.Content) > 0 && len(fresh.Content) > 0 {
+			mergeYAMLMapping(existing.Content[0], fresh.Content[0])
+			var output bytes.Buffer
+			encoder := yaml.NewEncoder(&output)
+			encoder.SetIndent(2)
+			if encodeErr := encoder.Encode(&existing); encodeErr == nil {
+				data = output.Bytes()
+			}
+			_ = encoder.Close()
+		}
+	}
+	return writeConfigFile(path, data, true)
+}
 
-	return os.WriteFile(path, data, 0644)
+// ReadRaw returns the exact active YAML document for the advanced settings
+// editor.
+func ReadRaw() ([]byte, error) {
+	return os.ReadFile(resolveConfigPath())
+}
+
+// SaveRaw validates and atomically stores a reviewed YAML document. The
+// previous valid document is retained beside it with a .bak suffix.
+func SaveRaw(data []byte) (Config, error) {
+	cfg, err := Parse(data)
+	if err != nil {
+		return Config{}, err
+	}
+	path := resolveConfigPath()
+	if path == "" {
+		return Config{}, os.ErrNotExist
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return Config{}, err
+	}
+	if err := writeConfigFile(path, data, true); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func mergeYAMLMapping(existing, fresh *yaml.Node) {
+	if existing.Kind != yaml.MappingNode || fresh.Kind != yaml.MappingNode {
+		return
+	}
+	positions := make(map[string]int, len(existing.Content)/2)
+	for i := 0; i+1 < len(existing.Content); i += 2 {
+		positions[existing.Content[i].Value] = i
+	}
+	for i := 0; i+1 < len(fresh.Content); i += 2 {
+		key, value := fresh.Content[i], fresh.Content[i+1]
+		position, found := positions[key.Value]
+		if !found {
+			existing.Content = append(existing.Content, key, value)
+			continue
+		}
+		oldValue := existing.Content[position+1]
+		if oldValue.Kind == yaml.MappingNode && value.Kind == yaml.MappingNode {
+			mergeYAMLMapping(oldValue, value)
+			continue
+		}
+		preserveYAMLComments(oldValue, value)
+		existing.Content[position+1] = value
+	}
+}
+
+func preserveYAMLComments(existing, replacement *yaml.Node) {
+	if replacement.HeadComment == "" {
+		replacement.HeadComment = existing.HeadComment
+	}
+	if replacement.LineComment == "" {
+		replacement.LineComment = existing.LineComment
+	}
+	if replacement.FootComment == "" {
+		replacement.FootComment = existing.FootComment
+	}
+}
+
+func writeConfigFile(path string, data []byte, backup bool) error {
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	if backup {
+		if previous, err := os.ReadFile(path); err == nil {
+			if err := writeConfigFile(path+".bak", previous, false); err != nil {
+				return fmt.Errorf("back up configuration: %w", err)
+			}
+		}
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".config-*.yaml")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(mode); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryName, path)
 }
 
 func (c *Config) applyDefaults() {
@@ -268,10 +577,10 @@ func (c *Config) applyDefaults() {
 		c.Defaults.RefreshInterval = 5
 	}
 	if c.Display.MaxEvents <= 0 {
-		c.Display.MaxEvents = 50
+		c.Display.MaxEvents = DefaultEventPageSize
 	}
 	if c.Display.MaxLogLines <= 0 {
-		c.Display.MaxLogLines = 1000
+		c.Display.MaxLogLines = DefaultMaxLogLines
 	}
 }
 
@@ -313,17 +622,21 @@ func boolDefault(b *bool, def bool) bool {
 	return *b
 }
 
-func (c *Config) ModuleS3() bool          { return boolDefault(c.Modules.S3, true) }
-func (c *Config) ModuleLambda() bool      { return boolDefault(c.Modules.Lambda, true) }
-func (c *Config) ModuleDynamoDB() bool    { return boolDefault(c.Modules.DynamoDB, true) }
-func (c *Config) ModuleSQS() bool         { return boolDefault(c.Modules.SQS, true) }
-func (c *Config) ModuleCodeBuild() bool   { return boolDefault(c.Modules.CodeBuild, true) }
-func (c *Config) ModuleEC2() bool         { return boolDefault(c.Modules.EC2, true) }
-func (c *Config) ModuleECR() bool         { return boolDefault(c.Modules.ECR, true) }
-func (c *Config) ModuleRDS() bool         { return boolDefault(c.Modules.RDS, true) }
-func (c *Config) ModuleRoute53() bool     { return boolDefault(c.Modules.Route53, true) }
-func (c *Config) ModuleTofu() bool        { return boolDefault(c.Modules.Tofu, true) }
-func (c *Config) ModuleECS() bool        { return boolDefault(c.Modules.ECS, true) }
+func (c *Config) ModuleS3() bool           { return boolDefault(c.Modules.S3, true) }
+func (c *Config) ModuleLambda() bool       { return boolDefault(c.Modules.Lambda, true) }
+func (c *Config) ModuleDynamoDB() bool     { return boolDefault(c.Modules.DynamoDB, true) }
+func (c *Config) ModuleSQS() bool          { return boolDefault(c.Modules.SQS, true) }
+func (c *Config) ModuleCodeBuild() bool    { return boolDefault(c.Modules.CodeBuild, true) }
+func (c *Config) ModuleEC2() bool          { return boolDefault(c.Modules.EC2, true) }
+func (c *Config) ModuleECR() bool          { return boolDefault(c.Modules.ECR, true) }
+func (c *Config) ModuleRDS() bool          { return boolDefault(c.Modules.RDS, true) }
+func (c *Config) ModuleRoute53() bool      { return boolDefault(c.Modules.Route53, true) }
+func (c *Config) ModuleTofu() bool         { return boolDefault(c.Modules.Tofu, true) }
+func (c *Config) ModuleCostExplorer() bool { return boolDefault(c.Modules.CostExplorer, true) }
+func (c *Config) ModuleElastiCache() bool  { return boolDefault(c.Modules.ElastiCache, true) }
+func (c *Config) ModuleAPIGateway() bool   { return boolDefault(c.Modules.APIGateway, true) }
+func (c *Config) ModuleSQLWorkbench() bool { return boolDefault(c.Modules.SQLWorkbench, true) }
+func (c *Config) ModuleECS() bool          { return boolDefault(c.Modules.ECS, true) }
 func (c *Config) ModuleCWLogs() bool {
 	if c.Modules.CWLogs != nil {
 		return *c.Modules.CWLogs
@@ -331,8 +644,8 @@ func (c *Config) ModuleCWLogs() bool {
 	return boolDefault(c.Modules.CloudWatch, true) // legacy fallback
 }
 func (c *Config) ModuleCWAlarms() bool { return boolDefault(c.Modules.CWAlarms, true) }
-func (c *Config) ModuleSSM() bool         { return boolDefault(c.Modules.SSM, true) }
-func (c *Config) ModuleSM() bool          { return boolDefault(c.Modules.SM, true) }
+func (c *Config) ModuleSSM() bool      { return boolDefault(c.Modules.SSM, true) }
+func (c *Config) ModuleSM() bool       { return boolDefault(c.Modules.SM, true) }
 
 // AddSMFilter adds or updates a saved Secrets Manager filter.
 func (c *Config) AddSMFilter(name, filter string) bool {
@@ -500,32 +813,65 @@ func (c *Config) RemoveLogPath(name string) {
 
 // AddLogPath adds or updates a saved log path.
 func (c *Config) AddLogPath(name, logGroup, stream string) bool {
-	for i, p := range c.LogPaths {
-		if p.Name == name {
-			c.LogPaths[i].LogGroup = logGroup
-			c.LogPaths[i].LogGroups = nil
-			c.LogPaths[i].Stream = stream
-			return false
-		}
-	}
-	c.LogPaths = append(c.LogPaths, LogPathEntry{Name: name, LogGroup: logGroup, Stream: stream})
-	return true
+	return c.UpsertLogPath(LogPathEntry{Name: name, LogGroup: logGroup, Stream: stream})
 }
 
 // AddLogPathMultiGroup adds or updates a saved multi-group log path.
 func (c *Config) AddLogPathMultiGroup(name string, groups []string) bool {
-	for i, p := range c.LogPaths {
-		if p.Name == name {
-			c.LogPaths[i].LogGroup = groups[0]
-			c.LogPaths[i].LogGroups = groups
-			c.LogPaths[i].Stream = ""
+	if len(groups) == 0 {
+		return false
+	}
+	return c.UpsertLogPath(LogPathEntry{Name: name, LogGroup: groups[0], LogGroups: groups})
+}
+
+// UpsertLogPath adds or replaces a complete saved CloudWatch Logs destination.
+// The slices are copied so callers can safely reuse their input.
+func (c *Config) UpsertLogPath(entry LogPathEntry) bool {
+	entry.LogGroups = append([]string(nil), entry.LogGroups...)
+	entry.Streams = append([]string(nil), entry.Streams...)
+	entry.HighlightRules = append([]model.LogHighlightRule(nil), entry.HighlightRules...)
+	entry.HiddenStreams = append([]string(nil), entry.HiddenStreams...)
+	for i, path := range c.LogPaths {
+		if path.Name == entry.Name {
+			c.LogPaths[i] = entry
 			return false
 		}
 	}
-	c.LogPaths = append(c.LogPaths, LogPathEntry{
-		Name:      name,
-		LogGroup:  groups[0],
-		LogGroups: groups,
-	})
+	c.LogPaths = append(c.LogPaths, entry)
 	return true
+}
+
+// RenameLogPath renames a saved destination. It refuses duplicate names.
+func (c *Config) RenameLogPath(oldName, newName string) bool {
+	if oldName == newName {
+		return true
+	}
+	for _, path := range c.LogPaths {
+		if path.Name == newName {
+			return false
+		}
+	}
+	for i := range c.LogPaths {
+		if c.LogPaths[i].Name == oldName {
+			c.LogPaths[i].Name = newName
+			return true
+		}
+	}
+	return false
+}
+
+// MoveLogPath moves a saved destination one slot in the requested direction.
+func (c *Config) MoveLogPath(name string, direction int) bool {
+	for i := range c.LogPaths {
+		if c.LogPaths[i].Name != name {
+			continue
+		}
+		to := i + direction
+		if to < 0 || to >= len(c.LogPaths) {
+			return false
+		}
+		c.LogPaths[i], c.LogPaths[to] = c.LogPaths[to], c.LogPaths[i]
+		return true
+	}
+	return false
 }

@@ -1,14 +1,15 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	tea "github.com/charmbracelet/bubbletea"
-	e9saws "github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/config"
+	"github.com/dostrow/e9s/internal/highlight"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -26,10 +27,13 @@ func (a App) promptCloudWatchBrowser() (App, tea.Cmd) {
 		label := p.Name
 		if len(p.LogGroups) > 1 {
 			label += fmt.Sprintf("  (%d groups)", len(p.LogGroups))
-		} else if p.Stream != "" {
-			label += fmt.Sprintf("  (%s / %s)", p.LogGroup, p.Stream)
+		} else if len(savedLogPathStreams(p)) > 0 {
+			label += fmt.Sprintf("  (%s / %s)", p.LogGroup, strings.Join(savedLogPathStreams(p), ", "))
 		} else {
 			label += fmt.Sprintf("  (%s)", p.LogGroup)
+		}
+		if p.Filter != "" {
+			label += "  " + p.Filter
 		}
 		items = append(items, label)
 	}
@@ -40,14 +44,21 @@ func (a App) promptCloudWatchBrowser() (App, tea.Cmd) {
 }
 
 func (a App) openLogGroups(prefix string) (App, tea.Cmd) {
+	a.logBrowseHighlightRules = nil
+	a.logBrowseHiddenStreams = nil
+	a.logBrowseSavedPath = ""
+	a.logSearchHighlightRules = nil
+	a.logSearchHiddenStreams = nil
+	a.logSearchSavedPath = ""
 	a.mode = modeCWLogs
 	a.state = viewLogGroups
 	a.logGroupsView = views.NewLogGroups()
 	a.logGroupsView = a.logGroupsView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	logs := a.logs
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		groups, err := client.ListLogGroups(context.Background(), prefix)
+		groups, err := logs.ListGroups(ctx, prefix)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -61,9 +72,10 @@ func (a App) openLogStreams(logGroup string) (App, tea.Cmd) {
 	a.logStreamsView = views.NewLogStreams(logGroup)
 	a.logStreamsView = a.logStreamsView.SetSize(a.width, a.height-3)
 	a.loading = true
-	client := a.client
+	logs := a.logs
+	ctx := a.ctx
 	return a, func() tea.Msg {
-		streams, err := client.ListLogStreams(context.Background(), logGroup, "")
+		streams, err := logs.ListStreams(ctx, logGroup, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -89,22 +101,17 @@ func (a App) peekLogStream() (App, tea.Cmd) {
 	logGroup := a.logStreamsView.LogGroup()
 	f := false
 
-	// Use the stream's first event time for lookback so historical logs are visible.
-	// Fall back to 5 minutes if no event time is available.
-	lookback := 5 * time.Minute
-	if s.FirstEventTime > 0 {
-		firstEvent := time.UnixMilli(s.FirstEventTime)
-		lookback = time.Since(firstEvent) + time.Minute
-	}
-
 	streamName := s.Name
 	return a, func() tea.Msg {
 		return logReadyMsg{
-			title:    fmt.Sprintf("%s / %s", logGroup, streamName),
-			logGroup: logGroup,
-			streams:  []string{streamName},
-			follow:   &f,
-			lookback: lookback,
+			title:          fmt.Sprintf("%s / %s", logGroup, streamName),
+			logGroup:       logGroup,
+			streams:        []string{streamName},
+			follow:         &f,
+			lookback:       15 * time.Minute,
+			highlightRules: append([]model.LogHighlightRule(nil), a.logBrowseHighlightRules...),
+			hiddenStreams:  append([]string(nil), a.logBrowseHiddenStreams...),
+			savedLogPath:   a.logBrowseSavedPath,
 		}
 	}
 }
@@ -126,13 +133,19 @@ func (a App) tailEntireLogGroup() (App, tea.Cmd) {
 }
 
 func (a App) startLogTail(logGroup string, streams []string, title string) tea.Cmd {
+	rules := append([]model.LogHighlightRule(nil), a.logBrowseHighlightRules...)
+	hiddenStreams := append([]string(nil), a.logBrowseHiddenStreams...)
+	savedPath := a.logBrowseSavedPath
 	return func() tea.Msg {
 		return logReadyMsg{
-			title:     title,
-			logGroup:  logGroup,
-			logGroups: []string{logGroup},
-			streams:   streams,
-			lookback:  10 * time.Second,
+			title:          title,
+			logGroup:       logGroup,
+			logGroups:      []string{logGroup},
+			streams:        streams,
+			lookback:       15 * time.Minute,
+			highlightRules: rules,
+			hiddenStreams:  hiddenStreams,
+			savedLogPath:   savedPath,
 		}
 	}
 }
@@ -148,6 +161,9 @@ func (a App) promptLogSearchFromGroups() (App, tea.Cmd) {
 	a.logSearchGroups = groups
 	a.logSearchGroup = groups[0] // primary group for display
 	a.logSearchStreams = nil
+	a.logSearchHighlightRules = nil
+	a.logSearchHiddenStreams = nil
+	a.logSearchSavedPath = ""
 	return a.promptLogSearchTimeRange()
 }
 
@@ -160,6 +176,9 @@ func (a App) promptLogSearchFromStreams() (App, tea.Cmd) {
 	a.logSearchGroup = a.logStreamsView.LogGroup()
 	a.logSearchGroups = []string{a.logSearchGroup}
 	a.logSearchStreams = streams
+	a.logSearchHighlightRules = nil
+	a.logSearchHiddenStreams = nil
+	a.logSearchSavedPath = ""
 	return a.promptLogSearchTimeRange()
 }
 
@@ -228,22 +247,7 @@ func parseUTCTimestamp(s string) (time.Time, error) {
 // in literal patterns, so interior quotes are stripped — the literal match
 // still finds the text in log lines that contain quotes around it.
 func quoteFilterPattern(pattern string) string {
-	if pattern == "" {
-		return pattern
-	}
-	first := pattern[0]
-	// JSON or space-delimited filter expressions — pass through
-	if first == '{' || first == '[' {
-		return pattern
-	}
-	// Already a single properly-quoted literal (starts and ends with " with no interior quotes)
-	if first == '"' && len(pattern) > 1 && pattern[len(pattern)-1] == '"' &&
-		!strings.Contains(pattern[1:len(pattern)-1], `"`) {
-		return pattern
-	}
-	// Strip any quotes and wrap for literal matching
-	cleaned := strings.ReplaceAll(pattern, `"`, ``)
-	return `"` + cleaned + `"`
+	return service.NormalizeFilterPattern(pattern)
 }
 
 func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
@@ -259,120 +263,124 @@ func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	// Auto-quote for literal matching if needed
 	a.logSearchFilter = quoteFilterPattern(pattern)
 
-	client := a.client
+	logs := a.logs
+	ctx := a.ctx
 	groups := a.logSearchGroups
 	streams := a.logSearchStreams
 	startMs := a.logSearchStartMs
 	endMs := a.logSearchEndMs
 	filter := a.logSearchFilter
+	pageSize := a.cfg.LogEventPageSize()
 
+	return a, func() tea.Msg {
+		page, err := logs.Fetch(ctx, groups[0], model.LogQuery{
+			Groups: groups, Streams: streams, Filter: filter,
+			StartTime: startMs, EndTime: endMs, Limit: pageSize,
+		})
+		return views.LogSearchResultsMsg{Results: page.Entries, Err: err}
+	}
+}
+
+func (a App) openSavedLogDestination(path config.LogPathEntry) (App, tea.Cmd) {
+	groups := savedLogPathGroups(path)
+	streams := savedLogPathStreams(path)
+	if len(groups) == 0 {
+		a.err = fmt.Errorf("saved CloudWatch destination %q has no log group", path.Name)
+		return a, nil
+	}
+	if path.Filter != "" || path.Lookback != "" || path.StartTime != 0 || path.EndTime != 0 {
+		start, end := path.StartTime, path.EndTime
+		if path.Lookback != "" {
+			lookback, err := time.ParseDuration(path.Lookback)
+			if err != nil || lookback <= 0 {
+				a.err = fmt.Errorf("saved CloudWatch destination %q has invalid lookback %q", path.Name, path.Lookback)
+				return a, nil
+			}
+			now := time.Now()
+			end = now.UnixMilli()
+			start = now.Add(-lookback).UnixMilli()
+		}
+		if start <= 0 || end <= start {
+			a.err = fmt.Errorf("saved CloudWatch destination %q has an invalid time range", path.Name)
+			return a, nil
+		}
+		a.prevState = viewLogGroups
+		a.logSearchGroups = groups
+		a.logSearchGroup = groups[0]
+		a.logSearchStreams = streams
+		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logSearchHiddenStreams = append([]string(nil), path.HiddenStreams...)
+		a.logSearchSavedPath = path.Name
+		a.logSearchStartMs = start
+		a.logSearchEndMs = end
+		return a.startLogSearch(path.Filter)
+	}
 	if len(groups) > 1 {
-		// Multi-group: search each group sequentially, streaming results
-		return a, searchNextGroup(client, groups, 0, filter, streams, startMs, endMs)
+		a.prevState = viewLogGroups
+		a.logSearchGroups = groups
+		a.logSearchGroup = groups[0]
+		a.logSearchStreams = nil
+		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logSearchHiddenStreams = append([]string(nil), path.HiddenStreams...)
+		a.logSearchSavedPath = path.Name
+		return a.promptLogSearchTimeRange()
 	}
-
-	// Single group: paginated streaming search
-	return a, searchGroupPaginated(client, groups[0], streams, filter, startMs, endMs, nil, 500)
+	if len(streams) > 0 {
+		a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+		a.logBrowseHiddenStreams = append([]string(nil), path.HiddenStreams...)
+		a.logBrowseSavedPath = path.Name
+		return a, a.startLogTail(groups[0], streams, path.Name)
+	}
+	a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), path.HighlightRules...)
+	a.logBrowseHiddenStreams = append([]string(nil), path.HiddenStreams...)
+	a.logBrowseSavedPath = path.Name
+	return a.openLogStreams(groups[0])
 }
 
-// searchNextGroup searches one group and chains to the next via partial messages.
-func searchNextGroup(client *e9saws.Client, groups []string, idx int, pattern string, streams []string, startMs, endMs int64) tea.Cmd {
-	return func() tea.Msg {
-		group := groups[idx]
-		isLast := idx == len(groups)-1
-
-		perGroup := max(50, 500/len(groups))
-
-		results, err := client.SearchLogs(context.Background(), group, streams, pattern, startMs, endMs, perGroup)
-		if err != nil {
-			return views.LogSearchPartialMsg{
-				Results: []e9saws.LogEntry{{
-					Timestamp: startMs,
-					Message:   fmt.Sprintf("[error searching %s: %v]", group, err),
-					Stream:    group,
-				}},
-				Done:   isLast,
-				Source: group,
-			}
-		}
-
-		// Tag entries with "group|stream" so we can split them back on jump
-		for i := range results {
-			if results[i].Stream == "" {
-				results[i].Stream = group
-			} else {
-				results[i].Stream = group + "|" + results[i].Stream
-			}
-		}
-
-		return views.LogSearchPartialMsg{
-			Results: results,
-			Done:    isLast,
-			Source:  group,
-		}
+func (a App) saveActiveLogHighlights(rules []model.LogHighlightRule) (App, tea.Cmd) {
+	if a.activeLogPathName == "" {
+		a.flashMessage = "Highlight rules apply to this buffer; open a saved CloudWatch search to persist them"
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
 	}
+	for _, path := range a.cfg.LogPaths {
+		if path.Name != a.activeLogPathName {
+			continue
+		}
+		path.HighlightRules = append([]model.LogHighlightRule(nil), rules...)
+		a.cfg.UpsertLogPath(path)
+		if err := a.cfg.Save(); err != nil {
+			a.err = err
+			return a, nil
+		}
+		a.logSearchHighlightRules = append([]model.LogHighlightRule(nil), rules...)
+		a.logBrowseHighlightRules = append([]model.LogHighlightRule(nil), rules...)
+		a.flashMessage = fmt.Sprintf("Saved %d highlight rules with %q", len(rules), path.Name)
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+	}
+	a.err = fmt.Errorf("saved CloudWatch search %q no longer exists", a.activeLogPathName)
+	return a, nil
 }
 
-// searchGroupPaginated searches a single group page by page, streaming results.
-func searchGroupPaginated(client *e9saws.Client, group string, streams []string, pattern string, startMs, endMs int64, nextToken *string, remaining int) tea.Cmd {
-	return func() tea.Msg {
-		input := &cloudwatchlogs.FilterLogEventsInput{
-			LogGroupName:  &group,
-			FilterPattern: &pattern,
-		}
-		if len(streams) > 0 {
-			input.LogStreamNames = streams
-		}
-		if startMs > 0 {
-			input.StartTime = &startMs
-		}
-		if endMs > 0 {
-			input.EndTime = &endMs
-		}
-		pageLimit := min(remaining, 100)
-		limit := int32(pageLimit)
-		input.Limit = &limit
-		input.NextToken = nextToken
-
-		page, err := client.Logs.FilterLogEvents(context.Background(), input)
-		if err != nil {
-			return views.LogSearchResultsMsg{Err: err}
-		}
-
-		var entries []e9saws.LogEntry
-		for _, ev := range page.Events {
-			entries = append(entries, e9saws.LogEntry{
-				Timestamp: derefInt64Ptr(ev.Timestamp),
-				Message:   derefStrPtr(ev.Message),
-				Stream:    derefStrPtr(ev.LogStreamName),
-			})
-		}
-
-		remaining -= len(entries)
-		done := page.NextToken == nil || remaining <= 0
-
-		return views.LogSearchPartialMsg{
-			Results:   entries,
-			Done:      done,
-			Source:    group,
-			NextToken: page.NextToken,
-			Remaining: remaining,
-		}
+func savedLogPathGroups(path config.LogPathEntry) []string {
+	if len(path.LogGroups) > 0 {
+		return append([]string(nil), path.LogGroups...)
 	}
+	if strings.TrimSpace(path.LogGroup) == "" {
+		return nil
+	}
+	return []string{strings.TrimSpace(path.LogGroup)}
 }
 
-func derefInt64Ptr(p *int64) int64 {
-	if p != nil {
-		return *p
+func savedLogPathStreams(path config.LogPathEntry) []string {
+	if len(path.Streams) > 0 {
+		return append([]string(nil), path.Streams...)
 	}
-	return 0
-}
-
-func derefStrPtr(p *string) string {
-	if p != nil {
-		return *p
+	if strings.TrimSpace(path.Stream) == "" {
+		return nil
 	}
-	return ""
+	return []string{strings.TrimSpace(path.Stream)}
 }
 
 func (a App) startLogCorrelation() (App, tea.Cmd) {
@@ -385,6 +393,9 @@ func (a App) startLogCorrelation() (App, tea.Cmd) {
 	a.logCorrelationActive = true
 	a.logCorrelationTS = entry.Timestamp
 	a.logCorrelationPattern = a.logSearchView.Pattern()
+	a.logCorrelationRules = highlight.CorrelationRules(a.logCorrelationPattern, entry.Message)
+	anchor := *entry
+	a.logCorrelationEntry = &anchor
 	a.logCorrelationGroups = nil
 	a.logCorrelationStreams = nil
 
@@ -450,18 +461,30 @@ func (a App) handleLogCorrelationWindowPick(value string) (App, tea.Cmd) {
 	if len(groups) > 0 {
 		logGroup = groups[0]
 	}
+	rules := append([]model.LogHighlightRule(nil), a.logCorrelationRules...)
+	rules = append(rules, a.logSearchHighlightRules...)
+	var anchor *model.LogEntry
+	if a.logCorrelationEntry != nil {
+		entry := *a.logCorrelationEntry
+		anchor = &entry
+	}
 
 	a.prevState = viewLogSearch
 	a.logCorrelationActive = false
+	a.logCorrelationRules = nil
+	a.logCorrelationEntry = nil
 	return a, func() tea.Msg {
 		return logReadyMsg{
-			title:     title,
-			logGroup:  logGroup,
-			logGroups: groups,
-			streams:   streams,
-			follow:    &follow,
-			startMs:   startMs,
-			endMs:     endMs,
+			title:          title,
+			logGroup:       logGroup,
+			logGroups:      groups,
+			streams:        streams,
+			follow:         &follow,
+			startMs:        startMs,
+			endMs:          endMs,
+			highlightRules: rules,
+			hiddenStreams:  append([]string(nil), a.logSearchHiddenStreams...),
+			anchor:         anchor,
 		}
 	}
 }

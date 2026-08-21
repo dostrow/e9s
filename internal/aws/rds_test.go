@@ -1,12 +1,72 @@
 package aws
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
+)
+
+func TestRDSClusterFromSDKPreservesMembersAndConfiguration(t *testing.T) {
+	created := time.Now().Add(-time.Hour)
+	cluster := rdsClusterFromSDK(rdstypes.DBCluster{
+		DBClusterIdentifier: awssdk.String("cluster-1"), Engine: awssdk.String("aurora-postgresql"),
+		EngineVersion: awssdk.String("16.3"), Status: awssdk.String("available"), Endpoint: awssdk.String("writer.local"),
+		ReaderEndpoint: awssdk.String("reader.local"), Port: awssdk.Int32(5432), ClusterCreateTime: &created,
+		DBClusterMembers:  []rdstypes.DBClusterMember{{DBInstanceIdentifier: awssdk.String("db-1"), IsClusterWriter: awssdk.Bool(true)}},
+		VpcSecurityGroups: []rdstypes.VpcSecurityGroupMembership{{VpcSecurityGroupId: awssdk.String("sg-1"), Status: awssdk.String("active")}},
+	})
+	if cluster.Identifier != "cluster-1" || cluster.Endpoint != "writer.local" || len(cluster.Members) != 1 || !cluster.Members[0].Writer {
+		t.Fatalf("rdsClusterFromSDK() = %#v", cluster)
+	}
+	if len(cluster.SecurityGroups) != 1 || cluster.SecurityGroups[0] != "sg-1 (active)" {
+		t.Fatalf("security groups = %#v", cluster.SecurityGroups)
+	}
+}
 
 func TestRDSRole_AuroraWriter(t *testing.T) {
 	writerMap := map[string]bool{"db-1": true, "db-2": false}
 	got := rdsRole("db-1", "my-cluster", "", false, writerMap)
 	if got != "writer" {
 		t.Errorf("rdsRole = %q, want %q", got, "writer")
+	}
+}
+
+func TestRDSMetricQueriesIncludeAggregateDBLoad(t *testing.T) {
+	queries := rdsMetricQueries("db-1")
+	wanted := map[string]string{
+		"db_load": "DBLoad", "db_load_cpu": "DBLoadCPU",
+		"db_load_non_cpu": "DBLoadNonCPU", "db_load_per_vcpu": "DBLoadRelativeToNumVCPUs",
+	}
+	for _, query := range queries {
+		if metric, ok := wanted[query.ID]; ok {
+			if query.MetricName != metric || len(query.Dimensions) != 1 || query.Dimensions[0].Value != "db-1" {
+				t.Errorf("query %q = %#v", query.ID, query)
+			}
+			delete(wanted, query.ID)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("missing DB Load queries: %#v", wanted)
+	}
+}
+
+func TestRDSClusterMetricQueriesRetainMetricAndMemberIdentity(t *testing.T) {
+	identifiers := []string{"writer-db", "reader-db"}
+	queries := rdsClusterMetricQueries(identifiers)
+	perInstance := len(rdsMetricQueries("writer-db"))
+	if len(queries) != perInstance*2 {
+		t.Fatalf("query count = %d, want %d", len(queries), perInstance*2)
+	}
+	for index, identifier := range identifiers {
+		for _, query := range queries[index*perInstance : (index+1)*perInstance] {
+			if !strings.HasSuffix(query.ID, fmt.Sprintf("__%d", index)) || query.Label != identifier || query.Dimensions[0].Value != identifier {
+				t.Fatalf("cluster query = %#v", query)
+			}
+		}
 	}
 }
 

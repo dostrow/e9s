@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-tui:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -59,8 +59,64 @@ jobs:
           name: e9s-${{ matrix.suffix }}
           path: e9s-${{ matrix.suffix }}
 
+  build-linux-desktop:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Install native packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            appstream desktop-file-utils dpkg-dev file curl patchelf \
+            libfontconfig-dev libgtk-4-dev libgtksourceview-5-dev \
+            libvte-2.91-gtk4-dev pkg-config
+
+      - name: Validate desktop metadata
+        run: |
+          desktop-file-validate packaging/linux/io.github.dostrow.e9s.desktop
+          appstreamcli validate --no-net packaging/linux/io.github.dostrow.e9s.metainfo.xml
+
+      - name: Test and build native frontends
+        run: |
+          go test ./...
+          go test -tags gui ./internal/gui
+          make build build-gui VERSION=${{ github.ref_name }}
+
+      - name: Build Debian packages
+        env:
+          E9S_TUI_BINARY: ${{ github.workspace }}/e9s
+          E9S_GUI_BINARY: ${{ github.workspace }}/e9s-gui
+        run: packaging/debian/build-debs.sh "${{ github.ref_name }}" "$PWD/dist"
+
+      - name: Build AppImage
+        env:
+          E9S_GUI_BINARY: ${{ github.workspace }}/e9s-gui
+        run: packaging/appimage/build-appimage.sh "${{ github.ref_name }}" "$PWD/dist"
+
+      - name: Upload Linux desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e9s-linux-desktop-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+
   release:
-    needs: build
+    needs: [build-tui, build-linux-desktop]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -71,12 +127,10 @@ jobs:
 
       - name: Generate checksums
         working-directory: artifacts
-        run: sha256sum e9s-* > checksums.txt
+        run: find . -maxdepth 1 -type f ! -name checksums.txt -printf '%f\n' | sort | xargs sha256sum > checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            artifacts/e9s-*
-            artifacts/checksums.txt
+          files: artifacts/*

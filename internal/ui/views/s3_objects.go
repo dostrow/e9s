@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
@@ -17,7 +17,7 @@ import (
 type S3ObjectsModel struct {
 	bucket      string
 	prefix      string // current "directory" prefix
-	objects     []aws.S3Object
+	objects     []model.S3Object
 	cursor      int
 	filter      string
 	filtering   bool
@@ -159,12 +159,12 @@ func formatBytesS3(b int64) string {
 	}
 }
 
-func (m S3ObjectsModel) filteredObjects() []aws.S3Object {
+func (m S3ObjectsModel) filteredObjects() []model.S3Object {
 	if m.filter == "" {
 		return m.objects
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.S3Object
+	var out []model.S3Object
 	for _, o := range m.objects {
 		if strings.Contains(strings.ToLower(displayName(o.Key, m.prefix)), lf) {
 			out = append(out, o)
@@ -173,7 +173,7 @@ func (m S3ObjectsModel) filteredObjects() []aws.S3Object {
 	return out
 }
 
-func (m S3ObjectsModel) SetObjects(objects []aws.S3Object) S3ObjectsModel {
+func (m S3ObjectsModel) SetObjects(objects []model.S3Object) S3ObjectsModel {
 	m.objects = objects
 	m.loaded = true
 	filtered := m.filteredObjects()
@@ -183,7 +183,7 @@ func (m S3ObjectsModel) SetObjects(objects []aws.S3Object) S3ObjectsModel {
 	return m
 }
 
-func (m S3ObjectsModel) SelectedObject() *aws.S3Object {
+func (m S3ObjectsModel) SelectedObject() *model.S3Object {
 	filtered := m.filteredObjects()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

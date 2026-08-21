@@ -1,13 +1,12 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
 
@@ -19,9 +18,9 @@ func (a App) openR53Zones() (App, tea.Cmd) {
 	a.r53ZonesView = views.NewR53Zones()
 	a.r53ZonesView = a.r53ZonesView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	return a, func() tea.Msg {
-		zones, err := client.ListR53Zones(context.Background(), "")
+		zones, err := route53Service.Zones(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -34,9 +33,9 @@ func (a App) openR53Records(zoneName, zoneID string) (App, tea.Cmd) {
 	a.r53RecordsView = views.NewR53Records(zoneName, zoneID)
 	a.r53RecordsView = a.r53RecordsView.SetSize(a.width-3, a.height-6)
 	a.loading = true
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	return a, func() tea.Msg {
-		records, err := client.ListR53Records(context.Background(), zoneID)
+		records, err := route53Service.Records(ctx, zoneID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -62,12 +61,11 @@ func (a App) testR53DNS() (App, tea.Cmd) {
 		return a, nil
 	}
 	zoneID := a.r53DetailView.ZoneID()
-	client := a.client
-	name := rec.Name
-	rType := rec.Type
+	route53Service, ctx := a.route53, a.ctx
+	record := *rec
 	a.loading = true
 	return a, func() tea.Msg {
-		answer, err := client.TestR53DNS(context.Background(), zoneID, name, rType)
+		answer, err := route53Service.TestDNS(ctx, zoneID, record)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -80,7 +78,7 @@ func (a App) createR53Record() (App, tea.Cmd) {
 	if zoneID == "" {
 		return a, nil
 	}
-	template := aws.BuildR53RecordTemplate(nil)
+	template := service.BuildRoute53RecordTemplate(nil)
 	tmpFile, err := os.CreateTemp("", "e9s-r53-*.json")
 	if err != nil {
 		a.err = err
@@ -101,7 +99,7 @@ func (a App) createR53Record() (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		record, err := aws.ParseR53RecordTemplate(string(data))
+		record, err := service.ParseRoute53RecordTemplate(string(data))
 		if err != nil {
 			return errMsg{err}
 		}
@@ -115,7 +113,7 @@ func (a App) editR53Record() (App, tea.Cmd) {
 		return a, nil
 	}
 	zoneID := a.r53DetailView.ZoneID()
-	template := aws.BuildR53RecordTemplate(rec)
+	template := service.BuildRoute53RecordTemplate(rec)
 	tmpFile, err := os.CreateTemp("", "e9s-r53-*.json")
 	if err != nil {
 		a.err = err
@@ -137,7 +135,7 @@ func (a App) editR53Record() (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		record, err := aws.ParseR53RecordTemplate(string(data))
+		record, err := service.ParseRoute53RecordTemplate(string(data))
 		if err != nil {
 			return errMsg{err}
 		}
@@ -161,11 +159,11 @@ func (a App) deleteR53Record() (App, tea.Cmd) {
 }
 
 func (a App) doCreateR53Record() tea.Cmd {
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	zoneID := a.r53EditZoneID
 	record := a.r53EditRecord
 	return func() tea.Msg {
-		err := client.CreateR53Record(context.Background(), zoneID, *record)
+		err := route53Service.Create(ctx, zoneID, *record)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -174,11 +172,11 @@ func (a App) doCreateR53Record() tea.Cmd {
 }
 
 func (a App) doUpdateR53Record() tea.Cmd {
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	zoneID := a.r53EditZoneID
 	record := a.r53EditRecord
 	return func() tea.Msg {
-		err := client.UpdateR53Record(context.Background(), zoneID, *record)
+		err := route53Service.Update(ctx, zoneID, *record)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -187,7 +185,7 @@ func (a App) doUpdateR53Record() tea.Cmd {
 }
 
 func (a App) doDeleteR53Record() tea.Cmd {
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	zoneID := a.r53DetailView.ZoneID()
 	record := a.r53DetailView.Record()
 	if record == nil {
@@ -195,7 +193,7 @@ func (a App) doDeleteR53Record() tea.Cmd {
 	}
 	rec := *record
 	return func() tea.Msg {
-		err := client.DeleteR53Record(context.Background(), zoneID, rec)
+		err := route53Service.Delete(ctx, zoneID, rec)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -204,9 +202,9 @@ func (a App) doDeleteR53Record() tea.Cmd {
 }
 
 func (a App) refreshR53Zones() tea.Cmd {
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	return func() tea.Msg {
-		zones, err := client.ListR53Zones(context.Background(), "")
+		zones, err := route53Service.Zones(ctx, "")
 		if err != nil {
 			return errMsg{err}
 		}
@@ -216,9 +214,9 @@ func (a App) refreshR53Zones() tea.Cmd {
 
 func (a App) refreshR53Records() tea.Cmd {
 	zoneID := a.r53RecordsView.ZoneID()
-	client := a.client
+	route53Service, ctx := a.route53, a.ctx
 	return func() tea.Msg {
-		records, err := client.ListR53Records(context.Background(), zoneID)
+		records, err := route53Service.Records(ctx, zoneID)
 		if err != nil {
 			return errMsg{err}
 		}

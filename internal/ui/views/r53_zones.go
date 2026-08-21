@@ -8,13 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type R53ZonesModel struct {
-	zones       []aws.R53Zone
+	zones       []model.Route53Zone
 	cursor      int
 	filter      string
 	filtering   bool
@@ -126,12 +126,12 @@ func (m R53ZonesModel) View() string {
 	return b.String()
 }
 
-func (m R53ZonesModel) filteredZones() []aws.R53Zone {
+func (m R53ZonesModel) filteredZones() []model.Route53Zone {
 	if m.filter == "" {
 		return m.zones
 	}
 	lf := strings.ToLower(m.filter)
-	var out []aws.R53Zone
+	var out []model.Route53Zone
 	for _, z := range m.zones {
 		if strings.Contains(strings.ToLower(z.Name), lf) ||
 			strings.Contains(strings.ToLower(z.Comment), lf) {
@@ -141,7 +141,7 @@ func (m R53ZonesModel) filteredZones() []aws.R53Zone {
 	return out
 }
 
-func (m R53ZonesModel) SetZones(zones []aws.R53Zone) R53ZonesModel {
+func (m R53ZonesModel) SetZones(zones []model.Route53Zone) R53ZonesModel {
 	m.zones = zones
 	m.loaded = true
 	filtered := m.filteredZones()
@@ -151,7 +151,7 @@ func (m R53ZonesModel) SetZones(zones []aws.R53Zone) R53ZonesModel {
 	return m
 }
 
-func (m R53ZonesModel) SelectedZone() *aws.R53Zone {
+func (m R53ZonesModel) SelectedZone() *model.Route53Zone {
 	filtered := m.filteredZones()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

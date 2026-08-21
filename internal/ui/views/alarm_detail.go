@@ -9,18 +9,18 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type AlarmDetailModel struct {
-	detail *aws.CWAlarmDetail
+	detail *model.AlarmDetail
 	scroll int
 	width  int
 	height int
 }
 
-func NewAlarmDetail(detail *aws.CWAlarmDetail) AlarmDetailModel {
+func NewAlarmDetail(detail *model.AlarmDetail) AlarmDetailModel {
 	return AlarmDetailModel{detail: detail}
 }
 
@@ -160,7 +160,7 @@ func (m AlarmDetailModel) View() string {
 	return strings.Join(visible, "\n")
 }
 
-func (m AlarmDetailModel) Detail() *aws.CWAlarmDetail { return m.detail }
+func (m AlarmDetailModel) Detail() *model.AlarmDetail { return m.detail }
 func (m AlarmDetailModel) AlarmName() string {
 	if m.detail != nil {
 		return m.detail.Name

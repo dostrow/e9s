@@ -14,6 +14,28 @@ type fakeFilterLogEventsAPI struct {
 	inputs []*cloudwatchlogs.FilterLogEventsInput
 }
 
+type fakeGetLogEventsAPI struct {
+	outputs []*cloudwatchlogs.GetLogEventsOutput
+	inputs  []*cloudwatchlogs.GetLogEventsInput
+}
+
+func (f *fakeGetLogEventsAPI) GetLogEvents(_ context.Context, input *cloudwatchlogs.GetLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error) {
+	cloned := *input
+	if input.EndTime != nil {
+		cloned.EndTime = int64PtrLogs(*input.EndTime)
+	}
+	if input.NextToken != nil {
+		cloned.NextToken = strPtrLogs(*input.NextToken)
+	}
+	f.inputs = append(f.inputs, &cloned)
+	if len(f.outputs) == 0 {
+		return &cloudwatchlogs.GetLogEventsOutput{}, nil
+	}
+	out := f.outputs[0]
+	f.outputs = f.outputs[1:]
+	return out, nil
+}
+
 func (f *fakeFilterLogEventsAPI) FilterLogEvents(_ context.Context, input *cloudwatchlogs.FilterLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error) {
 	f.inputs = append(f.inputs, cloneFilterInput(input))
 	if len(f.pages) == 0 {
@@ -62,6 +84,9 @@ func TestTailLogsPaginatesAcrossPages(t *testing.T) {
 	}
 	if entries[2].Message != "third" || entries[3].Message != "fourth" {
 		t.Fatalf("unexpected entry order: %#v", entries)
+	}
+	if entries[3].ID != "fourth" {
+		t.Fatalf("event ID = %q, want fourth", entries[3].ID)
 	}
 	if lastTS != 1001 {
 		t.Fatalf("lastTS = %d, want 1001", lastTS)
@@ -115,6 +140,114 @@ func TestTailLogsKeepsNewestEntriesWhenWindowExceedsLimit(t *testing.T) {
 	}
 	if lastTS != 5 {
 		t.Fatalf("lastTS = %d, want 5", lastTS)
+	}
+}
+
+func TestNewestStreamLogsWalksBackwardAcrossPartialAndEmptyPages(t *testing.T) {
+	api := &fakeGetLogEventsAPI{
+		outputs: []*cloudwatchlogs.GetLogEventsOutput{
+			{NextBackwardToken: strPtrLogs("back-1")},
+			{
+				Events: []cwltypes.OutputLogEvent{
+					{Timestamp: int64PtrLogs(1002), Message: strPtrLogs("newer")},
+					{Timestamp: int64PtrLogs(1003), Message: strPtrLogs("newest")},
+				},
+				NextBackwardToken: strPtrLogs("back-2"),
+			},
+			{Events: []cwltypes.OutputLogEvent{
+				{Timestamp: int64PtrLogs(1000), Message: strPtrLogs("oldest")},
+				{Timestamp: int64PtrLogs(1001), Message: strPtrLogs("older")},
+			}},
+		},
+	}
+
+	entries, lastTS, err := newestStreamLogs(context.Background(), api, "group", "stream", 2000, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(api.inputs) != 3 {
+		t.Fatalf("requests = %d, want 3", len(api.inputs))
+	}
+	if api.inputs[0].StartFromHead == nil || *api.inputs[0].StartFromHead {
+		t.Fatalf("StartFromHead = %v, want false", api.inputs[0].StartFromHead)
+	}
+	if api.inputs[0].Limit == nil || *api.inputs[0].Limit != 3 {
+		t.Fatalf("Limit = %v, want 3", api.inputs[0].Limit)
+	}
+	if api.inputs[0].EndTime == nil || *api.inputs[0].EndTime != 2000 {
+		t.Fatalf("EndTime = %v, want 2000", api.inputs[0].EndTime)
+	}
+	if api.inputs[1].NextToken == nil || *api.inputs[1].NextToken != "back-1" ||
+		api.inputs[2].NextToken == nil || *api.inputs[2].NextToken != "back-2" {
+		t.Fatalf("backward tokens = %v, %v", api.inputs[1].NextToken, api.inputs[2].NextToken)
+	}
+	if len(entries) != 3 || entries[0].Message != "older" || entries[1].Message != "newer" || entries[2].Message != "newest" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if entries[0].Stream != "stream" || lastTS != 1003 {
+		t.Fatalf("stream = %q, lastTS = %d", entries[0].Stream, lastTS)
+	}
+}
+
+func TestEarlierLogGroupEntriesExpandsAcrossQuietWindow(t *testing.T) {
+	api := &fakeFilterLogEventsAPI{
+		t: t,
+		pages: []*cloudwatchlogs.FilterLogEventsOutput{
+			{},
+			{Events: []cwltypes.FilteredLogEvent{logEvent(1000, "older")}},
+		},
+	}
+	const before = int64(60 * 60 * 1000)
+
+	entries, err := earlierLogGroupEntries(context.Background(), api, "group", before, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Message != "older" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if len(api.inputs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(api.inputs))
+	}
+	if api.inputs[0].StartTime == nil || *api.inputs[0].StartTime != before-(15*60*1000) {
+		t.Fatalf("first StartTime = %v", api.inputs[0].StartTime)
+	}
+	if api.inputs[1].StartTime == nil || *api.inputs[1].StartTime != 0 {
+		t.Fatalf("expanded StartTime = %v, want 0", api.inputs[1].StartTime)
+	}
+	if api.inputs[1].EndTime == nil || *api.inputs[1].EndTime != before {
+		t.Fatalf("EndTime = %v, want %d", api.inputs[1].EndTime, before)
+	}
+}
+
+func TestFirstLogEntriesPaginatesPastEmptyPagesAndHonorsBounds(t *testing.T) {
+	api := &fakeFilterLogEventsAPI{
+		t: t,
+		pages: []*cloudwatchlogs.FilterLogEventsOutput{
+			{NextToken: strPtrLogs("page-2")},
+			{Events: []cwltypes.FilteredLogEvent{
+				logEvent(100, "at-cutoff"),
+				logEvent(101, "first"),
+				logEvent(102, "second"),
+				logEvent(201, "past-frontier"),
+			}},
+		},
+	}
+	group := "group"
+	start, end := int64(100), int64(201)
+	entries, err := firstLogEntries(context.Background(), api, &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &group,
+		StartTime:    &start,
+		EndTime:      &end,
+	}, 100, 200, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].Message != "at-cutoff" || entries[1].Message != "first" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if len(api.inputs) != 2 || api.inputs[1].NextToken == nil || *api.inputs[1].NextToken != "page-2" {
+		t.Fatalf("inputs = %#v", api.inputs)
 	}
 }
 
@@ -223,6 +356,7 @@ func logEvent(ts int64, msg string) cwltypes.FilteredLogEvent {
 	return cwltypes.FilteredLogEvent{
 		Timestamp: int64PtrLogs(ts),
 		Message:   strPtrLogs(msg),
+		EventId:   strPtrLogs(msg),
 	}
 }
 

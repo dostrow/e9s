@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 )
 
 // --- rdsStatusStyle ---
@@ -247,6 +248,24 @@ func TestRDSInstancesModel_ViewShowsInstances(t *testing.T) {
 	}
 }
 
+func TestRDSClustersModelFiltersAndSelects(t *testing.T) {
+	m := NewRDSClusters().SetClusters([]model.RDSCluster{
+		{Identifier: "orders", Engine: "aurora-postgresql", Members: []model.RDSClusterMember{{Identifier: "orders-1", Writer: true}}},
+		{Identifier: "cache", Engine: "aurora-mysql"},
+	})
+	m.filter = "postgres"
+	selected := m.SelectedCluster()
+	if selected == nil || selected.Identifier != "orders" {
+		t.Fatalf("SelectedCluster() = %#v", selected)
+	}
+	view := m.SetSize(160, 40).View()
+	for _, want := range []string{"orders", "aurora-postgresql", "orders-1", "[tab] instances"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("cluster view missing %q:\n%s", want, view)
+		}
+	}
+}
+
 // --- RDSDetailModel ---
 
 func TestRDSDetailModel_ViewNilDetail(t *testing.T) {
@@ -268,20 +287,20 @@ func TestRDSDetailModel_InstanceIDEmpty(t *testing.T) {
 func TestRDSDetailModel_ViewShowsSections(t *testing.T) {
 	detail := &aws.RDSInstanceDetail{
 		RDSInstance: aws.RDSInstance{
-			Identifier: "my-db",
-			Engine:     "postgres",
-			Version:    "15.4",
-			Class:      "db.t3.medium",
-			Status:     "available",
-			Role:       "writer",
-			ClusterID:  "my-cluster",
-			AZ:         "us-east-1b",
-			Endpoint:   "my-db.cluster.rds.amazonaws.com",
-			Port:       5432,
-			StorageGB:  100,
+			Identifier:  "my-db",
+			Engine:      "postgres",
+			Version:     "15.4",
+			Class:       "db.t3.medium",
+			Status:      "available",
+			Role:        "writer",
+			ClusterID:   "my-cluster",
+			AZ:          "us-east-1b",
+			Endpoint:    "my-db.cluster.rds.amazonaws.com",
+			Port:        5432,
+			StorageGB:   100,
 			StorageType: "gp3",
-			Encrypted:  true,
-			Created:    time.Now().Add(-7 * 24 * time.Hour),
+			Encrypted:   true,
+			Created:     time.Now().Add(-7 * 24 * time.Hour),
 		},
 		SubnetGroup:         "my-subnet-group",
 		VPCID:               "vpc-abc123",
@@ -307,8 +326,8 @@ func TestRDSDetailModel_ViewShowsSections(t *testing.T) {
 		"my-db", "postgres", "writer", "my-cluster",
 		"us-east-1b", "vpc-abc123", "my-subnet-group",
 		"100 GiB", "gp3",
-		"42.5%",       // CPU
-		"18",          // connections
+		"42.5%",           // CPU
+		"18",              // connections
 		"prod", "backend", // tags
 	} {
 		if !strings.Contains(view, want) {

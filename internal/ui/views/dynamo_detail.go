@@ -8,14 +8,15 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 // DynamoEditFieldMsg is emitted when the user wants to edit a field.
 type DynamoEditFieldMsg struct {
 	TableName  string
-	Item       *aws.DynamoItem
+	Item       *model.DynamoItem
 	KeyNames   []string
 	FieldName  string
 	FieldValue string
@@ -25,7 +26,7 @@ type DynamoEditFieldMsg struct {
 // DynamoCloneItemMsg is emitted when the user wants to clone the item.
 type DynamoCloneItemMsg struct {
 	TableName string
-	Item      *aws.DynamoItem
+	Item      *model.DynamoItem
 	JSON      string
 }
 
@@ -39,7 +40,7 @@ type fieldEntry struct {
 type DynamoItemDetailModel struct {
 	tableName string
 	keyNames  []string
-	item      *aws.DynamoItem
+	item      *model.DynamoItem
 	fields    []fieldEntry
 	cursor    int // which field is selected
 	scroll    int
@@ -47,7 +48,7 @@ type DynamoItemDetailModel struct {
 	height    int
 }
 
-func NewDynamoItemDetail(tableName string, keyNames []string, item *aws.DynamoItem) DynamoItemDetailModel {
+func NewDynamoItemDetail(tableName string, keyNames []string, item *model.DynamoItem) DynamoItemDetailModel {
 	var fields []fieldEntry
 	if item != nil {
 		fields = buildFieldEntries(*item, keyNames)
@@ -60,7 +61,7 @@ func NewDynamoItemDetail(tableName string, keyNames []string, item *aws.DynamoIt
 	}
 }
 
-func buildFieldEntries(item aws.DynamoItem, keyNames []string) []fieldEntry {
+func buildFieldEntries(item model.DynamoItem, keyNames []string) []fieldEntry {
 	keySet := map[string]bool{}
 	for _, k := range keyNames {
 		keySet[k] = true
@@ -229,14 +230,14 @@ func (m DynamoItemDetailModel) SelectedField() (string, string, bool) {
 	f := m.fields[m.cursor]
 	val := ""
 	if m.item != nil {
-		val = aws.DynamoValueToEditableString((*m.item)[f.key])
+		val = service.DynamoValueToEditableString((*m.item)[f.key])
 	}
 	return f.key, val, f.isKey
 }
 
-func (m DynamoItemDetailModel) Item() *aws.DynamoItem { return m.item }
-func (m DynamoItemDetailModel) TableName() string     { return m.tableName }
-func (m DynamoItemDetailModel) KeyNames() []string    { return m.keyNames }
+func (m DynamoItemDetailModel) Item() *model.DynamoItem { return m.item }
+func (m DynamoItemDetailModel) TableName() string       { return m.tableName }
+func (m DynamoItemDetailModel) KeyNames() []string      { return m.keyNames }
 
 func (m DynamoItemDetailModel) visibleLines() int {
 	h := m.height - 6

@@ -9,13 +9,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type EC2InstancesModel struct {
-	instances   []aws.EC2Instance
+	instances   []model.EC2Instance
 	cursor      int
 	filter      string
 	filtering   bool
@@ -166,25 +167,11 @@ func shortDuration(d time.Duration) string {
 	return fmt.Sprintf("%dy%dd", days/365, days%365)
 }
 
-func (m EC2InstancesModel) filteredInstances() []aws.EC2Instance {
-	if m.filter == "" {
-		return m.instances
-	}
-	lf := strings.ToLower(m.filter)
-	var out []aws.EC2Instance
-	for _, i := range m.instances {
-		if strings.Contains(strings.ToLower(i.Name), lf) ||
-			strings.Contains(strings.ToLower(i.InstanceID), lf) ||
-			strings.Contains(strings.ToLower(i.PrivateIP), lf) ||
-			strings.Contains(strings.ToLower(i.Type), lf) ||
-			strings.Contains(strings.ToLower(i.State), lf) {
-			out = append(out, i)
-		}
-	}
-	return out
+func (m EC2InstancesModel) filteredInstances() []model.EC2Instance {
+	return service.FilterEC2Instances(m.instances, m.filter)
 }
 
-func (m EC2InstancesModel) SetInstances(instances []aws.EC2Instance) EC2InstancesModel {
+func (m EC2InstancesModel) SetInstances(instances []model.EC2Instance) EC2InstancesModel {
 	m.instances = instances
 	m.loaded = true
 	filtered := m.filteredInstances()
@@ -194,7 +181,7 @@ func (m EC2InstancesModel) SetInstances(instances []aws.EC2Instance) EC2Instance
 	return m
 }
 
-func (m EC2InstancesModel) SelectedInstance() *aws.EC2Instance {
+func (m EC2InstancesModel) SelectedInstance() *model.EC2Instance {
 	filtered := m.filteredInstances()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

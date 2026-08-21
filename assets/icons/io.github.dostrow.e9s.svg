@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">e9s</title>
+  <desc id="desc">A layered infrastructure E joined with an orbital nine</desc>
+  <defs>
+    <linearGradient id="surface" x1="30" y1="24" x2="226" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#32302f"/>
+      <stop offset="1" stop-color="#1d2021"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="130" y1="60" x2="206" y2="198" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#89b482"/>
+      <stop offset="1" stop-color="#7daea3"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="10" y="10" width="236" height="236" rx="54" fill="url(#surface)" stroke="#504945" stroke-width="4"/>
+
+  <!-- A compact infrastructure stack that reads as a lowercase e at small sizes. -->
+  <path d="M58 76v104M58 78h74M58 128h58M58 178h74"
+        fill="none" stroke="#d8a657" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="58" cy="78" r="10" fill="#e78a4e"/>
+  <circle cx="58" cy="128" r="10" fill="#e78a4e"/>
+  <circle cx="58" cy="178" r="10" fill="#e78a4e"/>
+
+  <!-- The open orbit and descending control path form the nine. -->
+  <path d="M174 66c27 0 47 20 47 46s-20 46-47 46-47-20-47-46 20-46 47-46Zm46 45c0 39-12 69-38 86"
+        fill="none" stroke="url(#orbit)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="174" cy="112" r="14" fill="#1d2021" stroke="#a9b665" stroke-width="8"/>
+  <circle cx="182" cy="197" r="9" fill="#a9b665"/>
+</svg>

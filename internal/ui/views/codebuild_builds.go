@@ -7,14 +7,14 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type CBBuildsModel struct {
 	projectName string
-	builds      []aws.CBBuild
+	builds      []model.CodeBuildBuild
 	cursor      int
 	utcTime     bool
 	width       int
@@ -125,7 +125,7 @@ func buildStatusCell(status string) components.Cell {
 	return components.Styled(status, style)
 }
 
-func (m CBBuildsModel) SetBuilds(builds []aws.CBBuild) CBBuildsModel {
+func (m CBBuildsModel) SetBuilds(builds []model.CodeBuildBuild) CBBuildsModel {
 	m.builds = builds
 	m.loaded = true
 	if m.cursor >= len(builds) && len(builds) > 0 {
@@ -134,7 +134,7 @@ func (m CBBuildsModel) SetBuilds(builds []aws.CBBuild) CBBuildsModel {
 	return m
 }
 
-func (m CBBuildsModel) SelectedBuild() *aws.CBBuild {
+func (m CBBuildsModel) SelectedBuild() *model.CodeBuildBuild {
 	if len(m.builds) == 0 || m.cursor >= len(m.builds) {
 		return nil
 	}

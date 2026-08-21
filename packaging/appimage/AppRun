@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+app_dir=${APPDIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
+export E9S_DATA_DIR="$app_dir/usr/share/e9s"
+export XDG_DATA_DIRS="$app_dir/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export LD_LIBRARY_PATH="$app_dir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# linuxdeploy places optional Gio modules and GDK Pixbuf loaders beneath
+# usr/lib. Point GTK at generated caches when they are present, while leaving
+# host defaults intact for leaner bundles.
+gio_modules=$(find "$app_dir/usr/lib" -type d -name gio 2>/dev/null | head -n 1 || true)
+if [ -n "$gio_modules" ]; then
+  export GIO_MODULE_DIR="$gio_modules/modules"
+fi
+pixbuf_cache=$(find "$app_dir/usr/lib" -name loaders.cache -print -quit 2>/dev/null || true)
+if [ -n "$pixbuf_cache" ]; then
+  export GDK_PIXBUF_MODULE_FILE="$pixbuf_cache"
+fi
+
+exec "$app_dir/usr/bin/e9s-gui" "$@"

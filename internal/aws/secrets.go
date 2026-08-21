@@ -2,34 +2,16 @@ package aws
 
 import (
 	"context"
-	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type Secret struct {
-	Name         string
-	ARN          string
-	Description  string
-	Tags         map[string]string
-	LastAccessed time.Time
-	LastChanged  time.Time
-}
-
-type SecretValue struct {
-	Name  string
-	Value string // the secret string (or "(binary)" for binary secrets)
-}
-
-// ListSecrets fetches secrets, optionally filtered by name substring.
-// Fetches all secrets and filters client-side for true substring matching
-// (the AWS API only supports prefix matching).
-func (c *Client) ListSecrets(ctx context.Context, nameFilter string) ([]Secret, error) {
+// ListSecrets fetches all secret metadata without secret values.
+func (c *Client) ListSecrets(ctx context.Context) ([]model.Secret, error) {
 	input := &secretsmanager.ListSecretsInput{}
 
-	var secrets []Secret
-	lf := strings.ToLower(nameFilter)
+	var secrets []model.Secret
 	paginator := secretsmanager.NewListSecretsPaginator(c.SM, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -38,10 +20,7 @@ func (c *Client) ListSecrets(ctx context.Context, nameFilter string) ([]Secret, 
 		}
 		for _, s := range page.SecretList {
 			name := derefStrAws(s.Name)
-			if lf != "" && !strings.Contains(strings.ToLower(name), lf) {
-				continue
-			}
-			sec := Secret{
+			sec := model.Secret{
 				Name: name,
 				ARN:  derefStrAws(s.ARN),
 				Tags: make(map[string]string),
@@ -67,7 +46,7 @@ func (c *Client) ListSecrets(ctx context.Context, nameFilter string) ([]Secret, 
 }
 
 // GetSecretValueByName fetches the current value of a secret.
-func (c *Client) GetSecretValueByName(ctx context.Context, secretName string) (*SecretValue, error) {
+func (c *Client) GetSecretValueByName(ctx context.Context, secretName string) (*model.SecretValue, error) {
 	out, err := c.SM.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
 		SecretId: &secretName,
 	})
@@ -75,12 +54,15 @@ func (c *Client) GetSecretValueByName(ctx context.Context, secretName string) (*
 		return nil, err
 	}
 	value := "(binary secret)"
+	binary := true
 	if out.SecretString != nil {
 		value = *out.SecretString
+		binary = false
 	}
-	return &SecretValue{
-		Name:  derefStrAws(out.Name),
-		Value: value,
+	return &model.SecretValue{
+		Name:   derefStrAws(out.Name),
+		Value:  value,
+		Binary: binary,
 	}, nil
 }
 

@@ -1,9 +1,15 @@
 package views
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dostrow/e9s/internal/highlight"
+	"github.com/dostrow/e9s/internal/model"
 )
 
 func TestSanitizeLogMessage_StripsCR(t *testing.T) {
@@ -100,12 +106,79 @@ func TestWrapPlainText_Unicode(t *testing.T) {
 }
 
 func TestNewLogViewerWithOptions_TailStartsFromLatestWindow(t *testing.T) {
-	m := NewLogViewerWithOptions("tail", nil, "/aws/ecs/example", nil, true, 10*time.Second)
-	if m.lastTS != 0 {
-		t.Fatalf("tail mode should start from the newest logs, got lastTS=%d", m.lastTS)
+	before := time.Now().Add(-15*time.Minute - time.Second).UnixMilli()
+	m := NewLogViewer("tail", nil, "/aws/ecs/example", nil)
+	after := time.Now().Add(-15*time.Minute + time.Second).UnixMilli()
+	if m.lastTS < before || m.lastTS > after {
+		t.Fatalf("tail mode start timestamp %d outside recent window [%d, %d]", m.lastTS, before, after)
 	}
 	if !m.tailMode {
 		t.Fatal("tail mode should be enabled when follow=true")
+	}
+}
+
+func TestLogViewerKeepsInclusiveCursorAndDeduplicatesOverlappingPolls(t *testing.T) {
+	m := LogViewerModel{lastTS: 100, follow: false}
+	first := model.LogEntry{ID: "event-1", Timestamp: 100, Message: "running"}
+	late := model.LogEntry{ID: "event-2", Timestamp: 100, Message: "final line"}
+
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{first}, LastTS: 100})
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{first, late}, LastTS: 100})
+
+	if m.lastTS != 100 {
+		t.Fatalf("inclusive cursor = %d, want 100", m.lastTS)
+	}
+	if len(m.lines) != 2 || m.lines[1].message != "final line" {
+		t.Fatalf("lines = %#v", m.lines)
+	}
+}
+
+func TestLogViewerHonorsConfiguredBufferLimit(t *testing.T) {
+	m := (LogViewerModel{follow: false}).WithLimits(2, 3)
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{
+		{ID: "one", Timestamp: 1, Message: "one"},
+		{ID: "two", Timestamp: 2, Message: "two"},
+		{ID: "three", Timestamp: 3, Message: "three"},
+		{ID: "four", Timestamp: 4, Message: "four"},
+	}, LastTS: 4})
+
+	if m.configuredPageSize() != 2 {
+		t.Fatalf("page size = %d, want 2", m.configuredPageSize())
+	}
+	if len(m.lines) != 3 || m.lines[0].message != "two" || m.lines[2].message != "four" {
+		t.Fatalf("buffered lines = %#v, want the newest three entries", m.lines)
+	}
+}
+
+func TestLogViewerStreamVisibilityOnlyFiltersDisplay(t *testing.T) {
+	m := LogViewerModel{width: 120, height: 30, search: "event"}
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{
+		{ID: "api", Timestamp: 1, Stream: "api", Message: "api event"},
+		{ID: "worker", Timestamp: 2, Stream: "worker", Message: "worker event"},
+	}, LastTS: 2})
+	m = m.OpenStreamManager()
+	if !m.streamManager {
+		t.Fatal("stream manager did not open for a multi-stream buffer")
+	}
+	m, _ = m.handleStreamManager(tea.KeyMsg{Type: tea.KeySpace})
+	m, _ = m.handleStreamManager(tea.KeyMsg{Type: tea.KeyEsc})
+
+	view := m.View()
+	if strings.Contains(view, "api event") || !strings.Contains(view, "worker event") {
+		t.Fatalf("filtered view = %q", view)
+	}
+	if len(m.lines) != 2 || len(m.ExportLines()) != 2 {
+		t.Fatalf("visibility altered buffered results: %d lines, %d exported", len(m.lines), len(m.ExportLines()))
+	}
+	if len(m.matchIndices) != 1 || m.lines[m.matchIndices[0]].stream != "worker" {
+		t.Fatalf("visible matches = %#v", m.matchIndices)
+	}
+
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{{
+		ID: "scheduler", Timestamp: 3, Stream: "scheduler", Message: "scheduler event",
+	}}, LastTS: 3})
+	if m.streamHidden("scheduler") {
+		t.Fatal("newly encountered stream should default to visible")
 	}
 }
 
@@ -137,9 +210,113 @@ func TestNewLogViewerInRange_SetsAbsoluteWindow(t *testing.T) {
 	}
 }
 
+func TestRangeViewerKeepsExactJumpTargetCenteredWhenCapped(t *testing.T) {
+	anchor := model.LogEntry{ID: "selected", Timestamp: 1500, Message: "selected"}
+	m := NewLogViewerInRange("range", nil, "/aws/ecs/example", nil, 0, 3000, "selected")
+	m = m.WithJumpTarget(anchor)
+	m.width, m.height = 120, 30
+	entries := make([]model.LogEntry, 0, 3000)
+	for i := 0; i < 3000; i++ {
+		if i == 1500 {
+			continue
+		}
+		entries = append(entries, model.LogEntry{ID: fmt.Sprintf("event-%d", i), Timestamp: int64(i), Message: "event"})
+	}
+
+	m, _ = m.Update(LogsLoadedMsg{Entries: entries, LastTS: 2999})
+	if len(m.lines) != maxLogLines {
+		t.Fatalf("lines = %d, want %d", len(m.lines), maxLogLines)
+	}
+	if m.lines[maxLogLines/2].key() != anchor.Key() {
+		t.Fatalf("center line = %#v, want anchor %#v", m.lines[maxLogLines/2], anchor)
+	}
+	visible := m.visibleLines()
+	if m.scroll != maxLogLines/2-visible/2 {
+		t.Fatalf("scroll = %d, want %d", m.scroll, maxLogLines/2-visible/2)
+	}
+}
+
 func TestFormatLogSource_MultiGroup(t *testing.T) {
 	got := formatLogSource("/aws/ecs/api|ecs/app/task")
 	if got != "/aws/ecs/api / ecs/app/task" {
 		t.Fatalf("formatLogSource() = %q", got)
 	}
+}
+
+func TestLogViewerHighlightsDoNotAlterExport(t *testing.T) {
+	m := LogViewerModel{
+		lines: []logLine{{timestamp: 1000, message: "🔥 ERROR complete"}},
+	}
+	m = m.SetHighlightRules([]model.LogHighlightRule{{
+		Pattern: "ERROR", Match: model.LogHighlightLiteral, Style: model.LogHighlightError,
+	}})
+	spans := m.highlighter.Spans(m.lines[0].message)
+	if len(spans) != 1 || spans[0].Start != 2 || spans[0].End != 7 {
+		t.Fatalf("highlight spans = %#v", spans)
+	}
+	exported := m.ExportLines()
+	if len(exported) != 1 || strings.Contains(exported[0], "\x1b[") || !strings.HasSuffix(exported[0], "🔥 ERROR complete") {
+		t.Fatalf("ExportLines() = %#v", exported)
+	}
+}
+
+func TestLogHighlightManagerAddsAndValidatesRules(t *testing.T) {
+	m := LogViewerModel{}.OpenHighlightManager()
+	m, _ = m.Update(keyRune('a'))
+	for _, r := range "timeout" {
+		m, _ = m.Update(keyRune(r))
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.highlightRules) != 1 || m.highlightRules[0].Pattern != "timeout" {
+		t.Fatalf("rules = %#v", m.highlightRules)
+	}
+
+	m.highlightRules[0].Pattern = "["
+	m.highlighter, _ = highlight.Compile(m.highlightRules)
+	m, _ = m.Update(keyRune('m'))
+	m, _ = m.Update(keyRune('m'))
+	if m.highlightRules[0].Match != model.LogHighlightLiteralCI {
+		t.Fatalf("invalid regex changed match mode to %q", m.highlightRules[0].Match)
+	}
+	if m.highlightError == "" {
+		t.Fatal("invalid regex did not produce an error")
+	}
+}
+
+func TestLogHighlightManagerRequestsPersistence(t *testing.T) {
+	m := LogViewerModel{}.SetHighlightRules([]model.LogHighlightRule{{
+		Pattern: "error", Match: model.LogHighlightLiteralCI, Style: model.LogHighlightError,
+	}}).OpenHighlightManager()
+	var cmd tea.Cmd
+	m, cmd = m.Update(keyRune('w'))
+	if cmd == nil {
+		t.Fatal("save did not return a command")
+	}
+	msg, ok := cmd().(LogHighlightSaveMsg)
+	if !ok || len(msg.Rules) != 1 || msg.Rules[0].Pattern != "error" {
+		t.Fatalf("save message = %#v", msg)
+	}
+}
+
+func TestLogViewerHiddenStreamsArePresentationOnly(t *testing.T) {
+	m := LogViewerModel{
+		lines: []logLine{
+			{stream: "api", message: "visible"},
+			{stream: "health", message: "hidden"},
+		},
+	}
+	m = m.SetHiddenStreams([]string{"health"})
+	if got := m.HiddenStreams(); !reflect.DeepEqual(got, []string{"health"}) {
+		t.Fatalf("HiddenStreams() = %#v", got)
+	}
+	if got := m.displayIndices(); !reflect.DeepEqual(got, []int{0}) {
+		t.Fatalf("displayIndices() = %#v", got)
+	}
+	if len(m.lines) != 2 {
+		t.Fatalf("underlying buffer contains %d lines, want 2", len(m.lines))
+	}
+}
+
+func keyRune(r rune) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 }

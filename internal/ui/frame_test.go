@@ -44,6 +44,7 @@ func TestModeDisplayName(t *testing.T) {
 		{modeS3, "S3"},
 		{modeLambda, "Lambda"},
 		{modeDynamoDB, "DynamoDB"},
+		{modeSQLWorkbench, "SQL Workbench"},
 	}
 	for _, tt := range tests {
 		got := modeDisplayName(tt.mode)
@@ -64,7 +65,7 @@ func TestModeShortName(t *testing.T) {
 
 func TestBuildInfoBar(t *testing.T) {
 	bar := buildInfoBar([]string{"cluster", "service"}, "us-east-1",
-		time.Time{}, false, "", time.Time{}, nil)
+		time.Time{}, false, "", time.Time{}, nil, "!")
 	if !strings.Contains(bar, "cluster") {
 		t.Error("Should contain breadcrumbs")
 	}
@@ -75,9 +76,12 @@ func TestBuildInfoBar(t *testing.T) {
 
 func TestBuildInfoBar_WithError(t *testing.T) {
 	bar := buildInfoBar(nil, "us-east-1", time.Time{}, false, "", time.Time{},
-		fmt.Errorf("test error"))
+		fmt.Errorf("test error"), "!")
 	if !strings.Contains(bar, "test error") {
 		t.Error("Should contain error message")
+	}
+	if !strings.Contains(bar, "error [!]") {
+		t.Error("Should advertise the error details key")
 	}
 }
 
@@ -97,6 +101,7 @@ func TestResolveDefaultMode(t *testing.T) {
 		{"DDB", ptr(modeDynamoDB)},
 		{"dynamodb", ptr(modeDynamoDB)},
 		{"Lambda", ptr(modeLambda)},
+		{"postgresql", ptr(modeSQLWorkbench)},
 		{"", nil},
 		{"nonexistent", nil},
 	}

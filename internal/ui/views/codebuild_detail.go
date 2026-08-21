@@ -8,18 +8,18 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
 type CBBuildDetailModel struct {
-	detail *aws.CBBuildDetail
+	detail *model.CodeBuildDetail
 	scroll int
 	width  int
 	height int
 }
 
-func NewCBBuildDetail(detail *aws.CBBuildDetail) CBBuildDetailModel {
+func NewCBBuildDetail(detail *model.CodeBuildDetail) CBBuildDetailModel {
 	return CBBuildDetailModel{detail: detail}
 }
 
@@ -142,7 +142,7 @@ func (m CBBuildDetailModel) View() string {
 	return strings.Join(visible, "\n")
 }
 
-func (m CBBuildDetailModel) Detail() *aws.CBBuildDetail { return m.detail }
+func (m CBBuildDetailModel) Detail() *model.CodeBuildDetail { return m.detail }
 func (m CBBuildDetailModel) BuildID() string {
 	if m.detail != nil {
 		return m.detail.ID

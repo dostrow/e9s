@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	cwltypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
@@ -12,14 +13,16 @@ import (
 	"github.com/dostrow/e9s/internal/model"
 )
 
-type LogEntry struct {
-	Timestamp int64
-	Message   string
-	Stream    string
-}
+// LogEntry is retained as an alias for compatibility with existing callers.
+// Shared frontend code should prefer model.LogEntry.
+type LogEntry = model.LogEntry
 
 type filterLogEventsAPI interface {
 	FilterLogEvents(context.Context, *cloudwatchlogs.FilterLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error)
+}
+
+type getLogEventsAPI interface {
+	GetLogEvents(context.Context, *cloudwatchlogs.GetLogEventsInput, ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error)
 }
 
 // GetLogConfig retrieves the awslogs configuration from a task definition
@@ -75,25 +78,10 @@ func (c *Client) FetchLogs(ctx context.Context, logGroup, logStream string, star
 	entries := make([]LogEntry, 0, len(out.Events))
 	lastTS := startTime
 	for _, ev := range out.Events {
-		ts := int64(0)
-		if ev.Timestamp != nil {
-			ts = *ev.Timestamp
-		}
-		msg := ""
-		if ev.Message != nil {
-			msg = *ev.Message
-		}
-		stream := ""
-		if ev.LogStreamName != nil {
-			stream = *ev.LogStreamName
-		}
-		entries = append(entries, LogEntry{
-			Timestamp: ts,
-			Message:   msg,
-			Stream:    stream,
-		})
-		if ts > lastTS {
-			lastTS = ts
+		entry := eventToLogEntry(ev)
+		entries = append(entries, entry)
+		if entry.Timestamp > lastTS {
+			lastTS = entry.Timestamp
 		}
 	}
 
@@ -298,10 +286,13 @@ func (c *Client) FetchMultiGroupRange(ctx context.Context, logGroups []string, s
 	return allEntries, nil
 }
 
-// TailLogs retrieves the newest log entries from a single stream since startTime.
-// Unlike FetchLogs, this paginates through the full result set so live tailing
-// does not get stuck on the oldest page of a busy window.
+// TailLogs retrieves the newest log entries from a single stream. A zero
+// startTime reads backward from the end directly; a positive startTime
+// paginates the live window so tailing cannot get stuck on its oldest page.
 func (c *Client) TailLogs(ctx context.Context, logGroup, logStream string, startTime int64, limit int) ([]LogEntry, int64, error) {
+	if startTime <= 0 {
+		return newestStreamLogs(ctx, c.Logs, logGroup, logStream, 0, limit)
+	}
 	input := &cloudwatchlogs.FilterLogEventsInput{
 		LogGroupName:   &logGroup,
 		LogStreamNames: []string{logStream},
@@ -310,6 +301,204 @@ func (c *Client) TailLogs(ctx context.Context, logGroup, logStream string, start
 		input.StartTime = &startTime
 	}
 	return tailLogs(ctx, c.Logs, input, startTime, limit)
+}
+
+func newestStreamLogs(ctx context.Context, api getLogEventsAPI, logGroup, logStream string, before int64, limit int) ([]LogEntry, int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	limit = min(limit, 10000)
+	startFromHead := false
+	input := &cloudwatchlogs.GetLogEventsInput{
+		LogGroupName:  &logGroup,
+		LogStreamName: &logStream,
+		Limit:         intPtr(int32(limit)),
+		StartFromHead: &startFromHead,
+	}
+	if before > 0 {
+		input.EndTime = &before
+	}
+
+	entries := make([]LogEntry, 0, limit)
+	seen := make(map[model.LogEntryKey]struct{}, limit)
+	seenTokens := make(map[string]struct{})
+	for len(entries) < limit {
+		out, err := api.GetLogEvents(ctx, input)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, event := range out.Events {
+			entry := LogEntry{Stream: logStream}
+			if event.Timestamp != nil {
+				entry.Timestamp = *event.Timestamp
+			}
+			if event.Message != nil {
+				entry.Message = *event.Message
+			}
+			if _, exists := seen[entry.Key()]; exists {
+				continue
+			}
+			seen[entry.Key()] = struct{}{}
+			entries = append(entries, entry)
+		}
+		if len(entries) >= limit || out.NextBackwardToken == nil || *out.NextBackwardToken == "" {
+			break
+		}
+		token := *out.NextBackwardToken
+		if _, repeated := seenTokens[token]; repeated {
+			break
+		}
+		seenTokens[token] = struct{}{}
+		input.NextToken = &token
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	if len(entries) > limit {
+		entries = append([]LogEntry(nil), entries[len(entries)-limit:]...)
+	}
+	var lastTS int64
+	for _, entry := range entries {
+		if entry.Timestamp > lastTS {
+			lastTS = entry.Timestamp
+		}
+	}
+	return entries, lastTS, nil
+}
+
+// FetchEarlierLogs returns the newest entries strictly before beforeTime. It
+// uses reverse stream reads when streams are known and an expanding backward
+// window for a whole-group source so quiet periods do not look like history's
+// beginning.
+func (c *Client) FetchEarlierLogs(ctx context.Context, logGroup string, logStreams []string, beforeTime int64, limit int) ([]LogEntry, error) {
+	if beforeTime <= 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if len(logStreams) == 0 {
+		return earlierLogGroupEntries(ctx, c.Logs, logGroup, beforeTime, limit)
+	}
+
+	entries := make([]LogEntry, 0, limit*len(logStreams))
+	seen := make(map[model.LogEntryKey]struct{})
+	for _, stream := range logStreams {
+		streamEntries, _, err := newestStreamLogs(ctx, c.Logs, logGroup, stream, beforeTime, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range streamEntries {
+			if entry.Timestamp >= beforeTime {
+				continue
+			}
+			if _, exists := seen[entry.Key()]; exists {
+				continue
+			}
+			seen[entry.Key()] = struct{}{}
+			entries = append(entries, entry)
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	if len(entries) > limit {
+		entries = append([]LogEntry(nil), entries[len(entries)-limit:]...)
+	}
+	return entries, nil
+}
+
+// FetchLaterLogs returns the oldest entries at or after afterTime, bounded by
+// untilTime when supplied. It is used to move a capped log buffer back toward
+// records previously evicted from its newest end.
+func (c *Client) FetchLaterLogs(ctx context.Context, logGroup string, logStreams []string, afterTime, untilTime int64, limit int) ([]LogEntry, error) {
+	if afterTime < 0 || (untilTime > 0 && untilTime < afterTime) {
+		return nil, nil
+	}
+	startTime := afterTime
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: &logGroup,
+		StartTime:    &startTime,
+	}
+	if len(logStreams) > 0 {
+		input.LogStreamNames = append([]string(nil), logStreams...)
+	}
+	if untilTime > 0 {
+		endTime := untilTime + 1
+		input.EndTime = &endTime
+	}
+	return firstLogEntries(ctx, c.Logs, input, afterTime, untilTime, limit)
+}
+
+func firstLogEntries(ctx context.Context, api filterLogEventsAPI, input *cloudwatchlogs.FilterLogEventsInput, afterTime, untilTime int64, limit int) ([]LogEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	req := *input
+	entries := make([]LogEntry, 0, limit)
+	seen := make(map[model.LogEntryKey]struct{}, limit)
+	seenTokens := make(map[string]struct{})
+	var nextToken *string
+	for len(entries) < limit {
+		req.NextToken = nextToken
+		req.Limit = intPtr(int32(min(limit-len(entries), 10000)))
+		out, err := api.FilterLogEvents(ctx, &req)
+		if err != nil {
+			return nil, err
+		}
+		for _, event := range out.Events {
+			entry := eventToLogEntry(event)
+			if entry.Timestamp < afterTime || (untilTime > 0 && entry.Timestamp > untilTime) {
+				continue
+			}
+			if _, exists := seen[entry.Key()]; exists {
+				continue
+			}
+			seen[entry.Key()] = struct{}{}
+			entries = append(entries, entry)
+			if len(entries) >= limit {
+				break
+			}
+		}
+		if len(entries) >= limit || out.NextToken == nil || *out.NextToken == "" {
+			break
+		}
+		token := *out.NextToken
+		if _, repeated := seenTokens[token]; repeated {
+			break
+		}
+		seenTokens[token] = struct{}{}
+		nextToken = &token
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Timestamp < entries[j].Timestamp
+	})
+	return entries, nil
+}
+
+func earlierLogGroupEntries(ctx context.Context, api filterLogEventsAPI, logGroup string, beforeTime int64, limit int) ([]LogEntry, error) {
+	window := (15 * time.Minute).Milliseconds()
+	for {
+		startTime := max(int64(0), beforeTime-window)
+		input := &cloudwatchlogs.FilterLogEventsInput{
+			LogGroupName: &logGroup,
+			StartTime:    &startTime,
+			EndTime:      &beforeTime,
+		}
+		entries, _, err := tailLogs(ctx, api, input, startTime, limit)
+		if err != nil {
+			return nil, err
+		}
+		if len(entries) > 0 || startTime == 0 {
+			return entries, nil
+		}
+		if window >= beforeTime/4 {
+			window = beforeTime
+		} else {
+			window *= 4
+		}
+	}
 }
 
 // TailMultiStreamLogs retrieves the newest log entries from multiple streams since startTime.
@@ -338,17 +527,10 @@ func (c *Client) TailLogGroup(ctx context.Context, logGroup string, startTime in
 	return tailLogs(ctx, c.Logs, input, startTime, limit)
 }
 
-type LogGroupInfo struct {
-	Name        string
-	StoredBytes int64
-	StreamCount int
-}
-
-type LogStreamInfo struct {
-	Name           string
-	LastEventTime  int64
-	FirstEventTime int64
-}
+// LogGroupInfo and LogStreamInfo remain aliases for compatibility with the TUI.
+// Shared frontend code should prefer the corresponding model types.
+type LogGroupInfo = model.LogGroup
+type LogStreamInfo = model.LogStream
 
 // ListLogGroups returns log groups matching a search term.
 // If the term starts with "/" it's treated as a prefix, otherwise as a substring pattern.
@@ -565,6 +747,9 @@ func boolPtr(b bool) *bool {
 
 func eventToLogEntry(ev cwltypes.FilteredLogEvent) LogEntry {
 	entry := LogEntry{}
+	if ev.EventId != nil {
+		entry.ID = *ev.EventId
+	}
 	if ev.Timestamp != nil {
 		entry.Timestamp = *ev.Timestamp
 	}

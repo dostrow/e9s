@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -12,32 +13,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/dostrow/e9s/internal/model"
 )
 
-type DynamoTable struct {
-	Name        string
-	Status      string
-	ItemCount   int64
-	SizeBytes   int64
-	BillingMode string
-	KeySchema   []DynamoKeyElement
-	GSIs        []string
-}
-
-type DynamoKeyElement struct {
-	Name     string
-	Type     string // HASH or RANGE
-	AttrType string // S, N, B
-}
-
-type DynamoItem map[string]any
-
-type DynamoScanResult struct {
-	Items            []DynamoItem
-	Count            int
-	ScannedCount     int
-	LastEvaluatedKey map[string]dbtypes.AttributeValue
-}
+type DynamoTable = model.DynamoTable
+type DynamoKeyElement = model.DynamoKeyElement
+type DynamoItem = model.DynamoItem
+type DynamoScanResult = model.DynamoPage
 
 // ListDynamoTables ListTables returns DynamoDB table names, optionally filtered by substring.
 func (c *Client) ListDynamoTables(ctx context.Context, filter string) ([]string, error) {
@@ -116,7 +98,7 @@ func (c *Client) DescribeDynamoTable(ctx context.Context, tableName string) (*Dy
 }
 
 // ScanDynamoTable scans a table and returns items as generic maps.
-func (c *Client) ScanDynamoTable(ctx context.Context, tableName string, limit int, startKey map[string]dbtypes.AttributeValue) (*DynamoScanResult, error) {
+func (c *Client) ScanDynamoTable(ctx context.Context, tableName string, limit int, nextToken string) (*DynamoScanResult, error) {
 	input := &dynamodb.ScanInput{
 		TableName: &tableName,
 	}
@@ -124,7 +106,11 @@ func (c *Client) ScanDynamoTable(ctx context.Context, tableName string, limit in
 		l := int32(limit)
 		input.Limit = &l
 	}
-	if len(startKey) > 0 {
+	if nextToken != "" {
+		startKey, err := attributevalue.UnmarshalMapJSON([]byte(nextToken))
+		if err != nil {
+			return nil, fmt.Errorf("decode DynamoDB page token: %w", err)
+		}
 		input.ExclusiveStartKey = startKey
 	}
 
@@ -142,16 +128,11 @@ func (c *Client) ScanDynamoTable(ctx context.Context, tableName string, limit in
 		items = append(items, m)
 	}
 
-	return &DynamoScanResult{
-		Items:            items,
-		Count:            int(out.Count),
-		ScannedCount:     int(out.ScannedCount),
-		LastEvaluatedKey: out.LastEvaluatedKey,
-	}, nil
+	return dynamoScanResult(items, int(out.Count), int(out.ScannedCount), out.LastEvaluatedKey)
 }
 
 // ScanDynamoTableWithFilter scans with a filter expression.
-func (c *Client) ScanDynamoTableWithFilter(ctx context.Context, tableName, attrName, operator, value string, limit int, startKey map[string]dbtypes.AttributeValue) (*DynamoScanResult, error) {
+func (c *Client) ScanDynamoTableWithFilter(ctx context.Context, tableName, attrName, operator, value string, limit int, nextToken string) (*DynamoScanResult, error) {
 	filterExpr := fmt.Sprintf("#attr %s :val", operator)
 	input := &dynamodb.ScanInput{
 		TableName:        &tableName,
@@ -167,7 +148,11 @@ func (c *Client) ScanDynamoTableWithFilter(ctx context.Context, tableName, attrN
 		l := int32(limit)
 		input.Limit = &l
 	}
-	if len(startKey) > 0 {
+	if nextToken != "" {
+		startKey, err := attributevalue.UnmarshalMapJSON([]byte(nextToken))
+		if err != nil {
+			return nil, fmt.Errorf("decode DynamoDB page token: %w", err)
+		}
 		input.ExclusiveStartKey = startKey
 	}
 
@@ -185,16 +170,11 @@ func (c *Client) ScanDynamoTableWithFilter(ctx context.Context, tableName, attrN
 		items = append(items, m)
 	}
 
-	return &DynamoScanResult{
-		Items:            items,
-		Count:            int(out.Count),
-		ScannedCount:     int(out.ScannedCount),
-		LastEvaluatedKey: out.LastEvaluatedKey,
-	}, nil
+	return dynamoScanResult(items, int(out.Count), int(out.ScannedCount), out.LastEvaluatedKey)
 }
 
 // ScanDynamoTableWithFuncFilter scans with a function-style filter (contains, begins_with).
-func (c *Client) ScanDynamoTableWithFuncFilter(ctx context.Context, tableName, attrName, funcName, value string, limit int, startKey map[string]dbtypes.AttributeValue) (*DynamoScanResult, error) {
+func (c *Client) ScanDynamoTableWithFuncFilter(ctx context.Context, tableName, attrName, funcName, value string, limit int, nextToken string) (*DynamoScanResult, error) {
 	filterExpr := fmt.Sprintf("%s(#attr, :val)", funcName)
 	input := &dynamodb.ScanInput{
 		TableName:        &tableName,
@@ -210,7 +190,11 @@ func (c *Client) ScanDynamoTableWithFuncFilter(ctx context.Context, tableName, a
 		l := int32(limit)
 		input.Limit = &l
 	}
-	if len(startKey) > 0 {
+	if nextToken != "" {
+		startKey, err := attributevalue.UnmarshalMapJSON([]byte(nextToken))
+		if err != nil {
+			return nil, fmt.Errorf("decode DynamoDB page token: %w", err)
+		}
 		input.ExclusiveStartKey = startKey
 	}
 
@@ -228,12 +212,20 @@ func (c *Client) ScanDynamoTableWithFuncFilter(ctx context.Context, tableName, a
 		items = append(items, m)
 	}
 
-	return &DynamoScanResult{
-		Items:            items,
-		Count:            int(out.Count),
-		ScannedCount:     int(out.ScannedCount),
-		LastEvaluatedKey: out.LastEvaluatedKey,
-	}, nil
+	return dynamoScanResult(items, int(out.Count), int(out.ScannedCount), out.LastEvaluatedKey)
+}
+
+func dynamoScanResult(items []DynamoItem, count, scanned int, lastKey map[string]dbtypes.AttributeValue) (*DynamoScanResult, error) {
+	result := &DynamoScanResult{Items: items, Count: count, ScannedCount: scanned}
+	if len(lastKey) == 0 {
+		return result, nil
+	}
+	token, err := attributevalue.MarshalMapJSON(lastKey)
+	if err != nil {
+		return nil, fmt.Errorf("encode DynamoDB page token: %w", err)
+	}
+	result.NextToken = string(token)
+	return result, nil
 }
 
 // ExecutePartiQL runs a PartiQL statement and returns results.
@@ -257,7 +249,11 @@ func (c *Client) ExecutePartiQL(ctx context.Context, statement string) ([]Dynamo
 }
 
 // GetDynamoItem fetches a single item by its key.
-func (c *Client) GetDynamoItem(ctx context.Context, tableName string, keyAV map[string]dbtypes.AttributeValue) (*DynamoItem, error) {
+func (c *Client) GetDynamoItem(ctx context.Context, tableName string, key DynamoItem) (*DynamoItem, error) {
+	keyAV, err := attributevalue.MarshalMap(key)
+	if err != nil {
+		return nil, fmt.Errorf("marshal item key: %w", err)
+	}
 	out, err := c.DynamoDB.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: &tableName,
 		Key:       keyAV,
@@ -276,44 +272,74 @@ func (c *Client) GetDynamoItem(ctx context.Context, tableName string, keyAV map[
 }
 
 // UpdateDynamoField updates a single attribute on an item identified by its key.
-func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, keyItem map[string]dbtypes.AttributeValue, attrName string, originalValue any, newValue string) error {
+func (c *Client) UpdateDynamoField(ctx context.Context, tableName string, key DynamoItem, attrName string, originalValue any, newValue string) error {
 	av, err := editedDynamoValueAttributeValue(originalValue, newValue)
 	if err != nil {
 		return err
 	}
+	originalAV, err := attributevalue.Marshal(originalValue)
+	if err != nil {
+		return fmt.Errorf("marshal original field value: %w", err)
+	}
+	keyItem, err := attributevalue.MarshalMap(key)
+	if err != nil {
+		return fmt.Errorf("marshal item key: %w", err)
+	}
 
 	expr := "SET #attr = :val"
+	condition := "#attr = :original"
 	input := &dynamodb.UpdateItemInput{
-		TableName:        &tableName,
-		Key:              keyItem,
-		UpdateExpression: &expr,
+		TableName:           &tableName,
+		Key:                 keyItem,
+		UpdateExpression:    &expr,
+		ConditionExpression: &condition,
 		ExpressionAttributeNames: map[string]string{
 			"#attr": attrName,
 		},
 		ExpressionAttributeValues: map[string]dbtypes.AttributeValue{
-			":val": av,
+			":val":      av,
+			":original": originalAV,
 		},
 	}
 
 	_, err = c.DynamoDB.UpdateItem(ctx, input)
+	if isDynamoConditionalFailure(err) {
+		return fmt.Errorf("field changed since it was loaded")
+	}
 	return err
 }
 
-// PutDynamoItem writes an item to a table (creates or replaces).
-func (c *Client) PutDynamoItem(ctx context.Context, tableName string, item DynamoItem) error {
+// PutDynamoItem creates an item only when its key does not already exist.
+func (c *Client) PutDynamoItem(ctx context.Context, tableName string, item DynamoItem, keyNames []string) error {
 	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
 		return fmt.Errorf("marshal item: %w", err)
 	}
+	if len(keyNames) == 0 {
+		return fmt.Errorf("build item condition: table key schema is unavailable")
+	}
+	condition := "attribute_not_exists(#key)"
 	_, err = c.DynamoDB.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: &tableName,
-		Item:      av,
+		TableName:           &tableName,
+		Item:                av,
+		ConditionExpression: &condition,
+		ExpressionAttributeNames: map[string]string{
+			"#key": keyNames[0],
+		},
 	})
+	if isDynamoConditionalFailure(err) {
+		return fmt.Errorf("an item with that key already exists")
+	}
 	return err
 }
 
+func isDynamoConditionalFailure(err error) bool {
+	var conditional *dbtypes.ConditionalCheckFailedException
+	return errors.As(err, &conditional)
+}
+
 // BuildKeyFromItem extracts the key attributes from an item given the key schema.
-func BuildKeyFromItem(item DynamoItem, keyNames []string) (map[string]dbtypes.AttributeValue, error) {
+func BuildKeyFromItem(item DynamoItem, keyNames []string) (DynamoItem, error) {
 	keyItem := DynamoItem{}
 	for _, k := range keyNames {
 		v, ok := item[k]
@@ -322,7 +348,7 @@ func BuildKeyFromItem(item DynamoItem, keyNames []string) (map[string]dbtypes.At
 		}
 		keyItem[k] = v
 	}
-	return attributevalue.MarshalMap(keyItem)
+	return keyItem, nil
 }
 
 // ParseDynamoItemFromJSON parses a JSON string back into a DynamoItem.

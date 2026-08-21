@@ -8,21 +8,16 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dostrow/e9s/internal/tofu"
 	"github.com/dostrow/e9s/internal/ui/components"
 	"github.com/dostrow/e9s/internal/ui/theme"
 )
 
-// TofuResource is a parsed resource address from state.
-type TofuResource struct {
-	Address string
-	Type    string
-	Name    string
-	Module  string
-}
+type TofuResource = tofu.Resource
 
 type TofuResourcesModel struct {
 	dir         string
-	resources   []TofuResource
+	resources   []tofu.Resource
 	cursor      int
 	filter      string
 	filtering   bool
@@ -151,38 +146,9 @@ func (m TofuResourcesModel) filteredResources() []TofuResource {
 	return out
 }
 
-func (m TofuResourcesModel) SetResources(addresses []string) TofuResourcesModel {
-	m.resources = nil
+func (m TofuResourcesModel) SetResources(resources []tofu.Resource) TofuResourcesModel {
+	m.resources = append([]tofu.Resource(nil), resources...)
 	m.loaded = true
-	for _, addr := range addresses {
-		r := TofuResource{Address: addr}
-		// Parse "module.foo.aws_ecs_service.api" or "aws_ecs_service.api"
-		parts := strings.Split(addr, ".")
-		if strings.HasPrefix(addr, "module.") && len(parts) >= 4 {
-			// module.name.type.name
-			modParts := []string{}
-			i := 0
-			for i < len(parts)-2 {
-				if parts[i] == "module" && i+1 < len(parts) {
-					modParts = append(modParts, "module."+parts[i+1])
-					i += 2
-				} else {
-					break
-				}
-			}
-			r.Module = strings.Join(modParts, ".")
-			if i+1 < len(parts) {
-				r.Type = parts[i]
-				r.Name = strings.Join(parts[i+1:], ".")
-			}
-		} else if len(parts) >= 2 {
-			r.Type = parts[0]
-			r.Name = strings.Join(parts[1:], ".")
-		} else {
-			r.Type = addr
-		}
-		m.resources = append(m.resources, r)
-	}
 	filtered := m.filteredResources()
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1
@@ -190,7 +156,7 @@ func (m TofuResourcesModel) SetResources(addresses []string) TofuResourcesModel 
 	return m
 }
 
-func (m TofuResourcesModel) SelectedResource() *TofuResource {
+func (m TofuResourcesModel) SelectedResource() *tofu.Resource {
 	filtered := m.filteredResources()
 	if len(filtered) == 0 || m.cursor >= len(filtered) {
 		return nil

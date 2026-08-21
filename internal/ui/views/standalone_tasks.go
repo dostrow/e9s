@@ -14,6 +14,8 @@ import (
 
 type StandaloneTasksModel struct {
 	tasks       []model.Task
+	stopped     bool
+	hasMore     bool
 	cursor      int
 	filter      string
 	filtering   bool
@@ -78,11 +80,13 @@ func (m StandaloneTasksModel) View() string {
 	filtered := m.filteredTasks()
 	var b strings.Builder
 
-	title := fmt.Sprintf("  Standalone Tasks (%d)", len(filtered))
+	title := fmt.Sprintf("  Standalone Tasks — %s (%d)", taskScopeLabel(m.stopped), len(filtered))
 	b.WriteString(theme.TitleStyle.Render(title))
 	if m.filter != "" {
 		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  filter: %q", m.filter)))
 	}
+	b.WriteString("\n")
+	b.WriteString(renderTaskScopeTabs(m.stopped, m.hasMore))
 	b.WriteString("\n")
 
 	if m.filtering {
@@ -96,6 +100,11 @@ func (m StandaloneTasksModel) View() string {
 		} else {
 			b.WriteString(theme.HelpStyle.Render("  No standalone tasks found"))
 		}
+		return b.String()
+	}
+
+	if m.stopped {
+		b.WriteString(renderStoppedTaskTable(filtered, m.cursor, m.visibleRows()))
 		return b.String()
 	}
 
@@ -142,7 +151,10 @@ func (m StandaloneTasksModel) filteredTasks() []model.Task {
 			strings.Contains(strings.ToLower(t.Status), lf) ||
 			strings.Contains(strings.ToLower(t.Group), lf) ||
 			strings.Contains(strings.ToLower(t.AvailabilityZone), lf) ||
-			strings.Contains(strings.ToLower(t.PrivateIP), lf)
+			strings.Contains(strings.ToLower(t.PrivateIP), lf) ||
+			strings.Contains(strings.ToLower(t.StopCode), lf) ||
+			strings.Contains(strings.ToLower(t.TaskDefinition), lf) ||
+			strings.Contains(strings.ToLower(t.StoppedReason), lf)
 		if match {
 			out = append(out, t)
 		}
@@ -154,7 +166,7 @@ func (m StandaloneTasksModel) SetTasks(tasks []model.Task) StandaloneTasksModel 
 	m.loaded = true
 	var standalone []model.Task
 	for _, t := range tasks {
-		if !strings.HasPrefix(t.Group, "service:") {
+		if m.stopped || !strings.HasPrefix(t.Group, "service:") {
 			standalone = append(standalone, t)
 		}
 	}
@@ -163,6 +175,26 @@ func (m StandaloneTasksModel) SetTasks(tasks []model.Task) StandaloneTasksModel 
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1
 	}
+	return m
+}
+
+func (m StandaloneTasksModel) AppendTasks(tasks []model.Task) StandaloneTasksModel {
+	m.tasks = appendUniqueTasks(m.tasks, tasks)
+	m.loaded = true
+	return m
+}
+
+func (m StandaloneTasksModel) SetScope(stopped bool) StandaloneTasksModel {
+	m.stopped = stopped
+	m.tasks = nil
+	m.cursor = 0
+	m.loaded = false
+	m.hasMore = false
+	return m
+}
+
+func (m StandaloneTasksModel) SetHasMore(hasMore bool) StandaloneTasksModel {
+	m.hasMore = hasMore
 	return m
 }
 
@@ -180,7 +212,7 @@ func (m StandaloneTasksModel) IsFiltering() bool {
 }
 
 func (m StandaloneTasksModel) visibleRows() int {
-	overhead := 9
+	overhead := 10
 	if m.filtering {
 		overhead++
 	}
