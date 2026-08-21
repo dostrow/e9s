@@ -572,6 +572,13 @@ text, the statement at the cursor, or the full tab. The TUI supports the latter
 two operations from its inline multiline editor. Both frontends can reconnect
 lost sessions and export the latest result to CSV.
 
+The GTK Browser Pane becomes a lazy PostgreSQL object explorer for the active
+query tab. Expand schemas and then tables, views, materialized views,
+sequences, or functions; selecting an object exposes Structure and Definition
+beside query Results. Object actions can preview 100 rows, generate a quoted
+`SELECT`, copy the qualified name, or refresh metadata. Expansion, selection,
+filter, and scroll position are retained independently for each connection tab.
+
 Connections support PostgreSQL password files, ephemeral password prompts,
 RDS IAM tokens, Secrets Manager, the RDS Data API, and optional SSM port
 forwarding. A per-connection `pgpass_file` is tried before the ordered global

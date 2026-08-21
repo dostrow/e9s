@@ -53,7 +53,8 @@ WebSocket, and custom-domain resources with their stages, routes,
 integrations, mappings, and metrics.
 
 SQL Workbench uses a UI-neutral PostgreSQL execution layer. GTK presents
-connection-scoped tabs and a vertically split editor/results workspace; the
+connection-scoped tabs, a lazy schema/object explorer, and a vertically split
+editor with Results, Structure, and Definition views; the
 TUI presents the same saved connections, restored tabs, inline editor, query
 execution, reconnection, and CSV export in terminal-native form. Authentication
 may come from ordered global and per-connection `.pgpass` files, an ephemeral

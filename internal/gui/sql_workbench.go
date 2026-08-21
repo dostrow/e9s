@@ -23,14 +23,58 @@ import (
 )
 
 type sqlWorkbenchTab struct {
-	state        sqlworkbench.TabState
-	editor       *sourceEditor
-	page         gtk.Widgetter
-	tabLabel     *gtk.Label
-	resultTable  *stringTable
-	resultScroll *gtk.ScrolledWindow
-	resultLabel  *gtk.Label
-	results      []model.SQLQueryResult
+	state               sqlworkbench.TabState
+	editor              *sourceEditor
+	page                gtk.Widgetter
+	tabLabel            *gtk.Label
+	resultTable         *stringTable
+	resultScroll        *gtk.ScrolledWindow
+	resultLabel         *gtk.Label
+	results             []model.SQLQueryResult
+	contextNotebook     *gtk.Notebook
+	structureBuffer     *gtk.TextBuffer
+	definitionBuffer    *gtk.TextBuffer
+	definitionEditor    *sourceEditor
+	objectToolbar       *gtk.Box
+	previewButton       *gtk.Button
+	generateButton      *gtk.Button
+	copyObjectButton    *gtk.Button
+	definitionButton    *gtk.Button
+	refreshObjectButton *gtk.Button
+	explorer            sqlObjectExplorer
+}
+
+type sqlObjectRowKind int
+
+const (
+	sqlObjectRowMessage sqlObjectRowKind = iota
+	sqlObjectRowSchema
+	sqlObjectRowCategory
+	sqlObjectRowObject
+)
+
+type sqlObjectBrowserRow struct {
+	key      string
+	kind     sqlObjectRowKind
+	schema   string
+	category sqlworkbench.ObjectKind
+	object   sqlworkbench.DatabaseObject
+	label    string
+}
+
+type sqlObjectExplorer struct {
+	schemas           []string
+	objects           map[string][]sqlworkbench.DatabaseObject
+	loaded            map[string]bool
+	loading           map[string]bool
+	expanded          map[string]bool
+	rows              []sqlObjectBrowserRow
+	selected          *sqlworkbench.DatabaseObject
+	loadingSchemas    bool
+	requestGeneration uint64
+	detailGeneration  uint64
+	restoreScroll     bool
+	detailPending     bool
 }
 
 func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
@@ -86,6 +130,9 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlNotebook.ConnectSwitchPage(func(_ gtk.Widgetter, _ uint) {
 		if tab := w.activeSQLTab(); tab != nil {
 			w.sqlState.ActiveTabID = tab.state.ID
+			if w.currentPage == pageSQLObjects {
+				w.showSQLObjectBrowser(tab)
+			}
 		}
 		w.updateSQLControls()
 		w.scheduleSQLStateSave()
@@ -190,9 +237,17 @@ func (w *mainWindow) openSQLProfileAt(position uint) {
 }
 
 func (w *mainWindow) openSelectedSQLProfile() {
-	profile, found := w.sqlProfileNamed(w.selectedSQLProfile)
+	var profile config.SQLConnection
+	var found bool
+	if w.currentPage == pageSQLObjects {
+		if tab := w.activeSQLTab(); tab != nil {
+			profile, found = w.sqlProfileNamed(tab.state.ProfileName)
+		}
+	} else {
+		profile, found = w.sqlProfileNamed(w.selectedSQLProfile)
+	}
 	if !found {
-		w.setStatus("Select a SQL connection in the Browser Pane first", true)
+		w.setStatus("Select a SQL connection or activate an existing query tab first", true)
 		return
 	}
 	w.openSQLTab(profile, sqlworkbench.TabState{})
@@ -247,17 +302,77 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	resultBox.Append(resultLabel)
 	resultBox.Append(resultScroll)
 
+	structureBuffer := gtk.NewTextBuffer(nil)
+	structureBuffer.SetText("Select a table, view, sequence, or function in the Browser Pane.")
+	structureView := gtk.NewTextViewWithBuffer(structureBuffer)
+	structureView.SetEditable(false)
+	structureView.SetCursorVisible(true)
+	structureView.SetMonospace(true)
+	structureView.SetWrapMode(gtk.WrapWordChar)
+	structureView.AddCSSClass("inspector")
+	structureScroll := gtk.NewScrolledWindow()
+	structureScroll.SetHExpand(true)
+	structureScroll.SetVExpand(true)
+	structureScroll.SetChild(structureView)
+
+	definitionEditor := newSourceEditor(sourceDocument{Path: "definition.sql", Language: "sql"})
+	definitionEditor.SetText("Select a database object to inspect its SQL definition.")
+	definitionEditor.ApplyPalette(w.currentSemanticPalette(w.window.StyleContext()))
+	if definitionView, ok := definitionEditor.Widget().(*gtk.TextView); ok {
+		definitionView.SetEditable(false)
+		definitionView.SetCursorVisible(true)
+	}
+	definitionScroll := gtk.NewScrolledWindow()
+	definitionScroll.SetHExpand(true)
+	definitionScroll.SetVExpand(true)
+	definitionScroll.SetChild(definitionEditor.Widget())
+
+	contextNotebook := gtk.NewNotebook()
+	contextNotebook.AddCSSClass("e9s-terminal-notebook")
+	contextNotebook.AddCSSClass("e9s-sql-context-notebook")
+	contextNotebook.SetHExpand(true)
+	contextNotebook.SetVExpand(true)
+	contextNotebook.AppendPage(resultBox, gtk.NewLabel("Results"))
+	contextNotebook.AppendPage(structureScroll, gtk.NewLabel("Structure"))
+	contextNotebook.AppendPage(definitionScroll, gtk.NewLabel("Definition"))
+
+	previewButton := gtk.NewButtonWithLabel("Preview 100 rows")
+	generateButton := gtk.NewButtonWithLabel("Generate SELECT")
+	copyObjectButton := gtk.NewButtonWithLabel("Copy qualified name")
+	definitionButton := gtk.NewButtonWithLabel("Open definition")
+	refreshObjectButton := gtk.NewButtonWithLabel("Refresh metadata")
+	objectToolbar := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	objectToolbar.AddCSSClass("log-toolbar")
+	objectToolbar.Append(previewButton)
+	objectToolbar.Append(generateButton)
+	objectToolbar.Append(copyObjectButton)
+	objectToolbar.Append(definitionButton)
+	objectToolbar.Append(refreshObjectButton)
+	objectToolbar.SetVisible(false)
+	lowerBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	lowerBox.Append(objectToolbar)
+	lowerBox.Append(contextNotebook)
+
 	split := gtk.NewPaned(gtk.OrientationVertical)
 	split.AddCSSClass("pane-split")
 	split.SetStartChild(editorScroll)
-	split.SetEndChild(resultBox)
+	split.SetEndChild(lowerBox)
 	split.SetPosition(320)
 	split.SetResizeStartChild(true)
 	split.SetResizeEndChild(true)
 	tab := &sqlWorkbenchTab{
 		state: state, editor: editor, page: split, tabLabel: gtk.NewLabel(""),
 		resultTable: resultTable, resultScroll: resultScroll, resultLabel: resultLabel,
+		contextNotebook: contextNotebook, structureBuffer: structureBuffer, definitionBuffer: definitionEditor.Buffer(), definitionEditor: definitionEditor,
+		objectToolbar: objectToolbar, previewButton: previewButton, generateButton: generateButton,
+		copyObjectButton: copyObjectButton, definitionButton: definitionButton, refreshObjectButton: refreshObjectButton,
+		explorer: newSQLObjectExplorer(state.Explorer),
 	}
+	previewButton.ConnectClicked(func() { w.previewSQLObject(tab) })
+	generateButton.ConnectClicked(func() { w.generateSQLSelect(tab) })
+	copyObjectButton.ConnectClicked(func() { w.copySQLObjectName(tab) })
+	definitionButton.ConnectClicked(func() { tab.contextNotebook.SetCurrentPage(2) })
+	refreshObjectButton.ConnectClicked(func() { w.refreshSQLObjectDetail(tab) })
 	tab.tabLabel.SetEllipsize(pango.EllipsizeMiddle)
 	tab.tabLabel.SetMaxWidthChars(28)
 	editor.ConnectChanged(func() {
@@ -273,6 +388,9 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	w.sqlState.ActiveTabID = tab.state.ID
 	w.scheduleSQLStateSave()
 	w.updateSQLControls()
+	if moduleForPage(w.currentPage) == moduleSQLWorkbench {
+		w.showSQLObjectBrowser(tab)
+	}
 	glib.IdleAdd(func() {
 		if view, ok := editor.Widget().(*gtk.TextView); ok {
 			view.GrabFocus()
@@ -328,6 +446,13 @@ func (w *mainWindow) closeSQLTab(tab *sqlWorkbenchTab) {
 		w.sqlState.ActiveTabID = active.state.ID
 	} else {
 		w.sqlState.ActiveTabID = ""
+	}
+	if w.currentPage == pageSQLObjects {
+		if active := w.activeSQLTab(); active != nil {
+			w.showSQLObjectBrowser(active)
+		} else {
+			w.openSQLWorkbenchModule()
+		}
 	}
 	w.scheduleSQLStateSave()
 	w.updateSQLControls()
@@ -504,6 +629,7 @@ func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
 		status += fmt.Sprintf(" • truncated at %d rows", sqlworkbench.DefaultMaxRows)
 	}
 	tab.resultLabel.SetLabel(status)
+	tab.contextNotebook.SetCurrentPage(0)
 }
 
 func (w *mainWindow) reconnectActiveSQLTab() {
@@ -604,6 +730,7 @@ func (w *mainWindow) updateSQLControls() {
 		}
 		w.sqlWritesUpdating = false
 	}
+	w.updateSQLObjectControls(tab)
 }
 
 func sqlTabHasExportableResult(tab *sqlWorkbenchTab) bool {

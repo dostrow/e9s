@@ -67,7 +67,7 @@ func moduleForPage(page string) string {
 		return moduleElastiCache
 	case pageAPIGateway:
 		return moduleAPIGateway
-	case pageSQLConnections:
+	case pageSQLConnections, pageSQLObjects:
 		return moduleSQLWorkbench
 	case pageS3Buckets, pageS3Objects:
 		return moduleS3

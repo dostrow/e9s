@@ -517,6 +517,9 @@ func (w *mainWindow) applySemanticPalette(palette semanticPalette) {
 	w.tofuSourceEditor.ApplyPalette(palette)
 	for _, tab := range w.sqlTabs {
 		tab.editor.ApplyPalette(palette)
+		if tab.definitionEditor != nil {
+			tab.definitionEditor.ApplyPalette(palette)
+		}
 	}
 	if w.terminal != nil {
 		w.terminal.SetPalette(palette)

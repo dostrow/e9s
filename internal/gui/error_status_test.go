@@ -44,6 +44,7 @@ func TestModuleForPage(t *testing.T) {
 		pageElastiCache:       moduleElastiCache,
 		pageAPIGateway:        moduleAPIGateway,
 		pageSQLConnections:    moduleSQLWorkbench,
+		pageSQLObjects:        moduleSQLWorkbench,
 		pageS3Buckets:         moduleS3,
 		pageS3Objects:         moduleS3,
 		pageDynamoTables:      moduleDynamoDB,

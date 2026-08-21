@@ -14,13 +14,23 @@ import (
 const stateVersion = 1
 
 type TabState struct {
-	ID          string    `json:"id"`
-	ProfileName string    `json:"profile_name"`
-	Title       string    `json:"title,omitempty"`
-	ManualTitle bool      `json:"manual_title,omitempty"`
-	Query       string    `json:"query,omitempty"`
-	AllowWrites bool      `json:"allow_writes,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string        `json:"id"`
+	ProfileName string        `json:"profile_name"`
+	Title       string        `json:"title,omitempty"`
+	ManualTitle bool          `json:"manual_title,omitempty"`
+	Query       string        `json:"query,omitempty"`
+	AllowWrites bool          `json:"allow_writes,omitempty"`
+	Explorer    ExplorerState `json:"explorer,omitempty"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+}
+
+// ExplorerState keeps navigation context with its connection tab. Catalog
+// contents are intentionally not persisted; they are refreshed from PostgreSQL.
+type ExplorerState struct {
+	Expanded []string `json:"expanded,omitempty"`
+	Selected string   `json:"selected,omitempty"`
+	Filter   string   `json:"filter,omitempty"`
+	Scroll   float64  `json:"scroll,omitempty"`
 }
 
 type WorkbenchState struct {

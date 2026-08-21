@@ -55,6 +55,7 @@ const (
 	pageElastiCache       = "elasticache"
 	pageAPIGateway        = "api-gateway"
 	pageSQLConnections    = "sql-connections"
+	pageSQLObjects        = "sql-objects"
 	pageS3Buckets         = "s3-buckets"
 	pageS3Objects         = "s3-objects"
 	pageDynamoTables      = "dynamodb-tables"
@@ -366,6 +367,9 @@ type mainWindow struct {
 	elastiCacheTable *stringTable
 	apiGatewayTable  *stringTable
 	sqlProfileTable  *stringTable
+	sqlObjectTable   *stringTable
+	sqlObjectScroll  *gtk.ScrolledWindow
+	sqlBrowserTab    *sqlWorkbenchTab
 
 	s3BucketTable            *stringTable
 	s3ObjectTable            *stringTable
@@ -930,6 +934,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "CONNECTION", field: 0, expand: true}, {title: "RESOURCE", field: 1, expand: true},
 		{title: "DATABASE", field: 2}, {title: "USER", field: 3}, {title: "AUTH", field: 4},
 	})
+	w.sqlObjectTable = newStringTable([]columnSpec{{title: "DATABASE OBJECT", field: 0, expand: true}})
+	w.sqlObjectTable.view.SetSingleClickActivate(true)
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
 	})
@@ -999,6 +1005,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.elastiCacheTable.view.ConnectActivate(w.openElastiCacheAt)
 	w.apiGatewayTable.view.ConnectActivate(w.openAPIGatewayAt)
 	w.sqlProfileTable.view.ConnectActivate(w.openSQLProfileAt)
+	w.sqlObjectTable.view.ConnectActivate(w.activateSQLObjectAt)
 	w.s3BucketTable.view.ConnectActivate(w.openS3BucketAt)
 	w.s3ObjectTable.view.ConnectActivate(w.openS3ObjectAt)
 	w.dynamoTable.view.ConnectActivate(w.openDynamoTableAt)
@@ -1039,6 +1046,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	w.elastiCacheTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectElastiCacheRow() })
 	w.apiGatewayTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectAPIGatewayRow() })
 	w.sqlProfileTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQLProfileRow() })
+	w.sqlObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectSQLObjectRow() })
 	w.s3BucketTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3BucketRow() })
 	w.s3ObjectTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectS3ObjectRow() })
 	w.dynamoTable.selection.ConnectSelectionChanged(func(_, _ uint) { w.selectDynamoTableRow() })
@@ -1812,6 +1820,17 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sqlProfileScroll.SetVExpand(true)
 	sqlProfileScroll.SetHExpand(true)
 	sqlProfileScroll.SetChild(w.sqlProfileTable.view)
+	sqlObjectScroll := gtk.NewScrolledWindow()
+	sqlObjectScroll.SetVExpand(true)
+	sqlObjectScroll.SetHExpand(true)
+	sqlObjectScroll.SetChild(w.sqlObjectTable.view)
+	w.sqlObjectScroll = sqlObjectScroll
+	sqlObjectScroll.VAdjustment().ConnectValueChanged(func() {
+		if w.currentPage == pageSQLObjects && w.sqlBrowserTab != nil {
+			w.sqlBrowserTab.state.Explorer.Scroll = sqlObjectScroll.VAdjustment().Value()
+			w.scheduleSQLStateSave()
+		}
+	})
 	s3BucketScroll := gtk.NewScrolledWindow()
 	s3BucketScroll.SetVExpand(true)
 	s3BucketScroll.SetHExpand(true)
@@ -1902,6 +1921,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.resourceStack.AddNamed(elastiCacheScroll, pageElastiCache)
 	w.resourceStack.AddNamed(apiGatewayScroll, pageAPIGateway)
 	w.resourceStack.AddNamed(sqlProfileScroll, pageSQLConnections)
+	w.resourceStack.AddNamed(sqlObjectScroll, pageSQLObjects)
 	w.resourceStack.AddNamed(s3BucketScroll, pageS3Buckets)
 	w.resourceStack.AddNamed(s3ObjectScroll, pageS3Objects)
 	w.resourceStack.AddNamed(dynamoTableScroll, pageDynamoTables)
@@ -3165,6 +3185,10 @@ func (w *mainWindow) applyFilter() {
 		w.applySQLProfileFilter()
 		return
 	}
+	if w.currentPage == pageSQLObjects {
+		w.applySQLObjectFilter()
+		return
+	}
 	if w.currentPage == pageLambda {
 		w.applyLambdaFilter()
 		return
@@ -3333,6 +3357,10 @@ func (w *mainWindow) navigateBrowserBack() {
 	}
 	if w.currentPage == pageTofuPlan {
 		w.restoreTofuResourcesFromPlan()
+		return
+	}
+	if w.currentPage == pageSQLObjects {
+		w.openSQLWorkbenchModule()
 		return
 	}
 	if w.currentPage == pageDynamoItems {
@@ -3643,6 +3671,10 @@ func (w *mainWindow) refreshCurrent(foreground bool) {
 	}
 	if w.currentPage == pageSQLConnections {
 		w.refreshSQLProfiles(foreground)
+		return
+	}
+	if w.currentPage == pageSQLObjects {
+		w.refreshSQLObjectBrowser(foreground)
 		return
 	}
 	if w.currentPage == pageS3Buckets {
@@ -4035,7 +4067,7 @@ func (w *mainWindow) updateActionSensitivity() {
 			w.apiGatewayDomainsNavButton.SetActive(w.currentPage == pageAPIGateway && w.apiGatewayKind == model.APIGatewayDomain)
 		}
 		if w.sqlConnectionsNavButton != nil {
-			w.sqlConnectionsNavButton.SetActive(w.currentPage == pageSQLConnections)
+			w.sqlConnectionsNavButton.SetActive(w.currentPage == pageSQLConnections || w.currentPage == pageSQLObjects)
 		}
 		if w.s3BucketsNavButton != nil {
 			w.s3BucketsNavButton.SetActive((w.currentPage == pageS3Buckets || w.currentPage == pageS3Objects) && w.activeSavedS3Search == "")
