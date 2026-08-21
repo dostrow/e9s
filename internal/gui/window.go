@@ -2200,6 +2200,22 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 }
 
 func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
+	mouse := gtk.NewEventControllerLegacy()
+	mouse.SetPropagationPhase(gtk.PhaseCapture)
+	mouse.ConnectEvent(func(event gdk.Eventer) bool {
+		base := gdk.BaseEvent(event)
+		if base.EventType() != gdk.MotionNotify {
+			return false
+		}
+		terminal := w.focusedVTETerminal()
+		if terminal == nil || !terminal.SuppressSyntheticMouseMotion() {
+			return false
+		}
+		buttons := gdk.Button1Mask | gdk.Button2Mask | gdk.Button3Mask
+		return base.ModifierState()&buttons == 0
+	})
+	w.window.AddController(mouse)
+
 	keys := gtk.NewEventControllerKey()
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
