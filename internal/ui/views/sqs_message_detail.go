@@ -41,6 +41,8 @@ func buildSQSMessageLines(msg *model.SQSMessage) []string {
 
 	lines = append(lines, fmt.Sprintf("%s: %s", theme.HeaderStyle.Render("Message ID"), msg.MessageID))
 	lines = append(lines, fmt.Sprintf("%s: %s", theme.HeaderStyle.Render("MD5"), msg.MD5))
+	lines = append(lines, fmt.Sprintf("%s: %s", theme.HeaderStyle.Render("Captured"), formatSQSCapturedAtTUI(msg.CapturedAt)))
+	lines = append(lines, fmt.Sprintf("%s: %s", theme.HeaderStyle.Render("Sent"), formatSQSSentAtTUI(msg.Attributes["SentTimestamp"])))
 
 	// System attributes
 	if len(msg.Attributes) > 0 {

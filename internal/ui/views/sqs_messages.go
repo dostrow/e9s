@@ -3,7 +3,9 @@ package views
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,6 +62,8 @@ func (m SQSMessagesModel) View() string {
 
 	tbl := components.NewTable([]components.Column{
 		{Title: "MESSAGE ID"},
+		{Title: "RECEIVES"},
+		{Title: "CAPTURED"},
 		{Title: "BODY PREVIEW"},
 	})
 
@@ -84,6 +88,8 @@ func (m SQSMessagesModel) View() string {
 		}
 		tbl.AddRow(
 			components.Plain(id),
+			components.Plain(valueOrDashSQS(msg.Attributes["ApproximateReceiveCount"])),
+			components.Plain(formatSQSCapturedAtTUI(msg.CapturedAt)),
 			components.Plain(body),
 		)
 	}
@@ -93,7 +99,32 @@ func (m SQSMessagesModel) View() string {
 }
 
 func (m SQSMessagesModel) SetMessages(messages []model.SQSMessage) SQSMessagesModel {
-	m.messages = append(m.messages, messages...)
+	positions := make(map[string]int, len(m.messages))
+	for i, message := range m.messages {
+		positions[message.MessageID] = i
+	}
+	for _, message := range messages {
+		if position, found := positions[message.MessageID]; found {
+			m.messages[position] = message
+			continue
+		}
+		positions[message.MessageID] = len(m.messages)
+		m.messages = append(m.messages, message)
+	}
+	return m
+}
+
+func (m SQSMessagesModel) RemoveMessage(messageID string) SQSMessagesModel {
+	remaining := make([]model.SQSMessage, 0, len(m.messages))
+	for _, message := range m.messages {
+		if message.MessageID != messageID {
+			remaining = append(remaining, message)
+		}
+	}
+	m.messages = remaining
+	if m.cursor >= len(m.messages) {
+		m.cursor = max(0, len(m.messages)-1)
+	}
 	return m
 }
 
@@ -127,4 +158,26 @@ func (m SQSMessagesModel) SetSize(w, h int) SQSMessagesModel {
 	m.width = w
 	m.height = h
 	return m
+}
+
+func valueOrDashSQS(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "—"
+	}
+	return value
+}
+
+func formatSQSCapturedAtTUI(value time.Time) string {
+	if value.IsZero() {
+		return "—"
+	}
+	return value.Local().Format("15:04:05")
+}
+
+func formatSQSSentAtTUI(value string) string {
+	millis, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || millis <= 0 {
+		return "—"
+	}
+	return time.UnixMilli(millis).Local().Format("2006-01-02 15:04:05")
 }

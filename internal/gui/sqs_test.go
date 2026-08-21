@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
@@ -114,5 +115,18 @@ func TestWithoutSQSMessageRemovesOnlySelectedMessage(t *testing.T) {
 	got := withoutSQSMessage(messages, "two")
 	if !reflect.DeepEqual(got, []model.SQSMessage{{MessageID: "one"}, {MessageID: "three"}}) {
 		t.Fatalf("withoutSQSMessage() = %#v", got)
+	}
+}
+
+func TestSQSMessageTimesFormatForBrowser(t *testing.T) {
+	want := time.Date(2026, 8, 21, 14, 30, 0, 0, time.Local)
+	if got := formatSQSCapturedAt(want); got != formatTime(want) {
+		t.Fatalf("formatSQSCapturedAt() = %q", got)
+	}
+	if got := formatSQSMillis("not-a-timestamp"); got != "—" {
+		t.Fatalf("formatSQSMillis(invalid) = %q", got)
+	}
+	if got := formatSQSMillis("1787322600000"); got == "—" {
+		t.Fatal("formatSQSMillis(valid) returned a placeholder")
 	}
 }

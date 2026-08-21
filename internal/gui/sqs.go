@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"html"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -261,9 +263,30 @@ func (w *mainWindow) applySQSMessageFilter() {
 	w.filteredSQSMessages = filterSQSMessages(w.allSQSMessages, w.search.Text())
 	rows := make([]string, 0, len(w.filteredSQSMessages))
 	for _, message := range w.filteredSQSMessages {
-		rows = append(rows, message.MessageID+"\t"+sqsMessagePreview(message.Body))
+		rows = append(rows, strings.Join([]string{
+			message.MessageID,
+			valueOrDash(message.Attributes["ApproximateReceiveCount"]),
+			formatSQSMillis(message.Attributes["SentTimestamp"]),
+			formatSQSCapturedAt(message.CapturedAt),
+			sqsMessagePreview(message.Body),
+		}, "\t"))
 	}
 	w.sqsMessageTable.replace(rows)
+}
+
+func formatSQSMillis(value string) string {
+	millis, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || millis <= 0 {
+		return "—"
+	}
+	return formatTime(time.UnixMilli(millis))
+}
+
+func formatSQSCapturedAt(capturedAt time.Time) string {
+	if capturedAt.IsZero() {
+		return "—"
+	}
+	return formatTime(capturedAt)
 }
 
 func filterSQSMessages(messages []model.SQSMessage, query string) []model.SQSMessage {
@@ -322,7 +345,44 @@ func (w *mainWindow) openSQSMessageAt(position uint) {
 	}
 }
 
-func (w *mainWindow) pollSQSMessages() {
+func (w *mainWindow) promptPollSQSMessages() {
+	if w.currentPage != pageSQSMessages || w.options.SQS == nil || w.sqsActionPending || w.sqsMessageQueue.URL == "" {
+		return
+	}
+	maxMessages, waitSeconds := w.sqsPollMaxMessages, w.sqsPollWaitSeconds
+	if maxMessages <= 0 {
+		maxMessages, waitSeconds = 10, 10
+	}
+	dialog := gtk.NewDialogWithFlags("Poll SQS messages", &w.window.Window, gtk.DialogModal)
+	dialog.SetDestroyWithParent(true)
+	content := dialog.ContentArea()
+	content.SetSpacing(8)
+	content.SetMarginTop(16)
+	content.SetMarginBottom(16)
+	content.SetMarginStart(16)
+	content.SetMarginEnd(16)
+	messageCount := gtk.NewSpinButtonWithRange(1, 10, 1)
+	messageCount.SetValue(float64(maxMessages))
+	waitTime := gtk.NewSpinButtonWithRange(0, 20, 1)
+	waitTime.SetValue(float64(waitSeconds))
+	content.Append(settingsRow("Maximum messages", messageCount))
+	content.Append(settingsRow("Long-poll wait (seconds)", waitTime))
+	content.Append(settingsNote("Received messages are captured in the local buffer and hidden from other consumers until acknowledged, released, or their queue visibility timeout expires."))
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Poll", int(gtk.ResponseOK))
+	dialog.SetDefaultResponse(int(gtk.ResponseOK))
+	dialog.ConnectResponse(func(response int) {
+		maxMessages, waitSeconds := messageCount.ValueAsInt(), waitTime.ValueAsInt()
+		dialog.Destroy()
+		if response == int(gtk.ResponseOK) {
+			w.sqsPollMaxMessages, w.sqsPollWaitSeconds = maxMessages, waitSeconds
+			w.pollSQSMessages(maxMessages, waitSeconds)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) pollSQSMessages(maxMessages, waitSeconds int) {
 	if w.currentPage != pageSQSMessages || w.options.SQS == nil || w.sqsActionPending || w.sqsMessageQueue.URL == "" {
 		return
 	}
@@ -342,7 +402,7 @@ func (w *mainWindow) pollSQSMessages() {
 		w.setStatus("SQS poll cancelled", false)
 	})
 	go func() {
-		messages, err := w.options.SQS.Messages(ctx, model.SQSReceiveRequest{QueueURL: queue.URL, MaxMessages: 10, WaitSeconds: 10})
+		messages, err := w.options.SQS.Messages(ctx, model.SQSReceiveRequest{QueueURL: queue.URL, MaxMessages: maxMessages, WaitSeconds: waitSeconds})
 		w.finishSQSAction(ctx, generation, err, fmt.Sprintf("Received %d message(s) from %s", len(messages), queue.Name), func() {
 			w.allSQSMessages = mergeSQSMessages(w.allSQSMessages, messages)
 			w.applySQSMessageFilter()
@@ -598,12 +658,12 @@ func (w *mainWindow) confirmDeleteSQSMessage() {
 		return
 	}
 	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
-	dialog.SetTitle("Delete SQS message")
-	dialog.SetMarkup("Permanently delete message <b>" + html.EscapeString(shortSQSMessageID(message.MessageID)) + "</b> from <b>" + html.EscapeString(queue.Name) + "</b>?")
+	dialog.SetTitle("Acknowledge SQS message")
+	dialog.SetMarkup("Acknowledge and permanently delete message <b>" + html.EscapeString(shortSQSMessageID(message.MessageID)) + "</b> from <b>" + html.EscapeString(queue.Name) + "</b>?")
 	dialog.SetObjectProperty("secondary-text", sqsMessagePreview(message.Body))
 	dialog.SetDestroyWithParent(true)
 	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
-	dialog.AddButton("Delete", int(gtk.ResponseOK))
+	dialog.AddButton("Acknowledge / delete", int(gtk.ResponseOK))
 	dialog.ConnectResponse(func(response int) {
 		dialog.Destroy()
 		if response == int(gtk.ResponseOK) {
@@ -619,10 +679,31 @@ func (w *mainWindow) runDeleteSQSMessage(queue model.SQSQueue, message model.SQS
 	}
 	w.sqsActionPending = true
 	w.updateActionSensitivity()
-	ctx, generation := w.startRequest("Deleting SQS message " + shortSQSMessageID(message.MessageID) + "…")
+	ctx, generation := w.startRequest("Acknowledging SQS message " + shortSQSMessageID(message.MessageID) + "…")
 	go func() {
 		err := w.options.SQS.DeleteMessage(ctx, queue.URL, message.ReceiptHandle)
-		w.finishSQSAction(ctx, generation, err, "Deleted SQS message "+shortSQSMessageID(message.MessageID), func() {
+		w.finishSQSAction(ctx, generation, err, "Acknowledged and deleted SQS message "+shortSQSMessageID(message.MessageID), func() {
+			w.allSQSMessages = withoutSQSMessage(w.allSQSMessages, message.MessageID)
+			w.selectedSQSMessage = ""
+			w.applySQSMessageFilter()
+			w.setBreadcrumb(sqsMessageBreadcrumb(w.activeSavedSQSQueue, queue.Name, ""))
+			w.setDetail(sqsMessageListSummary(queue, len(w.allSQSMessages)), detailSQSQueue)
+		})
+	}()
+}
+
+func (w *mainWindow) releaseSQSMessage() {
+	queue, _, queueFound := w.currentSQSQueueForAction()
+	message, messageFound := w.selectedSQSMessageValue()
+	if !queueFound || !messageFound || w.options.SQS == nil || w.sqsActionPending {
+		return
+	}
+	w.sqsActionPending = true
+	w.updateActionSensitivity()
+	ctx, generation := w.startRequest("Releasing SQS message " + shortSQSMessageID(message.MessageID) + "…")
+	go func() {
+		err := w.options.SQS.ReleaseMessage(ctx, queue.URL, message.ReceiptHandle)
+		w.finishSQSAction(ctx, generation, err, "Released SQS message "+shortSQSMessageID(message.MessageID), func() {
 			w.allSQSMessages = withoutSQSMessage(w.allSQSMessages, message.MessageID)
 			w.selectedSQSMessage = ""
 			w.applySQSMessageFilter()
@@ -655,7 +736,7 @@ func sqsMessageBreadcrumb(savedName, queueName, messageID string) string {
 }
 
 func sqsMessageListSummary(queue model.SQSQueue, count int) string {
-	return fmt.Sprintf("SQS MESSAGES\n\nQueue            %s\nBuffered         %d\n\nPolling receives up to 10 messages and changes their visibility. No messages are received automatically.", queue.Name, count)
+	return fmt.Sprintf("SQS MESSAGES\n\nQueue            %s\nCaptured         %d\n\nPolling receives messages and changes their visibility. Acknowledge/delete removes a message permanently; Release makes it immediately available again. No messages are received automatically.", queue.Name, count)
 }
 
 func formatSQSMessage(queue model.SQSQueue, message model.SQSMessage) string {
@@ -666,7 +747,7 @@ func formatSQSMessage(queue model.SQSQueue, message model.SQSMessage) string {
 			body = string(formatted)
 		}
 	}
-	result := fmt.Sprintf("SQS MESSAGE\n\nQueue       %s\nMessage ID  %s\nMD5         %s\n\nBODY\n%s", queue.Name, message.MessageID, valueOrDash(message.MD5), body)
+	result := fmt.Sprintf("SQS MESSAGE\n\nQueue       %s\nMessage ID  %s\nMD5         %s\nCaptured    %s\n\nBODY\n%s", queue.Name, message.MessageID, valueOrDash(message.MD5), formatSQSCapturedAt(message.CapturedAt), body)
 	if len(message.Attributes) > 0 {
 		result += "\n\nSYSTEM ATTRIBUTES"
 		for _, name := range sortedSQSAttributeNames(message.Attributes) {

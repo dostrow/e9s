@@ -24,6 +24,7 @@ type fakeSQSAPI struct {
 	metrics     *model.MetricSnapshot
 	metricName  string
 	metricRange time.Duration
+	visibility  int
 }
 
 func (f *fakeSQSAPI) ListSQSQueues(context.Context, string) ([]model.SQSQueue, error) {
@@ -37,6 +38,10 @@ func (f *fakeSQSAPI) ReceiveSQSMessages(_ context.Context, _ string, maxMessages
 	return append([]model.SQSMessage(nil), f.messages...), f.err
 }
 func (f *fakeSQSAPI) DeleteSQSMessage(context.Context, string, string) error { return f.err }
+func (f *fakeSQSAPI) ChangeSQSMessageVisibility(_ context.Context, _, _ string, timeout int) error {
+	f.visibility = timeout
+	return f.err
+}
 func (f *fakeSQSAPI) SendSQSMessage(_ context.Context, _ string, template model.SQSSendTemplate) (string, error) {
 	f.sent = template
 	return f.messageID, f.err
@@ -145,5 +150,22 @@ func TestSQSMetricsValidatesInput(t *testing.T) {
 	}
 	if _, err := sqs.Metrics(context.Background(), model.SQSQueue{Name: "jobs"}, 0); err == nil {
 		t.Fatal("Metrics() accepted a non-positive time range")
+	}
+}
+
+func TestSQSReleaseMakesMessageImmediatelyVisible(t *testing.T) {
+	api := &fakeSQSAPI{}
+	if err := NewSQS(api).ReleaseMessage(context.Background(), "https://example.test/jobs", "receipt"); err != nil {
+		t.Fatal(err)
+	}
+	if api.visibility != 0 {
+		t.Fatalf("visibility timeout = %d, want 0", api.visibility)
+	}
+	if err := NewSQS(api).ReleaseMessage(context.Background(), "", "receipt"); err == nil {
+		t.Fatal("ReleaseMessage() accepted an empty queue URL")
+	}
+	api.err = errors.New("expired receipt")
+	if err := NewSQS(api).ReleaseMessage(context.Background(), "https://example.test/jobs", "receipt"); err == nil || !strings.Contains(err.Error(), "release SQS message to \"jobs\"") {
+		t.Fatalf("ReleaseMessage() error = %v", err)
 	}
 }

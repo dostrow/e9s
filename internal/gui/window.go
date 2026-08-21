@@ -311,6 +311,8 @@ type mainWindow struct {
 	sqsMessagesParentURL       string
 	sqsMessagesParentSavedName string
 	sqsActionPending           bool
+	sqsPollMaxMessages         int
+	sqsPollWaitSeconds         int
 	allRoute53Zones            []model.Route53Zone
 	filteredRoute53Zones       []model.Route53Zone
 	selectedRoute53Zone        string
@@ -561,6 +563,7 @@ type mainWindow struct {
 	sqsDeadLetterButton         *gtk.Button
 	sqsSendButton               *gtk.Button
 	sqsCloneButton              *gtk.Button
+	sqsReleaseButton            *gtk.Button
 	sqsDeleteButton             *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
@@ -951,7 +954,8 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "QUEUE", field: 0, expand: true}, {title: "URL", field: 1, expand: true},
 	})
 	w.sqsMessageTable = newStringTable([]columnSpec{
-		{title: "MESSAGE ID", field: 0}, {title: "BODY PREVIEW", field: 1, expand: true},
+		{title: "MESSAGE ID", field: 0}, {title: "RECEIVES", field: 1}, {title: "SENT", field: 2},
+		{title: "CAPTURED", field: 3}, {title: "BODY PREVIEW", field: 4, expand: true},
 	})
 	w.route53ZoneTable = newStringTable([]columnSpec{
 		{title: "ZONE NAME", field: 0, expand: true}, {title: "TYPE", field: 1},
@@ -1257,9 +1261,10 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsSaveQueueButton.ConnectClicked(w.promptSaveSQSQueue)
 	w.sqsManageSavedButton = gtk.NewButtonWithLabel("Manage saved…")
 	w.sqsManageSavedButton.ConnectClicked(w.promptManageSQSQueues)
-	w.sqsPollButton = gtk.NewButtonWithLabel("Poll messages")
-	w.sqsPollButton.ConnectClicked(w.pollSQSMessages)
+	w.sqsPollButton = gtk.NewButtonWithLabel("Poll messages…")
+	w.sqsPollButton.ConnectClicked(w.promptPollSQSMessages)
 	w.sqsClearButton = gtk.NewButtonWithLabel("Clear buffer")
+	w.sqsClearButton.SetTooltipText("Forget captured messages locally; they remain invisible until their current visibility timeout expires")
 	w.sqsClearButton.ConnectClicked(w.clearSQSMessageBuffer)
 	w.sqsDeadLetterButton = gtk.NewButtonWithLabel("Open DLQ")
 	w.sqsDeadLetterButton.ConnectClicked(w.openSQSDeadLetterQueue)
@@ -1267,7 +1272,11 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsSendButton.ConnectClicked(w.promptSQSSendMessage)
 	w.sqsCloneButton = gtk.NewButtonWithLabel("Clone & send…")
 	w.sqsCloneButton.ConnectClicked(w.promptSQSCloneMessage)
-	w.sqsDeleteButton = gtk.NewButtonWithLabel("Delete message…")
+	w.sqsReleaseButton = gtk.NewButtonWithLabel("Release message")
+	w.sqsReleaseButton.SetTooltipText("Make the captured message immediately visible to another consumer")
+	w.sqsReleaseButton.ConnectClicked(w.releaseSQSMessage)
+	w.sqsDeleteButton = gtk.NewButtonWithLabel("Acknowledge / delete…")
+	w.sqsDeleteButton.SetTooltipText("Acknowledging an SQS message permanently deletes it")
 	w.sqsDeleteButton.AddCSSClass("destructive-action")
 	w.sqsDeleteButton.ConnectClicked(w.confirmDeleteSQSMessage)
 	w.route53TestDNSButton = gtk.NewButtonWithLabel("Test DNS")
@@ -1407,6 +1416,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.sqsDeadLetterButton)
 	header.Append(w.sqsSendButton)
 	header.Append(w.sqsCloneButton)
+	header.Append(w.sqsReleaseButton)
 	header.Append(w.sqsDeleteButton)
 	header.Append(w.route53TestDNSButton)
 	header.Append(w.route53CreateButton)
@@ -4350,6 +4360,8 @@ func (w *mainWindow) updateActionSensitivity() {
 	_, sqsMessageSelected := w.selectedSQSMessageValue()
 	w.sqsCloneButton.SetVisible(w.currentPage == pageSQSMessages && sqsMessageSelected)
 	w.sqsCloneButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
+	w.sqsReleaseButton.SetVisible(w.currentPage == pageSQSMessages && sqsMessageSelected)
+	w.sqsReleaseButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
 	w.sqsDeleteButton.SetVisible(w.currentPage == pageSQSMessages && sqsMessageSelected)
 	w.sqsDeleteButton.SetSensitive(w.currentPage == pageSQSMessages && sqsMessageSelected && sqsReady)
 	_, route53RecordSelected := w.selectedRoute53RecordValue()

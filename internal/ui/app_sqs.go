@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -125,16 +127,49 @@ func (a App) openSQSMessages() (App, tea.Cmd) {
 }
 
 func (a App) pollSQSMessages() (App, tea.Cmd) {
+	maxMessages, waitSeconds := a.sqsPollMaxMessages, a.sqsPollWaitSeconds
+	if maxMessages <= 0 {
+		maxMessages, waitSeconds = 10, 10
+	}
+	a.input = NewInput(InputSQSPollOptions,
+		"Poll options: maximum messages (1-10), long-poll seconds (0-20)",
+		fmt.Sprintf("%d,%d", maxMessages, waitSeconds))
+	return a, nil
+}
+
+func (a App) pollSQSMessagesWithOptions(value string) (App, tea.Cmd) {
+	maxMessages, waitSeconds, err := parseSQSPollOptions(value)
+	if err != nil {
+		a.err = err
+		return a, nil
+	}
+	a.sqsPollMaxMessages, a.sqsPollWaitSeconds = maxMessages, waitSeconds
 	queueURL := a.sqsMessagesView.QueueURL()
 	a.loading = true
 	sqsService, ctx := a.sqs, a.ctx
 	return a, func() tea.Msg {
-		messages, err := sqsService.Messages(ctx, model.SQSReceiveRequest{QueueURL: queueURL, MaxMessages: 10, WaitSeconds: 5})
+		messages, err := sqsService.Messages(ctx, model.SQSReceiveRequest{QueueURL: queueURL, MaxMessages: maxMessages, WaitSeconds: waitSeconds})
 		if err != nil {
 			return errMsg{err}
 		}
 		return sqsMessagesReceivedMsg{messages}
 	}
+}
+
+func parseSQSPollOptions(value string) (int, int, error) {
+	parts := strings.Split(value, ",")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("poll options must be maximum-messages,wait-seconds")
+	}
+	maxMessages, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || maxMessages < 1 || maxMessages > 10 {
+		return 0, 0, fmt.Errorf("maximum messages must be between 1 and 10")
+	}
+	waitSeconds, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || waitSeconds < 0 || waitSeconds > 20 {
+		return 0, 0, fmt.Errorf("long-poll wait must be between 0 and 20 seconds")
+	}
+	return maxMessages, waitSeconds, nil
 }
 
 func (a App) deleteSQSMessage() (App, tea.Cmd) {
@@ -147,7 +182,7 @@ func (a App) deleteSQSMessage() (App, tea.Cmd) {
 		id = id[:12]
 	}
 	a.confirm = NewConfirm(ConfirmSQSDelete,
-		fmt.Sprintf("Delete message %s from queue?", id))
+		fmt.Sprintf("Acknowledge and permanently delete message %s?", id))
 	return a, nil
 }
 
@@ -159,13 +194,25 @@ func (a App) doDeleteSQSMessage() tea.Cmd {
 	sqsService, ctx := a.sqs, a.ctx
 	queueURL := a.sqsMessagesView.QueueURL()
 	receiptHandle := msg.ReceiptHandle
+	messageID := msg.MessageID
 
 	return func() tea.Msg {
 		err := sqsService.DeleteMessage(ctx, queueURL, receiptHandle)
-		if err != nil {
-			return errMsg{err}
-		}
-		return actionSuccessMsg{"Message deleted"}
+		return sqsMessageActionMsg{messageID: messageID, message: "Message acknowledged and deleted", err: err}
+	}
+}
+
+func (a App) releaseSQSMessage() (App, tea.Cmd) {
+	msg := a.sqsMessagesView.SelectedMessage()
+	if msg == nil {
+		return a, nil
+	}
+	a.loading = true
+	sqsService, ctx := a.sqs, a.ctx
+	queueURL, receiptHandle, messageID := a.sqsMessagesView.QueueURL(), msg.ReceiptHandle, msg.MessageID
+	return a, func() tea.Msg {
+		err := sqsService.ReleaseMessage(ctx, queueURL, receiptHandle)
+		return sqsMessageActionMsg{messageID: messageID, message: "Message released to the queue", err: err}
 	}
 }
 

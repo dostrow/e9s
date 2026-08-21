@@ -41,6 +41,7 @@ const (
 	InputSMCloneName
 	InputSQSSearch
 	InputSQSSaveName
+	InputSQSPollOptions
 	InputLogSearchFrom
 	InputLogSearchTo
 	InputLogSearchGroupsSave

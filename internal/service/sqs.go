@@ -17,6 +17,7 @@ type SQSAPI interface {
 	ListSQSQueues(context.Context, string) ([]model.SQSQueue, error)
 	GetQueueStats(context.Context, string) (*model.SQSQueueStats, error)
 	ReceiveSQSMessages(context.Context, string, int, int) ([]model.SQSMessage, error)
+	ChangeSQSMessageVisibility(context.Context, string, string, int) error
 	DeleteSQSMessage(context.Context, string, string) error
 	SendSQSMessage(context.Context, string, model.SQSSendTemplate) (string, error)
 	GetQueueURL(context.Context, string) (string, error)
@@ -112,6 +113,20 @@ func (s *SQS) DeleteMessage(ctx context.Context, queueURL, receiptHandle string)
 	}
 	if err := s.api.DeleteSQSMessage(ctx, queueURL, receiptHandle); err != nil {
 		return fmt.Errorf("delete SQS message from %q: %w", QueueNameFromURL(queueURL), err)
+	}
+	return nil
+}
+
+// ReleaseMessage immediately returns a captured message to the queue by
+// resetting its visibility timeout. The receipt handle remains valid only for
+// the receive operation that produced it.
+func (s *SQS) ReleaseMessage(ctx context.Context, queueURL, receiptHandle string) error {
+	queueURL, receiptHandle = strings.TrimSpace(queueURL), strings.TrimSpace(receiptHandle)
+	if queueURL == "" || receiptHandle == "" {
+		return fmt.Errorf("release SQS message: queue URL and receipt handle are required")
+	}
+	if err := s.api.ChangeSQSMessageVisibility(ctx, queueURL, receiptHandle, 0); err != nil {
+		return fmt.Errorf("release SQS message to %q: %w", QueueNameFromURL(queueURL), err)
 	}
 	return nil
 }

@@ -150,6 +150,7 @@ func (c *Client) ReceiveSQSMessages(ctx context.Context, queueURL string, maxMes
 			ReceiptHandle:  derefStrAws(m.ReceiptHandle),
 			Body:           derefStrAws(m.Body),
 			MD5:            derefStrAws(m.MD5OfBody),
+			CapturedAt:     time.Now(),
 			Attributes:     m.Attributes,
 			UserAttributes: make(map[string]model.SQSMessageAttribute, len(m.MessageAttributes)),
 		}
@@ -162,6 +163,18 @@ func (c *Client) ReceiveSQSMessages(ctx context.Context, queueURL string, maxMes
 		messages = append(messages, msg)
 	}
 	return messages, nil
+}
+
+// ChangeSQSMessageVisibility changes the visibility deadline for a received
+// message. A zero timeout releases the message for another consumer now.
+func (c *Client) ChangeSQSMessageVisibility(ctx context.Context, queueURL, receiptHandle string, timeoutSeconds int) error {
+	timeout := int32(timeoutSeconds)
+	_, err := c.SQS.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
+		QueueUrl:          &queueURL,
+		ReceiptHandle:     &receiptHandle,
+		VisibilityTimeout: timeout,
+	})
+	return err
 }
 
 // DeleteSQSMessage deletes a message from a queue (acknowledges it).

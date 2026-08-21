@@ -77,6 +77,7 @@ type KeyBindings struct {
 	PollMessages string
 	SendMessage  string
 	CloneSend    string
+	ReleaseMsg   string
 	DeleteMsg    string
 	NavigateDLQ  string
 
@@ -193,6 +194,7 @@ func NewKeyBindings() KeyBindings {
 		PollMessages: "p",
 		SendMessage:  "s",
 		CloneSend:    "c",
+		ReleaseMsg:   "r",
 		DeleteMsg:    "x",
 		NavigateDLQ:  "n",
 
@@ -370,6 +372,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 			kb.SendMessage = key
 		case "clone_send":
 			kb.CloneSend = key
+		case "release_msg":
+			kb.ReleaseMsg = key
 		case "delete_msg":
 			kb.DeleteMsg = key
 		case "navigate_dlq":
