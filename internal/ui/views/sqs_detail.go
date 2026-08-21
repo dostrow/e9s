@@ -10,11 +10,13 @@ import (
 )
 
 type SQSDetailModel struct {
-	queueName string
-	queueURL  string
-	stats     *model.SQSQueueStats
-	width     int
-	height    int
+	queueName      string
+	queueURL       string
+	stats          *model.SQSQueueStats
+	metrics        *model.MetricSnapshot
+	metricsWarning string
+	width          int
+	height         int
 }
 
 func NewSQSDetail(queueName, queueURL string) SQSDetailModel {
@@ -57,6 +59,24 @@ func (m SQSDetailModel) View() string {
 		fmt.Fprintf(&b, "  %-25s %d\n", "Max Receive Count:", s.MaxReceiveCount)
 	}
 
+	if m.metrics != nil {
+		wroteHeading := false
+		for _, series := range m.metrics.Series {
+			if len(series.Points) == 0 {
+				continue
+			}
+			if !wroteHeading {
+				b.WriteString("\n  " + theme.TitleStyle.Render("LATEST CLOUDWATCH METRICS (15 MINUTES)") + "\n")
+				wroteHeading = true
+			}
+			point := series.Points[len(series.Points)-1]
+			fmt.Fprintf(&b, "  %-25s %.2f %s\n", series.Label+":", point.Value, series.Unit)
+		}
+	}
+	if m.metricsWarning != "" {
+		fmt.Fprintf(&b, "\n  %s\n", theme.HelpStyle.Render("CloudWatch metrics unavailable: "+m.metricsWarning))
+	}
+
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "  %-25s %s\n", "URL:", theme.HelpStyle.Render(m.queueURL))
 
@@ -65,6 +85,12 @@ func (m SQSDetailModel) View() string {
 
 func (m SQSDetailModel) SetStats(stats *model.SQSQueueStats) SQSDetailModel {
 	m.stats = stats
+	return m
+}
+
+func (m SQSDetailModel) SetMetrics(metrics *model.MetricSnapshot, warning string) SQSDetailModel {
+	m.metrics = metrics
+	m.metricsWarning = warning
 	return m
 }
 
