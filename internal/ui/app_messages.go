@@ -212,7 +212,11 @@ type dynamoWriteDoneMsg struct {
 // --- SQS Messages ---
 
 type sqsQueuesLoadedMsg struct{ queues []model.SQSQueue }
-type sqsStatsLoadedMsg struct{ stats *model.SQSQueueStats }
+type sqsStatsLoadedMsg struct {
+	stats          *model.SQSQueueStats
+	metrics        *model.MetricSnapshot
+	metricsWarning string
+}
 type sqsMessagesReceivedMsg struct{ messages []model.SQSMessage }
 type sqsDLQResolvedMsg struct {
 	name string

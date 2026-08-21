@@ -1049,6 +1049,12 @@ func (a App) refreshCurrentView() tea.Cmd {
 			_, cmd := a.openAPIGatewayDetail()
 			return cmd
 		}
+	case viewSQSQueues:
+		_, cmd := a.openSQSQueues(a.sqsQueuesView.SearchTerm())
+		return cmd
+	case viewSQSDetail:
+		_, cmd := a.openSQSDetail(a.sqsDetailView.QueueName(), a.sqsDetailView.QueueURL())
+		return cmd
 	case viewSQLConnections, viewSQLWorkbench:
 		return nil
 	default:

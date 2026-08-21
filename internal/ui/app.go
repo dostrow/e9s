@@ -1164,7 +1164,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case sqsStatsLoadedMsg:
-		a.sqsDetailView = a.sqsDetailView.SetStats(msg.stats)
+		a.sqsDetailView = a.sqsDetailView.SetStats(msg.stats).SetMetrics(msg.metrics, msg.metricsWarning)
 		a.loading = false
 		return a, nil
 

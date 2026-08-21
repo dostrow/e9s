@@ -57,7 +57,12 @@ func (a App) openSQSDetail(queueName, queueURL string) (App, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		return sqsStatsLoadedMsg{stats}
+		metrics, metricErr := sqsService.Metrics(ctx, model.SQSQueue{Name: queueName, URL: queueURL}, 15*time.Minute)
+		warning := ""
+		if metricErr != nil {
+			warning = metricErr.Error()
+		}
+		return sqsStatsLoadedMsg{stats: stats, metrics: metrics, metricsWarning: warning}
 	}
 }
 
