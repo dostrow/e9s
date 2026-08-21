@@ -138,6 +138,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - uses: actions/setup-go@v5
         with:
@@ -161,7 +162,7 @@ jobs:
         run: |
           go test ./...
           go test -tags "gui sourceview" ./internal/gui
-          make build-gui-windows-amd64 VERSION=${{ github.ref_name }}
+          make build-gui-windows-amd64 VERSION=${{ inputs.release_tag || github.ref_name }}
           ldd e9s-gui-windows-amd64.exe
 
       - name: Prepare optional Authenticode certificate
@@ -203,7 +204,7 @@ jobs:
       - name: Assemble portable application
         run: >-
           make package-windows-zip
-          VERSION=${{ github.ref_name }}
+          VERSION=${{ inputs.release_tag || github.ref_name }}
           E9S_GUI_BINARY="$PWD/e9s-gui-windows-amd64.exe"
 
       - name: Smoke test portable application without MSYS2
@@ -228,7 +229,7 @@ jobs:
         run: |
           $archive = (Get-ChildItem 'dist/e9s-gui-*-windows-amd64.zip').FullName
           ./packaging/windows/build-installer.ps1 `
-            -Version '${{ github.ref_name }}' `
+            -Version '${{ inputs.release_tag || github.ref_name }}' `
             -Archive $archive `
             -OutputDirectory "$PWD/dist"
 
