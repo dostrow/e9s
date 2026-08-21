@@ -602,8 +602,8 @@ defaults:
 
 display:
   timestamp_format: relative  # "relative" or "absolute"
-  max_events: 50
-  max_log_lines: 1000
+  max_events: 50              # events fetched by a normal log-viewer request
+  max_log_lines: 1000         # entries retained by each newly opened log viewer
 
 gui:
   # Local and embedded operation terminals; configurable up to 1,000,000 lines.

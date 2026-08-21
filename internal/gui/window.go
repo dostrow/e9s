@@ -698,6 +698,7 @@ type mainWindow struct {
 	logCorrelateButton          *gtk.Button
 	logHighlightsButton         *gtk.Button
 	logStore                    *boundedLogs
+	logPageSize                 int
 	logIndentTags               map[int]*gtk.TextTag
 	logHighlightTags            map[model.LogHighlightStyle]*gtk.TextTag
 	logHighlightRules           []model.LogHighlightRule

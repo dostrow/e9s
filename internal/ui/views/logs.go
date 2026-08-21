@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	maxLogLines    = 1000
-	logPollOverlap = 30 * time.Second
+	defaultLogPageSize = 50
+	maxLogLines        = 1000
+	logPollOverlap     = 30 * time.Second
 )
 
 // LogsLoadedMsg is sent when new log entries arrive.
@@ -86,6 +87,8 @@ type LogViewerModel struct {
 	rangeStartTS int64
 	endTS        int64
 	showStreams  bool
+	pageSize     int
+	bufferLines  int
 	width        int
 	height       int
 }
@@ -183,6 +186,34 @@ func (m LogViewerModel) WithContext(ctx context.Context) LogViewerModel {
 	return m
 }
 
+// WithLimits snapshots the display configuration for this viewer. Subsequent
+// configuration changes intentionally affect only newly opened viewers.
+func (m LogViewerModel) WithLimits(pageSize, bufferLines int) LogViewerModel {
+	if pageSize <= 0 {
+		pageSize = defaultLogPageSize
+	}
+	if bufferLines <= 0 {
+		bufferLines = maxLogLines
+	}
+	m.pageSize = pageSize
+	m.bufferLines = bufferLines
+	return m
+}
+
+func (m LogViewerModel) configuredPageSize() int {
+	if m.pageSize <= 0 {
+		return defaultLogPageSize
+	}
+	return m.pageSize
+}
+
+func (m LogViewerModel) configuredBufferLines() int {
+	if m.bufferLines <= 0 {
+		return maxLogLines
+	}
+	return m.bufferLines
+}
+
 // WithJumpTarget anchors the initial bounded range to an exact search result.
 func (m LogViewerModel) WithJumpTarget(entry model.LogEntry) LogViewerModel {
 	if entry.ID == "" && entry.Timestamp == 0 && entry.Message == "" && entry.Stream == "" {
@@ -210,7 +241,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 		m.initialFetch = true
 		entries := msg.Entries
 		if m.jumpTarget != nil && !m.initialLoaded {
-			entries = model.CenterLogEntries(entries, *m.jumpTarget, maxLogLines)
+			entries = model.CenterLogEntries(entries, *m.jumpTarget, m.configuredBufferLines())
 		}
 		if m.seen == nil {
 			m.seen = make(map[model.LogEntryKey]struct{}, len(m.lines)+len(entries))
@@ -234,8 +265,9 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 				return m.lines[i].timestamp < m.lines[j].timestamp
 			})
 		}
-		if len(m.lines) > maxLogLines {
-			trimmed := len(m.lines) - maxLogLines
+		bufferLines := m.configuredBufferLines()
+		if len(m.lines) > bufferLines {
+			trimmed := len(m.lines) - bufferLines
 			visibleTrimmed := m.visibleCount(m.lines[:trimmed])
 			for _, line := range m.lines[:trimmed] {
 				delete(m.seen, line.key())
@@ -314,12 +346,13 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			m.firstTS = m.lines[0].timestamp
 		}
 		// Cap buffer from the end if needed
-		if len(m.lines) > maxLogLines {
-			excess := len(m.lines) - maxLogLines
+		bufferLines := m.configuredBufferLines()
+		if len(m.lines) > bufferLines {
+			excess := len(m.lines) - bufferLines
 			for _, line := range m.lines[len(m.lines)-excess:] {
 				delete(m.seen, line.key())
 			}
-			m.lines = m.lines[:maxLogLines]
+			m.lines = m.lines[:bufferLines]
 		}
 		m.rebuildMatchIndices()
 		return m, nil
@@ -810,9 +843,11 @@ func (m LogViewerModel) fetchLogs() tea.Cmd {
 	if m.initialFetch && m.endTS == 0 {
 		startTime = max(int64(0), startTime-logPollOverlap.Milliseconds())
 	}
-	limit := 100
-	if m.tailMode || !m.initialFetch {
-		limit = maxLogLines
+	limit := m.configuredPageSize()
+	if m.jumpTarget != nil && !m.initialFetch {
+		// Correlation is the one deliberate exception to normal paging: load a
+		// full bounded window so the selected event can remain centered.
+		limit = m.configuredBufferLines()
 	}
 	fallbackLimit := 0
 	if !m.initialFetch {
@@ -846,7 +881,7 @@ func (m LogViewerModel) fetchOlderLogs() tea.Cmd {
 		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
 			Streams:    streams,
 			BeforeTime: endTime,
-			Limit:      100,
+			Limit:      m.configuredPageSize(),
 		})
 		if err != nil {
 			return LogsErrorMsg{Err: err}
@@ -905,7 +940,7 @@ func (m LogViewerModel) fetchNewerLogs() tea.Cmd {
 		page, err := m.logs.Fetch(m.ctx, logGroup, model.LogQuery{
 			Streams:   streams,
 			StartTime: startTime,
-			Limit:     100,
+			Limit:     m.configuredPageSize(),
 			Tail:      true,
 		})
 		if err != nil {
@@ -925,7 +960,7 @@ func (m LogViewerModel) fetchRangeEntries(startTime, endTime int64) ([]model.Log
 		Streams:   append([]string(nil), m.streams...),
 		StartTime: startTime,
 		EndTime:   endTime,
-		Limit:     maxLogLines,
+		Limit:     m.configuredPageSize(),
 	})
 	return page.Entries, err
 }

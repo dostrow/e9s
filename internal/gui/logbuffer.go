@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/highlight"
 	"github.com/dostrow/e9s/internal/model"
 )
@@ -51,7 +52,7 @@ const (
 
 func newBoundedLogs(maxEntries int) *boundedLogs {
 	if maxEntries <= 0 {
-		maxEntries = 2000
+		maxEntries = config.DefaultMaxLogLines
 	}
 	return &boundedLogs{max: maxEntries}
 }
@@ -174,16 +175,6 @@ func (b *boundedLogs) lastTimestamp() int64 {
 		}
 	}
 	return last
-}
-
-func (b *boundedLogs) countTimestamp(timestamp int64) int {
-	count := 0
-	for _, entry := range b.entries {
-		if entry.Timestamp == timestamp {
-			count++
-		}
-	}
-	return count
 }
 
 func (b *boundedLogs) clear() {

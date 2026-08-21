@@ -133,6 +133,23 @@ func TestLogViewerKeepsInclusiveCursorAndDeduplicatesOverlappingPolls(t *testing
 	}
 }
 
+func TestLogViewerHonorsConfiguredBufferLimit(t *testing.T) {
+	m := (LogViewerModel{follow: false}).WithLimits(2, 3)
+	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{
+		{ID: "one", Timestamp: 1, Message: "one"},
+		{ID: "two", Timestamp: 2, Message: "two"},
+		{ID: "three", Timestamp: 3, Message: "three"},
+		{ID: "four", Timestamp: 4, Message: "four"},
+	}, LastTS: 4})
+
+	if m.configuredPageSize() != 2 {
+		t.Fatalf("page size = %d, want 2", m.configuredPageSize())
+	}
+	if len(m.lines) != 3 || m.lines[0].message != "two" || m.lines[2].message != "four" {
+		t.Fatalf("buffered lines = %#v, want the newest three entries", m.lines)
+	}
+}
+
 func TestLogViewerStreamVisibilityOnlyFiltersDisplay(t *testing.T) {
 	m := LogViewerModel{width: 120, height: 30, search: "event"}
 	m, _ = m.Update(LogsLoadedMsg{Entries: []model.LogEntry{

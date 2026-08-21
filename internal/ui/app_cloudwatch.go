@@ -270,11 +270,12 @@ func (a App) startLogSearch(pattern string) (App, tea.Cmd) {
 	startMs := a.logSearchStartMs
 	endMs := a.logSearchEndMs
 	filter := a.logSearchFilter
+	pageSize := a.cfg.LogEventPageSize()
 
 	return a, func() tea.Msg {
 		page, err := logs.Fetch(ctx, groups[0], model.LogQuery{
 			Groups: groups, Streams: streams, Filter: filter,
-			StartTime: startMs, EndTime: endMs, Limit: 500,
+			StartTime: startMs, EndTime: endMs, Limit: pageSize,
 		})
 		return views.LogSearchResultsMsg{Results: page.Entries, Err: err}
 	}

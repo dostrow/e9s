@@ -38,6 +38,35 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestLogDisplayLimitsUseConfiguredValuesAndSafeDefaults(t *testing.T) {
+	var missing *Config
+	if got := missing.LogEventPageSize(); got != DefaultEventPageSize {
+		t.Fatalf("nil config event page size = %d, want %d", got, DefaultEventPageSize)
+	}
+	if got := missing.LogBufferLines(); got != DefaultMaxLogLines {
+		t.Fatalf("nil config log buffer = %d, want %d", got, DefaultMaxLogLines)
+	}
+
+	cfg := DefaultConfig()
+	cfg.Display.MaxEvents = 75
+	cfg.Display.MaxLogLines = 2500
+	if got := cfg.LogEventPageSize(); got != 75 {
+		t.Fatalf("event page size = %d, want 75", got)
+	}
+	if got := cfg.LogBufferLines(); got != 2500 {
+		t.Fatalf("log buffer = %d, want 2500", got)
+	}
+
+	cfg.Display.MaxEvents = MaxEventPageSize + 1
+	cfg.Display.MaxLogLines = MaxBufferedLogLines + 1
+	if got := cfg.LogEventPageSize(); got != DefaultEventPageSize {
+		t.Fatalf("invalid event page size = %d, want default %d", got, DefaultEventPageSize)
+	}
+	if got := cfg.LogBufferLines(); got != DefaultMaxLogLines {
+		t.Fatalf("invalid log buffer = %d, want default %d", got, DefaultMaxLogLines)
+	}
+}
+
 func TestValidateSQLConnections(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.SQL.Connections = []SQLConnection{{Name: "production", Database: "app", Auth: "secrets-manager"}}

@@ -13,8 +13,6 @@ import (
 	"github.com/dostrow/e9s/internal/service"
 )
 
-const cloudWatchSearchLimit = 1000
-
 var cloudWatchTimePresets = []struct {
 	label    string
 	duration time.Duration
@@ -224,9 +222,11 @@ func (w *mainWindow) runCloudWatchSearch(spec cloudWatchSearch) {
 		anchor := *spec.Anchor
 		spec.Anchor = &anchor
 	}
-	limit := cloudWatchSearchLimit
+	limit := w.configuredLogPageSize()
 	if spec.Anchor != nil {
-		limit = maxGUILogEntries
+		// Correlation loads a full bounded window so the selected event remains
+		// centered even when an ordinary result page is much smaller.
+		limit = w.configuredLogBufferLines()
 	}
 	query := model.LogQuery{
 		Groups: append([]string(nil), spec.Groups...), Streams: append([]string(nil), spec.Streams...),

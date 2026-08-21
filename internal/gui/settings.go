@@ -241,13 +241,13 @@ func (w *mainWindow) showSettings() {
 	notebook.AppendPage(awsPage, gtk.NewLabel("AWS"))
 
 	logsPage := settingsPage()
-	maxEvents := gtk.NewSpinButtonWithRange(1, 100000, 50)
+	maxEvents := gtk.NewSpinButtonWithRange(1, config.MaxEventPageSize, 50)
 	maxEvents.SetValue(float64(cfg.Display.MaxEvents))
-	maxLogLines := gtk.NewSpinButtonWithRange(100, 1000000, 100)
+	maxLogLines := gtk.NewSpinButtonWithRange(100, config.MaxBufferedLogLines, 100)
 	maxLogLines.SetValue(float64(cfg.Display.MaxLogLines))
 	logsPage.Append(settingsRow("Default event page size", maxEvents))
 	logsPage.Append(settingsRow("Maximum buffered log lines", maxLogLines))
-	logsPage.Append(settingsNote("Changes apply to newly opened log buffers. Existing buffers keep their current limits."))
+	logsPage.Append(settingsNote("Request and buffer limits apply to newly opened log viewers. Existing viewers keep their current limits."))
 	notebook.AppendPage(logsPage, gtk.NewLabel("Logs"))
 
 	editorPage := settingsPage()

@@ -857,6 +857,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
+		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
 		if msg.anchor != nil {
 			a.logView = a.logView.WithJumpTarget(*msg.anchor)
 		}
@@ -878,6 +879,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.prevState = viewLogSearch
 		a.state = viewLogs
 		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
+		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
 		a.logView = a.logView.WithJumpTarget(msg.Entry)
 		a.activeLogPathName = a.logSearchSavedPath
 		a.logView = a.logView.WithContext(a.ctx)

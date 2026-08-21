@@ -17,6 +17,10 @@ import (
 )
 
 const (
+	DefaultEventPageSize           = 50
+	DefaultMaxLogLines             = 1000
+	MaxEventPageSize               = 10000
+	MaxBufferedLogLines            = 1000000
 	DefaultTerminalScrollbackLines = 10000
 	MaxTerminalScrollbackLines     = 1000000
 )
@@ -194,10 +198,28 @@ func DefaultConfig() Config {
 	c.Defaults.IdleTimeout = 300
 	c.Defaults.CostGuardUSD = 1
 	c.Display.TimestampFormat = "relative"
-	c.Display.MaxEvents = 50
-	c.Display.MaxLogLines = 1000
+	c.Display.MaxEvents = DefaultEventPageSize
+	c.Display.MaxLogLines = DefaultMaxLogLines
 	c.GUI.TerminalScrollbackLines = DefaultTerminalScrollbackLines
 	return c
+}
+
+// LogEventPageSize returns the configured number of events fetched by each
+// normal log-viewer request, with a safe default for incomplete configurations.
+func (c *Config) LogEventPageSize() int {
+	if c == nil || c.Display.MaxEvents < 1 || c.Display.MaxEvents > MaxEventPageSize {
+		return DefaultEventPageSize
+	}
+	return c.Display.MaxEvents
+}
+
+// LogBufferLines returns the maximum number of entries retained by a newly
+// opened log viewer, with a safe default for incomplete configurations.
+func (c *Config) LogBufferLines() int {
+	if c == nil || c.Display.MaxLogLines < 1 || c.Display.MaxLogLines > MaxBufferedLogLines {
+		return DefaultMaxLogLines
+	}
+	return c.Display.MaxLogLines
 }
 
 // resolveConfigPath determines the config file path using XDG conventions.
@@ -320,6 +342,12 @@ func (c Config) Validate() error {
 	}
 	if c.Display.MaxEvents < 0 || c.Display.MaxLogLines < 0 {
 		return fmt.Errorf("display limits cannot be negative")
+	}
+	if c.Display.MaxEvents > MaxEventPageSize {
+		return fmt.Errorf("display.max_events cannot exceed %d", MaxEventPageSize)
+	}
+	if c.Display.MaxLogLines > MaxBufferedLogLines {
+		return fmt.Errorf("display.max_log_lines cannot exceed %d", MaxBufferedLogLines)
 	}
 	if c.GUI.TerminalScrollbackLines < 1 || c.GUI.TerminalScrollbackLines > MaxTerminalScrollbackLines {
 		return fmt.Errorf("gui.terminal_scrollback_lines must be between 1 and %d", MaxTerminalScrollbackLines)
@@ -549,10 +577,10 @@ func (c *Config) applyDefaults() {
 		c.Defaults.RefreshInterval = 5
 	}
 	if c.Display.MaxEvents <= 0 {
-		c.Display.MaxEvents = 50
+		c.Display.MaxEvents = DefaultEventPageSize
 	}
 	if c.Display.MaxLogLines <= 0 {
-		c.Display.MaxLogLines = 1000
+		c.Display.MaxLogLines = DefaultMaxLogLines
 	}
 }
 

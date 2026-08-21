@@ -407,9 +407,10 @@ func (w *mainWindow) viewCodeBuildLogs() {
 	w.codeBuildActionPending = true
 	w.updateActionSensitivity()
 	ctx, generation := w.startRequest("Loading CodeBuild logs…")
+	pageSize := w.configuredLogPageSize()
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, source.Group, model.LogQuery{
-			Streams: source.Streams, StartTime: start, Limit: maxGUILogEntries, Tail: true, FallbackLimit: 10,
+			Streams: source.Streams, StartTime: start, Limit: pageSize, Tail: true, FallbackLimit: 10,
 		})
 		status := fmt.Sprintf("Loaded %d events for build #%d", len(page.Entries), detail.BuildNumber)
 		w.finishCodeBuildRequest(ctx, generation, err, status, false, func() {

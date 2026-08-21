@@ -17,10 +17,17 @@ import (
 )
 
 const (
-	maxGUILogEntries = 2000
-	logPollInterval  = 2 * time.Second
-	logPollOverlap   = 30 * time.Second
+	logPollInterval = 2 * time.Second
+	logPollOverlap  = 30 * time.Second
 )
+
+func (w *mainWindow) configuredLogPageSize() int {
+	return w.options.Config.LogEventPageSize()
+}
+
+func (w *mainWindow) configuredLogBufferLines() int {
+	return w.options.Config.LogBufferLines()
+}
 
 func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	back := gtk.NewButtonWithLabel("Back to details")
@@ -179,7 +186,8 @@ func (w *mainWindow) showLogFollowFrom(source model.LogSource, title string, sta
 	w.applyContextLogHighlights(nil, true)
 	w.logPauseButton.SetVisible(true)
 	w.updateLogSearchControls()
-	w.logStore = newBoundedLogs(maxGUILogEntries)
+	w.logPageSize = w.configuredLogPageSize()
+	w.logStore = newBoundedLogs(w.configuredLogBufferLines())
 	w.logHiddenStreams = nil
 	w.logLastTS = max(int64(0), startTime)
 	w.logSearch.SetText("")
@@ -217,7 +225,8 @@ func (w *mainWindow) showLogSnapshotData(source model.LogSource, title string, p
 		rules = w.logSearchSpec.HighlightRules
 	}
 	w.applyContextLogHighlights(rules, preferSaved)
-	w.logStore = newBoundedLogs(maxGUILogEntries)
+	w.logPageSize = w.configuredLogPageSize()
+	w.logStore = newBoundedLogs(w.configuredLogBufferLines())
 	w.logStore.append(page.Entries)
 	w.logLastTS = page.LastTimestamp
 	w.logSearch.SetText("")
@@ -255,7 +264,8 @@ func taskContainerNames(task model.Task) []string {
 
 func (w *mainWindow) startLogFollow(source model.LogSource, preserve bool) {
 	if !preserve || w.logStore == nil {
-		w.logStore = newBoundedLogs(maxGUILogEntries)
+		w.logPageSize = w.configuredLogPageSize()
+		w.logStore = newBoundedLogs(w.configuredLogBufferLines())
 		w.logHiddenStreams = nil
 		w.logLastTS = time.Now().Add(-15 * time.Minute).UnixMilli()
 		w.logSearch.SetText("")
@@ -283,18 +293,24 @@ func (w *mainWindow) startLogFollowWithFallback(source model.LogSource, allowFal
 	w.logPauseButton.SetVisible(true)
 	w.logPauseButton.SetLabel("Pause")
 	if w.logStore == nil {
-		w.logStore = newBoundedLogs(maxGUILogEntries)
+		w.logPageSize = w.configuredLogPageSize()
+		w.logStore = newBoundedLogs(w.configuredLogBufferLines())
 		w.logHiddenStreams = nil
 		w.logLastTS = time.Now().Add(-15 * time.Minute).UnixMilli()
 		w.logSearch.SetText("")
 		w.renderLogs()
 	}
 	startTime := w.logLastTS
+	pageSize := w.logPageSize
+	if pageSize <= 0 {
+		pageSize = w.configuredLogPageSize()
+		w.logPageSize = pageSize
+	}
 
-	go w.followLogs(ctx, generation, source, startTime, allowFallback)
+	go w.followLogs(ctx, generation, source, startTime, allowFallback, pageSize)
 }
 
-func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source model.LogSource, startTime int64, allowFallback bool) {
+func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source model.LogSource, startTime int64, allowFallback bool, pageSize int) {
 	next := startTime
 	for {
 		if !w.backgroundPollingAllowed(time.Now()) {
@@ -319,7 +335,7 @@ func (w *mainWindow) followLogs(ctx context.Context, generation uint64, source m
 		page, err := w.options.Logs.Fetch(ctx, source.Group, model.LogQuery{
 			Streams:       append([]string(nil), source.Streams...),
 			StartTime:     queryStart,
-			Limit:         500,
+			Limit:         pageSize,
 			Tail:          true,
 			FallbackLimit: fallbackLimit,
 		})
@@ -409,11 +425,12 @@ func (w *mainWindow) loadOlderLogEntries() {
 	w.spinner.Start()
 	w.setStatus("Loading older log events…", false)
 	w.setWorkspaceBusy("Loading older log events…", true)
+	pageSize := w.logPageSize
 	go func() {
 		page, err := w.options.Logs.Fetch(ctx, w.logSource.Group, model.LogQuery{
 			Streams:    append([]string(nil), w.logSource.Streams...),
 			BeforeTime: cutoff,
-			Limit:      500,
+			Limit:      pageSize,
 		})
 		glib.IdleAdd(func() {
 			if ctx.Err() != nil || generation != w.logGeneration || !w.showingLogs {
@@ -466,8 +483,7 @@ func (w *mainWindow) loadNewerLogEntries() {
 		return
 	}
 	frontier := w.logNewestKnownTS
-	batchSize := min(500, w.logNewerKnown)
-	queryLimit := batchSize + w.logStore.countTimestamp(cutoff)
+	queryLimit := w.logPageSize
 	source := model.LogSource{
 		Group:   w.logSource.Group,
 		Streams: append([]string(nil), w.logSource.Streams...),
