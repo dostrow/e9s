@@ -207,7 +207,8 @@ Ctrl+backtick, or `F12`; hiding it preserves the running shell. When opened from
 active OpenTofu workspace, a new dock shell starts in that workspace directory.
 Tabs support nested Split Right and Split Down terminal panes. Use `Ctrl+Alt+R`
 or `Ctrl+Alt+D` to split the focused pane and `Ctrl+Alt+Arrow` to move focus
-through the tab's panes.
+through the tab's panes. Exited shells are removed automatically, and exiting
+the final shell hides the empty drawer.
 On Ubuntu or Debian, install
 `libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
 prerequisites; AWS's `session-manager-plugin` is required at runtime.

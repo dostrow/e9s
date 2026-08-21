@@ -21,6 +21,7 @@ const (
 	terminalDockPreferredHeight = 280
 	terminalTabMinimumChars     = 8
 	terminalTabMaximumChars     = 28
+	terminalExitPollMillis      = 200
 )
 
 type terminalDockSession struct {
@@ -196,6 +197,7 @@ func (w *mainWindow) spawnTerminalDock() (*terminalDockSession, error) {
 	tab.tabLabel.SetMaxWidthChars(terminalTabMaximumChars)
 	w.terminalDockTabs = append(w.terminalDockTabs, tab)
 	w.terminalDockSessions = append(w.terminalDockSessions, session)
+	w.watchTerminalDockSession(session)
 	w.updateTerminalDockSessionTitle(session)
 	label := w.terminalDockTabLabel(tab)
 	page := w.terminalDockNotebook.AppendPage(tab.container, label)
@@ -449,6 +451,7 @@ func (w *mainWindow) splitActiveTerminalDock(orientation gtk.Orientation) {
 	session.tab = tab
 	w.attachTerminalDockNode(tab, node)
 	w.terminalDockSessions = append(w.terminalDockSessions, session)
+	w.watchTerminalDockSession(session)
 	w.bindTerminalDockSessionFocus(session)
 	w.setActiveTerminalDockSession(session)
 	w.updateTerminalDockSessionTitle(session)
@@ -502,6 +505,40 @@ func (w *mainWindow) attachTerminalDockNode(tab *terminalDockTab, node *terminal
 
 func (w *mainWindow) confirmCloseActiveTerminalDock() {
 	w.confirmCloseTerminalDock(w.activeTerminalDockSession())
+}
+
+func (w *mainWindow) watchTerminalDockSession(session *terminalDockSession) {
+	if session == nil || session.terminal == nil {
+		return
+	}
+	glib.TimeoutAdd(terminalExitPollMillis, func() bool {
+		if w.indexOfTerminalDockSession(session) < 0 {
+			return false
+		}
+		if session.terminal.Running() {
+			return true
+		}
+		w.handleTerminalDockSessionExit(session, session.terminal.ExitStatus())
+		return false
+	})
+}
+
+func (w *mainWindow) handleTerminalDockSessionExit(session *terminalDockSession, status int) {
+	if session == nil || w.indexOfTerminalDockSession(session) < 0 {
+		return
+	}
+	id := session.id
+	w.closeTerminalDockSession(session)
+	message := fmt.Sprintf("Terminal pane %d exited with status %d and was closed", id, status)
+	if len(w.terminalDockSessions) == 0 {
+		if w.terminalDockButton != nil && w.terminalDockButton.Active() {
+			w.terminalDockButton.SetActive(false)
+		} else if w.terminalDockContainer != nil {
+			w.setTerminalDockVisible(false)
+		}
+		message += "; terminal drawer hidden"
+	}
+	w.setStatus(message, false)
 }
 
 func (w *mainWindow) confirmCloseTerminalDock(session *terminalDockSession) {

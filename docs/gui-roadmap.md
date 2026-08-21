@@ -127,7 +127,9 @@ its shell is running. Font, palette, and zoom changes apply to every session.
 `Ctrl+Shift+T` opens a tab, `Ctrl+Shift+W` closes the focused pane,
 `Ctrl+PageUp`/`Ctrl+PageDown` move between tabs, `Ctrl+Alt+R` and `Ctrl+Alt+D`
 split right and down, and `Ctrl+Alt+Arrow` moves through panes in visual order.
-Sessions and layouts are not restored after the application exits.
+When a shell exits, its pane closes and the split tree collapses automatically;
+exiting the final shell also hides the empty drawer. Sessions and layouts are
+not restored after the application exits.
 
 ## Shared metrics foundation
 

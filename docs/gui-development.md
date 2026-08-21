@@ -426,7 +426,8 @@ memory than a cached rebuild.
     nested Split Right and Split Down panes, verify a split inherits the focused
     shell's current directory when available, navigate them with Ctrl+Alt+Arrow,
     and confirm closing a pane collapses its redundant divider while the tab
-    close glyph closes every pane in that tab.
+    close glyph closes every pane in that tab. Exit a shell and verify its pane
+    closes automatically; exit the final shell and verify the drawer hides.
 
 See [`gui-poc-results.md`](gui-poc-results.md) for the measurements, limitations,
 and recommendation from the initial experiment.
