@@ -108,13 +108,44 @@ func (terminal *vteTerminal) SelectAll() {
 // to interpret as input.
 func (terminal *vteTerminal) NoteKeyPressed() {
 	terminal.motionGuard.noteKeyPressed()
+	C.e9s_vte_terminal_set_motion_suppressed(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+		1,
+	)
+}
+
+func (terminal *vteTerminal) NotePointerActivity() {
+	terminal.motionGuard.notePointerActivity()
+	C.e9s_vte_terminal_set_motion_suppressed(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+		0,
+	)
+}
+
+func (terminal *vteTerminal) motionSuppressionAvailable() bool {
+	return C.e9s_vte_terminal_motion_suppression_available(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+	) != 0
+}
+
+func (terminal *vteTerminal) motionSuppressionActive() bool {
+	return C.e9s_vte_terminal_motion_suppression_active(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+	) != 0
 }
 
 func (terminal *vteTerminal) SuppressSyntheticMouseMotion(
 	x, y float64,
 	positionOK, buttonsDown bool,
 ) bool {
-	return terminal.motionGuard.filterMotion(x, y, positionOK, buttonsDown)
+	suppress := terminal.motionGuard.filterMotion(x, y, positionOK, buttonsDown)
+	if !terminal.motionGuard.armed {
+		C.e9s_vte_terminal_set_motion_suppressed(
+			(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+			0,
+		)
+	}
+	return suppress
 }
 
 func (terminal *vteTerminal) installContextMenu() {

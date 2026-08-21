@@ -52,6 +52,8 @@ func (terminal *vteTerminal) SelectAll() {}
 
 func (terminal *vteTerminal) NoteKeyPressed() {}
 
+func (terminal *vteTerminal) NotePointerActivity() {}
+
 func (terminal *vteTerminal) SuppressSyntheticMouseMotion(float64, float64, bool, bool) bool {
 	return false
 }

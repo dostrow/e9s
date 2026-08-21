@@ -45,6 +45,17 @@ func TestTerminalMotionGuardAllowsButtonDrag(t *testing.T) {
 	}
 }
 
+func TestTerminalMotionGuardAllowsExplicitPointerActivity(t *testing.T) {
+	var guard terminalMotionGuard
+	guard.filterMotion(116, 12, true, false)
+	guard.noteKeyPressed()
+	guard.notePointerActivity()
+
+	if guard.filterMotion(116, 12, true, false) {
+		t.Fatal("motion remained suppressed after explicit pointer activity")
+	}
+}
+
 func TestTerminalMotionGuardHandlesUnknownFirstPosition(t *testing.T) {
 	var guard terminalMotionGuard
 	guard.noteKeyPressed()

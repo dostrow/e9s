@@ -23,6 +23,10 @@ func (guard *terminalMotionGuard) noteKeyPressed() {
 	guard.armed = true
 }
 
+func (guard *terminalMotionGuard) notePointerActivity() {
+	guard.armed = false
+}
+
 func (guard *terminalMotionGuard) filterMotion(x, y float64, positionOK, buttonsDown bool) bool {
 	if !positionOK {
 		if guard.armed && !buttonsDown {
@@ -44,7 +48,7 @@ func (guard *terminalMotionGuard) filterMotion(x, y float64, positionOK, buttons
 		return false
 	}
 	if buttonsDown || moved {
-		guard.armed = false
+		guard.notePointerActivity()
 		return false
 	}
 

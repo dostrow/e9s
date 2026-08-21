@@ -2223,11 +2223,16 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 	mouse.SetPropagationPhase(gtk.PhaseCapture)
 	mouse.ConnectEvent(func(event gdk.Eventer) bool {
 		base := gdk.BaseEvent(event)
-		if base.EventType() != gdk.MotionNotify {
-			return false
-		}
 		terminal := w.focusedVTETerminal()
 		if terminal == nil {
+			return false
+		}
+		switch base.EventType() {
+		case gdk.ButtonPress, gdk.ButtonRelease, gdk.Scroll, gdk.DragMotion:
+			terminal.NotePointerActivity()
+			return false
+		case gdk.MotionNotify:
+		default:
 			return false
 		}
 		buttons := gdk.Button1Mask | gdk.Button2Mask | gdk.Button3Mask

@@ -12,6 +12,9 @@ typedef struct {
     gboolean spawning;
     gboolean exited;
     int exit_status;
+    GtkEventController *motion_controller;
+    gboolean motion_suppressed;
+    guint motion_handler_blocks;
 } E9sVteState;
 
 typedef struct {
@@ -64,6 +67,72 @@ static void e9s_vte_child_exited(VteTerminal *terminal, int status, gpointer use
     g_free(message);
 }
 
+static GtkEventController *e9s_vte_motion_controller(GtkWidget *widget) {
+    GListModel *controllers = gtk_widget_observe_controllers(widget);
+    GtkEventController *fallback = NULL;
+    GtkEventController *match = NULL;
+    guint count = g_list_model_get_n_items(controllers);
+    for (guint i = 0; i < count; i++) {
+        GtkEventController *controller = g_list_model_get_item(controllers, i);
+        if (!GTK_IS_EVENT_CONTROLLER_MOTION(controller)) {
+            g_object_unref(controller);
+            continue;
+        }
+        if (fallback == NULL) {
+            fallback = controller;
+        }
+        const char *name = gtk_event_controller_get_name(controller);
+        if (g_strcmp0(name, "vte-motion-controller") == 0) {
+            match = controller;
+            break;
+        }
+        if (controller != fallback) {
+            g_object_unref(controller);
+        }
+    }
+    if (match != NULL && fallback != NULL && match != fallback) {
+        g_object_unref(fallback);
+    }
+    if (match == NULL) {
+        match = fallback;
+    }
+    g_object_unref(controllers);
+
+    /* The widget owns the controller. Drop the temporary list-model reference
+     * while retaining a borrowed pointer for the widget's lifetime. */
+    if (match != NULL) {
+        g_object_unref(match);
+    }
+    return match;
+}
+
+static guint e9s_vte_block_motion_signal(GtkEventController *controller, const char *name, gboolean block) {
+    guint signal_id = g_signal_lookup(name, GTK_TYPE_EVENT_CONTROLLER_MOTION);
+    if (signal_id == 0) {
+        return 0;
+    }
+    if (block) {
+        return g_signal_handlers_block_matched(
+            controller,
+            G_SIGNAL_MATCH_ID,
+            signal_id,
+            0,
+            NULL,
+            NULL,
+            NULL
+        );
+    }
+    return g_signal_handlers_unblock_matched(
+        controller,
+        G_SIGNAL_MATCH_ID,
+        signal_id,
+        0,
+        NULL,
+        NULL,
+        NULL
+    );
+}
+
 GtkWidget *e9s_vte_terminal_new(void) {
     GtkWidget *widget = vte_terminal_new();
 #if VTE_CHECK_VERSION(0, 76, 0)
@@ -76,6 +145,7 @@ GtkWidget *e9s_vte_terminal_new(void) {
     vte_terminal_set_yfill(VTE_TERMINAL(widget), FALSE);
 #endif
     E9sVteState *state = g_new0(E9sVteState, 1);
+    state->motion_controller = e9s_vte_motion_controller(widget);
     /* Keep the tiny state allocation alive for any late async spawn callback. */
     g_object_set_data(G_OBJECT(widget), "e9s-vte-state", state);
     g_signal_connect(widget, "child-exited", G_CALLBACK(e9s_vte_child_exited), state);
@@ -99,6 +169,39 @@ gboolean e9s_vte_terminal_has_selection(GtkWidget *widget) {
 
 void e9s_vte_terminal_select_all(GtkWidget *widget) {
     vte_terminal_select_all(VTE_TERMINAL(widget));
+}
+
+gboolean e9s_vte_terminal_motion_suppression_available(GtkWidget *widget) {
+    E9sVteState *state = e9s_vte_state(widget);
+    return state != NULL && state->motion_controller != NULL;
+}
+
+gboolean e9s_vte_terminal_motion_suppression_active(GtkWidget *widget) {
+    E9sVteState *state = e9s_vte_state(widget);
+    return state != NULL && state->motion_suppressed && state->motion_handler_blocks >= 2;
+}
+
+void e9s_vte_terminal_set_motion_suppressed(GtkWidget *widget, gboolean suppressed) {
+    E9sVteState *state = e9s_vte_state(widget);
+    if (state == NULL || state->motion_controller == NULL || state->motion_suppressed == suppressed) {
+        return;
+    }
+
+    /* VTE's GTK4 motion controller turns both its "enter" and "motion"
+     * signals into terminal mouse reports. The enter signal has no underlying
+     * GdkEvent, so an ancestor legacy-event controller cannot consume it. */
+    if (suppressed) {
+        state->motion_handler_blocks =
+            e9s_vte_block_motion_signal(state->motion_controller, "enter", TRUE) +
+            e9s_vte_block_motion_signal(state->motion_controller, "motion", TRUE);
+        state->motion_suppressed = state->motion_handler_blocks > 0;
+        return;
+    }
+
+    e9s_vte_block_motion_signal(state->motion_controller, "enter", FALSE);
+    e9s_vte_block_motion_signal(state->motion_controller, "motion", FALSE);
+    state->motion_handler_blocks = 0;
+    state->motion_suppressed = FALSE;
 }
 
 void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory) {
