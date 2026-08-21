@@ -48,6 +48,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gtk4
             mingw-w64-ucrt-x86_64-gtksourceview5
             mingw-w64-ucrt-x86_64-pkgconf
+            zip
 
       - name: Verify native toolchain
         run: |
@@ -69,9 +70,17 @@ jobs:
       - name: Inspect executable dependencies
         run: ldd e9s-gui-windows-amd64.exe
 
+      - name: Assemble portable application
+        run: >-
+          make package-windows-zip
+          VERSION=${{ github.sha }}
+          E9S_GUI_BINARY="$PWD/e9s-gui-windows-amd64.exe"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: e9s-windows-gui-compile-amd64
-          path: e9s-gui-windows-amd64.exe
+          name: e9s-windows-gui-portable-amd64
+          path: |
+            e9s-gui-windows-amd64.exe
+            dist/e9s-gui-*-windows-amd64.zip
           if-no-files-found: error
           retention-days: 7

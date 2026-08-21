@@ -25,7 +25,8 @@ pacman -S --needed \
   mingw-w64-ucrt-x86_64-gcc \
   mingw-w64-ucrt-x86_64-gtk4 \
   mingw-w64-ucrt-x86_64-gtksourceview5 \
-  mingw-w64-ucrt-x86_64-pkgconf
+  mingw-w64-ucrt-x86_64-pkgconf \
+  zip
 ```
 
 Install Go 1.24.4 or newer for Windows and ensure `go.exe` is visible inside
@@ -45,18 +46,25 @@ go env GOOS GOARCH CGO_ENABLED CC
 make build-gui-windows-amd64
 ```
 
-The result is `e9s-gui-windows-amd64.exe`. At this phase it is a compile
-artifact, not a distributable application: GTK DLLs and runtime data must still
-be present in the MSYS2 environment. The portable bundle implemented in the
-next phase will remove that end-user requirement.
+The result is `e9s-gui-windows-amd64.exe`. This raw executable still requires
+the MSYS2 runtime. Build a distributable archive with:
+
+```sh
+make package-windows-zip
+```
+
+The resulting `dist/e9s-gui-<version>-windows-amd64.zip` carries the native DLL
+closure, GTK and GLib schemas and data, GtkSourceView language definitions and
+styles, icon and MIME data, Fontconfig configuration, bundled application fonts,
+and the applicable license texts. It must be tested outside MSYS2 before it is
+treated as a release artifact; that clean-machine launch test is the next phase.
 
 ## CI boundary
 
 `.github/workflows/windows-gui.yml` performs the same build on a native Windows
 runner using MSYS2 UCRT64. It runs the shared test suite, the GTK-tagged GUI
-tests, records the executable's dynamic dependencies, and uploads the raw
-compile artifact for inspection.
+tests, validates the executable's dynamic dependencies, assembles the portable
+ZIP, and uploads both it and the raw compile artifact for inspection.
 
 VTE must not be added to the Windows build tags. GtkSourceView language
-definitions and style schemes must be included with the portable runtime in the
-next phase.
+definitions and style schemes are included in the portable runtime.

@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 INSTALL ?= install
 
-.PHONY: build build-gui build-gui-basic build-gui-windows-amd64 install install-gui install-gui-assets package-deb package-appimage clean test
+.PHONY: build build-gui build-gui-basic build-gui-windows-amd64 install install-gui install-gui-assets package-deb package-appimage package-windows-zip clean test
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) .
@@ -48,6 +48,11 @@ package-deb:
 
 package-appimage:
 	packaging/appimage/build-appimage.sh "$(VERSION)" "$(CURDIR)/dist"
+
+# Run from an MSYS2 UCRT64 shell. The resulting ZIP contains the application,
+# its native DLL closure, and the GTK/GtkSourceView runtime data.
+package-windows-zip:
+	packaging/windows/build-portable.sh "$(VERSION)" "$(CURDIR)/dist"
 
 test:
 	go test ./...
