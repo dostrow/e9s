@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -16,13 +17,14 @@ type columnSpec struct {
 }
 
 type stringTable struct {
-	model     *gtk.StringList
-	selection *gtk.SingleSelection
-	view      *gtk.ColumnView
-	columns   []*gtk.ColumnViewColumn
-	specs     []columnSpec
-	count     uint
-	rows      []string
+	model         *gtk.StringList
+	selection     *gtk.SingleSelection
+	view          *gtk.ColumnView
+	columns       []*gtk.ColumnViewColumn
+	specs         []columnSpec
+	count         uint
+	rows          []string
+	cellActivated func(position uint, field int)
 }
 
 func newStringTable(columns []columnSpec) *stringTable {
@@ -58,7 +60,7 @@ func (t *stringTable) setColumns(specs []columnSpec) {
 	}
 	t.columns = t.columns[:0]
 	for _, spec := range specs {
-		column := textColumn(spec)
+		column := t.textColumn(spec)
 		t.view.AppendColumn(column)
 		t.columns = append(t.columns, column)
 	}
@@ -105,7 +107,7 @@ func (t *stringTable) clear() {
 	t.view.QueueDraw()
 }
 
-func textColumn(spec columnSpec) *gtk.ColumnViewColumn {
+func (t *stringTable) textColumn(spec columnSpec) *gtk.ColumnViewColumn {
 	factory := gtk.NewSignalListItemFactory()
 	factory.ConnectSetup(func(object *coreglib.Object) {
 		cell := object.Cast().(*gtk.ColumnViewCell)
@@ -113,6 +115,20 @@ func textColumn(spec columnSpec) *gtk.ColumnViewColumn {
 		label.SetXAlign(0)
 		label.SetEllipsize(3)
 		label.AddCSSClass("table-cell")
+		if t.cellActivated != nil {
+			click := gtk.NewGestureClick()
+			click.SetButton(gdk.BUTTON_PRIMARY)
+			click.ConnectPressed(func(nPress int, _, _ float64) {
+				if nPress != 2 {
+					return
+				}
+				position := cell.Position()
+				if position != gtk.InvalidListPosition {
+					t.cellActivated(position, spec.field)
+				}
+			})
+			label.AddController(click)
+		}
 		cell.SetChild(label)
 	})
 	factory.ConnectBind(func(object *coreglib.Object) {
