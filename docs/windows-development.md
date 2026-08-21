@@ -66,6 +66,28 @@ flag initializes GTK, registers the fonts, loads GtkSourceView's SQL language
 definition, and exercises an editor buffer without loading AWS configuration.
 It is hidden because it is a packaging diagnostic rather than a user workflow.
 
+## Installer
+
+The Windows installer uses Inno Setup 6.7.1. It installs for the current user
+beneath `%LOCALAPPDATA%\Programs\e9s`, so it does not require administrator
+rights. It creates a Start Menu shortcut, offers an unchecked desktop-shortcut
+option, registers a normal Programs and Features uninstaller, and uses a stable
+application ID so later versions upgrade the existing installation.
+
+Build it from PowerShell after extracting or staging the portable archive:
+
+```powershell
+./packaging/windows/build-installer.ps1 `
+  -Version "v0.9.0" `
+  -BundleDirectory "C:\path\to\e9s-gui-0.9.0-windows-amd64" `
+  -OutputDirectory "$PWD\dist"
+```
+
+The application icon is embedded into the Windows executable during the native
+build and is also used for installer and shortcut metadata. The installer does
+not remove `%APPDATA%\e9s` or the per-user runtime cache during uninstall, so a
+user's AWS-oriented settings and saved work are preserved.
+
 ## CI boundary
 
 `.github/workflows/windows-gui.yml` performs the same build on a native Windows

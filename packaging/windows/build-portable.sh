@@ -44,6 +44,7 @@ else
 fi
 
 install -m 0644 "$repo_dir/LICENSE" "$bundle_dir/licenses/e9s/LICENSE"
+install -m 0644 "$repo_dir/assets/icons/io.github.dostrow.e9s.ico" "$bundle_dir/e9s.ico"
 install -m 0644 "$repo_dir/assets/fonts/README.md" "$bundle_dir/share/e9s/fonts/README.md"
 install -m 0644 "$repo_dir/assets/fonts/"*.ttf "$bundle_dir/share/e9s/fonts/"
 install -m 0644 "$repo_dir/assets/fonts/licenses/"* "$bundle_dir/licenses/e9s/fonts/"

@@ -7,4 +7,5 @@ single-color 16-pixel source intended for desktop surfaces that recolor icons.
 
 The artwork is original to e9s and is distributed under the repository's MIT
 license. Raster fallbacks are generated from the full-color SVG; the SVG files
-are the editable sources of record.
+are the editable sources of record. The multi-resolution `.ico` is generated
+from the same SVG and is embedded in Windows executables and installers.
