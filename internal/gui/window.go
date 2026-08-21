@@ -2139,7 +2139,9 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.search.GrabFocus()
 		}
 	})
-	w.addAction(app, "back", []string{"Escape"}, w.goBack)
+	// Escape is handled by the window key controller so focused VTE terminals
+	// can deliver it to their child process instead of activating Back.
+	w.addAction(app, "back", nil, w.goBack)
 	w.addAction(app, "modes", []string{"<Control>p"}, w.showModulePicker)
 	w.addAction(app, "terminal-dock", []string{"<Control>grave", "F12"}, w.toggleTerminalDock)
 	w.addAction(app, "terminal-new-tab", []string{"<Control><Shift>t"}, w.openNewTerminalDockTab)
@@ -2200,8 +2202,15 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
 		w.noteAWSActivity()
-		if keyval == gdk.KEY_Escape && w.showingMetrics && w.metricsFocusedTitle != "" {
-			w.restoreMetricCharts()
+		if keyval == gdk.KEY_Escape {
+			if w.terminalAcceptsKeyboardInput() {
+				return false
+			}
+			if w.showingMetrics && w.metricsFocusedTitle != "" {
+				w.restoreMetricCharts()
+				return true
+			}
+			w.goBack()
 			return true
 		}
 		action := printableShortcutAction(keyval, state)
@@ -2246,7 +2255,7 @@ func printableShortcutAction(keyval uint, state gdk.ModifierType) string {
 }
 
 func (w *mainWindow) focusAcceptsTextInput() bool {
-	if w.showingTerminal || w.terminalDockHasFocus() {
+	if w.terminalAcceptsKeyboardInput() {
 		return true
 	}
 	focus := w.window.Focus()
@@ -2267,6 +2276,10 @@ func (w *mainWindow) focusAcceptsTextInput() bool {
 		return true
 	}
 	return false
+}
+
+func (w *mainWindow) terminalAcceptsKeyboardInput() bool {
+	return w.showingTerminal || w.terminalDockHasFocus()
 }
 
 func (w *mainWindow) addAction(app *gtk.Application, name string, accels []string, run func()) {
