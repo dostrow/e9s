@@ -23,6 +23,7 @@ Install MSYS2 and open a UCRT64 shell. Install the native GTK development stack:
 ```sh
 pacman -S --needed \
   mingw-w64-ucrt-x86_64-gcc \
+  mingw-w64-ucrt-x86_64-gobject-introspection \
   mingw-w64-ucrt-x86_64-gtk4 \
   mingw-w64-ucrt-x86_64-gtksourceview5 \
   mingw-w64-ucrt-x86_64-pkgconf \

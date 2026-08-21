@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -331,13 +332,23 @@ func resetConfigPath() {
 	configPath = ""
 }
 
-func TestSaveAndLoad(t *testing.T) {
-	tmpDir := t.TempDir()
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+func useTemporaryConfigHome(t *testing.T) string {
+	t.Helper()
+	temporary := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", temporary)
+		t.Setenv("USERPROFILE", temporary)
+	} else {
+		t.Setenv("XDG_CONFIG_HOME", temporary)
+		t.Setenv("HOME", temporary)
+	}
 	resetConfigPath()
-	defer resetConfigPath()
+	t.Cleanup(resetConfigPath)
+	return temporary
+}
+
+func TestSaveAndLoad(t *testing.T) {
+	tmpDir := useTemporaryConfigHome(t)
 
 	cfg := DefaultConfig()
 	cfg.Defaults.Cluster = "test-cluster"
@@ -370,12 +381,7 @@ func TestSaveAndLoad(t *testing.T) {
 }
 
 func TestSavePreservesUnknownKeysAndComments(t *testing.T) {
-	tmpDir := t.TempDir()
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
-	resetConfigPath()
-	defer resetConfigPath()
+	tmpDir := useTemporaryConfigHome(t)
 
 	path := filepath.Join(tmpDir, "e9s", "config.yaml")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -411,12 +417,7 @@ func TestSavePreservesUnknownKeysAndComments(t *testing.T) {
 }
 
 func TestSaveRawRejectsInvalidConfiguration(t *testing.T) {
-	tmpDir := t.TempDir()
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
-	resetConfigPath()
-	defer resetConfigPath()
+	tmpDir := useTemporaryConfigHome(t)
 
 	cfg := DefaultConfig()
 	if err := cfg.Save(); err != nil {
@@ -460,12 +461,7 @@ gui:
 }
 
 func TestLoadMissingFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
-	resetConfigPath()
-	defer resetConfigPath()
+	useTemporaryConfigHome(t)
 
 	cfg := Load()
 	if cfg.Defaults.RefreshInterval != 5 {
@@ -486,12 +482,7 @@ func TestSaveDir(t *testing.T) {
 }
 
 func TestConfigPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
-	resetConfigPath()
-	defer resetConfigPath()
+	useTemporaryConfigHome(t)
 
 	path := Path()
 	if path == "" {

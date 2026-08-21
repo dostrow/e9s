@@ -569,7 +569,7 @@ func writeConfigFile(path string, data []byte, backup bool) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporaryName, path)
+	return replaceFile(temporaryName, path)
 }
 
 func (c *Config) applyDefaults() {

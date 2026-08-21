@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -275,11 +276,18 @@ func (c *Client) DownloadPrefix(ctx context.Context, bucket, prefix, destDir str
 }
 
 func s3PrefixDestination(destination, relative string) (string, error) {
-	clean := filepath.Clean(relative)
-	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+	// S3 keys always use slash separators, but a backslash becomes a path
+	// separator when the destination is on Windows. Normalize both forms before
+	// validating so a key cannot become rooted or traverse upward only on one
+	// operating system.
+	normalized := strings.ReplaceAll(relative, `\`, "/")
+	clean := pathpkg.Clean(normalized)
+	local := filepath.FromSlash(clean)
+	if clean == "." || strings.HasPrefix(clean, "/") || clean == ".." ||
+		strings.HasPrefix(clean, "../") || filepath.IsAbs(local) || filepath.VolumeName(local) != "" {
 		return "", fmt.Errorf("unsafe S3 object key path %q", relative)
 	}
-	return filepath.Join(destination, clean), nil
+	return filepath.Join(destination, local), nil
 }
 
 type s3ProgressWriter struct {

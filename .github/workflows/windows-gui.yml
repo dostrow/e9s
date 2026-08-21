@@ -45,6 +45,7 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gobject-introspection
             mingw-w64-ucrt-x86_64-gtk4
             mingw-w64-ucrt-x86_64-gtksourceview5
             mingw-w64-ucrt-x86_64-pkgconf
@@ -54,6 +55,7 @@ jobs:
         run: |
           go version
           gcc --version
+          pkg-config --modversion gobject-introspection-1.0
           pkg-config --modversion gtk4
           pkg-config --modversion gtksourceview-5
           go env GOOS GOARCH CGO_ENABLED CC

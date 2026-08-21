@@ -36,6 +36,7 @@ require (
 	github.com/diamondburned/gotk4/pkg v0.3.1
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sys v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -85,6 +86,5 @@ require (
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 )
