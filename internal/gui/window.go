@@ -1262,7 +1262,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.sqsManageSavedButton = gtk.NewButtonWithLabel("Manage saved…")
 	w.sqsManageSavedButton.ConnectClicked(w.promptManageSQSQueues)
 	w.sqsPollButton = gtk.NewButtonWithLabel("Poll messages…")
-	w.sqsPollButton.ConnectClicked(w.promptPollSQSMessages)
+	w.sqsPollButton.ConnectClicked(w.openOrPollSQSMessages)
 	w.sqsClearButton = gtk.NewButtonWithLabel("Clear buffer")
 	w.sqsClearButton.SetTooltipText("Forget captured messages locally; they remain invisible until their current visibility timeout expires")
 	w.sqsClearButton.ConnectClicked(w.clearSQSMessageBuffer)
@@ -4342,8 +4342,16 @@ func (w *mainWindow) updateActionSensitivity() {
 	hasSavedSQSQueues := w.options.Config != nil && len(w.options.Config.SQSQueues) > 0
 	w.sqsManageSavedButton.SetVisible(sqsPage && hasSavedSQSQueues)
 	w.sqsManageSavedButton.SetSensitive(sqsPage && hasSavedSQSQueues && sqsReady)
-	w.sqsPollButton.SetVisible(w.currentPage == pageSQSMessages)
-	w.sqsPollButton.SetSensitive(w.currentPage == pageSQSMessages && sqsReady)
+	sqsQueueMessagesReady := w.currentPage == pageSQSQueues && sqsQueueSelected
+	w.sqsPollButton.SetVisible(sqsQueueMessagesReady || w.currentPage == pageSQSMessages)
+	w.sqsPollButton.SetSensitive((sqsQueueMessagesReady || w.currentPage == pageSQSMessages) && sqsReady)
+	if w.currentPage == pageSQSMessages {
+		w.sqsPollButton.SetLabel("Poll messages…")
+		w.sqsPollButton.SetTooltipText("Receive messages into the local capture buffer")
+	} else {
+		w.sqsPollButton.SetLabel("Messages")
+		w.sqsPollButton.SetTooltipText("Open the message capture browser for this queue")
+	}
 	w.sqsClearButton.SetVisible(w.currentPage == pageSQSMessages && len(w.allSQSMessages) > 0)
 	w.sqsClearButton.SetSensitive(w.currentPage == pageSQSMessages && len(w.allSQSMessages) > 0 && sqsReady)
 	deadLetterAvailable := false
