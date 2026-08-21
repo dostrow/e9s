@@ -48,7 +48,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libfontconfig-dev libgtk-4-dev libgtksourceview-5-dev \
+            gobject-introspection libfontconfig-dev libgtk-4-dev libgtksourceview-5-dev \
             libvte-2.91-gtk4-dev pkg-config
 
       - name: Test GUI adapters
