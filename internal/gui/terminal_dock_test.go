@@ -155,3 +155,29 @@ func TestTerminalDockPageAfterClose(t *testing.T) {
 		})
 	}
 }
+
+func TestTerminalDockFocusAfterTabClose(t *testing.T) {
+	first := &terminalDockSession{id: 1}
+	second := &terminalDockSession{id: 2}
+	third := &terminalDockSession{id: 3}
+	tab := &terminalDockTab{
+		active: second,
+		root: &terminalDockNode{
+			first: &terminalDockNode{session: first},
+			second: &terminalDockNode{
+				first:  &terminalDockNode{session: second},
+				second: &terminalDockNode{session: third},
+			},
+		},
+	}
+	if got := terminalDockFocusAfterTabClose(tab, true); got != first {
+		t.Fatalf("active-tab close focus = terminal %v, want first terminal %v", got, first)
+	}
+	if got := terminalDockFocusAfterTabClose(tab, false); got != second {
+		t.Fatalf("background-tab close focus = terminal %v, want preserved terminal %v", got, second)
+	}
+	tab.active = nil
+	if got := terminalDockFocusAfterTabClose(tab, false); got != first {
+		t.Fatalf("missing active terminal fallback = %v, want first terminal %v", got, first)
+	}
+}

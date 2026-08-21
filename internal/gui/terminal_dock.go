@@ -652,6 +652,7 @@ func (w *mainWindow) closeTerminalDockTab(tab *terminalDockTab) {
 		return
 	}
 	currentPage := w.terminalDockNotebook.CurrentPage()
+	closedActiveTab := currentPage == index
 	closed := make(map[*terminalDockSession]struct{})
 	for _, session := range terminalDockNodeSessions(tab.root) {
 		session.terminal.Stop()
@@ -669,10 +670,7 @@ func (w *mainWindow) closeTerminalDockTab(tab *terminalDockTab) {
 	if page := terminalDockPageAfterClose(currentPage, index, len(w.terminalDockTabs)); page >= 0 {
 		w.terminalDockNotebook.SetCurrentPage(page)
 		nextTab := w.terminalDockTabs[page]
-		next := nextTab.active
-		if next == nil {
-			next = firstTerminalDockSession(nextTab.root)
-		}
+		next := terminalDockFocusAfterTabClose(nextTab, closedActiveTab)
 		if next != nil {
 			w.setActiveTerminalDockSession(next)
 			glib.IdleAdd(next.terminal.GrabFocus)
@@ -680,6 +678,19 @@ func (w *mainWindow) closeTerminalDockTab(tab *terminalDockTab) {
 	}
 	w.updateTerminalDockTitle()
 	w.setStatus(fmt.Sprintf("Closed terminal tab %d", tab.id), false)
+}
+
+func terminalDockFocusAfterTabClose(tab *terminalDockTab, closedActiveTab bool) *terminalDockSession {
+	if tab == nil {
+		return nil
+	}
+	if closedActiveTab {
+		return firstTerminalDockSession(tab.root)
+	}
+	if tab.active != nil {
+		return tab.active
+	}
+	return firstTerminalDockSession(tab.root)
 }
 
 func terminalDockPageAfterClose(current, closed, remaining int) int {
