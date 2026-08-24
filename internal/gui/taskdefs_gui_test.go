@@ -42,6 +42,22 @@ func TestFormatTaskDefinitionEnvironmentProtectsSecretsUntilResolved(t *testing.
 	}
 }
 
+func TestFormatTaskEnvironmentProtectsSecretsUntilResolved(t *testing.T) {
+	task := model.Task{TaskID: "1234567890", TaskDefinition: "arn:aws:ecs:us-east-2:123:task-definition/api:7"}
+	environment := []model.EnvVar{
+		{Name: "PLAIN", Value: "visible"},
+		{Name: "TOKEN", Value: "arn:secret", ResolvedValue: "secret-value", Source: "secrets-manager"},
+	}
+	hidden := formatTaskEnvironment(task, "api", environment, false)
+	if !strings.Contains(hidden, "1234567890 / api") || !strings.Contains(hidden, "arn:secret") || strings.Contains(hidden, "secret-value") {
+		t.Fatalf("unresolved task environment has unexpected output:\n%s", hidden)
+	}
+	revealed := formatTaskEnvironment(task, "api", environment, true)
+	if !strings.Contains(revealed, "secret-value") {
+		t.Fatalf("resolved task environment missing value:\n%s", revealed)
+	}
+}
+
 func TestFormatTaskDefinitionSummary(t *testing.T) {
 	definition := &model.TaskDefSummary{
 		ARN: "arn:api:7", Family: "api", Revision: 7, CPU: "512", Memory: "1024",
