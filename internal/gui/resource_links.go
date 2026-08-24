@@ -288,6 +288,10 @@ func (w *mainWindow) currentResourceRef() (model.ResourceRef, bool) {
 }
 
 func (w *mainWindow) renderTaskDetail(task model.Task) {
+	w.taskEnvironmentContainer = ""
+	w.taskEnvironmentTaskARN = ""
+	w.taskEnvironmentResolved = false
+	w.taskEnvironmentHasSecrets = false
 	var parent *model.Service
 	parentName := w.selectedService
 	if strings.HasPrefix(task.Group, "service:") {

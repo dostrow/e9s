@@ -79,6 +79,7 @@ const (
 	detailClusterSummary   = "cluster-summary"
 	detailService          = "service"
 	detailTask             = "task"
+	detailTaskEnvironment  = "task-environment"
 	detailHelp             = "help"
 	detailError            = "error"
 	detailLogGroup         = "log-group"
@@ -140,6 +141,10 @@ type mainWindow struct {
 	selectedCluster           string
 	selectedService           string
 	selectedTask              string
+	taskEnvironmentContainer  string
+	taskEnvironmentTaskARN    string
+	taskEnvironmentResolved   bool
+	taskEnvironmentHasSecrets bool
 	allClusters               []model.Cluster
 	filteredClusters          []model.Cluster
 	allServices               []model.Service
@@ -567,6 +572,9 @@ type mainWindow struct {
 	sqsDeleteButton             *gtk.Button
 	logsButton                  *gtk.Button
 	taskLogsButton              *gtk.Button
+	taskDetailsButton           *gtk.Button
+	taskEnvironmentButton       *gtk.Button
+	taskRevealEnvironmentButton *gtk.Button
 	standaloneButton            *gtk.Button
 	runTaskButton               *gtk.Button
 	taskScopeBar                *gtk.Box
@@ -1133,6 +1141,12 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.taskLogsButton = gtk.NewButtonWithLabel("Task logs")
 	w.taskLogsButton.SetSensitive(false)
 	w.taskLogsButton.ConnectClicked(w.openTaskLogs)
+	w.taskDetailsButton = gtk.NewButtonWithLabel("Task details")
+	w.taskDetailsButton.ConnectClicked(w.showSelectedTaskDetails)
+	w.taskEnvironmentButton = gtk.NewButtonWithLabel("Environment")
+	w.taskEnvironmentButton.ConnectClicked(w.openTaskEnvironment)
+	w.taskRevealEnvironmentButton = gtk.NewButtonWithLabel("Reveal secret values…")
+	w.taskRevealEnvironmentButton.ConnectClicked(w.confirmRevealTaskEnvironmentSecrets)
 	w.peekLogStreamButton = gtk.NewButtonWithLabel("Peek stream")
 	w.peekLogStreamButton.ConnectClicked(w.peekSelectedLogStream)
 	w.followLogStreamButton = gtk.NewButtonWithLabel("Follow stream")
@@ -1349,6 +1363,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	header.Append(w.execButton)
 	header.Append(w.logsButton)
 	header.Append(w.taskLogsButton)
+	header.Append(w.taskDetailsButton)
+	header.Append(w.taskEnvironmentButton)
+	header.Append(w.taskRevealEnvironmentButton)
 	header.Append(w.peekLogStreamButton)
 	header.Append(w.followLogStreamButton)
 	header.Append(w.followLogGroupButton)
@@ -2201,7 +2218,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "metrics", nil, w.openMetrics)
 	w.addAction(app, "toggle-scale-in", []string{"<Control><Shift>a"}, w.confirmToggleScaleIn)
 	w.addAction(app, "task-definitions", nil, w.openTaskDefinitions)
-	w.addAction(app, "task-definition-env", nil, w.openTaskDefinitionEnvironment)
+	w.addAction(app, "task-definition-env", nil, w.openECSEnvironment)
 	w.addAction(app, "task-definition-diff", nil, w.openTaskDefinitionDiff)
 	w.addAction(app, "task-definition-edit", []string{"<Control>e"}, w.openTaskDefinitionEditor)
 	w.addAction(app, "task-definition-register", []string{"<Control>s"}, w.saveActiveEditor)
@@ -2495,12 +2512,13 @@ func (w *mainWindow) updateDetailParentAction(content string) {
 	if w.detailToolbar == nil {
 		return
 	}
-	visible := content == detailTask && (w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks)
+	visible := (content == detailTask || content == detailTaskEnvironment) &&
+		(w.currentPage == pageTasks || w.currentPage == pageStandaloneTasks || w.currentPage == pageStoppedTasks)
 	w.detailToolbar.SetVisible(visible)
 	if !visible {
 		return
 	}
-	if w.currentPage == pageStandaloneTasks {
+	if w.currentPage == pageStandaloneTasks || w.currentPage == pageStoppedTasks {
 		if w.showingStoppedTasks {
 			w.detailParentButton.SetLabel("Back to recently stopped tasks")
 		} else {
@@ -2574,6 +2592,10 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 	w.lambdaEnvironment = nil
 	w.lambdaEnvironmentResolved = false
 	w.lambdaViewMode = ""
+	w.taskEnvironmentContainer = ""
+	w.taskEnvironmentTaskARN = ""
+	w.taskEnvironmentResolved = false
+	w.taskEnvironmentHasSecrets = false
 	w.codeBuildDetail = nil
 	w.codeBuildActionPending = false
 	w.ec2Detail = nil
@@ -3801,7 +3823,7 @@ func (w *mainWindow) refreshStandaloneTasks(foreground bool) {
 				w.selectedTask = ""
 				w.updateActionSensitivity()
 				w.setBreadcrumb(w.standaloneTaskBreadcrumb())
-				if w.detailContent == detailTask {
+				if w.detailContent == detailTask || w.detailContent == detailTaskEnvironment {
 					w.setDetail("The selected task is no longer available.\n\n"+w.standaloneTaskSummary(), detailClusterSummary)
 				}
 				return
@@ -3864,7 +3886,7 @@ func (w *mainWindow) refreshTasks(foreground bool) {
 				w.selectedTask = ""
 				w.updateActionSensitivity()
 				w.setBreadcrumb(w.serviceTaskBreadcrumb())
-				if w.detailContent == detailTask {
+				if w.detailContent == detailTask || w.detailContent == detailTaskEnvironment {
 					w.renderServiceTaskSummary(service, "The selected task is no longer available.")
 				}
 				return
@@ -3970,8 +3992,9 @@ func (w *mainWindow) updateActionSensitivity() {
 		w.costForceRefreshButton.SetSensitive(costPage && !w.costRequestPending && w.options.CostExplorer != nil)
 	}
 	serviceSelected := w.currentPage == pageTasks && w.selectedCluster != "" && w.selectedService != ""
-	standalonePage := w.currentPage == pageStandaloneTasks && w.selectedCluster != ""
+	standalonePage := (w.currentPage == pageStandaloneTasks || w.currentPage == pageStoppedTasks) && w.selectedCluster != ""
 	taskSelected := (serviceSelected || standalonePage) && w.selectedTask != ""
+	taskEnvironmentVisible := taskSelected && w.detailContent == detailTaskEnvironment && w.taskEnvironmentTaskARN == w.selectedTask
 	taskRunning := false
 	taskStopped := false
 	if taskSelected {
@@ -4152,6 +4175,12 @@ func (w *mainWindow) updateActionSensitivity() {
 	w.logsButton.SetSensitive(serviceSelected && w.options.Logs != nil)
 	w.taskLogsButton.SetVisible(taskSelected)
 	w.taskLogsButton.SetSensitive(taskSelected && w.options.Logs != nil)
+	w.taskDetailsButton.SetVisible(taskEnvironmentVisible)
+	w.taskDetailsButton.SetSensitive(taskEnvironmentVisible)
+	w.taskEnvironmentButton.SetVisible(taskSelected && !taskEnvironmentVisible)
+	w.taskEnvironmentButton.SetSensitive(taskSelected && w.options.ECS != nil)
+	w.taskRevealEnvironmentButton.SetVisible(taskEnvironmentVisible && w.taskEnvironmentHasSecrets && !w.taskEnvironmentResolved)
+	w.taskRevealEnvironmentButton.SetSensitive(taskEnvironmentVisible && w.options.ECS != nil)
 	logGroupSelected := (w.currentPage == pageLogGroups || w.currentPage == pageLogStreams || w.currentPage == pageSavedLogSearch) && w.selectedLogGroup != ""
 	logStreamSelected := w.currentPage == pageLogStreams && w.selectedLogStream != ""
 	w.peekLogStreamButton.SetVisible(logStreamSelected)
