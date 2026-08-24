@@ -702,6 +702,7 @@ type mainWindow struct {
 	resourceHistory             []resourceNavigationState
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
+	logEndMark                  *gtk.TextMark
 	logSearch                   *gtk.SearchEntry
 	logPauseButton              *gtk.Button
 	logTimestampButton          *gtk.Button

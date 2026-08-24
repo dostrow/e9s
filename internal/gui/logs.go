@@ -77,6 +77,7 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	toolbar.Append(w.logSearch)
 
 	w.logTextBuffer = gtk.NewTextBuffer(nil)
+	w.logEndMark = w.logTextBuffer.CreateMark("e9s-log-end", w.logTextBuffer.EndIter(), false)
 	w.logView = gtk.NewTextViewWithBuffer(w.logTextBuffer)
 	w.logView.SetEditable(false)
 	w.logView.SetCursorVisible(false)
@@ -375,8 +376,9 @@ func (w *mainWindow) applyLogPage(ctx context.Context, generation uint64, page m
 		w.logOlderButton.SetSensitive(true)
 		w.logLastTS = next
 		if len(page.Entries) > 0 {
-			w.logStore.append(page.Entries)
-			w.renderLogs()
+			if added, _ := w.logStore.append(page.Entries); added > 0 {
+				w.renderLogs()
+			}
 		}
 		w.setStatus(fmt.Sprintf("Following %s • %d buffered lines", w.logTitle, w.logStore.len()), false)
 	})
@@ -533,7 +535,7 @@ func (w *mainWindow) loadNewerLogEntries() {
 			}
 			w.updateLogSearchControls()
 			w.renderLogs()
-			w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
+			w.scrollLogsToEnd()
 			status := fmt.Sprintf("Loaded %d newer log events", added)
 			if evicted > 0 {
 				status += fmt.Sprintf(" • dropped %d oldest", evicted)
@@ -598,8 +600,19 @@ func (w *mainWindow) renderLogs() {
 	w.applyLogHighlightTags(formatted)
 	w.updateLogStreamsButton()
 	if w.logFollowing {
-		w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
+		w.scrollLogsToEnd()
 	}
+}
+
+func (w *mainWindow) scrollLogsToEnd() {
+	if w.logView == nil || w.logTextBuffer == nil || w.logEndMark == nil {
+		return
+	}
+	w.logTextBuffer.MoveMark(w.logEndMark, w.logTextBuffer.EndIter())
+	// ScrollToMark is safe while GtkTextView is still validating the layout
+	// produced by SetText. ScrollToIter can briefly expose the buffer start
+	// during that validation, which makes a live tail visibly jump each poll.
+	w.logView.ScrollToMark(w.logEndMark, 0, true, 0, 1)
 }
 
 func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
