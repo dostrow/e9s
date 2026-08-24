@@ -217,6 +217,11 @@ static void e9s_vte_install_pointer_observers(GtkWidget *widget, E9sVteState *st
 
 GtkWidget *e9s_vte_terminal_new(void) {
     GtkWidget *widget = vte_terminal_new();
+#if VTE_CHECK_VERSION(0, 62, 0)
+    if ((vte_get_feature_flags() & VTE_FEATURE_FLAG_SIXEL) != 0) {
+        vte_terminal_set_enable_sixel(VTE_TERMINAL(widget), TRUE);
+    }
+#endif
 #if VTE_CHECK_VERSION(0, 76, 0)
     /* GtkPaned allocates fractional character rows while its divider moves.
      * Filling that remainder stretches every row until another complete row
@@ -236,6 +241,22 @@ GtkWidget *e9s_vte_terminal_new(void) {
     vte_terminal_set_scroll_on_keystroke(VTE_TERMINAL(widget), TRUE);
     vte_terminal_set_scroll_on_output(VTE_TERMINAL(widget), FALSE);
     return widget;
+}
+
+gboolean e9s_vte_terminal_sixel_available(void) {
+#if VTE_CHECK_VERSION(0, 62, 0)
+    return (vte_get_feature_flags() & VTE_FEATURE_FLAG_SIXEL) != 0;
+#else
+    return FALSE;
+#endif
+}
+
+gboolean e9s_vte_terminal_sixel_enabled(GtkWidget *widget) {
+#if VTE_CHECK_VERSION(0, 62, 0)
+    return vte_terminal_get_enable_sixel(VTE_TERMINAL(widget));
+#else
+    return FALSE;
+#endif
 }
 
 void e9s_vte_terminal_copy_clipboard(GtkWidget *widget) {

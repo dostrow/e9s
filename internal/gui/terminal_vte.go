@@ -131,6 +131,16 @@ func (terminal *vteTerminal) motionSuppressionActive() bool {
 	) != 0
 }
 
+func (terminal *vteTerminal) sixelEnabled() bool {
+	return C.e9s_vte_terminal_sixel_enabled(
+		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
+	) != 0
+}
+
+func vteSixelAvailable() bool {
+	return C.e9s_vte_terminal_sixel_available() != 0
+}
+
 func (terminal *vteTerminal) installContextMenu() {
 	menu := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.SetMarginTop(6)

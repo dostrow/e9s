@@ -130,7 +130,9 @@ its shell is running. Font, palette, and zoom changes apply to every session.
 split right and down, and `Ctrl+Alt+Arrow` moves through panes in visual order.
 When a shell exits, its pane closes and the split tree collapses automatically;
 exiting the final shell also hides the empty drawer. Sessions and layouts are
-not restored after the application exits.
+not restored after the application exits. SIXEL graphics are enabled
+automatically when the linked VTE library was compiled with support; tools such
+as Fastfetch can use an explicit `sixel` image-logo mode in embedded sessions.
 
 ## Shared metrics foundation
 

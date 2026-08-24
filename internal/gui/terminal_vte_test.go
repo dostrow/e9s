@@ -27,3 +27,17 @@ func TestVTEMotionSuppressionControllerIsAvailable(t *testing.T) {
 		t.Fatal("VTE enter and motion handlers remained suppressed after pointer activity")
 	}
 }
+
+func TestVTESixelEnabledWhenRuntimeSupportsIt(t *testing.T) {
+	if !gtk.InitCheck() {
+		t.Skip("GTK display unavailable")
+	}
+	if !vteSixelAvailable() {
+		t.Skip("VTE was built without SIXEL support")
+	}
+
+	terminal := newVTETerminal()
+	if !terminal.sixelEnabled() {
+		t.Fatal("VTE reports SIXEL support but the terminal did not enable it")
+	}
+}
