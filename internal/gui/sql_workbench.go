@@ -4,6 +4,7 @@ package gui
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -94,11 +96,13 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlReconnectButton = gtk.NewButtonWithLabel("Reconnect")
 	w.sqlReconnectButton.ConnectClicked(w.reconnectActiveSQLTab)
 	w.sqlRunSelectionButton = gtk.NewButtonWithLabel("Run selection")
+	w.sqlRunSelectionButton.SetTooltipText("Run the selected SQL text (F5 when text is selected)")
 	w.sqlRunSelectionButton.ConnectClicked(func() { w.runActiveSQL(sqlRunSelection) })
 	w.sqlRunCurrentButton = gtk.NewButtonWithLabel("Run current")
-	w.sqlRunCurrentButton.SetTooltipText("Run the statement containing the cursor")
+	w.sqlRunCurrentButton.SetTooltipText("Run only the statement containing the cursor (F5 when no text is selected)")
 	w.sqlRunCurrentButton.ConnectClicked(func() { w.runActiveSQL(sqlRunCurrent) })
 	w.sqlRunAllButton = gtk.NewButtonWithLabel("Run all")
+	w.sqlRunAllButton.SetTooltipText("Run every statement in this query tab, in order")
 	w.sqlRunAllButton.ConnectClicked(func() { w.runActiveSQL(sqlRunAll) })
 	w.sqlWritesButton = gtk.NewToggleButtonWithLabel("Writes locked")
 	w.sqlWritesButton.AddCSSClass("destructive-action")
@@ -288,8 +292,8 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	editorScroll.SetVExpand(true)
 	editorScroll.SetChild(editor.Widget())
 
-	resultTable := newStringTable(nil)
-	resultTable.view.SetTooltipText("Double-click a cell to inspect and copy its complete value")
+	resultTable := newMultiStringTable(nil)
+	resultTable.view.SetTooltipText("Select one or more rows to copy; double-click a cell to inspect its complete value")
 	resultScroll := gtk.NewScrolledWindow()
 	resultScroll.SetHExpand(true)
 	resultScroll.SetVExpand(true)
@@ -378,6 +382,7 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	resultTable.cellActivated = func(position uint, field int) {
 		w.showSQLResultCell(tab, int(position), field)
 	}
+	w.installSQLResultContextMenu(tab)
 	previewButton.ConnectClicked(func() { w.previewSQLObject(tab) })
 	generateButton.ConnectClicked(func() { w.generateSQLSelect(tab) })
 	copyObjectButton.ConnectClicked(func() { w.copySQLObjectName(tab) })
@@ -540,6 +545,19 @@ const (
 	sqlRunAll
 )
 
+func (w *mainWindow) runSelectedOrCurrentSQL() {
+	tab := w.activeSQLTab()
+	if tab == nil {
+		return
+	}
+	_, _, selected := tab.editor.Buffer().SelectionBounds()
+	if selected {
+		w.runActiveSQL(sqlRunSelection)
+		return
+	}
+	w.runActiveSQL(sqlRunCurrent)
+}
+
 func (w *mainWindow) runActiveSQL(mode sqlRunMode) {
 	tab := w.activeSQLTab()
 	if tab == nil || w.sqlActionPending || w.sqlExecutor == nil {
@@ -646,6 +664,100 @@ func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
 	}
 	tab.resultLabel.SetLabel(status)
 	tab.contextNotebook.SetCurrentPage(0)
+}
+
+func (w *mainWindow) installSQLResultContextMenu(tab *sqlWorkbenchTab) {
+	if tab == nil || tab.resultTable == nil {
+		return
+	}
+	menu := gtk.NewBox(gtk.OrientationVertical, 2)
+	menu.SetMarginTop(6)
+	menu.SetMarginBottom(6)
+	menu.SetMarginStart(6)
+	menu.SetMarginEnd(6)
+
+	copyRows := gtk.NewButtonWithLabel("Copy")
+	copyRows.AddCSSClass("flat")
+	copyRows.SetHAlign(gtk.AlignFill)
+	menu.Append(copyRows)
+	copyWithHeaders := gtk.NewButtonWithLabel("Copy with headers")
+	copyWithHeaders.AddCSSClass("flat")
+	copyWithHeaders.SetHAlign(gtk.AlignFill)
+	menu.Append(copyWithHeaders)
+
+	popover := gtk.NewPopover()
+	popover.AddCSSClass("menu")
+	popover.SetChild(menu)
+	popover.SetParent(tab.resultTable.view)
+	copyRows.ConnectClicked(func() {
+		w.copySelectedSQLResultRows(tab, false)
+		popover.Popdown()
+	})
+	copyWithHeaders.ConnectClicked(func() {
+		w.copySelectedSQLResultRows(tab, true)
+		popover.Popdown()
+	})
+
+	click := gtk.NewGestureClick()
+	click.SetButton(gdk.BUTTON_SECONDARY)
+	click.SetPropagationPhase(gtk.PhaseCapture)
+	click.ConnectPressed(func(_ int, x, y float64) {
+		hasSelection := len(tab.resultTable.selectedPositions()) > 0
+		copyRows.SetSensitive(hasSelection)
+		copyWithHeaders.SetSensitive(hasSelection)
+		rectangle := gdk.NewRectangle(int(x), int(y), 1, 1)
+		popover.SetPointingTo(&rectangle)
+		popover.Popup()
+	})
+	tab.resultTable.view.AddController(click)
+}
+
+func (w *mainWindow) copySelectedSQLResultRows(tab *sqlWorkbenchTab, includeHeaders bool) {
+	if tab == nil || len(tab.results) == 0 {
+		return
+	}
+	positions := tab.resultTable.selectedPositions()
+	text, rows, err := formatSQLResultRows(tab.results[len(tab.results)-1], positions, includeHeaders)
+	if err != nil {
+		w.setStatus("Copying SQL result rows failed: "+err.Error(), true)
+		return
+	}
+	if rows == 0 {
+		w.setStatus("Select one or more SQL result rows to copy", true)
+		return
+	}
+	w.window.Clipboard().SetText(text)
+	label := fmt.Sprintf("Copied %d SQL result row(s)", rows)
+	if includeHeaders {
+		label += " with headers"
+	}
+	w.setStatus(label, false)
+}
+
+func formatSQLResultRows(result model.SQLQueryResult, positions []int, includeHeaders bool) (string, int, error) {
+	var out strings.Builder
+	writer := csv.NewWriter(&out)
+	writer.Comma = '\t'
+	if includeHeaders && len(result.Columns) > 0 {
+		if err := writer.Write(result.Columns); err != nil {
+			return "", 0, err
+		}
+	}
+	written := 0
+	for _, position := range positions {
+		if position < 0 || position >= len(result.Rows) {
+			continue
+		}
+		if err := writer.Write(result.Rows[position]); err != nil {
+			return "", 0, err
+		}
+		written++
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", 0, err
+	}
+	return strings.TrimSuffix(out.String(), "\n"), written, nil
 }
 
 func (w *mainWindow) showSQLResultCell(tab *sqlWorkbenchTab, row, field int) {

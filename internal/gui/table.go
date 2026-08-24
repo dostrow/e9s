@@ -17,14 +17,15 @@ type columnSpec struct {
 }
 
 type stringTable struct {
-	model         *gtk.StringList
-	selection     *gtk.SingleSelection
-	view          *gtk.ColumnView
-	columns       []*gtk.ColumnViewColumn
-	specs         []columnSpec
-	count         uint
-	rows          []string
-	cellActivated func(position uint, field int)
+	model          *gtk.StringList
+	selection      *gtk.SingleSelection
+	multiSelection *gtk.MultiSelection
+	view           *gtk.ColumnView
+	columns        []*gtk.ColumnViewColumn
+	specs          []columnSpec
+	count          uint
+	rows           []string
+	cellActivated  func(position uint, field int)
 }
 
 func newStringTable(columns []columnSpec) *stringTable {
@@ -39,6 +40,20 @@ func newStringTable(columns []columnSpec) *stringTable {
 	view.SetSingleClickActivate(false)
 
 	table := &stringTable{model: model, selection: selection, view: view}
+	table.setColumns(columns)
+	return table
+}
+
+func newMultiStringTable(columns []columnSpec) *stringTable {
+	model := gtk.NewStringList(nil)
+	selection := gtk.NewMultiSelection(model)
+	view := gtk.NewColumnView(selection)
+	view.AddCSSClass("e9s-table")
+	view.SetShowColumnSeparators(true)
+	view.SetShowRowSeparators(true)
+	view.SetSingleClickActivate(false)
+
+	table := &stringTable{model: model, multiSelection: selection, view: view}
 	table.setColumns(columns)
 	return table
 }
@@ -85,11 +100,17 @@ func (t *stringTable) replace(rows []string) {
 	if stringRowsEqual(t.rows, rows) {
 		return
 	}
-	selected, preserveSelection := preservedRowPosition(t.rows, rows, t.selection.Selected())
+	selected, preserveSelection := uint(gtk.InvalidListPosition), false
+	if t.selection != nil {
+		selected, preserveSelection = preservedRowPosition(t.rows, rows, t.selection.Selected())
+	}
+	if t.multiSelection != nil {
+		t.multiSelection.UnselectAll()
+	}
 	t.model.Splice(0, t.count, rows)
 	t.count = uint(len(rows))
 	t.rows = append(t.rows[:0], rows...)
-	if preserveSelection {
+	if preserveSelection && t.selection != nil {
 		t.selection.SetSelected(selected)
 	}
 }
@@ -98,13 +119,38 @@ func (t *stringTable) replace(rows []string) {
 // Context changes use this instead of replace(nil) so stale list items cannot
 // remain rendered while the next asynchronous request is in flight.
 func (t *stringTable) clear() {
-	t.selection.SetSelected(gtk.InvalidListPosition)
+	if t.selection != nil {
+		t.selection.SetSelected(gtk.InvalidListPosition)
+	}
+	if t.multiSelection != nil {
+		t.multiSelection.UnselectAll()
+	}
 	if t.count > 0 {
 		t.model.Splice(0, t.count, nil)
 	}
 	t.count = 0
 	t.rows = nil
 	t.view.QueueDraw()
+}
+
+func (t *stringTable) selectedPositions() []int {
+	if t.multiSelection != nil {
+		positions := make([]int, 0)
+		for position := range t.rows {
+			if t.multiSelection.IsSelected(uint(position)) {
+				positions = append(positions, position)
+			}
+		}
+		return positions
+	}
+	if t.selection == nil {
+		return nil
+	}
+	position := t.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(t.rows) {
+		return nil
+	}
+	return []int{int(position)}
 }
 
 func (t *stringTable) textColumn(spec columnSpec) *gtk.ColumnViewColumn {

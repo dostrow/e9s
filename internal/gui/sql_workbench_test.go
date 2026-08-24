@@ -3,6 +3,7 @@
 package gui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dostrow/e9s/internal/config"
@@ -63,5 +64,39 @@ func TestSQLResultCellRejectsInvalidCoordinates(t *testing.T) {
 		if _, _, ok := sqlResultCell(result, coordinate[0], coordinate[1]); ok {
 			t.Fatalf("sqlResultCell accepted coordinate row=%d field=%d", coordinate[0], coordinate[1])
 		}
+	}
+}
+
+func TestFormatSQLResultRowsUsesTSVAndOriginalValues(t *testing.T) {
+	result := model.SQLQueryResult{
+		Columns: []string{"id", "payload"},
+		Rows: [][]string{
+			{"1", "plain"},
+			{"2", "first line\nsecond\tline"},
+			{"3", "ignored"},
+		},
+	}
+	got, rows, err := formatSQLResultRows(result, []int{1, 0}, true)
+	if err != nil {
+		t.Fatalf("formatSQLResultRows: %v", err)
+	}
+	if rows != 2 {
+		t.Fatalf("rows = %d, want 2", rows)
+	}
+	for _, want := range []string{"id\tpayload", "2\t\"first line\nsecond\tline\"", "1\tplain"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatted rows missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatSQLResultRowsSkipsInvalidPositions(t *testing.T) {
+	result := model.SQLQueryResult{Columns: []string{"id"}, Rows: [][]string{{"7"}}}
+	got, rows, err := formatSQLResultRows(result, []int{-1, 1, 0}, false)
+	if err != nil {
+		t.Fatalf("formatSQLResultRows: %v", err)
+	}
+	if rows != 1 || got != "7" {
+		t.Fatalf("formatSQLResultRows() = %q, %d rows; want 7, 1 row", got, rows)
 	}
 }

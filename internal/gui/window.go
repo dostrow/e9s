@@ -2256,6 +2256,10 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 			terminal.NoteKeyPressed()
 		}
 		modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
+		if keyval == gdk.KEY_F5 && modifiers == 0 && terminal == nil && moduleForPage(w.currentPage) == moduleSQLWorkbench {
+			w.runSelectedOrCurrentSQL()
+			return true
+		}
 		if modifiers == (gdk.ControlMask | gdk.ShiftMask) {
 			switch keyval {
 			case gdk.KEY_c, gdk.KEY_C:
