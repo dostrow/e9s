@@ -59,3 +59,10 @@ func TestConnectionKeyIncludesTLSRootCertificate(t *testing.T) {
 		t.Fatal("connection key did not change with the TLS root certificate")
 	}
 }
+
+func TestSQLValueStringFormatsPostgreSQLUUID(t *testing.T) {
+	value := [16]byte{0xdf, 0x9c, 0xaa, 0x78, 0xd7, 0xdb, 0x47, 0x6a, 0x88, 0x67, 0x67, 0x1c, 0xd7, 0x75, 0x3c, 0x2d}
+	if got, want := SQLValueString(value), "df9caa78-d7db-476a-8867-671cd7753c2d"; got != want {
+		t.Fatalf("SQLValueString(UUID) = %q, want %q", got, want)
+	}
+}
