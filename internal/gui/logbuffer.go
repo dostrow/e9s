@@ -42,6 +42,75 @@ type formattedLogHighlight struct {
 	style model.LogHighlightStyle
 }
 
+type incrementalLogUpdate struct {
+	deletePrefix int
+	appendText   string
+}
+
+// incrementalLogBufferUpdate describes an in-place mutation from old to next.
+// A live, bounded tail normally retains a suffix of the old entries, possibly
+// after evicting its oldest records, and appends new entries. Keeping that
+// retained text in GtkTextBuffer avoids a transient relayout at the buffer
+// start on every polling cycle.
+func incrementalLogBufferUpdate(old, next formattedLogBuffer) (incrementalLogUpdate, bool) {
+	if old.text == next.text {
+		return incrementalLogUpdate{}, true
+	}
+	if len(old.lines) == 0 || len(next.lines) == 0 {
+		return incrementalLogUpdate{}, false
+	}
+
+	firstNext := next.lines[0].entry.Key()
+	oldStart := -1
+	for i := range old.lines {
+		if old.lines[i].entry.Key() == firstNext {
+			oldStart = i
+			break
+		}
+	}
+	if oldStart < 0 {
+		return incrementalLogUpdate{}, false
+	}
+	overlap := len(old.lines) - oldStart
+	if overlap > len(next.lines) {
+		return incrementalLogUpdate{}, false
+	}
+	for i := 0; i < overlap; i++ {
+		if old.lines[oldStart+i].entry.Key() != next.lines[i].entry.Key() {
+			return incrementalLogUpdate{}, false
+		}
+	}
+
+	oldKeepByte := byteOffsetAtRune(old.text, old.lines[oldStart].start)
+	nextAppendRune := utf8.RuneCountInString(next.text)
+	if overlap < len(next.lines) {
+		nextAppendRune = next.lines[overlap].start
+	}
+	nextAppendByte := byteOffsetAtRune(next.text, nextAppendRune)
+	if old.text[oldKeepByte:] != next.text[:nextAppendByte] {
+		return incrementalLogUpdate{}, false
+	}
+
+	return incrementalLogUpdate{
+		deletePrefix: old.lines[oldStart].start,
+		appendText:   next.text[nextAppendByte:],
+	}, true
+}
+
+func byteOffsetAtRune(value string, offset int) int {
+	if offset <= 0 {
+		return 0
+	}
+	runes := 0
+	for byteOffset := range value {
+		if runes == offset {
+			return byteOffset
+		}
+		runes++
+	}
+	return len(value)
+}
+
 type logTimestampMode int
 
 const (

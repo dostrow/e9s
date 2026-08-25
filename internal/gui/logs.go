@@ -585,7 +585,25 @@ func (w *mainWindow) renderLogs() {
 		return
 	}
 	formatted := w.formatDisplayedLogs(w.logSearch.Text())
-	w.logTextBuffer.SetText(formatted.text)
+	updatedInPlace := false
+	if w.logFollowing {
+		if update, ok := incrementalLogBufferUpdate(w.logRendered, formatted); ok {
+			if update.deletePrefix > 0 {
+				w.logTextBuffer.Delete(
+					w.logTextBuffer.StartIter(),
+					w.logTextBuffer.IterAtOffset(update.deletePrefix),
+				)
+			}
+			if update.appendText != "" {
+				w.logTextBuffer.Insert(w.logTextBuffer.EndIter(), update.appendText)
+			}
+			updatedInPlace = true
+		}
+	}
+	if !updatedInPlace {
+		w.logTextBuffer.SetText(formatted.text)
+	}
+	w.logRendered = formatted
 	if w.logIndentTags == nil {
 		w.logIndentTags = make(map[int]*gtk.TextTag)
 	}
@@ -620,11 +638,20 @@ func (w *mainWindow) scrollLogsToEnd() {
 	if w.logView == nil || w.logTextBuffer == nil || w.logEndMark == nil {
 		return
 	}
+	w.logScrollGeneration++
+	generation := w.logScrollGeneration
 	w.logTextBuffer.MoveMark(w.logEndMark, w.logTextBuffer.EndIter())
-	// ScrollToMark is safe while GtkTextView is still validating the layout
-	// produced by SetText. ScrollToIter can briefly expose the buffer start
-	// during that validation, which makes a live tail visibly jump each poll.
 	w.logView.ScrollToMark(w.logEndMark, 0, true, 0, 1)
+	// Wrapped lines can change the final layout after the buffer mutation has
+	// returned. Reassert the tail position once GTK has processed that layout,
+	// while discarding stale callbacks from an earlier refresh.
+	glib.IdleAdd(func() {
+		if generation != w.logScrollGeneration || !w.showingLogs || !w.logFollowing {
+			return
+		}
+		w.logTextBuffer.MoveMark(w.logEndMark, w.logTextBuffer.EndIter())
+		w.logView.ScrollToMark(w.logEndMark, 0, true, 0, 1)
+	})
 }
 
 func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
@@ -787,6 +814,9 @@ func (w *mainWindow) updateLogHighlightButton() {
 }
 
 func (w *mainWindow) applyLogHighlightTags(formatted formattedLogBuffer) {
+	for _, tag := range w.logHighlightTags {
+		w.logTextBuffer.RemoveTag(tag, w.logTextBuffer.StartIter(), w.logTextBuffer.EndIter())
+	}
 	spans, err := formatLogHighlights(formatted, w.logHighlightRules)
 	if err != nil || len(w.logHighlightRules) == 0 {
 		return

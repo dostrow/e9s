@@ -705,6 +705,8 @@ type mainWindow struct {
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
 	logEndMark                  *gtk.TextMark
+	logRendered                 formattedLogBuffer
+	logScrollGeneration         uint64
 	logSearch                   *gtk.SearchEntry
 	logPauseButton              *gtk.Button
 	logTimestampButton          *gtk.Button

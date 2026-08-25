@@ -233,6 +233,63 @@ func TestFormattedLogsOffsetsAccountForUnicode(t *testing.T) {
 	}
 }
 
+func TestIncrementalLogBufferUpdateAppendsWithoutReplacingRetainedText(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{
+		{ID: "one", Timestamp: 1, Message: "one ☃"},
+		{ID: "two", Timestamp: 2, Message: "two"},
+	})
+	old := logs.formatWithTimestamps("", logTimestampUTC, time.Now())
+	logs.append([]model.LogEntry{{ID: "three", Timestamp: 3, Message: "three"}})
+	next := logs.formatWithTimestamps("", logTimestampUTC, time.Now())
+
+	update, ok := incrementalLogBufferUpdate(old, next)
+	if !ok {
+		t.Fatal("incrementalLogBufferUpdate() rejected an append-only update")
+	}
+	if update.deletePrefix != 0 || update.appendText == "" {
+		t.Fatalf("update = %#v, want an appended suffix", update)
+	}
+	if got := old.text + update.appendText; got != next.text {
+		t.Fatalf("applied update = %q, want %q", got, next.text)
+	}
+}
+
+func TestIncrementalLogBufferUpdateDropsEvictedPrefixAndAppends(t *testing.T) {
+	logs := newBoundedLogs(3)
+	logs.append([]model.LogEntry{
+		{ID: "one", Timestamp: 1, Message: "one"},
+		{ID: "two", Timestamp: 2, Message: "two λ"},
+		{ID: "three", Timestamp: 3, Message: "three"},
+	})
+	old := logs.formatWithTimestamps("", logTimestampUTC, time.Now())
+	logs.append([]model.LogEntry{{ID: "four", Timestamp: 4, Message: "four"}})
+	next := logs.formatWithTimestamps("", logTimestampUTC, time.Now())
+
+	update, ok := incrementalLogBufferUpdate(old, next)
+	if !ok {
+		t.Fatal("incrementalLogBufferUpdate() rejected a sliding-window update")
+	}
+	if update.deletePrefix <= 0 || update.appendText == "" {
+		t.Fatalf("update = %#v, want a deleted prefix and appended suffix", update)
+	}
+	oldRunes := []rune(old.text)
+	if got := string(oldRunes[update.deletePrefix:]) + update.appendText; got != next.text {
+		t.Fatalf("applied update = %q, want %q", got, next.text)
+	}
+}
+
+func TestIncrementalLogBufferUpdateRejectsChangedRetainedRendering(t *testing.T) {
+	logs := newBoundedLogs(10)
+	logs.append([]model.LogEntry{{ID: "one", Timestamp: 1, Message: "one"}})
+	old := logs.formatWithTimestamps("", logTimestampUTC, time.Now())
+	next := logs.formatWithTimestamps("", logTimestampRelative, time.UnixMilli(5001))
+
+	if _, ok := incrementalLogBufferUpdate(old, next); ok {
+		t.Fatal("incrementalLogBufferUpdate() accepted changed retained text")
+	}
+}
+
 func TestFormattedLogHighlightsMapMessageOffsets(t *testing.T) {
 	logs := newBoundedLogs(10)
 	logs.append([]model.LogEntry{{
