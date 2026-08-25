@@ -3,6 +3,8 @@ package sqlworkbench
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -25,6 +27,7 @@ type ResolvedConnection struct {
 	User         string
 	Password     string
 	SSLMode      string
+	SSLRootCert  string
 	AuthMode     string
 	PGPassSource string
 	DataAPI      bool
@@ -45,6 +48,13 @@ func ResolveConnection(ctx context.Context, profile config.SQLConnection, global
 	}
 	if resolved.Database == "" {
 		return ResolvedConnection{}, fmt.Errorf("database is required")
+	}
+	if resolved.AuthMode != "data-api" && sslModeUsesRootCert(resolved.SSLMode) && strings.TrimSpace(profile.SSLRootCert) != "" {
+		path, err := resolveSSLRootCertPath(profile.SSLRootCert)
+		if err != nil {
+			return ResolvedConnection{}, err
+		}
+		resolved.SSLRootCert = path
 	}
 	switch resolved.AuthMode {
 	case "data-api":
@@ -100,6 +110,41 @@ func ResolveConnection(ctx context.Context, profile config.SQLConnection, global
 		return ResolvedConnection{}, fmt.Errorf("SQL connection %q did not resolve a host, user, and password", profile.Name)
 	}
 	return resolved, nil
+}
+
+func sslModeUsesRootCert(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "verify-ca", "verify-full":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveSSLRootCertPath(configuredPath string) (string, error) {
+	path, err := expandUserPath(configuredPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve TLS root certificate path: %w", err)
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve TLS root certificate path %q: %w", configuredPath, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("read TLS root certificate %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("TLS root certificate %s is not a regular file", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("read TLS root certificate %s: %w", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close TLS root certificate %s: %w", path, err)
+	}
+	return path, nil
 }
 
 func applySecretCredentials(connection *ResolvedConnection, credentials model.SQLCredentials) {

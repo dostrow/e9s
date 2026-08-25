@@ -199,6 +199,9 @@ func (e *Executor) connect(ctx context.Context, connection ResolvedConnection, k
 		User: url.UserPassword(connection.User, connection.Password)}
 	query := connectionURL.Query()
 	query.Set("sslmode", connection.SSLMode)
+	if connection.SSLRootCert != "" {
+		query.Set("sslrootcert", connection.SSLRootCert)
+	}
 	if connection.Profile.ConnectSecs > 0 {
 		query.Set("connect_timeout", strconv.Itoa(connection.Profile.ConnectSecs))
 	}
@@ -303,10 +306,10 @@ func (s *directSession) close() {
 
 func connectionKey(connection ResolvedConnection) string {
 	encoded, _ := json.Marshal(struct {
-		Host, Database, User, SSLMode, Auth string
-		Port                                int
-		Tunnel                              *config.SSMTunnel
-	}{connection.Host, connection.Database, connection.User, connection.SSLMode, connection.AuthMode, connection.Port, connection.Profile.SSMTunnel})
+		Host, Database, User, SSLMode, SSLRootCert, Auth string
+		Port                                             int
+		Tunnel                                           *config.SSMTunnel
+	}{connection.Host, connection.Database, connection.User, connection.SSLMode, connection.SSLRootCert, connection.AuthMode, connection.Port, connection.Profile.SSMTunnel})
 	return string(encoded)
 }
 

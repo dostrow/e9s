@@ -584,7 +584,9 @@ RDS IAM tokens, Secrets Manager, the RDS Data API, and optional SSM port
 forwarding. A per-connection `pgpass_file` is tried before the ordered global
 `sql.pgpass_files` list and the platform default. Files must be private (`0600`
 on Unix). Passwords and generated IAM tokens are never written to e9s config or
-tab state.
+tab state. Direct connections using `verify-full` can set a per-connection
+`sslrootcert` path to a PEM CA bundle when the signing certificate is not in the
+platform or PostgreSQL default trust store.
 
 Queries are read-only by default. Data-changing SQL requires both the global
 `sql.allow_writes` setting and a separately confirmed, per-tab break-glass
@@ -669,6 +671,7 @@ sql:
       auth: pgpass # pgpass, iam, secrets-manager, password, or data-api
       pgpass_file: ~/.pgpass-reporting # optional per-profile first choice
       sslmode: verify-full
+      sslrootcert: ~/.postgresql/rds-ca-bundle.pem # optional PEM CA bundle
 
 exclude_services: []
 ```

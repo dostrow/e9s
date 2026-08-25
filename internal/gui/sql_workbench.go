@@ -1111,6 +1111,13 @@ func (w *mainWindow) manageSQLConnections() {
 	resourceARN := gtk.NewEntry()
 	sslModes := []settingsChoice{{label: "Verify full", value: "verify-full"}, {label: "Require TLS", value: "require"}, {label: "Prefer TLS", value: "prefer"}, {label: "Disable TLS", value: "disable"}}
 	sslMode := gtk.NewDropDownFromStrings(settingsChoiceLabels(sslModes))
+	sslRootCert := gtk.NewEntry()
+	sslRootCert.SetHExpand(true)
+	sslRootCert.SetPlaceholderText("Optional PEM CA bundle; blank uses the default trust store")
+	sslRootCertBrowse := gtk.NewButtonWithLabel("Browse…")
+	sslRootCertControl := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	sslRootCertControl.Append(sslRootCert)
+	sslRootCertControl.Append(sslRootCertBrowse)
 	connectTimeout := gtk.NewSpinButtonWithRange(0, 300, 1)
 	connectTimeout.SetValue(15)
 	ssmInstance := gtk.NewEntry()
@@ -1132,6 +1139,9 @@ func (w *mainWindow) manageSQLConnections() {
 	content.Append(settingsRow("Secrets Manager ARN", secretARN))
 	content.Append(settingsRow("Data API resource ARN", resourceARN))
 	content.Append(settingsRow("TLS mode", sslMode))
+	sslRootCertRow := settingsRow("TLS root certificate bundle", sslRootCertControl)
+	content.Append(sslRootCertRow)
+	content.Append(settingsNote("For verify-full, choose a PEM CA/root-certificate bundle only when the database certificate is not trusted by the platform or PostgreSQL default trust store."))
 	content.Append(settingsRow("Connect timeout (seconds; 0 uses driver default)", connectTimeout))
 	content.Append(settingsNote("Optional SSM tunnel. e9s runs the AWS CLI start-session command and keeps that process scoped to the database connection."))
 	content.Append(settingsRow("SSM managed instance ID", ssmInstance))
@@ -1168,6 +1178,7 @@ func (w *mainWindow) manageSQLConnections() {
 		secretARN.SetText(profile.SecretARN)
 		resourceARN.SetText(profile.ResourceARN)
 		sslMode.SetSelected(uint(settingsChoiceIndex(sslModes, firstValue(profile.SSLMode, "verify-full"))))
+		sslRootCert.SetText(profile.SSLRootCert)
 		connectTimeout.SetValue(float64(profile.ConnectSecs))
 		if profile.SSMTunnel == nil {
 			ssmInstance.SetText("")
@@ -1181,8 +1192,27 @@ func (w *mainWindow) manageSQLConnections() {
 			ssmLocalPort.SetValue(float64(profile.SSMTunnel.LocalPort))
 		}
 	}
+	updateSSLRootCertSensitivity := func() {
+		sslRootCertRow.SetSensitive(settingsChoiceValue(sslModes, sslMode.Selected()) == "verify-full")
+	}
 	selector.NotifyProperty("selected", loadProfile)
+	sslMode.NotifyProperty("selected", updateSSLRootCertSensitivity)
+	sslRootCertBrowse.ConnectClicked(func() {
+		chooser := gtk.NewFileChooserNative("Choose TLS root certificate bundle", &dialog.Window, gtk.FileChooserActionOpen, "Choose", "Cancel")
+		chooser.SetModal(true)
+		if path := strings.TrimSpace(sslRootCert.Text()); path != "" {
+			_ = chooser.SetFile(gio.NewFileForPath(path))
+		}
+		chooser.ConnectResponse(func(response int) {
+			defer chooser.Destroy()
+			if response == int(gtk.ResponseAccept) && chooser.File() != nil && chooser.File().Path() != "" {
+				sslRootCert.SetText(chooser.File().Path())
+			}
+		})
+		chooser.Show()
+	})
 	loadProfile()
+	updateSSLRootCertSensitivity()
 
 	dialog.AddButton("Close", int(gtk.ResponseClose))
 	dialog.AddButton("Delete", int(gtk.ResponseReject))
@@ -1225,7 +1255,8 @@ func (w *mainWindow) manageSQLConnections() {
 			Database: strings.TrimSpace(database.Text()), User: strings.TrimSpace(user.Text()),
 			Auth: settingsChoiceValue(authModes, auth.Selected()), PGPassFile: strings.TrimSpace(pgpass.Text()),
 			SecretARN: strings.TrimSpace(secretARN.Text()), ResourceARN: strings.TrimSpace(resourceARN.Text()),
-			SSLMode: settingsChoiceValue(sslModes, sslMode.Selected()), ConnectSecs: connectTimeout.ValueAsInt(),
+			SSLMode: settingsChoiceValue(sslModes, sslMode.Selected()), SSLRootCert: strings.TrimSpace(sslRootCert.Text()),
+			ConnectSecs: connectTimeout.ValueAsInt(),
 		}
 		if instance := strings.TrimSpace(ssmInstance.Text()); instance != "" {
 			profile.SSMTunnel = &config.SSMTunnel{InstanceID: instance, RemoteHost: strings.TrimSpace(ssmHost.Text()),

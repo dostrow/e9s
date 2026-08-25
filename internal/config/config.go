@@ -71,6 +71,7 @@ type SQLConnection struct {
 	SecretARN    string     `yaml:"secret_arn,omitempty"`
 	ResourceARN  string     `yaml:"resource_arn,omitempty"` // Data API cluster ARN
 	SSLMode      string     `yaml:"sslmode,omitempty"`
+	SSLRootCert  string     `yaml:"sslrootcert,omitempty"` // optional PEM CA bundle for server verification
 	ConnectSecs  int        `yaml:"connect_timeout_seconds,omitempty"`
 	SSMTunnel    *SSMTunnel `yaml:"ssm_tunnel,omitempty"`
 }
