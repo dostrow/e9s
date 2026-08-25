@@ -599,6 +599,8 @@ type mainWindow struct {
 	detailText                  string
 	detailStack                 *gtk.Stack
 	workspaceBusyBar            *gtk.Box
+	workspacePauseBar           *gtk.Box
+	workspacePauseLabel         *gtk.Label
 	workspaceCancelButton       *gtk.Button
 	workspaceCancel             func()
 	workspaceBusySpinner        *gtk.Spinner
@@ -1127,14 +1129,24 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.refreshPauseButton.ConnectToggled(func() {
 		paused := w.refreshPauseButton.Active()
 		w.manualRefreshPaused.Store(paused)
+		w.setWorkspaceRefreshPaused(paused)
 		if paused {
 			w.refreshPauseButton.SetLabel("Resume refresh")
-			w.setStatus("Automatic AWS refresh paused", false)
+			if w.showingLogs && w.logFollowing {
+				w.setWorkspaceBusy("", false)
+				w.setStatus("Log follow is waiting because automatic AWS refresh is paused", false)
+			} else {
+				w.setStatus("Automatic AWS refresh paused", false)
+			}
 			return
 		}
 		w.refreshPauseButton.SetLabel("Pause refresh")
 		w.noteAWSActivity()
-		w.setStatus("Automatic AWS refresh resumed", false)
+		if w.showingLogs && w.logFollowing {
+			w.setStatus("Automatic AWS refresh resumed; log follow will retrieve new events", false)
+		} else {
+			w.setStatus("Automatic AWS refresh resumed", false)
+		}
 		w.refreshCurrent(true)
 	})
 	w.logsButton = gtk.NewButtonWithLabel("Service logs")
@@ -2046,8 +2058,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	})
 	w.workspaceBusyBar.Append(w.workspaceCancelButton)
 	w.workspaceBusyBar.SetVisible(false)
+	w.workspacePauseLabel = gtk.NewLabel("Automatic refresh is paused. Live data will not be retrieved until refresh is resumed. Manual Refresh and one-time actions remain available.")
+	w.workspacePauseLabel.SetXAlign(0)
+	w.workspacePauseLabel.SetHExpand(true)
+	w.workspacePauseLabel.SetWrap(true)
+	w.workspacePauseLabel.AddCSSClass("semantic-warning")
+	resumeRefresh := gtk.NewButtonWithLabel("Resume refresh")
+	resumeRefresh.ConnectClicked(func() { w.refreshPauseButton.SetActive(false) })
+	w.workspacePauseBar = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	w.workspacePauseBar.AddCSSClass("workspace-paused")
+	w.workspacePauseBar.Append(w.workspacePauseLabel)
+	w.workspacePauseBar.Append(resumeRefresh)
+	w.workspacePauseBar.SetVisible(false)
 	workspace := gtk.NewBox(gtk.OrientationVertical, 0)
 	preparePaneCard(&workspace.Widget)
+	workspace.Append(w.workspacePauseBar)
 	workspace.Append(w.workspaceBusyBar)
 	workspace.Append(w.detailStack)
 
@@ -2473,6 +2498,12 @@ func (w *mainWindow) setWorkspaceBusy(label string, busy bool) {
 	w.workspaceBusyLabel.SetLabel(label)
 	w.workspaceBusySpinner.Start()
 	w.workspaceBusyBar.SetVisible(true)
+}
+
+func (w *mainWindow) setWorkspaceRefreshPaused(paused bool) {
+	if w.workspacePauseBar != nil {
+		w.workspacePauseBar.SetVisible(paused)
+	}
 }
 
 func (w *mainWindow) setWorkspaceCancellation(cancel func()) {

@@ -149,7 +149,7 @@ func buildInfoBar(breadcrumbs []string, region string, lastRefresh time.Time, pa
 		summary := strings.Join(strings.Fields(err.Error()), " ")
 		right = theme.ErrorStyle.Render(fmt.Sprintf("error [%s]: %s", errorDetailsKey, summary))
 	} else if paused {
-		right = lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("⏸ paused (press any key)")
+		right = lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("⏸ automatic refresh paused")
 	} else if !lastRefresh.IsZero() {
 		ago := time.Since(lastRefresh).Truncate(time.Second)
 		right = fmt.Sprintf("↻ %s ago", ago)

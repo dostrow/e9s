@@ -860,6 +860,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
 		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
+		a.logView = a.logView.WithGlobalRefreshPaused(a.paused)
 		if msg.anchor != nil {
 			a.logView = a.logView.WithJumpTarget(*msg.anchor)
 		}
@@ -882,6 +883,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = viewLogs
 		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
 		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
+		a.logView = a.logView.WithGlobalRefreshPaused(a.paused)
 		a.logView = a.logView.WithJumpTarget(msg.Entry)
 		a.activeLogPathName = a.logSearchSavedPath
 		a.logView = a.logView.WithContext(a.ctx)
@@ -2028,6 +2030,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if snapshot.EstimatedCostUSD >= a.cfg.Defaults.CostGuardUSD {
 				a.paused = true
 				a.manualPause = true
+				if a.state == viewLogs {
+					a.logView.SetGlobalRefreshPaused(true)
+				}
 				a.flashMessage = fmt.Sprintf("Polling paused: known session cost $%.2f reached guard $%.2f; manual refresh remains available", snapshot.EstimatedCostUSD, a.cfg.Defaults.CostGuardUSD)
 				a.flashExpiry = time.Now().Add(8 * time.Second)
 				return a, a.tick()
@@ -2036,6 +2041,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pause refresh when idle or manually paused
 		if a.paused || (a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout) {
 			a.paused = true
+			if a.state == viewLogs {
+				a.logView.SetGlobalRefreshPaused(true)
+			}
 			return a, a.tick() // keep ticking for flash/config but skip refresh
 		}
 		base := time.Duration(a.refreshSec) * time.Second
@@ -2093,6 +2101,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == a.kb.PauseResume {
 			a.paused = !a.paused
 			a.manualPause = a.paused
+			var logRefresh tea.Cmd
+			if a.state == viewLogs {
+				logRefresh = a.logView.SetGlobalRefreshPaused(a.paused)
+			}
 			if a.paused {
 				a.flashMessage = "Polling paused"
 				a.flashExpiry = time.Now().Add(3 * time.Second)
@@ -2100,16 +2112,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.flashMessage = "Polling resumed"
 				a.flashExpiry = time.Now().Add(3 * time.Second)
 				a.loading = true
-				return a, a.refreshCurrentView()
+				return a, tea.Batch(logRefresh, a.refreshCurrentView())
 			}
-			return a, nil
+			return a, logRefresh
 		}
 
 		// If idle-paused (not manually), any key resumes
 		if a.paused && !a.manualPause {
 			a.paused = false
 			a.loading = true
-			return a, a.refreshCurrentView()
+			var logRefresh tea.Cmd
+			if a.state == viewLogs {
+				logRefresh = a.logView.SetGlobalRefreshPaused(false)
+			}
+			return a, tea.Batch(logRefresh, a.refreshCurrentView())
 		}
 
 		// Global keys

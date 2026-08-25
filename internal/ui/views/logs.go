@@ -51,12 +51,13 @@ type LogViewerModel struct {
 	logGroups []string
 	streams   []string
 
-	lines    []logLine
-	seen     map[model.LogEntryKey]struct{}
-	scroll   int
-	follow   bool // auto-scroll to bottom
-	tailMode bool // true if opened for live tailing; false for historical/jump
-	tsMode   int  // 0=relative, 1=absolute local, 2=absolute UTC
+	lines               []logLine
+	seen                map[model.LogEntryKey]struct{}
+	scroll              int
+	follow              bool // auto-scroll to bottom
+	tailMode            bool // true if opened for live tailing; false for historical/jump
+	globalRefreshPaused bool
+	tsMode              int // 0=relative, 1=absolute local, 2=absolute UTC
 
 	// Search
 	search       string // current search pattern
@@ -175,7 +176,30 @@ func NewMultiGroupLogViewerInRange(title string, logs *service.Logs, logGroups [
 }
 
 func (m LogViewerModel) Init() tea.Cmd {
+	if m.follow && m.globalRefreshPaused {
+		return m.scheduleRefresh()
+	}
 	return m.fetchLogs()
+}
+
+// WithGlobalRefreshPaused prevents a live viewer's initial request until the
+// application's global refresh control is resumed. Fixed-range and other
+// one-time log requests remain available while automatic refresh is paused.
+func (m LogViewerModel) WithGlobalRefreshPaused(paused bool) LogViewerModel {
+	m.globalRefreshPaused = paused
+	return m
+}
+
+// SetGlobalRefreshPaused updates a live viewer after the application-level
+// pause changes. Resuming immediately requests the next page rather than
+// waiting for the next scheduled log tick.
+func (m *LogViewerModel) SetGlobalRefreshPaused(paused bool) tea.Cmd {
+	wasPaused := m.globalRefreshPaused
+	m.globalRefreshPaused = paused
+	if wasPaused && !paused && m.follow {
+		return m.fetchLogs()
+	}
+	return nil
 }
 
 // WithContext binds log requests to the owning frontend lifecycle.
@@ -365,7 +389,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 
 	case LogTickMsg:
 		if m.follow {
-			return m, m.fetchLogs()
+			return m, m.followRefreshCommand()
 		}
 		return m, nil
 
@@ -388,7 +412,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 				m.scroll = maxScroll
 				if m.tailMode && !m.follow {
 					m.follow = true
-					return m, m.fetchLogs()
+					return m, m.followRefreshCommand()
 				}
 			}
 		case msg.String() == "pgup":
@@ -404,7 +428,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 				m.scroll = maxScroll
 				if m.tailMode && !m.follow {
 					m.follow = true
-					return m, m.fetchLogs()
+					return m, m.followRefreshCommand()
 				}
 			}
 		case msg.String() == "f", msg.String() == "F":
@@ -412,7 +436,7 @@ func (m LogViewerModel) Update(msg tea.Msg) (LogViewerModel, tea.Cmd) {
 			if m.follow {
 				m.tailMode = true // explicit toggle promotes to tail mode
 				m.scrollToBottom()
-				return m, m.fetchLogs()
+				return m, m.followRefreshCommand()
 			}
 		case msg.String() == "t", msg.String() == "T":
 			m.tsMode = (m.tsMode + 1) % 3
@@ -599,7 +623,11 @@ func (m LogViewerModel) View() string {
 
 	followIndicator := theme.HelpStyle.Render(" (paused)")
 	if m.follow {
-		followIndicator = theme.HealthStyle("healthy").Render(" (following)")
+		if m.globalRefreshPaused {
+			followIndicator = lipgloss.NewStyle().Foreground(theme.ColorYellow).Render(" (waiting: global refresh paused)")
+		} else {
+			followIndicator = theme.HealthStyle("healthy").Render(" (following)")
+		}
 	}
 	b.WriteString(followIndicator)
 
@@ -621,6 +649,11 @@ func (m LogViewerModel) View() string {
 		fmt.Fprintf(&b, "  [%d/%d lines shown]", len(display), len(m.lines))
 	}
 	b.WriteString("\n\n")
+	if m.follow && m.globalRefreshPaused {
+		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorYellow).Bold(true).Render(
+			"  ⏸ Automatic refresh is paused. Live log data will not be retrieved until refresh is resumed."))
+		b.WriteString("\n\n")
+	}
 
 	if m.searching {
 		b.WriteString("  / " + m.searchInput.View() + "\n\n")
@@ -836,6 +869,13 @@ func (m LogViewerModel) scheduleRefresh() tea.Cmd {
 	return tea.Tick(2*time.Second, func(_ time.Time) tea.Msg {
 		return LogTickMsg{}
 	})
+}
+
+func (m LogViewerModel) followRefreshCommand() tea.Cmd {
+	if m.globalRefreshPaused {
+		return m.scheduleRefresh()
+	}
+	return m.fetchLogs()
 }
 
 func (m LogViewerModel) fetchLogs() tea.Cmd {

@@ -198,7 +198,11 @@ func (w *mainWindow) showLogFollowFrom(source model.LogSource, title string, sta
 		w.logHiddenStreams = stringSet(path.HiddenStreams)
 		w.renderLogs()
 	}
-	w.setStatus("Following logs for "+title, false)
+	if w.manualRefreshPaused.Load() {
+		w.setStatus("Log follow for "+title+" is waiting for automatic refresh to resume", false)
+	} else {
+		w.setStatus("Following logs for "+title, false)
+	}
 	w.updateActionSensitivity()
 }
 
@@ -279,7 +283,11 @@ func (w *mainWindow) startLogFollowWithFallback(source model.LogSource, allowFal
 	if w.logCancel != nil {
 		w.logCancel()
 	}
-	w.setWorkspaceBusy("Loading log events…", true)
+	if w.manualRefreshPaused.Load() {
+		w.setWorkspaceBusy("", false)
+	} else {
+		w.setWorkspaceBusy("Loading log events…", true)
+	}
 	w.logNewerKnown = 0
 	w.logNewestKnownTS = 0
 	if w.logOlderButton != nil {
@@ -565,7 +573,11 @@ func (w *mainWindow) toggleLogFollow() {
 		return
 	}
 	w.startLogFollow(w.logSource, true)
-	w.setStatus("Log follow resumed", false)
+	if w.manualRefreshPaused.Load() {
+		w.setStatus("Log follow is waiting because automatic AWS refresh is paused", false)
+	} else {
+		w.setStatus("Log follow resumed", false)
+	}
 }
 
 func (w *mainWindow) renderLogs() {

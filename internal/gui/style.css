@@ -245,6 +245,11 @@ checkbutton.e9s-check > check:disabled {
   padding: 8px 12px;
 }
 
+.workspace-paused {
+  border-bottom: 1px solid alpha(currentColor, 0.18);
+  padding: 8px 12px;
+}
+
 /* GTK dialog action areas are linked button boxes in several themes. Keep
  * ordinary actions visually distinct with the same eight-pixel gap used by
  * application-owned button groups. */
