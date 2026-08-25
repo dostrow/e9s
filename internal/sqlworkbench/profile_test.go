@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dostrow/e9s/internal/config"
@@ -44,5 +45,51 @@ func TestResolveConnectionSecretFillsMissingMetadata(t *testing.T) {
 	}
 	if resolved.Host != "db" || resolved.User != "reader" || resolved.Password != "secret" {
 		t.Fatalf("unexpected resolution: %#v", resolved)
+	}
+}
+
+func TestResolveConnectionUsesExplicitTLSRootCertificate(t *testing.T) {
+	directory := t.TempDir()
+	certificate := filepath.Join(directory, "rds-ca-bundle.pem")
+	if err := os.WriteFile(certificate, []byte("test certificate bundle"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ResolveConnection(context.Background(), config.SQLConnection{
+		Name: "db", Host: "db", Database: "app", User: "reader", Auth: "password",
+		SSLMode: "verify-full", SSLRootCert: certificate,
+	}, nil, nil, func(context.Context, config.SQLConnection) (string, error) { return "password", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(certificate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.SSLRootCert != want {
+		t.Fatalf("SSLRootCert = %q, want %q", resolved.SSLRootCert, want)
+	}
+}
+
+func TestResolveConnectionRejectsMissingTLSRootCertificate(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.pem")
+	_, err := ResolveConnection(context.Background(), config.SQLConnection{
+		Name: "db", Host: "db", Database: "app", User: "reader", Auth: "password",
+		SSLMode: "verify-full", SSLRootCert: missing,
+	}, nil, nil, func(context.Context, config.SQLConnection) (string, error) { return "password", nil })
+	if err == nil || !strings.Contains(err.Error(), "TLS root certificate") {
+		t.Fatalf("ResolveConnection error = %v, want a TLS root certificate error", err)
+	}
+}
+
+func TestResolveConnectionIgnoresTLSRootCertificateOutsideVerificationModes(t *testing.T) {
+	resolved, err := ResolveConnection(context.Background(), config.SQLConnection{
+		Name: "db", Host: "db", Database: "app", User: "reader", Auth: "password",
+		SSLMode: "require", SSLRootCert: filepath.Join(t.TempDir(), "missing.pem"),
+	}, nil, nil, func(context.Context, config.SQLConnection) (string, error) { return "password", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.SSLRootCert != "" {
+		t.Fatalf("SSLRootCert = %q in require mode, want empty", resolved.SSLRootCert)
 	}
 }

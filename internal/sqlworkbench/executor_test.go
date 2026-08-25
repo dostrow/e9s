@@ -50,3 +50,12 @@ func TestExecutorRequiresBothWriteGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestConnectionKeyIncludesTLSRootCertificate(t *testing.T) {
+	base := ResolvedConnection{Host: "db", Port: 5432, Database: "app", User: "reader", SSLMode: "verify-full", AuthMode: "password"}
+	withCertificate := base
+	withCertificate.SSLRootCert = "/certificates/rds-ca.pem"
+	if connectionKey(base) == connectionKey(withCertificate) {
+		t.Fatal("connection key did not change with the TLS root certificate")
+	}
+}
