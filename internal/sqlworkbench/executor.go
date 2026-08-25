@@ -14,6 +14,7 @@ import (
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const DefaultMaxRows = 10000
@@ -321,6 +322,16 @@ func SQLValueString(value any) string {
 		return typed
 	case []byte:
 		return string(typed)
+	case [16]byte:
+		// pgx decodes PostgreSQL uuid values to their raw fixed-size byte
+		// representation. Render that representation in the canonical form
+		// users expect instead of allowing JSON to turn it into 16 integers.
+		return pgtype.UUID{Bytes: typed, Valid: true}.String()
+	case pgtype.UUID:
+		if !typed.Valid {
+			return "NULL"
+		}
+		return typed.String()
 	case time.Time:
 		return typed.Format(time.RFC3339Nano)
 	default:
