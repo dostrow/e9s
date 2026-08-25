@@ -574,10 +574,20 @@ lost sessions and export the latest result to CSV.
 
 The GTK Browser Pane becomes a lazy PostgreSQL object explorer for the active
 query tab. Expand schemas and then tables, views, materialized views,
-sequences, or functions; selecting an object exposes Structure and Definition
-beside query Results. Object actions can preview 100 rows, generate a quoted
-`SELECT`, copy the qualified name, or refresh metadata. Expansion, selection,
-filter, and scroll position are retained independently for each connection tab.
+sequences, or functions; tables and views expand one level further into their
+columns. Selecting an object exposes Structure and Definition beside query
+Results. Object and column names can be inserted with toolbar actions or
+dragged directly into the editor; relation drags are schema-qualified while
+column drags insert the quoted column name. Other object actions can preview
+100 rows, generate a quoted `SELECT`, copy the qualified name, or refresh
+metadata. Expansion, selection, filter, and scroll position are retained
+independently for each connection tab.
+
+The TUI exposes the same lazy hierarchy inside each query tab with `o`. Use
+Enter to expand schemas, categories, tables, and views, `i` to insert the
+selected quoted name, and `I` to insert its fully qualified name. This keeps
+catalog discovery available without pretending that terminal drag-and-drop is
+a useful interaction metaphor.
 
 Connections support PostgreSQL password files, ephemeral password prompts,
 RDS IAM tokens, Secrets Manager, the RDS Data API, and optional SSM port

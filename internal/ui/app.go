@@ -1647,6 +1647,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, nil
 
+	case sqlCatalogSchemasMsg:
+		a.sqlWorkbenchView.SetCatalogSchemasFor(msg.tabID, msg.schemas, msg.err)
+		return a, nil
+
+	case sqlCatalogObjectsMsg:
+		a.sqlWorkbenchView.SetCatalogObjectsFor(msg.tabID, msg.schema, msg.kind, msg.objects, msg.err)
+		return a, nil
+
+	case sqlCatalogColumnsMsg:
+		a.sqlWorkbenchView.SetCatalogColumnsFor(msg.tabID, msg.object, msg.columns, msg.err)
+		return a, nil
+
 	case runTaskStartedMsg:
 		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() {
 			return a, nil
@@ -2046,6 +2058,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
 			return a, cmd
 		}
+		if a.state == viewSQLWorkbench && a.sqlWorkbenchView.CatalogOpen() {
+			switch msg.String() {
+			case "esc", "o":
+				return a.toggleSQLCatalog()
+			case "enter":
+				return a.activateSQLCatalog()
+			case "j", "down":
+				a.sqlWorkbenchView.CatalogMove(1)
+				return a, nil
+			case "k", "up":
+				a.sqlWorkbenchView.CatalogMove(-1)
+				return a, nil
+			case "g":
+				a.sqlWorkbenchView.CatalogTop()
+				return a, nil
+			case "G":
+				a.sqlWorkbenchView.CatalogBottom()
+				return a, nil
+			case "i":
+				if _, inserted := a.sqlWorkbenchView.InsertCatalogSelection(false); inserted {
+					a.saveSQLWorkbenchState()
+				}
+				return a, nil
+			case "I":
+				if _, inserted := a.sqlWorkbenchView.InsertCatalogSelection(true); inserted {
+					a.saveSQLWorkbenchState()
+				}
+				return a, nil
+			}
+		}
 
 		// Toggle manual pause
 		if msg.String() == a.kb.PauseResume {
@@ -2158,6 +2200,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case viewSQLWorkbench:
 				switch k {
+				case "o":
+					return a.toggleSQLCatalog()
 				case "e":
 					return a, a.sqlWorkbenchView.BeginEditing()
 				case "r":
@@ -2803,6 +2847,9 @@ func (a App) buildBreadcrumbs() []string {
 		if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
 			crumbs = append(crumbs, tab.ProfileName)
 		}
+		if a.sqlWorkbenchView.CatalogOpen() {
+			crumbs = append(crumbs, "Database objects")
+		}
 		return crumbs
 	}
 	if a.state == viewCostExplorer {
@@ -3150,7 +3197,11 @@ func (a App) helpText() string {
 	case viewSQLConnections:
 		primary = "[enter] new tab  [t] open tabs  [/] filter"
 	case viewSQLWorkbench:
-		primary = "[e] edit  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
+		if a.sqlWorkbenchView.CatalogOpen() {
+			primary = "[enter] expand  [i/I] insert name/qualified  [o/esc] close objects"
+		} else {
+			primary = "[e] edit  [o] objects  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
+		}
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3585,10 +3636,11 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{{"enter", "Open a new query tab for selected connection"}, {"t", "Return to open tabs"}, {"/", "Filter connections"}}
 	case viewSQLWorkbench:
 		context = []kv{
-			{"e", "Edit query (Esc returns to commands)"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
+			{"e", "Edit query (Esc returns to commands)"}, {"o", "Toggle database object browser"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
 			{"R", "Reconnect"}, {"[/]", "Previous/next tab"}, {"n", "Connection browser / new tab"},
 			{"t", "Rename tab"}, {"d", "Close tab"}, {"x", "Export latest result as CSV"}, {"w", "Toggle per-tab write break-glass"},
-			{"j/k", "Scroll result rows"},
+			{"enter", "Expand selected schema, category, table, or view in object browser"},
+			{"i/I", "Insert selected object name / qualified name"}, {"j/k", "Scroll result rows or object browser"},
 		}
 	case viewEC2Instances:
 		context = []kv{

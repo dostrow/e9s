@@ -24,6 +24,7 @@ type SQLWorkbenchModel struct {
 	editing      bool
 	results      map[string][]model.SQLQueryResult
 	resultCursor map[string]int
+	catalogs     map[string]*SQLCatalogModel
 	status       string
 	width        int
 	height       int
@@ -37,13 +38,15 @@ func NewSQLWorkbench(tabs []sqlworkbench.TabState, activeID string) SQLWorkbench
 	editor.Blur()
 	m := SQLWorkbenchModel{
 		tabs: append([]sqlworkbench.TabState(nil), tabs...), editor: editor,
-		results: make(map[string][]model.SQLQueryResult), resultCursor: make(map[string]int),
+		results: make(map[string][]model.SQLQueryResult), resultCursor: make(map[string]int), catalogs: make(map[string]*SQLCatalogModel),
 	}
 	for index := range m.tabs {
 		m.tabs[index].AllowWrites = false
 		if m.tabs[index].ID == activeID {
 			m.active = index
 		}
+		catalog := NewSQLCatalogModel()
+		m.catalogs[m.tabs[index].ID] = &catalog
 	}
 	m.loadActiveQuery()
 	return m
@@ -51,10 +54,18 @@ func NewSQLWorkbench(tabs []sqlworkbench.TabState, activeID string) SQLWorkbench
 
 func (m SQLWorkbenchModel) SetSize(width, height int) SQLWorkbenchModel {
 	m.width, m.height = width, height
-	m.editor.SetWidth(max(20, width-6))
+	m.configureEditorWidth()
 	editorHeight := max(5, min(14, (height-9)/2))
 	m.editor.SetHeight(editorHeight)
 	return m
+}
+
+func (m *SQLWorkbenchModel) configureEditorWidth() {
+	width := m.width - 6
+	if catalog := m.activeCatalog(); catalog != nil && catalog.Open {
+		width -= min(52, max(30, m.width/3)) + 2
+	}
+	m.editor.SetWidth(max(20, width))
 }
 
 func (m SQLWorkbenchModel) Update(msg tea.Msg) (SQLWorkbenchModel, tea.Cmd) {
@@ -105,8 +116,11 @@ func (m *SQLWorkbenchModel) AddTab(tab sqlworkbench.TabState) {
 	m.storeActiveQuery()
 	tab.AllowWrites = false
 	m.tabs = append(m.tabs, tab)
+	catalog := NewSQLCatalogModel()
+	m.catalogs[tab.ID] = &catalog
 	m.active = len(m.tabs) - 1
 	m.loadActiveQuery()
+	m.configureEditorWidth()
 }
 
 func (m *SQLWorkbenchModel) CloseActive() {
@@ -116,11 +130,90 @@ func (m *SQLWorkbenchModel) CloseActive() {
 	id := m.ActiveID()
 	delete(m.results, id)
 	delete(m.resultCursor, id)
+	delete(m.catalogs, id)
 	m.tabs = append(m.tabs[:m.active], m.tabs[m.active+1:]...)
 	if m.active >= len(m.tabs) {
 		m.active = max(0, len(m.tabs)-1)
 	}
 	m.loadActiveQuery()
+	m.configureEditorWidth()
+}
+
+func (m *SQLWorkbenchModel) CatalogOpen() bool {
+	catalog := m.activeCatalog()
+	return catalog != nil && catalog.Open
+}
+
+func (m *SQLWorkbenchModel) ToggleCatalog() (bool, bool) {
+	catalog := m.activeCatalog()
+	if catalog == nil {
+		return false, false
+	}
+	opened, needsSchemas := catalog.Toggle()
+	m.configureEditorWidth()
+	return opened, needsSchemas
+}
+
+func (m *SQLWorkbenchModel) CatalogMove(delta int) {
+	if catalog := m.activeCatalog(); catalog != nil {
+		catalog.Move(delta)
+	}
+}
+
+func (m *SQLWorkbenchModel) CatalogTop() {
+	if catalog := m.activeCatalog(); catalog != nil {
+		catalog.Top()
+	}
+}
+
+func (m *SQLWorkbenchModel) CatalogBottom() {
+	if catalog := m.activeCatalog(); catalog != nil {
+		catalog.Bottom()
+	}
+}
+
+func (m *SQLWorkbenchModel) ActivateCatalog() SQLCatalogRequest {
+	if catalog := m.activeCatalog(); catalog != nil {
+		return catalog.Activate()
+	}
+	return SQLCatalogRequest{}
+}
+
+func (m *SQLWorkbenchModel) InsertCatalogSelection(qualified bool) (string, bool) {
+	catalog := m.activeCatalog()
+	if catalog == nil {
+		return "", false
+	}
+	text, ok := catalog.Insertion(qualified)
+	if !ok {
+		return "", false
+	}
+	m.editor.InsertString(text)
+	m.storeActiveQuery()
+	m.status = "Inserted " + text + " at the query cursor"
+	return text, true
+}
+
+func (m *SQLWorkbenchModel) SetCatalogSchemasFor(id string, schemas []string, err error) {
+	if catalog := m.catalogs[id]; catalog != nil {
+		catalog.SetSchemas(schemas, err)
+	}
+}
+
+func (m *SQLWorkbenchModel) SetCatalogObjectsFor(id, schema string, kind sqlworkbench.ObjectKind, objects []sqlworkbench.DatabaseObject, err error) {
+	if catalog := m.catalogs[id]; catalog != nil {
+		catalog.SetObjects(schema, kind, objects, err)
+	}
+}
+
+func (m *SQLWorkbenchModel) SetCatalogColumnsFor(id string, object sqlworkbench.DatabaseObject, columns []sqlworkbench.ObjectColumn, err error) {
+	if catalog := m.catalogs[id]; catalog != nil {
+		catalog.SetColumns(object, columns, err)
+	}
+}
+
+func (m *SQLWorkbenchModel) activeCatalog() *SQLCatalogModel {
+	return m.catalogs[m.ActiveID()]
 }
 
 func (m *SQLWorkbenchModel) Switch(delta int) {
@@ -130,6 +223,7 @@ func (m *SQLWorkbenchModel) Switch(delta int) {
 	m.storeActiveQuery()
 	m.active = (m.active + delta + len(m.tabs)) % len(m.tabs)
 	m.loadActiveQuery()
+	m.configureEditorWidth()
 }
 
 func (m *SQLWorkbenchModel) Rename(title string) {
@@ -271,7 +365,15 @@ func (m SQLWorkbenchModel) View() string {
 	}
 	b.WriteString("\n")
 	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lock).Padding(0, 1)
-	b.WriteString(border.Width(max(10, m.width-4)).Render(m.editor.View()))
+	editorWidth := max(10, m.width-4)
+	editorPanel := border.Width(editorWidth).Render(m.editor.View())
+	if catalog := m.activeCatalog(); catalog != nil && catalog.Open {
+		catalogWidth := min(52, max(30, m.width/3))
+		editorWidth = max(10, m.width-catalogWidth-6)
+		editorPanel = lipgloss.JoinHorizontal(lipgloss.Top, catalog.View(catalogWidth, m.editor.Height()+2),
+			border.Width(editorWidth).Render(m.editor.View()))
+	}
+	b.WriteString(editorPanel)
 	b.WriteString("\n")
 	result, ok := m.LastResult()
 	if !ok {

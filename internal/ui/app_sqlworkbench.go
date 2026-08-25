@@ -57,6 +57,27 @@ type sqlReconnectedMsg struct {
 	err     error
 }
 
+type sqlCatalogSchemasMsg struct {
+	tabID   string
+	schemas []string
+	err     error
+}
+
+type sqlCatalogObjectsMsg struct {
+	tabID   string
+	schema  string
+	kind    sqlworkbench.ObjectKind
+	objects []sqlworkbench.DatabaseObject
+	err     error
+}
+
+type sqlCatalogColumnsMsg struct {
+	tabID   string
+	object  sqlworkbench.DatabaseObject
+	columns []sqlworkbench.ObjectColumn
+	err     error
+}
+
 func (a App) openSQLConnections() (App, tea.Cmd) {
 	a.mode = modeSQLWorkbench
 	a.state = viewSQLConnections
@@ -106,6 +127,63 @@ func (a App) showSQLWorkbench() (App, tea.Cmd) {
 	}
 	a.state = viewSQLWorkbench
 	return a, nil
+}
+
+func (a App) toggleSQLCatalog() (App, tea.Cmd) {
+	tab, found := a.sqlWorkbenchView.ActiveTabValue()
+	if !found {
+		return a, nil
+	}
+	_, needsSchemas := a.sqlWorkbenchView.ToggleCatalog()
+	if needsSchemas {
+		return a, a.loadSQLCatalogSchemas(tab)
+	}
+	return a, nil
+}
+
+func (a App) loadSQLCatalogSchemas(tab sqlworkbench.TabState) tea.Cmd {
+	profile, found := a.sqlProfileNamed(tab.ProfileName)
+	if !found || a.sqlExecutor == nil {
+		return nil
+	}
+	executor, ctx, tabID := a.sqlExecutor, a.ctx, tab.ID
+	return func() tea.Msg {
+		requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+		schemas, err := executor.ListSchemas(requestCtx, profile)
+		return sqlCatalogSchemasMsg{tabID: tabID, schemas: schemas, err: err}
+	}
+}
+
+func (a App) activateSQLCatalog() (App, tea.Cmd) {
+	tab, found := a.sqlWorkbenchView.ActiveTabValue()
+	if !found {
+		return a, nil
+	}
+	request := a.sqlWorkbenchView.ActivateCatalog()
+	profile, found := a.sqlProfileNamed(tab.ProfileName)
+	if !found || a.sqlExecutor == nil {
+		return a, nil
+	}
+	executor, ctx, tabID := a.sqlExecutor, a.ctx, tab.ID
+	switch request.Kind {
+	case views.SQLCatalogRequestObjects:
+		return a, func() tea.Msg {
+			requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel()
+			objects, err := executor.ListObjects(requestCtx, profile, request.Schema, request.ObjectKind)
+			return sqlCatalogObjectsMsg{tabID: tabID, schema: request.Schema, kind: request.ObjectKind, objects: objects, err: err}
+		}
+	case views.SQLCatalogRequestColumns:
+		return a, func() tea.Msg {
+			requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel()
+			columns, err := executor.ListColumns(requestCtx, profile, request.Object)
+			return sqlCatalogColumnsMsg{tabID: tabID, object: request.Object, columns: columns, err: err}
+		}
+	default:
+		return a, nil
+	}
 }
 
 func (a App) sqlProfileNamed(name string) (config.SQLConnection, bool) {
