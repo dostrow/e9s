@@ -947,6 +947,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "DATABASE", field: 2}, {title: "USER", field: 3}, {title: "AUTH", field: 4},
 	})
 	w.sqlObjectTable = newStringTable([]columnSpec{{title: "DATABASE OBJECT", field: 0, expand: true}})
+	w.sqlObjectTable.dragText = w.sqlObjectDragText
 	w.sqlObjectTable.view.SetSingleClickActivate(true)
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},

@@ -26,6 +26,7 @@ type stringTable struct {
 	count          uint
 	rows           []string
 	cellActivated  func(position uint, field int)
+	dragText       func(position uint) string
 }
 
 func newStringTable(columns []columnSpec) *stringTable {
@@ -174,6 +175,22 @@ func (t *stringTable) textColumn(spec columnSpec) *gtk.ColumnViewColumn {
 				}
 			})
 			label.AddController(click)
+		}
+		if t.dragText != nil {
+			drag := gtk.NewDragSource()
+			drag.SetActions(gdk.ActionCopy)
+			drag.ConnectPrepare(func(_, _ float64) *gdk.ContentProvider {
+				position := cell.Position()
+				if position == gtk.InvalidListPosition {
+					return nil
+				}
+				text := t.dragText(position)
+				if text == "" {
+					return nil
+				}
+				return gdk.NewContentProviderForValue(coreglib.NewValue(text))
+			})
+			label.AddController(drag)
 		}
 		cell.SetChild(label)
 	})

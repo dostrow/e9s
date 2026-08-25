@@ -26,25 +26,27 @@ import (
 )
 
 type sqlWorkbenchTab struct {
-	state               sqlworkbench.TabState
-	editor              *sourceEditor
-	page                gtk.Widgetter
-	tabLabel            *gtk.Label
-	resultTable         *stringTable
-	resultScroll        *gtk.ScrolledWindow
-	resultLabel         *gtk.Label
-	results             []model.SQLQueryResult
-	contextNotebook     *gtk.Notebook
-	structureBuffer     *gtk.TextBuffer
-	definitionBuffer    *gtk.TextBuffer
-	definitionEditor    *sourceEditor
-	objectToolbar       *gtk.Box
-	previewButton       *gtk.Button
-	generateButton      *gtk.Button
-	copyObjectButton    *gtk.Button
-	definitionButton    *gtk.Button
-	refreshObjectButton *gtk.Button
-	explorer            sqlObjectExplorer
+	state                 sqlworkbench.TabState
+	editor                *sourceEditor
+	page                  gtk.Widgetter
+	tabLabel              *gtk.Label
+	resultTable           *stringTable
+	resultScroll          *gtk.ScrolledWindow
+	resultLabel           *gtk.Label
+	results               []model.SQLQueryResult
+	contextNotebook       *gtk.Notebook
+	structureBuffer       *gtk.TextBuffer
+	definitionBuffer      *gtk.TextBuffer
+	definitionEditor      *sourceEditor
+	objectToolbar         *gtk.Box
+	previewButton         *gtk.Button
+	generateButton        *gtk.Button
+	insertNameButton      *gtk.Button
+	insertQualifiedButton *gtk.Button
+	copyObjectButton      *gtk.Button
+	definitionButton      *gtk.Button
+	refreshObjectButton   *gtk.Button
+	explorer              sqlObjectExplorer
 }
 
 type sqlObjectRowKind int
@@ -54,6 +56,7 @@ const (
 	sqlObjectRowSchema
 	sqlObjectRowCategory
 	sqlObjectRowObject
+	sqlObjectRowColumn
 )
 
 type sqlObjectBrowserRow struct {
@@ -62,14 +65,18 @@ type sqlObjectBrowserRow struct {
 	schema   string
 	category sqlworkbench.ObjectKind
 	object   sqlworkbench.DatabaseObject
+	column   sqlworkbench.ObjectColumn
 	label    string
 }
 
 type sqlObjectExplorer struct {
 	schemas           []string
 	objects           map[string][]sqlworkbench.DatabaseObject
+	columns           map[string][]sqlworkbench.ObjectColumn
 	loaded            map[string]bool
 	loading           map[string]bool
+	columnsLoaded     map[string]bool
+	columnsLoading    map[string]bool
 	expanded          map[string]bool
 	rows              []sqlObjectBrowserRow
 	selected          *sqlworkbench.DatabaseObject
@@ -349,6 +356,10 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 
 	previewButton := gtk.NewButtonWithLabel("Preview 100 rows")
 	generateButton := gtk.NewButtonWithLabel("Generate SELECT")
+	insertNameButton := gtk.NewButtonWithLabel("Insert name")
+	insertNameButton.SetTooltipText("Insert the selected object or column name at the query cursor")
+	insertQualifiedButton := gtk.NewButtonWithLabel("Insert qualified")
+	insertQualifiedButton.SetTooltipText("Insert the selected schema-qualified object or column name at the query cursor")
 	copyObjectButton := gtk.NewButtonWithLabel("Copy qualified name")
 	definitionButton := gtk.NewButtonWithLabel("Open definition")
 	refreshObjectButton := gtk.NewButtonWithLabel("Refresh metadata")
@@ -356,6 +367,8 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	objectToolbar.AddCSSClass("log-toolbar")
 	objectToolbar.Append(previewButton)
 	objectToolbar.Append(generateButton)
+	objectToolbar.Append(insertNameButton)
+	objectToolbar.Append(insertQualifiedButton)
 	objectToolbar.Append(copyObjectButton)
 	objectToolbar.Append(definitionButton)
 	objectToolbar.Append(refreshObjectButton)
@@ -376,6 +389,7 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 		resultTable: resultTable, resultScroll: resultScroll, resultLabel: resultLabel,
 		contextNotebook: contextNotebook, structureBuffer: structureBuffer, definitionBuffer: definitionEditor.Buffer(), definitionEditor: definitionEditor,
 		objectToolbar: objectToolbar, previewButton: previewButton, generateButton: generateButton,
+		insertNameButton: insertNameButton, insertQualifiedButton: insertQualifiedButton,
 		copyObjectButton: copyObjectButton, definitionButton: definitionButton, refreshObjectButton: refreshObjectButton,
 		explorer: newSQLObjectExplorer(state.Explorer),
 	}
@@ -385,6 +399,8 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	w.installSQLResultContextMenu(tab)
 	previewButton.ConnectClicked(func() { w.previewSQLObject(tab) })
 	generateButton.ConnectClicked(func() { w.generateSQLSelect(tab) })
+	insertNameButton.ConnectClicked(func() { w.insertSQLBrowserSelection(tab, false) })
+	insertQualifiedButton.ConnectClicked(func() { w.insertSQLBrowserSelection(tab, true) })
 	copyObjectButton.ConnectClicked(func() { w.copySQLObjectName(tab) })
 	definitionButton.ConnectClicked(func() { tab.contextNotebook.SetCurrentPage(2) })
 	refreshObjectButton.ConnectClicked(func() { w.refreshSQLObjectDetail(tab) })
