@@ -11,12 +11,44 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/service"
 )
+
+func (w *mainWindow) installDynamoItemShortcuts() {
+	keys := gtk.NewEventControllerKey()
+	keys.SetPropagationPhase(gtk.PhaseCapture)
+	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		activate, consume := dynamoLoadMoreShortcut(keyval, state)
+		if !activate || w.currentPage != pageDynamoItems || w.dynamoNextToken == "" {
+			return false
+		}
+		w.noteAWSActivity()
+		w.loadMoreDynamoItems()
+		return consume
+	})
+	w.dynamoItemTable.view.AddController(keys)
+}
+
+func dynamoLoadMoreShortcut(keyval uint, state gdk.ModifierType) (activate, consume bool) {
+	modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
+	if modifiers != 0 {
+		return false, false
+	}
+	switch keyval {
+	case gdk.KEY_bracketright:
+		return true, true
+	case gdk.KEY_Page_Down:
+		// Preserve normal viewport paging while requesting the next batch.
+		return true, false
+	default:
+		return false, false
+	}
+}
 
 func (o Options) ConfigDynamoTables() []config.DynamoTable {
 	if o.Config == nil {
@@ -278,6 +310,12 @@ func (w *mainWindow) loadMoreDynamoItems() {
 	ctx, generation := w.startRequest("Loading more DynamoDB items…")
 	go func() {
 		page, err := w.options.DynamoDB.Scan(ctx, request)
+		if err == nil && page == nil {
+			err = fmt.Errorf("load more DynamoDB items: scan returned no page")
+		}
+		if err == nil && page.NextToken == token {
+			err = fmt.Errorf("load more DynamoDB items: DynamoDB returned the same continuation token")
+		}
 		w.finishDynamoAction(ctx, generation, err, "Loaded more DynamoDB items", func() {
 			selected, preserveSelection := w.selectedDynamoItemValue()
 			w.allDynamoItems = append(w.allDynamoItems, page.Items...)

@@ -14,6 +14,10 @@ func stringRowsEqual(left, right []string) bool {
 	return true
 }
 
+func stringRowsExtend(current, next []string) bool {
+	return len(next) > len(current) && stringRowsEqual(current, next[:len(current)])
+}
+
 func preservedRowPosition(current, next []string, selected uint) (uint, bool) {
 	if int(selected) >= len(current) {
 		return 0, false

@@ -101,6 +101,13 @@ func (t *stringTable) replace(rows []string) {
 	if stringRowsEqual(t.rows, rows) {
 		return
 	}
+	if stringRowsExtend(t.rows, rows) {
+		appended := rows[len(t.rows):]
+		t.model.Splice(t.count, 0, appended)
+		t.count += uint(len(appended))
+		t.rows = append(t.rows, appended...)
+		return
+	}
 	selected, preserveSelection := uint(gtk.InvalidListPosition), false
 	if t.selection != nil {
 		selected, preserveSelection = preservedRowPosition(t.rows, rows, t.selection.Selected())

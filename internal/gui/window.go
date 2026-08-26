@@ -964,6 +964,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "TABLE", field: 0, expand: true},
 	})
 	w.dynamoItemTable = newStringTable(nil)
+	w.installDynamoItemShortcuts()
 	w.sqsQueueTable = newStringTable([]columnSpec{
 		{title: "QUEUE", field: 0, expand: true}, {title: "URL", field: 1, expand: true},
 	})
@@ -1282,6 +1283,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.dynamoSaveQueryButton = gtk.NewButtonWithLabel("Save query…")
 	w.dynamoSaveQueryButton.ConnectClicked(w.promptSaveDynamoQuery)
 	w.dynamoLoadMoreButton = gtk.NewButtonWithLabel("Load more")
+	w.dynamoLoadMoreButton.SetTooltipText("Load the next result batch (] or Page Down in the item browser)")
 	w.dynamoLoadMoreButton.ConnectClicked(w.loadMoreDynamoItems)
 	w.dynamoEditButton = gtk.NewButtonWithLabel("Edit field…")
 	w.dynamoEditButton.ConnectClicked(w.promptDynamoFieldEdit)
@@ -2237,7 +2239,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the focused terminal pane\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nCtrl+Alt+R     Split the focused terminal right\nCtrl+Alt+D     Split the focused terminal down\nCtrl+Alt+Arrow Focus the adjacent terminal pane\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the focused terminal pane\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nCtrl+Alt+R     Split the focused terminal right\nCtrl+Alt+D     Split the focused terminal down\nCtrl+Alt+Arrow Focus the adjacent terminal pane\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n] / PgDn       Load more DynamoDB items\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", nil, w.openServiceLogs)

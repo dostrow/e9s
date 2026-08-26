@@ -36,3 +36,28 @@ func TestPrintableShortcutAction(t *testing.T) {
 		})
 	}
 }
+
+func TestDynamoLoadMoreShortcut(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyval   uint
+		state    gdk.ModifierType
+		activate bool
+		consume  bool
+	}{
+		{name: "closing bracket", keyval: gdk.KEY_bracketright, activate: true, consume: true},
+		{name: "page down", keyval: gdk.KEY_Page_Down, activate: true, consume: false},
+		{name: "modified page down", keyval: gdk.KEY_Page_Down, state: gdk.ControlMask},
+		{name: "unrelated key", keyval: gdk.KEY_n},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			activate, consume := dynamoLoadMoreShortcut(test.keyval, test.state)
+			if activate != test.activate || consume != test.consume {
+				t.Fatalf("dynamoLoadMoreShortcut() = (%t, %t), want (%t, %t)",
+					activate, consume, test.activate, test.consume)
+			}
+		})
+	}
+}
