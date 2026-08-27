@@ -54,6 +54,9 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: Download Go modules
+        run: bash .github/scripts/download-go-modules.sh
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -85,6 +88,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+
+      - name: Download Go modules
+        run: bash .github/scripts/download-go-modules.sh
 
       - name: Install native packaging dependencies
         run: |
