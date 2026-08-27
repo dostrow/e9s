@@ -104,6 +104,29 @@ accelerators. See GTK's
 Run a bounded portability spike after the CloudWatch Logs GUI module and before
 committing to the remaining cross-platform release work.
 
+Implementation now proceeds in five independently committed phases:
+
+1. establish a native MSYS2 UCRT64 GTK and GtkSourceView build plus a CI compile
+   artifact, with only VTE omitted;
+2. assemble a self-contained portable ZIP with GTK runtime data and licenses;
+3. add Windows resource discovery, bundled-font support, capability messaging,
+   and launch smoke tests;
+4. produce an installer with Start Menu and uninstall integration; and
+5. add signing hooks, release automation, checksums, and the verified support
+   matrix.
+
+The native setup and current build boundary are documented in
+[`windows-development.md`](windows-development.md).
+
+All five phases are represented in the Windows workflows. They compile natively,
+assemble the relocatable runtime, launch an internal GTK/GtkSourceView self-test
+from the extracted archive with MSYS2 absent from `PATH`, build and exercise the
+installer and upgrade path, optionally sign release artifacts, and include the
+final signed bytes in release checksums. The self-test is an early packaging
+gate; interactive acceptance testing on supported Windows versions remains
+necessary before publishing a generally available release. See the
+[`Windows support matrix`](windows-support.md) for the precise boundary.
+
 ### Windows artifact
 
 1. Build the GTK-only GUI natively on a Windows CI runner without VTE.

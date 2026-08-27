@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 INSTALL ?= install
 
-.PHONY: build build-gui build-gui-basic install install-gui install-gui-assets package-deb package-appimage clean test
+.PHONY: build build-gui build-gui-basic build-gui-windows-amd64 install install-gui install-gui-assets package-deb package-appimage package-windows-zip package-windows-installer clean test
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) .
@@ -18,6 +18,12 @@ build-gui:
 
 build-gui-basic:
 	go build -tags gui $(LDFLAGS) -o $(BINARY)-gui ./cmd/e9s-gui
+
+# Run this target from an MSYS2 UCRT64 shell with the GTK 4 development
+# packages installed. GtkSourceView is available natively on Windows; VTE is
+# intentionally omitted in favor of the terminal-unavailable fallback.
+build-gui-windows-amd64:
+	packaging/windows/build-gui.sh "$(VERSION)" "$(CURDIR)/$(BINARY)-gui-windows-amd64.exe"
 
 install:
 	go install $(LDFLAGS) .
@@ -43,11 +49,21 @@ package-deb:
 package-appimage:
 	packaging/appimage/build-appimage.sh "$(VERSION)" "$(CURDIR)/dist"
 
+# Run from an MSYS2 UCRT64 shell. The resulting ZIP contains the application,
+# its native DLL closure, and the GTK/GtkSourceView runtime data.
+package-windows-zip:
+	packaging/windows/build-portable.sh "$(VERSION)" "$(CURDIR)/dist"
+
+# Requires Inno Setup 6.7.1 and PowerShell on a native Windows host. CI invokes
+# this after extracting the portable bundle so the same tested payload is used.
+package-windows-installer: package-windows-zip
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging/windows/build-installer.ps1 -Version "$(VERSION)" -OutputDirectory "$(CURDIR)/dist"
+
 test:
 	go test ./...
 
 clean:
-	rm -f $(BINARY) $(BINARY)-gui
+	rm -f $(BINARY) $(BINARY)-gui $(BINARY)-gui-windows-amd64.exe
 
 linux-amd64:
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BINARY)-linux-amd64 .

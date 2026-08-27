@@ -10,3 +10,5 @@ func newSourceEditor(sourceDocument) *sourceEditor {
 	configurePlainSourceView(view)
 	return &sourceEditor{buffer: buffer, view: view}
 }
+
+func sourceViewLanguageID(sourceDocument) string { return "" }

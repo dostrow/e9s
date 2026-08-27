@@ -13,9 +13,9 @@ func TestResolveTerminalShell(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	shell := filepath.Join(directory, "e9s-test-shell")
-	if err := os.WriteFile(shell, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatalf("write test shell: %v", err)
+	shell, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
 	}
 	resolved, err := resolveTerminalShell(shell)
 	if err != nil {

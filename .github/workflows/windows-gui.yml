@@ -1,0 +1,161 @@
+name: Windows GUI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/windows-portability
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-gui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-gui:
+    name: GTK 4 / UCRT64 / amd64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      # MSYS2 tools expect LF line endings. Configure Git before checkout so
+      # the Windows runner does not rewrite repository scripts to CRLF.
+      - name: Preserve repository line endings
+        shell: powershell
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gobject-introspection
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-gtksourceview5
+            mingw-w64-ucrt-x86_64-pkgconf
+            zip
+
+      - name: Verify native toolchain
+        run: |
+          go version
+          gcc --version
+          pkg-config --modversion gobject-introspection-1.0
+          pkg-config --modversion gtk4
+          pkg-config --modversion gtksourceview-5
+          go env GOOS GOARCH CGO_ENABLED CC
+
+      - name: Test shared application code
+        run: go test ./...
+
+      - name: Test GTK frontend
+        run: go test -tags "gui sourceview" ./internal/gui
+
+      - name: Build Windows GUI
+        run: make build-gui-windows-amd64 VERSION=${{ github.sha }}
+
+      - name: Inspect executable dependencies
+        run: ldd e9s-gui-windows-amd64.exe
+
+      - name: Assemble portable application
+        run: >-
+          make package-windows-zip
+          VERSION=${{ github.sha }}
+          E9S_GUI_BINARY="$PWD/e9s-gui-windows-amd64.exe"
+
+      - name: Smoke test portable application without MSYS2
+        shell: powershell
+        run: |
+          $archive = (Get-ChildItem "dist/e9s-gui-*-windows-amd64.zip").FullName
+          $destination = Join-Path $env:RUNNER_TEMP "e9s-portable-smoke"
+          Expand-Archive -Path $archive -DestinationPath $destination
+          $executable = (Get-ChildItem $destination -Recurse -Filter "e9s-gui.exe").FullName
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          ./packaging/windows/test-runtime.ps1 `
+            -Executable $executable `
+            -Description 'portable GTK runtime self-test'
+
+      - name: Install pinned Inno Setup compiler
+        shell: powershell
+        run: choco install innosetup --version=6.7.1 --no-progress --yes
+
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $archive = (Get-ChildItem "dist/e9s-gui-*-windows-amd64.zip").FullName
+          $payloadRoot = Join-Path $env:RUNNER_TEMP "e9s-installer-payload"
+          Expand-Archive -Path $archive -DestinationPath $payloadRoot
+          $bundle = (Get-ChildItem $payloadRoot -Directory | Select-Object -First 1).FullName
+          ./packaging/windows/build-installer.ps1 `
+            -Version "${{ github.sha }}" `
+            -BundleDirectory $bundle `
+            -OutputDirectory "$PWD/dist"
+
+      - name: Test installer and uninstaller
+        shell: powershell
+        run: |
+          $installer = (Get-ChildItem "dist/e9s-gui-*-windows-amd64-setup.exe").FullName
+          $process = Start-Process -FilePath $installer -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+            "/LOG=$env:RUNNER_TEMP\e9s-install.log"
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "installer failed with exit code $($process.ExitCode)"
+          }
+          # A second silent install exercises the stable AppId upgrade path.
+          $process = Start-Process -FilePath $installer -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "installer upgrade failed with exit code $($process.ExitCode)"
+          }
+          $installed = Join-Path $env:LOCALAPPDATA "Programs\e9s\e9s-gui.exe"
+          if (-not (Test-Path -LiteralPath $installed -PathType Leaf)) {
+            throw "installed executable was not found: $installed"
+          }
+          $shortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\e9s.lnk"
+          if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf)) {
+            throw "Start Menu shortcut was not found: $shortcut"
+          }
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          ./packaging/windows/test-runtime.ps1 `
+            -Executable $installed `
+            -Description 'installed GTK runtime self-test'
+          $uninstaller = Join-Path (Split-Path -Parent $installed) 'unins000.exe'
+          $process = Start-Process -FilePath $uninstaller -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "uninstaller failed with exit code $($process.ExitCode)"
+          }
+          if (Test-Path -LiteralPath $installed) {
+            throw "uninstaller left the application executable behind"
+          }
+          if (Test-Path -LiteralPath $shortcut) {
+            throw "uninstaller left the Start Menu shortcut behind"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e9s-windows-gui-portable-amd64
+          path: |
+            e9s-gui-windows-amd64.exe
+            dist/e9s-gui-*-windows-amd64.zip
+            dist/e9s-gui-*-windows-amd64-setup.exe
+          if-no-files-found: error
+          retention-days: 7

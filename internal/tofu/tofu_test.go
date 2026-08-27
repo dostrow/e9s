@@ -2,8 +2,10 @@ package tofu
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -28,8 +30,12 @@ func TestRunnerHonorsCanceledContext(t *testing.T) {
 	t.Parallel()
 
 	workdir := t.TempDir()
-	binary := writeFakeTofuBinary(t, `{"format_version":"1.2"}`)
-	runner := &Runner{Dir: workdir, Binary: binary}
+	runner := &Runner{
+		Dir: workdir, Binary: "tofu",
+		runContextOverride: func(ctx context.Context, _ ...string) (string, error) {
+			return "", ctx.Err()
+		},
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := runner.StateListContext(ctx); err == nil || !strings.Contains(err.Error(), "context canceled") {
@@ -52,8 +58,24 @@ func TestPlanJSONSavedPreservesPlanFile(t *testing.T) {
 	t.Parallel()
 
 	workdir := t.TempDir()
-	binary := writeFakeTofuBinary(t, `{"format_version":"1.2"}`)
-	runner := &Runner{Dir: workdir, Binary: binary}
+	runner := &Runner{
+		Dir: workdir, Binary: "tofu",
+		runContextOverride: func(_ context.Context, args ...string) (string, error) {
+			switch args[0] {
+			case "plan":
+				for _, argument := range args[1:] {
+					if planPath, found := strings.CutPrefix(argument, "-out="); found {
+						return "", os.WriteFile(planPath, []byte("planned\n"), 0o600)
+					}
+				}
+				return "", fmt.Errorf("missing -out flag")
+			case "show":
+				return `{"format_version":"1.2"}` + "\n", nil
+			default:
+				return "", fmt.Errorf("unexpected arguments: %v", args)
+			}
+		},
+	}
 
 	jsonOut, planFile, err := runner.PlanJSONSaved()
 	if err != nil {
@@ -65,6 +87,7 @@ func TestPlanJSONSavedPreservesPlanFile(t *testing.T) {
 	if planFile == "" {
 		t.Fatal("planFile should not be empty")
 	}
+	t.Cleanup(func() { _ = os.Remove(planFile) })
 	if _, err := os.Stat(planFile); err != nil {
 		t.Fatalf("saved plan file missing: %v", err)
 	}
@@ -96,7 +119,7 @@ func TestVariablesDocumentCreatesAndUpdatesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat created variables file: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Fatalf("created variables mode = %o, want 600", got)
 	}
 
@@ -155,7 +178,7 @@ func TestSaveVariablesPreservesExistingPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat variables: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o640 {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o640 {
 		t.Fatalf("updated variables mode = %o, want 640", got)
 	}
 }
@@ -184,38 +207,4 @@ func TestVariablesHonorCanceledContext(t *testing.T) {
 	if _, err := ReadVariables(ctx, t.TempDir()); err == nil || !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("ReadVariables canceled error = %v", err)
 	}
-}
-
-func writeFakeTofuBinary(t *testing.T, jsonOut string) string {
-	t.Helper()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "fake-tofu")
-	script := `#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ "$1" == "plan" ]]; then
-  for arg in "$@"; do
-    if [[ "$arg" == -out=* ]]; then
-      plan_file="${arg#-out=}"
-      printf 'planned\n' > "$plan_file"
-      exit 0
-    fi
-  done
-  echo "missing -out flag" >&2
-  exit 1
-fi
-
-if [[ "$1" == "show" && "$2" == "-json" ]]; then
-  printf '%s\n' '` + jsonOut + `'
-  exit 0
-fi
-
-echo "unexpected args: $*" >&2
-exit 1
-`
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake tofu binary: %v", err)
-	}
-	return path
 }

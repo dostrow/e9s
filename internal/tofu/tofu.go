@@ -22,8 +22,9 @@ const (
 
 // Runner executes tofu/terraform commands in a working directory.
 type Runner struct {
-	Dir    string // working directory
-	Binary string // "tofu" or "terraform"
+	Dir                string // working directory
+	Binary             string // "tofu" or "terraform"
+	runContextOverride func(context.Context, ...string) (string, error)
 }
 
 // Workspace describes a validated OpenTofu/Terraform working directory.
@@ -203,7 +204,7 @@ func atomicWriteVariables(ctx context.Context, path string, content []byte, mode
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := replaceFile(temporaryPath, path); err != nil {
 		return fmt.Errorf("replace %s: %w", VariablesFilename, err)
 	}
 	return nil
@@ -366,6 +367,9 @@ func (r *Runner) ApplyContext(ctx context.Context, planFile string) (string, err
 }
 
 func (r *Runner) runContext(ctx context.Context, args ...string) (string, error) {
+	if r.runContextOverride != nil {
+		return r.runContextOverride(ctx, args...)
+	}
 	cmd := exec.CommandContext(ctx, r.Binary, args...)
 	cmd.Dir = r.Dir
 	var stdout, stderr bytes.Buffer

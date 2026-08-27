@@ -31,7 +31,12 @@ func TestS3PrefixDestinationStaysWithinSelectedDirectory(t *testing.T) {
 	if err != nil || got != filepath.Join(destination, "reports", "summary.csv") {
 		t.Fatalf("s3PrefixDestination() = %q, %v", got, err)
 	}
-	for _, relative := range []string{"../escape", filepath.Join("..", "escape"), string(filepath.Separator) + "absolute"} {
+	for _, relative := range []string{
+		"../escape",
+		`..\escape`,
+		"/absolute",
+		`\absolute`,
+	} {
 		if _, err := s3PrefixDestination(destination, relative); err == nil {
 			t.Fatalf("s3PrefixDestination(%q) accepted an unsafe path", relative)
 		}
