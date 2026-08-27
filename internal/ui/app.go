@@ -860,6 +860,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logView = views.NewLogViewerWithOptions(msg.title, a.logs, msg.logGroup, msg.streams, follow, lookback)
 		}
 		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
+		a.logView = a.logView.WithGlobalRefreshPaused(a.paused)
 		if msg.anchor != nil {
 			a.logView = a.logView.WithJumpTarget(*msg.anchor)
 		}
@@ -882,6 +883,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = viewLogs
 		a.logView = views.NewLogViewerAtTimestamp(title, a.logs, msg.LogGroup, streams, msg.Timestamp, msg.Pattern)
 		a.logView = a.logView.WithLimits(a.cfg.LogEventPageSize(), a.cfg.LogBufferLines())
+		a.logView = a.logView.WithGlobalRefreshPaused(a.paused)
 		a.logView = a.logView.WithJumpTarget(msg.Entry)
 		a.activeLogPathName = a.logSearchSavedPath
 		a.logView = a.logView.WithContext(a.ctx)
@@ -1647,6 +1649,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, nil
 
+	case sqlCatalogSchemasMsg:
+		a.sqlWorkbenchView.SetCatalogSchemasFor(msg.tabID, msg.schemas, msg.err)
+		return a, nil
+
+	case sqlCatalogObjectsMsg:
+		a.sqlWorkbenchView.SetCatalogObjectsFor(msg.tabID, msg.schema, msg.kind, msg.objects, msg.err)
+		return a, nil
+
+	case sqlCatalogColumnsMsg:
+		a.sqlWorkbenchView.SetCatalogColumnsFor(msg.tabID, msg.object, msg.columns, msg.err)
+		return a, nil
+
 	case runTaskStartedMsg:
 		if a.state != viewStandaloneTasks || msg.cluster != a.selectedClusterName() {
 			return a, nil
@@ -2016,6 +2030,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if snapshot.EstimatedCostUSD >= a.cfg.Defaults.CostGuardUSD {
 				a.paused = true
 				a.manualPause = true
+				if a.state == viewLogs {
+					a.logView.SetGlobalRefreshPaused(true)
+				}
 				a.flashMessage = fmt.Sprintf("Polling paused: known session cost $%.2f reached guard $%.2f; manual refresh remains available", snapshot.EstimatedCostUSD, a.cfg.Defaults.CostGuardUSD)
 				a.flashExpiry = time.Now().Add(8 * time.Second)
 				return a, a.tick()
@@ -2024,6 +2041,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pause refresh when idle or manually paused
 		if a.paused || (a.idleTimeout > 0 && time.Since(a.lastActivity) > a.idleTimeout) {
 			a.paused = true
+			if a.state == viewLogs {
+				a.logView.SetGlobalRefreshPaused(true)
+			}
 			return a, a.tick() // keep ticking for flash/config but skip refresh
 		}
 		base := time.Duration(a.refreshSec) * time.Second
@@ -2046,11 +2066,45 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
 			return a, cmd
 		}
+		if a.state == viewSQLWorkbench && a.sqlWorkbenchView.CatalogOpen() {
+			switch msg.String() {
+			case "esc", "o":
+				return a.toggleSQLCatalog()
+			case "enter":
+				return a.activateSQLCatalog()
+			case "j", "down":
+				a.sqlWorkbenchView.CatalogMove(1)
+				return a, nil
+			case "k", "up":
+				a.sqlWorkbenchView.CatalogMove(-1)
+				return a, nil
+			case "g":
+				a.sqlWorkbenchView.CatalogTop()
+				return a, nil
+			case "G":
+				a.sqlWorkbenchView.CatalogBottom()
+				return a, nil
+			case "i":
+				if _, inserted := a.sqlWorkbenchView.InsertCatalogSelection(false); inserted {
+					a.saveSQLWorkbenchState()
+				}
+				return a, nil
+			case "I":
+				if _, inserted := a.sqlWorkbenchView.InsertCatalogSelection(true); inserted {
+					a.saveSQLWorkbenchState()
+				}
+				return a, nil
+			}
+		}
 
 		// Toggle manual pause
 		if msg.String() == a.kb.PauseResume {
 			a.paused = !a.paused
 			a.manualPause = a.paused
+			var logRefresh tea.Cmd
+			if a.state == viewLogs {
+				logRefresh = a.logView.SetGlobalRefreshPaused(a.paused)
+			}
 			if a.paused {
 				a.flashMessage = "Polling paused"
 				a.flashExpiry = time.Now().Add(3 * time.Second)
@@ -2058,16 +2112,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.flashMessage = "Polling resumed"
 				a.flashExpiry = time.Now().Add(3 * time.Second)
 				a.loading = true
-				return a, a.refreshCurrentView()
+				return a, tea.Batch(logRefresh, a.refreshCurrentView())
 			}
-			return a, nil
+			return a, logRefresh
 		}
 
 		// If idle-paused (not manually), any key resumes
 		if a.paused && !a.manualPause {
 			a.paused = false
 			a.loading = true
-			return a, a.refreshCurrentView()
+			var logRefresh tea.Cmd
+			if a.state == viewLogs {
+				logRefresh = a.logView.SetGlobalRefreshPaused(false)
+			}
+			return a, tea.Batch(logRefresh, a.refreshCurrentView())
 		}
 
 		// Global keys
@@ -2158,6 +2216,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case viewSQLWorkbench:
 				switch k {
+				case "o":
+					return a.toggleSQLCatalog()
 				case "e":
 					return a, a.sqlWorkbenchView.BeginEditing()
 				case "r":
@@ -2803,6 +2863,9 @@ func (a App) buildBreadcrumbs() []string {
 		if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
 			crumbs = append(crumbs, tab.ProfileName)
 		}
+		if a.sqlWorkbenchView.CatalogOpen() {
+			crumbs = append(crumbs, "Database objects")
+		}
 		return crumbs
 	}
 	if a.state == viewCostExplorer {
@@ -3150,7 +3213,11 @@ func (a App) helpText() string {
 	case viewSQLConnections:
 		primary = "[enter] new tab  [t] open tabs  [/] filter"
 	case viewSQLWorkbench:
-		primary = "[e] edit  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
+		if a.sqlWorkbenchView.CatalogOpen() {
+			primary = "[enter] expand  [i/I] insert name/qualified  [o/esc] close objects"
+		} else {
+			primary = "[e] edit  [o] objects  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
+		}
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3585,10 +3652,11 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 		context = []kv{{"enter", "Open a new query tab for selected connection"}, {"t", "Return to open tabs"}, {"/", "Filter connections"}}
 	case viewSQLWorkbench:
 		context = []kv{
-			{"e", "Edit query (Esc returns to commands)"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
+			{"e", "Edit query (Esc returns to commands)"}, {"o", "Toggle database object browser"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
 			{"R", "Reconnect"}, {"[/]", "Previous/next tab"}, {"n", "Connection browser / new tab"},
 			{"t", "Rename tab"}, {"d", "Close tab"}, {"x", "Export latest result as CSV"}, {"w", "Toggle per-tab write break-glass"},
-			{"j/k", "Scroll result rows"},
+			{"enter", "Expand selected schema, category, table, or view in object browser"},
+			{"i/I", "Insert selected object name / qualified name"}, {"j/k", "Scroll result rows or object browser"},
 		}
 	case viewEC2Instances:
 		context = []kv{

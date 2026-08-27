@@ -12,6 +12,19 @@ func TestStringRowsEqual(t *testing.T) {
 	}
 }
 
+func TestStringRowsExtend(t *testing.T) {
+	current := []string{"one", "two"}
+	if !stringRowsExtend(current, []string{"one", "two", "three"}) {
+		t.Fatal("stringRowsExtend() rejected an appended result page")
+	}
+	if stringRowsExtend(current, []string{"one", "changed", "three"}) {
+		t.Fatal("stringRowsExtend() accepted changed retained rows")
+	}
+	if stringRowsExtend(current, append([]string(nil), current...)) {
+		t.Fatal("stringRowsExtend() accepted an unchanged result set")
+	}
+}
+
 func TestPreservedRowPositionUsesResourceIdentity(t *testing.T) {
 	current := []string{"api\tACTIVE\t2", "worker\tACTIVE\t1"}
 	next := []string{"worker\tACTIVE\t2", "api\tACTIVE\t2"}

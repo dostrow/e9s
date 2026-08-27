@@ -37,3 +37,30 @@ func TestDatabaseObjectDisplayName(t *testing.T) {
 		t.Fatalf("DisplayName() = %q, want %q", got, want)
 	}
 }
+
+func TestObjectColumnNames(t *testing.T) {
+	object := DatabaseObject{Schema: "billing", Name: "order items", Kind: ObjectTable}
+	column := ObjectColumn{Name: "order id", DataType: "uuid", Nullable: false}
+	if got, want := column.DisplayName(), "order id  uuid, not null"; got != want {
+		t.Fatalf("DisplayName() = %q, want %q", got, want)
+	}
+	if got, want := column.SQLName(), `"order id"`; got != want {
+		t.Fatalf("SQLName() = %q, want %q", got, want)
+	}
+	if got, want := column.QualifiedName(object), `"billing"."order items"."order id"`; got != want {
+		t.Fatalf("QualifiedName() = %q, want %q", got, want)
+	}
+}
+
+func TestObjectKindHasColumns(t *testing.T) {
+	for _, kind := range []ObjectKind{ObjectTable, ObjectView, ObjectMaterializedView} {
+		if !ObjectKindHasColumns(kind) {
+			t.Errorf("ObjectKindHasColumns(%q) = false", kind)
+		}
+	}
+	for _, kind := range []ObjectKind{ObjectSequence, ObjectFunction} {
+		if ObjectKindHasColumns(kind) {
+			t.Errorf("ObjectKindHasColumns(%q) = true", kind)
+		}
+	}
+}

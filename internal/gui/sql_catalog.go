@@ -21,8 +21,9 @@ func newSQLObjectExplorer(saved sqlworkbench.ExplorerState) sqlObjectExplorer {
 		expanded[key] = true
 	}
 	return sqlObjectExplorer{
-		objects: make(map[string][]sqlworkbench.DatabaseObject), loaded: make(map[string]bool),
-		loading: make(map[string]bool), expanded: expanded,
+		objects: make(map[string][]sqlworkbench.DatabaseObject), columns: make(map[string][]sqlworkbench.ObjectColumn),
+		loaded: make(map[string]bool), loading: make(map[string]bool),
+		columnsLoaded: make(map[string]bool), columnsLoading: make(map[string]bool), expanded: expanded,
 	}
 }
 
@@ -34,6 +35,10 @@ func sqlCategoryKey(schema string, kind sqlworkbench.ObjectKind) string {
 
 func sqlObjectKey(object sqlworkbench.DatabaseObject) string {
 	return "object:" + object.OID + ":" + string(object.Kind)
+}
+
+func sqlColumnKey(object sqlworkbench.DatabaseObject, column sqlworkbench.ObjectColumn) string {
+	return "column:" + object.OID + ":" + column.Name
 }
 
 func (w *mainWindow) showSQLObjectBrowser(tab *sqlWorkbenchTab) {
@@ -132,6 +137,44 @@ func (w *mainWindow) loadSQLObjects(tab *sqlWorkbenchTab, schema string, kind sq
 			tab.explorer.objects[key] = objects
 			tab.explorer.loaded[key] = true
 			w.renderSQLObjectBrowser(tab)
+			for _, object := range objects {
+				if sqlworkbench.ObjectKindHasColumns(object.Kind) && tab.explorer.expanded[sqlObjectKey(object)] {
+					w.loadSQLColumns(tab, object)
+				}
+			}
+		})
+	}()
+}
+
+func (w *mainWindow) loadSQLColumns(tab *sqlWorkbenchTab, object sqlworkbench.DatabaseObject) {
+	key := sqlObjectKey(object)
+	if tab == nil || tab.explorer.columnsLoaded[key] || tab.explorer.columnsLoading[key] || w.sqlExecutor == nil {
+		return
+	}
+	profile, found := w.sqlProfileNamed(tab.state.ProfileName)
+	if !found {
+		return
+	}
+	tab.explorer.columnsLoading[key] = true
+	generation := tab.explorer.requestGeneration
+	w.renderSQLObjectBrowser(tab)
+	ctx, cancel := context.WithTimeout(w.sqlCatalogContext(tab), 45*time.Second)
+	go func() {
+		defer cancel()
+		columns, err := w.sqlExecutor.ListColumns(ctx, profile, object)
+		glib.IdleAdd(func() {
+			if generation != tab.explorer.requestGeneration {
+				return
+			}
+			delete(tab.explorer.columnsLoading, key)
+			if err != nil {
+				w.renderSQLObjectBrowser(tab)
+				w.setStatus("Load columns for "+object.QualifiedName()+": "+err.Error(), true)
+				return
+			}
+			tab.explorer.columns[key] = columns
+			tab.explorer.columnsLoaded[key] = true
+			w.renderSQLObjectBrowser(tab)
 		})
 	}()
 }
@@ -170,8 +213,25 @@ func (w *mainWindow) renderSQLObjectBrowser(tab *sqlWorkbenchTab) {
 				continue
 			}
 			for _, object := range tab.explorer.objects[key] {
+				objectKey := sqlObjectKey(object)
+				label := strings.Repeat("    ", 2) + object.DisplayName()
+				if sqlworkbench.ObjectKindHasColumns(object.Kind) {
+					label = sqlTreeLabel(2, tab.explorer.expanded[objectKey], object.DisplayName())
+				}
 				rows = append(rows, sqlObjectBrowserRow{kind: sqlObjectRowObject, key: sqlObjectKey(object), schema: schema,
-					category: kind, object: object, label: strings.Repeat("    ", 2) + object.DisplayName()})
+					category: kind, object: object, label: label})
+				if !tab.explorer.expanded[objectKey] || !sqlworkbench.ObjectKindHasColumns(object.Kind) {
+					continue
+				}
+				if tab.explorer.columnsLoading[objectKey] {
+					rows = append(rows, sqlObjectBrowserRow{kind: sqlObjectRowMessage, key: objectKey + ":loading", schema: schema,
+						category: kind, object: object, label: strings.Repeat("    ", 3) + "Loading columns…"})
+					continue
+				}
+				for _, column := range tab.explorer.columns[objectKey] {
+					rows = append(rows, sqlObjectBrowserRow{kind: sqlObjectRowColumn, key: sqlColumnKey(object, column), schema: schema,
+						category: kind, object: object, column: column, label: strings.Repeat("    ", 3) + column.DisplayName()})
+				}
 			}
 		}
 	}
@@ -189,7 +249,7 @@ func (w *mainWindow) renderSQLObjectBrowser(tab *sqlWorkbenchTab) {
 	if selected != gtk.InvalidListPosition {
 		w.sqlObjectTable.selection.SetSelected(uint(selected))
 	}
-	if tab.explorer.restoreScroll && !tab.explorer.loadingSchemas && len(tab.explorer.loading) == 0 && w.sqlObjectScroll != nil {
+	if tab.explorer.restoreScroll && !tab.explorer.loadingSchemas && len(tab.explorer.loading) == 0 && len(tab.explorer.columnsLoading) == 0 && w.sqlObjectScroll != nil {
 		tab.explorer.restoreScroll = false
 		glib.IdleAdd(func() { w.sqlObjectScroll.VAdjustment().SetValue(tab.state.Explorer.Scroll) })
 	}
@@ -217,6 +277,9 @@ func filterSQLObjectRows(rows []sqlObjectBrowserRow, term string) []sqlObjectBro
 			}
 			if row.category != "" {
 				keep[sqlCategoryKey(row.schema, row.category)] = true
+			}
+			if row.kind == sqlObjectRowColumn {
+				keep[sqlObjectKey(row.object)] = true
 			}
 		}
 	}
@@ -255,7 +318,19 @@ func (w *mainWindow) activateSQLObjectAt(position uint) {
 	case sqlObjectRowObject:
 		// GtkColumnView may move its selection while rows are virtualized during
 		// scrolling. Activation is the deliberate single click/keyboard action.
+		if sqlworkbench.ObjectKindHasColumns(row.object.Kind) {
+			tab.explorer.expanded[row.key] = !tab.explorer.expanded[row.key]
+			if tab.explorer.expanded[row.key] {
+				w.loadSQLColumns(tab, row.object)
+			}
+		}
 		w.loadSQLObjectDetail(tab, row.object)
+	case sqlObjectRowColumn:
+		selected := row.object
+		tab.explorer.selected = &selected
+		tab.objectToolbar.SetVisible(true)
+		w.updateSQLObjectControls(tab)
+		w.setStatus("Selected column "+row.column.QualifiedName(row.object)+"; drag it or insert it at the query cursor", false)
 	}
 	w.syncSQLExplorerState(tab)
 	w.renderSQLObjectBrowser(tab)
@@ -377,10 +452,17 @@ func (w *mainWindow) generateSQLSelect(tab *sqlWorkbenchTab) {
 }
 
 func (w *mainWindow) copySQLObjectName(tab *sqlWorkbenchTab) {
-	if tab == nil || tab.explorer.selected == nil {
+	if tab == nil {
 		return
 	}
-	name := tab.explorer.selected.QualifiedName()
+	_, name, ok := w.sqlBrowserSelectionNames(tab)
+	if !ok && tab.explorer.selected != nil {
+		name = tab.explorer.selected.QualifiedName()
+		ok = true
+	}
+	if !ok {
+		return
+	}
 	w.window.Clipboard().SetText(name)
 	w.setStatus("Copied "+name, false)
 }
@@ -403,8 +485,11 @@ func (w *mainWindow) refreshSQLObjectBrowser(foreground bool) {
 	tab.explorer.detailCancel = nil
 	tab.explorer.schemas = nil
 	tab.explorer.objects = make(map[string][]sqlworkbench.DatabaseObject)
+	tab.explorer.columns = make(map[string][]sqlworkbench.ObjectColumn)
 	tab.explorer.loaded = make(map[string]bool)
 	tab.explorer.loading = make(map[string]bool)
+	tab.explorer.columnsLoaded = make(map[string]bool)
+	tab.explorer.columnsLoading = make(map[string]bool)
 	tab.explorer.loadingSchemas = false
 	tab.explorer.selected = nil
 	tab.explorer.detailPending = false
@@ -429,11 +514,68 @@ func (w *mainWindow) updateSQLObjectControls(tab *sqlWorkbenchTab) {
 	selected := tab.explorer.selected
 	hasObject := selected != nil
 	rowObject := hasObject && selected.Kind != sqlworkbench.ObjectFunction && selected.Kind != sqlworkbench.ObjectSequence
+	_, _, canInsert := w.sqlBrowserSelectionNames(tab)
 	tab.previewButton.SetSensitive(rowObject && !w.sqlActionPending && !tab.explorer.detailPending)
 	tab.generateButton.SetSensitive(rowObject && !w.sqlActionPending)
+	tab.insertNameButton.SetSensitive(canInsert)
+	tab.insertQualifiedButton.SetSensitive(canInsert)
 	tab.copyObjectButton.SetSensitive(hasObject)
 	tab.definitionButton.SetSensitive(hasObject)
 	tab.refreshObjectButton.SetSensitive(hasObject && !w.sqlActionPending && !tab.explorer.detailPending)
+}
+
+func (w *mainWindow) sqlObjectDragText(position uint) string {
+	tab := w.activeSQLTab()
+	if tab == nil || int(position) >= len(tab.explorer.rows) {
+		return ""
+	}
+	plain, qualified, ok := sqlBrowserRowNames(tab.explorer.rows[position])
+	if !ok {
+		return ""
+	}
+	if tab.explorer.rows[position].kind == sqlObjectRowObject {
+		return qualified
+	}
+	return plain
+}
+
+func (w *mainWindow) sqlBrowserSelectionNames(tab *sqlWorkbenchTab) (string, string, bool) {
+	if tab == nil || w.sqlObjectTable == nil {
+		return "", "", false
+	}
+	position := w.sqlObjectTable.selection.Selected()
+	if position == gtk.InvalidListPosition || int(position) >= len(tab.explorer.rows) {
+		return "", "", false
+	}
+	return sqlBrowserRowNames(tab.explorer.rows[position])
+}
+
+func sqlBrowserRowNames(row sqlObjectBrowserRow) (string, string, bool) {
+	switch row.kind {
+	case sqlObjectRowObject:
+		return sqlworkbench.QuoteIdentifier(row.object.Name), row.object.QualifiedName(), true
+	case sqlObjectRowColumn:
+		return row.column.SQLName(), row.column.QualifiedName(row.object), true
+	default:
+		return "", "", false
+	}
+}
+
+func (w *mainWindow) insertSQLBrowserSelection(tab *sqlWorkbenchTab, qualified bool) {
+	plain, full, ok := w.sqlBrowserSelectionNames(tab)
+	if !ok {
+		return
+	}
+	text := plain
+	if qualified {
+		text = full
+	}
+	buffer := tab.editor.Buffer()
+	buffer.InsertAtCursor(text)
+	if view, ok := tab.editor.Widget().(*gtk.TextView); ok {
+		view.GrabFocus()
+	}
+	w.setStatus("Inserted "+text+" at the query cursor", false)
 }
 
 func (w *mainWindow) syncSQLExplorerState(tab *sqlWorkbenchTab) {

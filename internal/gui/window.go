@@ -599,6 +599,8 @@ type mainWindow struct {
 	detailText                  string
 	detailStack                 *gtk.Stack
 	workspaceBusyBar            *gtk.Box
+	workspacePauseBar           *gtk.Box
+	workspacePauseLabel         *gtk.Label
 	workspaceCancelButton       *gtk.Button
 	workspaceCancel             func()
 	workspaceBusySpinner        *gtk.Spinner
@@ -702,6 +704,9 @@ type mainWindow struct {
 	resourceHistory             []resourceNavigationState
 	logView                     *gtk.TextView
 	logTextBuffer               *gtk.TextBuffer
+	logEndMark                  *gtk.TextMark
+	logRendered                 formattedLogBuffer
+	logScrollGeneration         uint64
 	logSearch                   *gtk.SearchEntry
 	logPauseButton              *gtk.Button
 	logTimestampButton          *gtk.Button
@@ -946,6 +951,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "DATABASE", field: 2}, {title: "USER", field: 3}, {title: "AUTH", field: 4},
 	})
 	w.sqlObjectTable = newStringTable([]columnSpec{{title: "DATABASE OBJECT", field: 0, expand: true}})
+	w.sqlObjectTable.dragText = w.sqlObjectDragText
 	w.sqlObjectTable.view.SetSingleClickActivate(true)
 	w.s3BucketTable = newStringTable([]columnSpec{
 		{title: "BUCKET", field: 0, expand: true}, {title: "CREATED", field: 1},
@@ -958,6 +964,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 		{title: "TABLE", field: 0, expand: true},
 	})
 	w.dynamoItemTable = newStringTable(nil)
+	w.installDynamoItemShortcuts()
 	w.sqsQueueTable = newStringTable([]columnSpec{
 		{title: "QUEUE", field: 0, expand: true}, {title: "URL", field: 1, expand: true},
 	})
@@ -1125,14 +1132,24 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.refreshPauseButton.ConnectToggled(func() {
 		paused := w.refreshPauseButton.Active()
 		w.manualRefreshPaused.Store(paused)
+		w.setWorkspaceRefreshPaused(paused)
 		if paused {
 			w.refreshPauseButton.SetLabel("Resume refresh")
-			w.setStatus("Automatic AWS refresh paused", false)
+			if w.showingLogs && w.logFollowing {
+				w.setWorkspaceBusy("", false)
+				w.setStatus("Log follow is waiting because automatic AWS refresh is paused", false)
+			} else {
+				w.setStatus("Automatic AWS refresh paused", false)
+			}
 			return
 		}
 		w.refreshPauseButton.SetLabel("Pause refresh")
 		w.noteAWSActivity()
-		w.setStatus("Automatic AWS refresh resumed", false)
+		if w.showingLogs && w.logFollowing {
+			w.setStatus("Automatic AWS refresh resumed; log follow will retrieve new events", false)
+		} else {
+			w.setStatus("Automatic AWS refresh resumed", false)
+		}
 		w.refreshCurrent(true)
 	})
 	w.logsButton = gtk.NewButtonWithLabel("Service logs")
@@ -1266,6 +1283,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	w.dynamoSaveQueryButton = gtk.NewButtonWithLabel("Save query…")
 	w.dynamoSaveQueryButton.ConnectClicked(w.promptSaveDynamoQuery)
 	w.dynamoLoadMoreButton = gtk.NewButtonWithLabel("Load more")
+	w.dynamoLoadMoreButton.SetTooltipText("Load the next result batch (] or Page Down in the item browser)")
 	w.dynamoLoadMoreButton.ConnectClicked(w.loadMoreDynamoItems)
 	w.dynamoEditButton = gtk.NewButtonWithLabel("Edit field…")
 	w.dynamoEditButton.ConnectClicked(w.promptDynamoFieldEdit)
@@ -2044,8 +2062,21 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	})
 	w.workspaceBusyBar.Append(w.workspaceCancelButton)
 	w.workspaceBusyBar.SetVisible(false)
+	w.workspacePauseLabel = gtk.NewLabel("Automatic refresh is paused. Live data will not be retrieved until refresh is resumed. Manual Refresh and one-time actions remain available.")
+	w.workspacePauseLabel.SetXAlign(0)
+	w.workspacePauseLabel.SetHExpand(true)
+	w.workspacePauseLabel.SetWrap(true)
+	w.workspacePauseLabel.AddCSSClass("semantic-warning")
+	resumeRefresh := gtk.NewButtonWithLabel("Resume refresh")
+	resumeRefresh.ConnectClicked(func() { w.refreshPauseButton.SetActive(false) })
+	w.workspacePauseBar = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	w.workspacePauseBar.AddCSSClass("workspace-paused")
+	w.workspacePauseBar.Append(w.workspacePauseLabel)
+	w.workspacePauseBar.Append(resumeRefresh)
+	w.workspacePauseBar.SetVisible(false)
 	workspace := gtk.NewBox(gtk.OrientationVertical, 0)
 	preparePaneCard(&workspace.Widget)
+	workspace.Append(w.workspacePauseBar)
 	workspace.Append(w.workspaceBusyBar)
 	workspace.Append(w.detailStack)
 
@@ -2208,7 +2239,7 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 			w.setStatus("Close the editor before opening help", false)
 			return
 		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the focused terminal pane\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nCtrl+Alt+R     Split the focused terminal right\nCtrl+Alt+D     Split the focused terminal down\nCtrl+Alt+Arrow Focus the adjacent terminal pane\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n?              Show this help", detailHelp)
+		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the focused terminal pane\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nCtrl+Alt+R     Split the focused terminal right\nCtrl+Alt+D     Split the focused terminal down\nCtrl+Alt+Arrow Focus the adjacent terminal pane\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n] / PgDn       Load more DynamoDB items\n?              Show this help", detailHelp)
 		w.detailStack.SetVisibleChildName("detail")
 	})
 	w.addAction(app, "logs", nil, w.openServiceLogs)
@@ -2255,6 +2286,10 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 			terminal.NoteKeyPressed()
 		}
 		modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
+		if keyval == gdk.KEY_F5 && modifiers == 0 && terminal == nil && moduleForPage(w.currentPage) == moduleSQLWorkbench {
+			w.runSelectedOrCurrentSQL()
+			return true
+		}
 		if modifiers == (gdk.ControlMask | gdk.ShiftMask) {
 			switch keyval {
 			case gdk.KEY_c, gdk.KEY_C:
@@ -2467,6 +2502,12 @@ func (w *mainWindow) setWorkspaceBusy(label string, busy bool) {
 	w.workspaceBusyLabel.SetLabel(label)
 	w.workspaceBusySpinner.Start()
 	w.workspaceBusyBar.SetVisible(true)
+}
+
+func (w *mainWindow) setWorkspaceRefreshPaused(paused bool) {
+	if w.workspacePauseBar != nil {
+		w.workspacePauseBar.SetVisible(paused)
+	}
 }
 
 func (w *mainWindow) setWorkspaceCancellation(cancel func()) {

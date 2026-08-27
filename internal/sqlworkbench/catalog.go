@@ -49,6 +49,20 @@ type ObjectColumn struct {
 	Generation string
 }
 
+func (column ObjectColumn) DisplayName() string {
+	nullability := "not null"
+	if column.Nullable {
+		nullability = "nullable"
+	}
+	return fmt.Sprintf("%s  %s, %s", column.Name, column.DataType, nullability)
+}
+
+func (column ObjectColumn) SQLName() string { return QuoteIdentifier(column.Name) }
+
+func (column ObjectColumn) QualifiedName(object DatabaseObject) string {
+	return object.QualifiedName() + "." + column.SQLName()
+}
+
 type NamedDefinition struct {
 	Name       string
 	Definition string
@@ -82,6 +96,10 @@ func ObjectKindLabel(kind ObjectKind) string {
 
 func CatalogKinds() []ObjectKind {
 	return []ObjectKind{ObjectTable, ObjectView, ObjectMaterializedView, ObjectSequence, ObjectFunction}
+}
+
+func ObjectKindHasColumns(kind ObjectKind) bool {
+	return kind == ObjectTable || kind == ObjectView || kind == ObjectMaterializedView
 }
 
 func (e *Executor) ListSchemas(ctx context.Context, profile config.SQLConnection) ([]string, error) {
@@ -159,28 +177,12 @@ func (e *Executor) InspectObject(ctx context.Context, profile config.SQLConnecti
 	if err == nil && len(ownerResult.Rows) > 0 && len(ownerResult.Rows[0]) > 0 {
 		detail.Owner = ownerResult.Rows[0][0]
 	}
-	if object.Kind != ObjectFunction {
-		columns, queryErr := e.catalogQuery(ctx, profile, fmt.Sprintf(`
-SELECT a.attname,
-       pg_catalog.format_type(a.atttypid, a.atttypmod),
-       CASE WHEN a.attnotnull THEN 'false' ELSE 'true' END,
-       COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''),
-       CASE a.attidentity WHEN 'a' THEN 'ALWAYS' WHEN 'd' THEN 'BY DEFAULT' ELSE '' END,
-       CASE a.attgenerated WHEN 's' THEN 'STORED' ELSE '' END
-FROM pg_catalog.pg_attribute a
-LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-WHERE a.attrelid = %s::oid AND a.attnum > 0 AND NOT a.attisdropped
-ORDER BY a.attnum`, object.OID))
+	if ObjectKindHasColumns(object.Kind) {
+		columns, queryErr := e.ListColumns(ctx, profile, object)
 		if queryErr != nil {
 			return ObjectDetail{}, queryErr
 		}
-		for _, row := range columns.Rows {
-			if len(row) < 6 {
-				continue
-			}
-			detail.Columns = append(detail.Columns, ObjectColumn{Name: row[0], DataType: row[1], Nullable: row[2] == "true",
-				Default: row[3], Identity: row[4], Generation: row[5]})
-		}
+		detail.Columns = columns
 	}
 	if object.Kind == ObjectTable || object.Kind == ObjectMaterializedView {
 		constraints, queryErr := e.catalogQuery(ctx, profile, fmt.Sprintf(`
@@ -216,6 +218,42 @@ ORDER BY c.relname`, object.OID))
 		return ObjectDetail{}, err
 	}
 	return detail, nil
+}
+
+// ListColumns performs the single lightweight catalog query used when a
+// relation is expanded in an object browser. Full object inspection remains a
+// separate operation because it also loads ownership, constraints, indexes,
+// and generated definition text.
+func (e *Executor) ListColumns(ctx context.Context, profile config.SQLConnection, object DatabaseObject) ([]ObjectColumn, error) {
+	if !ObjectKindHasColumns(object.Kind) {
+		return nil, fmt.Errorf("%s objects do not expose relation columns", ObjectKindLabel(object.Kind))
+	}
+	if _, err := strconv.ParseUint(object.OID, 10, 64); err != nil {
+		return nil, fmt.Errorf("invalid catalog object identifier %q", object.OID)
+	}
+	result, err := e.catalogQuery(ctx, profile, fmt.Sprintf(`
+SELECT a.attname,
+       pg_catalog.format_type(a.atttypid, a.atttypmod),
+       CASE WHEN a.attnotnull THEN 'false' ELSE 'true' END,
+       COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''),
+       CASE a.attidentity WHEN 'a' THEN 'ALWAYS' WHEN 'd' THEN 'BY DEFAULT' ELSE '' END,
+       CASE a.attgenerated WHEN 's' THEN 'STORED' ELSE '' END
+FROM pg_catalog.pg_attribute a
+LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+WHERE a.attrelid = %s::oid AND a.attnum > 0 AND NOT a.attisdropped
+ORDER BY a.attnum`, object.OID))
+	if err != nil {
+		return nil, err
+	}
+	columns := make([]ObjectColumn, 0, len(result.Rows))
+	for _, row := range result.Rows {
+		if len(row) < 6 {
+			continue
+		}
+		columns = append(columns, ObjectColumn{Name: row[0], DataType: row[1], Nullable: row[2] == "true",
+			Default: row[3], Identity: row[4], Generation: row[5]})
+	}
+	return columns, nil
 }
 
 func (e *Executor) PreviewObject(ctx context.Context, profile config.SQLConnection, object DatabaseObject, limit int) (model.SQLQueryResult, error) {

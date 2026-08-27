@@ -281,6 +281,11 @@ func (w *mainWindow) finishCodeBuildRequest(ctx context.Context, generation uint
 		if ctx.Err() != nil || generation != w.generation {
 			return
 		}
+		// CodeBuild detail and mutation requests use this specialized completion
+		// path rather than finishRequestResult. Keep the shared request lifecycle
+		// in sync so the automatic refresh scheduler is not left permanently
+		// blocked after a build is selected.
+		w.requestPending = false
 		w.spinner.Stop()
 		w.setWorkspaceBusy("", false)
 		w.codeBuildActionPending = false

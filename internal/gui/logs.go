@@ -77,6 +77,7 @@ func (w *mainWindow) buildLogPane() gtk.Widgetter {
 	toolbar.Append(w.logSearch)
 
 	w.logTextBuffer = gtk.NewTextBuffer(nil)
+	w.logEndMark = w.logTextBuffer.CreateMark("e9s-log-end", w.logTextBuffer.EndIter(), false)
 	w.logView = gtk.NewTextViewWithBuffer(w.logTextBuffer)
 	w.logView.SetEditable(false)
 	w.logView.SetCursorVisible(false)
@@ -197,7 +198,11 @@ func (w *mainWindow) showLogFollowFrom(source model.LogSource, title string, sta
 		w.logHiddenStreams = stringSet(path.HiddenStreams)
 		w.renderLogs()
 	}
-	w.setStatus("Following logs for "+title, false)
+	if w.manualRefreshPaused.Load() {
+		w.setStatus("Log follow for "+title+" is waiting for automatic refresh to resume", false)
+	} else {
+		w.setStatus("Following logs for "+title, false)
+	}
 	w.updateActionSensitivity()
 }
 
@@ -278,7 +283,11 @@ func (w *mainWindow) startLogFollowWithFallback(source model.LogSource, allowFal
 	if w.logCancel != nil {
 		w.logCancel()
 	}
-	w.setWorkspaceBusy("Loading log events…", true)
+	if w.manualRefreshPaused.Load() {
+		w.setWorkspaceBusy("", false)
+	} else {
+		w.setWorkspaceBusy("Loading log events…", true)
+	}
 	w.logNewerKnown = 0
 	w.logNewestKnownTS = 0
 	if w.logOlderButton != nil {
@@ -375,8 +384,9 @@ func (w *mainWindow) applyLogPage(ctx context.Context, generation uint64, page m
 		w.logOlderButton.SetSensitive(true)
 		w.logLastTS = next
 		if len(page.Entries) > 0 {
-			w.logStore.append(page.Entries)
-			w.renderLogs()
+			if added, _ := w.logStore.append(page.Entries); added > 0 {
+				w.renderLogs()
+			}
 		}
 		w.setStatus(fmt.Sprintf("Following %s • %d buffered lines", w.logTitle, w.logStore.len()), false)
 	})
@@ -533,7 +543,7 @@ func (w *mainWindow) loadNewerLogEntries() {
 			}
 			w.updateLogSearchControls()
 			w.renderLogs()
-			w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
+			w.scrollLogsToEnd()
 			status := fmt.Sprintf("Loaded %d newer log events", added)
 			if evicted > 0 {
 				status += fmt.Sprintf(" • dropped %d oldest", evicted)
@@ -563,7 +573,11 @@ func (w *mainWindow) toggleLogFollow() {
 		return
 	}
 	w.startLogFollow(w.logSource, true)
-	w.setStatus("Log follow resumed", false)
+	if w.manualRefreshPaused.Load() {
+		w.setStatus("Log follow is waiting because automatic AWS refresh is paused", false)
+	} else {
+		w.setStatus("Log follow resumed", false)
+	}
 }
 
 func (w *mainWindow) renderLogs() {
@@ -571,7 +585,25 @@ func (w *mainWindow) renderLogs() {
 		return
 	}
 	formatted := w.formatDisplayedLogs(w.logSearch.Text())
-	w.logTextBuffer.SetText(formatted.text)
+	updatedInPlace := false
+	if w.logFollowing {
+		if update, ok := incrementalLogBufferUpdate(w.logRendered, formatted); ok {
+			if update.deletePrefix > 0 {
+				w.logTextBuffer.Delete(
+					w.logTextBuffer.StartIter(),
+					w.logTextBuffer.IterAtOffset(update.deletePrefix),
+				)
+			}
+			if update.appendText != "" {
+				w.logTextBuffer.Insert(w.logTextBuffer.EndIter(), update.appendText)
+			}
+			updatedInPlace = true
+		}
+	}
+	if !updatedInPlace {
+		w.logTextBuffer.SetText(formatted.text)
+	}
+	w.logRendered = formatted
 	if w.logIndentTags == nil {
 		w.logIndentTags = make(map[int]*gtk.TextTag)
 	}
@@ -598,8 +630,28 @@ func (w *mainWindow) renderLogs() {
 	w.applyLogHighlightTags(formatted)
 	w.updateLogStreamsButton()
 	if w.logFollowing {
-		w.logView.ScrollToIter(w.logTextBuffer.EndIter(), 0, false, 0, 1)
+		w.scrollLogsToEnd()
 	}
+}
+
+func (w *mainWindow) scrollLogsToEnd() {
+	if w.logView == nil || w.logTextBuffer == nil || w.logEndMark == nil {
+		return
+	}
+	w.logScrollGeneration++
+	generation := w.logScrollGeneration
+	w.logTextBuffer.MoveMark(w.logEndMark, w.logTextBuffer.EndIter())
+	w.logView.ScrollToMark(w.logEndMark, 0, true, 0, 1)
+	// Wrapped lines can change the final layout after the buffer mutation has
+	// returned. Reassert the tail position once GTK has processed that layout,
+	// while discarding stale callbacks from an earlier refresh.
+	glib.IdleAdd(func() {
+		if generation != w.logScrollGeneration || !w.showingLogs || !w.logFollowing {
+			return
+		}
+		w.logTextBuffer.MoveMark(w.logEndMark, w.logTextBuffer.EndIter())
+		w.logView.ScrollToMark(w.logEndMark, 0, true, 0, 1)
+	})
 }
 
 func (w *mainWindow) scrollLogEntryToCenter(entry model.LogEntry) {
@@ -762,6 +814,9 @@ func (w *mainWindow) updateLogHighlightButton() {
 }
 
 func (w *mainWindow) applyLogHighlightTags(formatted formattedLogBuffer) {
+	for _, tag := range w.logHighlightTags {
+		w.logTextBuffer.RemoveTag(tag, w.logTextBuffer.StartIter(), w.logTextBuffer.EndIter())
+	}
 	spans, err := formatLogHighlights(formatted, w.logHighlightRules)
 	if err != nil || len(w.logHighlightRules) == 0 {
 		return

@@ -117,6 +117,34 @@ func TestNewLogViewerWithOptions_TailStartsFromLatestWindow(t *testing.T) {
 	}
 }
 
+func TestLogViewerGlobalPauseWaitsAndExplainsLiveRetrieval(t *testing.T) {
+	m := NewLogViewer("tail", nil, "/aws/ecs/example", nil).WithGlobalRefreshPaused(true)
+	if !m.globalRefreshPaused {
+		t.Fatal("global refresh pause was not retained")
+	}
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("paused live viewer must keep a wake-up tick scheduled")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Live log data will not be retrieved") {
+		t.Fatalf("paused viewer does not explain the waiting state:\n%s", view)
+	}
+	if cmd := m.SetGlobalRefreshPaused(false); cmd == nil {
+		t.Fatal("resuming a live viewer should request logs immediately")
+	}
+}
+
+func TestLogViewerGlobalPauseDoesNotBlockHistoricalRequest(t *testing.T) {
+	m := NewLogViewerWithOptions("history", nil, "/aws/ecs/example", nil, false, time.Minute).
+		WithGlobalRefreshPaused(true)
+	if cmd := m.SetGlobalRefreshPaused(false); cmd != nil {
+		t.Fatal("resuming a historical viewer should not start live polling")
+	}
+	if strings.Contains(m.View(), "Live log data will not be retrieved") {
+		t.Fatal("historical viewer should not display a live-refresh warning")
+	}
+}
+
 func TestLogViewerKeepsInclusiveCursorAndDeduplicatesOverlappingPolls(t *testing.T) {
 	m := LogViewerModel{lastTS: 100, follow: false}
 	first := model.LogEntry{ID: "event-1", Timestamp: 100, Message: "running"}
