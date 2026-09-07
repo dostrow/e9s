@@ -148,9 +148,10 @@ func TestGroupModuleRailSections(t *testing.T) {
 		{key: moduleECS, name: "ECS"},
 		{key: moduleTofu, name: "OpenTofu"},
 		{key: moduleSQLWorkbench, name: "SQL Workbench"},
+		{key: "plugin:example", name: "Example Operations"},
 	}
 	groups := groupModuleRailSections(sections)
-	if len(groups) != 2 || groups[0].name != "AWS SERVICES" || groups[1].name != "TOOLS" {
+	if len(groups) != 3 || groups[0].name != "AWS SERVICES" || groups[1].name != "TOOLS" || groups[2].name != "PLUGINS" {
 		t.Fatalf("unexpected groups: %#v", groups)
 	}
 	if len(groups[0].sections) != 2 || groups[0].sections[0].key != moduleAPIGateway || groups[0].sections[1].key != moduleECS {
@@ -158,6 +159,9 @@ func TestGroupModuleRailSections(t *testing.T) {
 	}
 	if len(groups[1].sections) != 2 || groups[1].sections[0].key != moduleTofu || groups[1].sections[1].key != moduleSQLWorkbench {
 		t.Fatalf("unexpected tool modules: %#v", groups[1].sections)
+	}
+	if len(groups[2].sections) != 1 || groups[2].sections[0].key != "plugin:example" {
+		t.Fatalf("unexpected plugin modules: %#v", groups[2].sections)
 	}
 }
 

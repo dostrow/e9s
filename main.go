@@ -62,7 +62,7 @@ a module. Press ` + "`" + ` at any time to switch between modules.`,
 				return fmt.Errorf("failed to initialize AWS client: %w", err)
 			}
 
-			app := ui.NewApp(client, &cfg, cluster, refresh)
+			app := ui.NewApp(client, &cfg, cluster, profile, refresh)
 			p := tea.NewProgram(app, tea.WithAltScreen())
 
 			if _, err := p.Run(); err != nil {
@@ -75,7 +75,7 @@ a module. Press ` + "`" + ` at any time to switch between modules.`,
 	rootCmd.Flags().StringVarP(&cluster, "cluster", "c", "", "ECS cluster (skips to service list)")
 	rootCmd.Flags().StringVarP(&region, "region", "r", "", "AWS region (default: from AWS config)")
 	rootCmd.Flags().StringVarP(&profile, "profile", "p", "", "AWS profile name")
-	rootCmd.Flags().StringVarP(&mode, "mode", "m", "", "Start in module: ECS, EC2i, ECR, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53, TF")
+	rootCmd.Flags().StringVarP(&mode, "mode", "m", "", "Start in module: ECS, EC2i, ECR, CWL, CWA, SSM, SM, S3, Lambda, DDB, SQS, CB, R53, TF, PLUG, SET")
 	rootCmd.Flags().IntVar(&refresh, "refresh", 5, "Auto-refresh interval in seconds")
 
 	if err := rootCmd.Execute(); err != nil {

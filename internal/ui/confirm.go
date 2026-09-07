@@ -39,6 +39,8 @@ const (
 	ConfirmTofuApply
 	ConfirmCostRefresh
 	ConfirmSQLWrites
+	ConfirmRunbook
+	ConfirmDeletePlugin
 )
 
 type ConfirmModel struct {

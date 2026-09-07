@@ -15,6 +15,7 @@ import (
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/refreshpolicy"
+	"github.com/dostrow/e9s/internal/runbook"
 	"github.com/dostrow/e9s/internal/service"
 	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/ui/theme"
@@ -43,6 +44,8 @@ const (
 	modeElastiCache
 	modeAPIGateway
 	modeSQLWorkbench
+	modePlugins
+	modeSettings
 )
 
 type viewState int
@@ -118,6 +121,8 @@ const (
 	viewAPIGatewayDetail
 	viewSQLConnections
 	viewSQLWorkbench
+	viewPlugins
+	viewPluginSettings
 )
 
 type App struct {
@@ -146,6 +151,7 @@ type App struct {
 	ctx                        context.Context
 	cancel                     context.CancelFunc
 	cfg                        *config.Config
+	awsProfile                 string
 	mode                       topMode
 	state                      viewState
 	prevState                  viewState
@@ -245,6 +251,12 @@ type App struct {
 	sqlPendingRun              sqlTUIRunMode
 	sqlPendingProfile          string
 	regionPicker               views.RegionPickerModel
+	runbookActions             []runbook.ConfiguredAction
+	runbooksView               views.RunbooksModel
+	runbookForm                RunbookFormModel
+	pendingRunbook             *runbook.Invocation
+	pluginSettingsView         PluginSettingsModel
+	pendingPluginDelete        int
 
 	// Navigation context
 	selectedCluster          *model.Cluster
@@ -376,7 +388,7 @@ func (a App) autoRefreshClass() refreshpolicy.Class {
 	}
 }
 
-func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, refreshSec int) App {
+func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster, profile string, refreshSec int) App {
 	ctx, cancel := context.WithCancel(context.Background())
 	idleTimeout := time.Duration(cfg.Defaults.IdleTimeout) * time.Second
 
@@ -406,6 +418,7 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		ctx:           ctx,
 		cancel:        cancel,
 		cfg:           cfg,
+		awsProfile:    profile,
 		state:         viewClusters,
 		clusterView:   views.NewClusterList(),
 		refreshSec:    refreshSec,
@@ -415,8 +428,10 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 			kb.ApplyOverrides(cfg.KeyBindings)
 			return kb
 		}(),
-		idleTimeout: idleTimeout,
+		idleTimeout:         idleTimeout,
+		pendingPluginDelete: -1,
 	}
+	app.pluginSettingsView = NewPluginSettings(cfg.Plugins)
 	passwords := newSQLPasswordCache()
 	sqlState, _ := sqlworkbench.LoadState("")
 	sqlStatePath, _ := sqlworkbench.DefaultStatePath()
@@ -429,8 +444,14 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 	app.sqlExecutor = sqlworkbench.NewExecutor(sqlworkbench.ExecutorOptions{
 		AuthProvider: client, DataAPI: client, Prompt: sqlPasswordPrompt(passwords),
 		PGPassFiles: cfg.SQL.PGPassFiles, AllowWrites: cfg.SQL.AllowWrites,
-		AWSProfile: cfg.Defaults.Profile, AWSRegion: client.Region(),
+		AWSProfile: profile, AWSRegion: client.Region(),
 	})
+	if actions, err := loadConfiguredRunbooks(cfg); err != nil {
+		app.err = err
+	} else {
+		app.runbookActions = actions
+		app.runbooksView = views.NewRunbooks(actions)
+	}
 
 	allModes := []struct {
 		mode    topMode
@@ -456,6 +477,8 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster string, re
 		{modeElastiCache, "CACHE", cfg.ModuleElastiCache()},
 		{modeAPIGateway, "APIGW", cfg.ModuleAPIGateway()},
 		{modeSQLWorkbench, "SQL", cfg.ModuleSQLWorkbench()},
+		{modePlugins, "PLUG", len(app.runbookActions) > 0},
+		{modeSettings, "SET", true},
 	}
 	idx := 1
 	for _, m := range allModes {
@@ -510,6 +533,8 @@ func resolveDefaultMode(s string) *topMode {
 		"ElastiCache": modeElastiCache, "elasticache": modeElastiCache, "CACHE": modeElastiCache, "cache": modeElastiCache,
 		"API Gateway": modeAPIGateway, "api gateway": modeAPIGateway, "apigateway": modeAPIGateway, "APIGW": modeAPIGateway,
 		"SQL Workbench": modeSQLWorkbench, "sql workbench": modeSQLWorkbench, "sql": modeSQLWorkbench, "postgres": modeSQLWorkbench, "postgresql": modeSQLWorkbench,
+		"Plugins": modePlugins, "plugins": modePlugins, "plugin": modePlugins, "runbooks": modePlugins, "PLUG": modePlugins, "plug": modePlugins,
+		"Settings": modeSettings, "settings": modeSettings, "SET": modeSettings, "set": modeSettings,
 	}
 	if m, ok := modes[s]; ok {
 		return &m
@@ -607,6 +632,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.apiGatewayDetailView = a.apiGatewayDetailView.SetSize(w, h)
 		a.sqlConnectionsView = a.sqlConnectionsView.SetSize(w, h)
 		a.sqlWorkbenchView = a.sqlWorkbenchView.SetSize(w, h)
+		a.runbooksView = a.runbooksView.SetSize(w, h)
+		a.runbookForm = a.runbookForm.SetHeight(h)
+		a.pluginSettingsView = a.pluginSettingsView.SetSize(w-3, h-6)
 		a.envVarsView = a.envVarsView.SetSize(w, h)
 		a.logGroupsView = a.logGroupsView.SetSize(w, h)
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
@@ -686,6 +714,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return a, nil
 		}
+	}
+	if a.runbookForm.Active {
+		switch msg.(type) {
+		case RunbookSubmitMsg, RunbookCancelMsg:
+		case tea.KeyMsg:
+			var cmd tea.Cmd
+			a.runbookForm, cmd = a.runbookForm.Update(msg)
+			return a, cmd
+		default:
+			return a, nil
+		}
+	}
+	if a.state == viewPluginSettings && a.pluginSettingsView.Editing() {
+		var cmd tea.Cmd
+		a.pluginSettingsView, cmd = a.pluginSettingsView.Update(msg)
+		return a, cmd
 	}
 	if a.pathInput != nil {
 		// Let result/cancel messages pass through to the main handler
@@ -1682,11 +1726,47 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.runTaskForm.Active = false
 		return a, nil
 
+	case RunbookSubmitMsg:
+		a.runbookForm.Active = false
+		invocation := msg.Invocation
+		a.pendingRunbook = &invocation
+		a.confirm = NewConfirm(ConfirmRunbook, runbookConfirmation(invocation))
+		return a, nil
+
+	case RunbookCancelMsg:
+		a.runbookForm.Active = false
+		return a, nil
+
+	case runbookDoneMsg:
+		if msg.err != nil {
+			a.err = fmt.Errorf("plugin action failed: %w", msg.err)
+			return a, nil
+		}
+		a.flashMessage = "Plugin action completed"
+		a.flashExpiry = time.Now().Add(5 * time.Second)
+		return a, nil
+
+	case PluginSettingsSaveMsg:
+		return a.savePluginEntries(msg.Entries)
+
+	case PluginSettingsDeleteMsg:
+		if msg.Index >= 0 && msg.Index < len(a.cfg.Plugins) {
+			a.pendingPluginDelete = msg.Index
+			a.confirm = NewConfirm(ConfirmDeletePlugin, fmt.Sprintf("Remove plugin %q from e9s?\n\nThe manifest and executable will not be deleted.", pluginEntryLabel(a.cfg.Plugins[msg.Index])))
+		}
+		return a, nil
+
 	// --- Dialog results ---
 	case ConfirmResultMsg:
 		if !msg.Confirmed {
 			if msg.Action == ConfirmRegisterTaskDefinition {
 				a.taskDefinitionDocument = ""
+			}
+			if msg.Action == ConfirmRunbook {
+				a.pendingRunbook = nil
+			}
+			if msg.Action == ConfirmDeletePlugin {
+				a.pendingPluginDelete = -1
 			}
 			return a, nil
 		}
@@ -1753,6 +1833,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sqlWorkbenchView.ToggleWrites()
 			a.saveSQLWorkbenchState()
 			return a, nil
+		case ConfirmRunbook:
+			return a.runPendingRunbook()
+		case ConfirmDeletePlugin:
+			return a.deletePendingPlugin()
 		}
 		return a, nil
 
@@ -1989,6 +2073,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Config was edited in $EDITOR — reload it
 		newCfg := config.Reload()
 		a.cfg = &newCfg
+		a = a.reloadConfiguredRunbooks(&newCfg)
 		a.configModTime = config.ModTime()
 		a.flashMessage = "Config reloaded"
 		a.flashExpiry = time.Now().Add(3 * time.Second)
@@ -2000,6 +2085,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			a = a.reloadConfiguredRunbooks(&newCfg)
 			if a.sqlExecutor != nil {
 				a.sqlExecutor.SetPolicy(newCfg.SQL.AllowWrites, newCfg.SQL.PGPassFiles)
 			}
@@ -2020,6 +2106,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !modTime.IsZero() && modTime.After(a.configModTime) {
 			newCfg := config.Reload()
 			a.cfg = &newCfg
+			a = a.reloadConfiguredRunbooks(&newCfg)
 			a.idleTimeout = time.Duration(newCfg.Defaults.IdleTimeout) * time.Second
 			a.configModTime = modTime
 			a.flashMessage = "Config reloaded"
@@ -2774,6 +2861,10 @@ func (a App) delegateToActiveView(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.sqlConnectionsView, cmd = a.sqlConnectionsView.Update(msg)
 	case viewSQLWorkbench:
 		a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
+	case viewPlugins:
+		a.runbooksView, cmd = a.runbooksView.Update(msg)
+	case viewPluginSettings:
+		a.pluginSettingsView, cmd = a.pluginSettingsView.Update(msg)
 	}
 	return a, cmd
 }
@@ -2848,6 +2939,8 @@ func (a App) isFiltering() bool {
 		return a.apiGatewayView.IsFiltering()
 	case viewSQLConnections:
 		return a.sqlConnectionsView.IsFiltering()
+	case viewPlugins:
+		return a.runbooksView.IsFiltering()
 	}
 	return false
 }
@@ -2855,6 +2948,12 @@ func (a App) isFiltering() bool {
 // --- View ---
 
 func (a App) buildBreadcrumbs() []string {
+	if a.state == viewPlugins {
+		return []string{"Plugins"}
+	}
+	if a.state == viewPluginSettings {
+		return []string{"Settings", "Plugins"}
+	}
 	if a.state == viewSQLConnections {
 		return []string{"SQL Workbench", "Connections"}
 	}
@@ -3012,6 +3111,10 @@ func (a App) View() string {
 		content = a.sqlConnectionsView.View()
 	case viewSQLWorkbench:
 		content = a.sqlWorkbenchView.View()
+	case viewPlugins:
+		content = a.runbooksView.View()
+	case viewPluginSettings:
+		content = a.pluginSettingsView.View()
 	case viewEC2Instances:
 		content = a.ec2InstancesView.View()
 	case viewEC2Detail:
@@ -3063,6 +3166,9 @@ func (a App) View() string {
 	}
 	if a.runTaskForm.Active {
 		return renderOverlay(fullView, a.runTaskForm.View(), a.width, a.height)
+	}
+	if a.runbookForm.Active {
+		return renderOverlay(fullView, a.runbookForm.View(), a.width, a.height)
 	}
 
 	return fullView
@@ -3218,6 +3324,10 @@ func (a App) helpText() string {
 		} else {
 			primary = "[e] edit  [o] objects  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
 		}
+	case viewPlugins:
+		primary = "[enter] configure and run"
+	case viewPluginSettings:
+		primary = "[a] add  [enter/e] edit  [d] remove  [ctrl+e] raw config"
 	case viewEC2Instances:
 		primary = "[enter] detail"
 	case viewEC2Detail:
@@ -3658,6 +3768,10 @@ func (a App) contextHelpLines() []struct{ key, desc string } {
 			{"enter", "Expand selected schema, category, table, or view in object browser"},
 			{"i/I", "Insert selected object name / qualified name"}, {"j/k", "Scroll result rows or object browser"},
 		}
+	case viewPlugins:
+		context = []kv{{"enter", "Configure and run selected plugin action"}, {"/", "Filter plugin actions"}}
+	case viewPluginSettings:
+		context = []kv{{"a", "Add and validate a plugin"}, {"enter/e", "Edit selected plugin"}, {"d", "Remove selected plugin registration"}, {"ctrl+e", "Edit raw configuration"}}
 	case viewEC2Instances:
 		context = []kv{
 			{"enter", "View instance detail"},
@@ -3838,6 +3952,14 @@ func (a App) drillDown() (App, tea.Cmd) {
 		return a.openAPIGatewayDetail()
 	case viewSQLConnections:
 		return a.openSelectedSQLConnection()
+	case viewPlugins:
+		if action := a.runbooksView.SelectedAction(); action != nil {
+			a.runbookForm = NewRunbookForm(*action, runbook.Context{Region: a.client.Region(), Profile: a.awsProfile}).SetHeight(a.height - 6)
+			return a, nil
+		}
+	case viewPluginSettings:
+		a.pluginSettingsView = a.pluginSettingsView.BeginEditSelected()
+		return a, nil
 	case viewR53Zones:
 		if z := a.r53ZonesView.SelectedZone(); z != nil {
 			return a.openR53Records(z.Name, z.ID)
@@ -3921,6 +4043,12 @@ func (a App) reopenModePicker() (App, tea.Cmd) {
 		return a.openAPIGateway(model.APIGatewayREST)
 	case modeSQLWorkbench:
 		return a.openSQLConnections()
+	case modePlugins:
+		a.state = viewPlugins
+		return a, nil
+	case modeSettings:
+		a.state = viewPluginSettings
+		return a, nil
 	}
 	return a, nil
 }
@@ -3974,6 +4102,12 @@ func (a App) switchMode(mode topMode) (App, tea.Cmd) {
 		return a.openAPIGateway(model.APIGatewayREST)
 	case modeSQLWorkbench:
 		return a.openSQLConnections()
+	case modePlugins:
+		a.state = viewPlugins
+		return a, nil
+	case modeSettings:
+		a.state = viewPluginSettings
+		return a, nil
 	}
 	return a, nil
 }
@@ -4233,6 +4367,10 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a.showModePicker()
 	case viewSQLWorkbench:
 		return a.openSQLConnections()
+	case viewPlugins:
+		return a.showModePicker()
+	case viewPluginSettings:
+		return a.showModePicker()
 	case viewEC2Instances:
 		return a.showModePicker()
 	case viewEC2Detail:

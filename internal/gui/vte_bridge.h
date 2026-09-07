@@ -14,7 +14,7 @@ gboolean e9s_vte_terminal_motion_suppression_active(GtkWidget *widget);
 gboolean e9s_vte_terminal_sixel_available(void);
 gboolean e9s_vte_terminal_sixel_enabled(GtkWidget *widget);
 void e9s_vte_terminal_set_motion_suppressed(GtkWidget *widget, gboolean suppressed);
-void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory);
+void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, char **envv, const char *working_directory);
 void e9s_vte_terminal_stop(GtkWidget *widget);
 gboolean e9s_vte_terminal_running(GtkWidget *widget);
 int e9s_vte_terminal_exit_status(GtkWidget *widget);

@@ -25,10 +25,12 @@ type moduleRailGroup struct {
 // browsers while retaining the alphabetic order established by the caller.
 // The picker intentionally remains a single alphabetic list for fast search.
 func groupModuleRailSections(sections []moduleRailSection) []moduleRailGroup {
-	groups := []moduleRailGroup{{name: "AWS SERVICES"}, {name: "TOOLS"}}
+	groups := []moduleRailGroup{{name: "AWS SERVICES"}, {name: "TOOLS"}, {name: "PLUGINS"}}
 	for _, section := range sections {
 		group := 0
-		if section.key == moduleTofu || section.key == moduleSQLWorkbench {
+		if strings.HasPrefix(section.key, "plugin:") {
+			group = 2
+		} else if section.key == moduleTofu || section.key == moduleSQLWorkbench {
 			group = 1
 		}
 		groups[group].sections = append(groups[group].sections, section)
@@ -70,12 +72,19 @@ func modulePickerLabels(sections []moduleRailSection) []string {
 }
 
 func (w *mainWindow) start() {
+	if w.pluginLoadError != nil {
+		defer func() { w.setStatus(w.pluginLoadError.Error(), true) }()
+	}
 	if w.options.DefaultCluster != "" {
 		w.activateModule(moduleECS)
 		return
 	}
 	if w.options.Config != nil && strings.TrimSpace(w.options.Config.Defaults.DefaultMode) != "" {
 		configured := w.options.Config.Defaults.DefaultMode
+		if strings.EqualFold(configured, "Settings") || strings.EqualFold(configured, "SET") {
+			w.showSettings()
+			return
+		}
 		if w.activateModule(configured) {
 			return
 		}

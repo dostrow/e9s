@@ -18,6 +18,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pangocairo"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/runbook"
 	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/tofu"
 )
@@ -423,6 +424,12 @@ type mainWindow struct {
 	moduleErrorGlyphs          map[string]*gtk.Image
 	moduleSections             []moduleRailSection
 	modulePickerOpen           bool
+	runbookActions             []runbook.ConfiguredAction
+	pluginLoadError            error
+	pluginActionPending        bool
+	pluginTerminalGeneration   uint64
+	pluginActionButtons        []*gtk.Button
+	pluginRailContainer        *gtk.Box
 	alarmNavButtons            map[string]*gtk.ToggleButton
 	savedLogsLabel             *gtk.Label
 	savedLogNavButtons         []*gtk.ToggleButton
@@ -779,6 +786,7 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 	})
 	if options.Config != nil {
 		w.sqlExecutor.SetPolicy(options.Config.SQL.AllowWrites, options.Config.SQL.PGPassFiles)
+		w.runbookActions, w.pluginLoadError = loadGUIRunbooks(options.Config)
 	}
 	w.lastAWSActivity.Store(time.Now().UnixNano())
 	if options.Config != nil {
@@ -1694,8 +1702,13 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 		{key: moduleSecrets, name: "Secrets Manager", defaultItem: "Secrets", aliases: []string{"sm", "secrets", "secrets manager", "secrets-manager"}, expander: secretsManager, activate: func() { w.loadSecrets("", "") }},
 		{key: moduleLambda, name: "Lambda", defaultItem: "Functions", aliases: []string{"lambda", "λ"}, expander: lambdaFunctions, activate: func() { w.loadLambdaFunctions("", "") }},
 	}
+	pluginSections := w.buildPluginModuleSections()
+	w.moduleSections = append(w.moduleSections, pluginSections...)
 	sortModuleRailSections(w.moduleSections)
 	for groupIndex, group := range groupModuleRailSections(w.moduleSections) {
+		if group.name == "PLUGINS" {
+			continue
+		}
 		if len(group.sections) == 0 {
 			continue
 		}
@@ -1711,6 +1724,9 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 			sidebar.Append(section.expander)
 		}
 	}
+	w.pluginRailContainer = gtk.NewBox(gtk.OrientationVertical, 2)
+	w.populatePluginRail(pluginSections)
+	sidebar.Append(w.pluginRailContainer)
 	w.settingsNavButton = newModuleRailButton("Settings", w.showSettings)
 	w.settingsNavButton.SetGroup(w.clustersNavButton)
 	w.settingsNavButton.SetTooltipText("Open application settings (Ctrl+,)")
@@ -4027,6 +4043,9 @@ func (w *mainWindow) setStatus(message string, isError bool) {
 }
 
 func (w *mainWindow) updateActionSensitivity() {
+	for _, button := range w.pluginActionButtons {
+		button.SetSensitive(!w.pluginActionPending)
+	}
 	costPage := w.currentPage == pageCostOverview || w.currentPage == pageCostBreakdown || w.currentPage == pageCostAnomalies || w.currentPage == pageCostResources || w.currentPage == pageCostSavedView
 	if w.costForceRefreshButton != nil {
 		w.costForceRefreshButton.SetVisible(costPage)

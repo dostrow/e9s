@@ -34,6 +34,7 @@ var settingsModuleChoices = []settingsChoice{
 	{label: "Route 53", value: "Route53"},
 	{label: "S3", value: "S3"},
 	{label: "Secrets Manager", value: "SM"},
+	{label: "Settings", value: "Settings"},
 	{label: "SQL Workbench", value: "SQL Workbench"},
 	{label: "SQS", value: "SQS"},
 	{label: "SSM Parameter Store", value: "SSM"},
@@ -273,6 +274,9 @@ func (w *mainWindow) showSettings() {
 	safetyPage.Append(settingsNote("SQL tabs remain read-only unless this global setting and the tab's separately confirmed Writes control are both enabled. Write authorization is never restored when e9s restarts."))
 	notebook.AppendPage(safetyPage, gtk.NewLabel("Safety"))
 
+	pluginsEditor := newPluginSettingsEditor(w, cfg.Plugins)
+	notebook.AppendPage(pluginsEditor.page, gtk.NewLabel("Plugins"))
+
 	advancedPage := settingsPage()
 	advancedToggle := gtk.NewSwitch()
 	advancedPage.Append(settingsRow("Edit configuration as YAML", advancedToggle))
@@ -347,6 +351,12 @@ func (w *mainWindow) showSettings() {
 		updated.Display.MaxLogLines = maxLogLines.ValueAsInt()
 		updated.GUI.TerminalShell = strings.TrimSpace(terminalShell.Text())
 		updated.GUI.TerminalScrollbackLines = terminalScrollback.ValueAsInt()
+		plugins, err := pluginsEditor.entries()
+		if err != nil {
+			w.setStatus("Invalid plugin settings: "+err.Error(), true)
+			return
+		}
+		updated.Plugins = plugins
 		appearance := appearanceDraft()
 		updated.GUI.Appearance = appearance.GUI.Appearance
 		if err := updated.Validate(); err != nil {
@@ -407,6 +417,10 @@ func (w *mainWindow) applyRuntimeSettings(updated config.Config) {
 	if w.sqlExecutor != nil {
 		w.sqlExecutor.SetPolicy(updated.SQL.AllowWrites, updated.SQL.PGPassFiles)
 	}
+	if err := w.reloadPluginConfiguration(&updated); err != nil {
+		w.pluginLoadError = err
+		w.setStatus("Load plugins: "+err.Error(), true)
+	}
 }
 
 func (w *mainWindow) applyTerminalScrollback(lines int) {
@@ -435,6 +449,10 @@ func (w *mainWindow) reviewRawSettings(before, after []byte, onSaved func(config
 	parsed, err := config.Parse(after)
 	if err != nil {
 		w.setStatus("Invalid configuration: "+err.Error(), true)
+		return
+	}
+	if _, err := loadPluginEntries(parsed.Plugins); err != nil {
+		w.setStatus("Invalid plugin settings: "+err.Error(), true)
 		return
 	}
 	diff := configurationDiff(string(before), string(after))

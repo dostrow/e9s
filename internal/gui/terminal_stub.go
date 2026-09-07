@@ -38,6 +38,10 @@ func (terminal *vteTerminal) SpawnInDirectory(string, []string, string) error {
 	return fmt.Errorf("embedded terminal unavailable: %s", terminalUnavailableDetail())
 }
 
+func (terminal *vteTerminal) SpawnWithEnvironment(string, []string, string, map[string]string) error {
+	return fmt.Errorf("embedded terminal unavailable: %s", terminalUnavailableDetail())
+}
+
 func (terminal *vteTerminal) GrabFocus() {}
 
 func (terminal *vteTerminal) HasFocus() bool { return false }

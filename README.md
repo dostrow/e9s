@@ -13,10 +13,14 @@ Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubblete
 - **Config hot-reload** — edit `~/.config/e9s/config.yaml` (or `ctrl+e` to open in `$EDITOR`) and changes apply automatically
 - **Saved bookmarks** — save frequently used paths, filters, queries, and multi-group selections with `W`
 - **Terminal-adaptive colors** — uses ANSI indices 0–15 so colors match your terminal theme
+- **External-action plugins** — trusted manifests add organization-specific, form-driven commands without coupling their workflows to e9s
 
 ## Modules
 
 e9s is organized into modules accessible via the mode switcher (`` ` ``). Modules can be individually enabled or disabled in the config file.
+
+Configured external-action plugins appear as the `Plugins`/`PLUG` module in
+the TUI and as friendly-name expanders beneath the GUI's `PLUGINS` heading.
 
 ### ECS
 
@@ -628,6 +632,12 @@ gui:
   # Local and embedded operation terminals; configurable up to 1,000,000 lines.
   terminal_scrollback_lines: 10000
 
+# Explicitly trusted external-action plugins. Relative manifest paths resolve
+# from this config file; name is an optional local friendly-name override.
+plugins:
+  - name: DICOMweb Operations
+    manifest: /path/to/dicomweb-infra/.e9s/plugin.yaml
+
 # Enable/disable modules (all enabled by default)
 modules:
   ecs: true
@@ -687,6 +697,13 @@ exclude_services: []
 ```
 
 CLI flags override config file values.
+
+Plugin actions appear under a separate **Plugins** heading in the GUI module
+rail and in the TUI mode picker. e9s renders their launch forms, shows the exact
+command and directories for review, then gives the process a real terminal for
+its own interactive prompts. Register and validate plugins under the GUI's
+**Settings → Plugins** tab or the TUI's **Settings (`SET`) → Plugins** page. See
+[External-action plugins](docs/plugins.md).
 
 ## AWS Permissions
 

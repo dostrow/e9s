@@ -45,6 +45,8 @@ func TestModeDisplayName(t *testing.T) {
 		{modeLambda, "Lambda"},
 		{modeDynamoDB, "DynamoDB"},
 		{modeSQLWorkbench, "SQL Workbench"},
+		{modePlugins, "Plugins"},
+		{modeSettings, "Settings"},
 	}
 	for _, tt := range tests {
 		got := modeDisplayName(tt.mode)
@@ -60,6 +62,9 @@ func TestModeShortName(t *testing.T) {
 	}
 	if got := modeShortName(modeLambda); got != "λ" {
 		t.Errorf("modeShortName(Lambda) = %q", got)
+	}
+	if got := modeShortName(modeSettings); got != "SET" {
+		t.Errorf("modeShortName(Settings) = %q", got)
 	}
 }
 
@@ -102,6 +107,8 @@ func TestResolveDefaultMode(t *testing.T) {
 		{"dynamodb", ptr(modeDynamoDB)},
 		{"Lambda", ptr(modeLambda)},
 		{"postgresql", ptr(modeSQLWorkbench)},
+		{"plugins", ptr(modePlugins)},
+		{"settings", ptr(modeSettings)},
 		{"", nil},
 		{"nonexistent", nil},
 	}

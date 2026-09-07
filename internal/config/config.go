@@ -89,6 +89,13 @@ type SQLConfig struct {
 	Connections []SQLConnection `yaml:"connections,omitempty"`
 }
 
+// PluginEntry names an explicitly trusted external-action manifest. Name is a
+// local friendly-name override; the manifest display name is used when empty.
+type PluginEntry struct {
+	Name     string `yaml:"name,omitempty"`
+	Manifest string `yaml:"manifest"`
+}
+
 // CostView is a reusable Cost Explorer query exposed beneath the module's
 // Saved Views section in both frontends.
 type CostView struct {
@@ -190,6 +197,7 @@ type Config struct {
 	TofuDirs        []TofuDirEntry    `yaml:"tofu_dirs"`
 	CostViews       []CostView        `yaml:"cost_views,omitempty"`
 	SQL             SQLConfig         `yaml:"sql,omitempty"`
+	Plugins         []PluginEntry     `yaml:"plugins"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -352,6 +360,11 @@ func (c Config) Validate() error {
 	}
 	if c.GUI.TerminalScrollbackLines < 1 || c.GUI.TerminalScrollbackLines > MaxTerminalScrollbackLines {
 		return fmt.Errorf("gui.terminal_scrollback_lines must be between 1 and %d", MaxTerminalScrollbackLines)
+	}
+	for index, plugin := range c.Plugins {
+		if strings.TrimSpace(plugin.Manifest) == "" {
+			return fmt.Errorf("plugins[%d].manifest cannot be empty", index)
+		}
 	}
 	for index, view := range c.CostViews {
 		if strings.TrimSpace(view.Name) == "" {

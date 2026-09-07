@@ -11,6 +11,8 @@ import "C"
 
 import (
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"unsafe"
 
@@ -52,6 +54,10 @@ func (terminal *vteTerminal) Spawn(executable string, args []string) error {
 }
 
 func (terminal *vteTerminal) SpawnInDirectory(executable string, args []string, workingDirectory string) error {
+	return terminal.SpawnWithEnvironment(executable, args, workingDirectory, nil)
+}
+
+func (terminal *vteTerminal) SpawnWithEnvironment(executable string, args []string, workingDirectory string, environment map[string]string) error {
 	if executable == "" {
 		return fmt.Errorf("terminal command is empty")
 	}
@@ -67,6 +73,21 @@ func (terminal *vteTerminal) SpawnInDirectory(executable string, args []string, 
 		defer C.free(unsafe.Pointer(items[i]))
 	}
 	items[len(argv)] = nil
+	var nativeEnvironment unsafe.Pointer
+	if len(environment) > 0 {
+		values := environmentVector(environment)
+		nativeEnvironment = C.malloc(C.size_t(len(values)+1) * C.size_t(unsafe.Sizeof(uintptr(0))))
+		if nativeEnvironment == nil {
+			return fmt.Errorf("allocate terminal environment vector")
+		}
+		defer C.free(nativeEnvironment)
+		environmentItems := unsafe.Slice((**C.char)(nativeEnvironment), len(values)+1)
+		for index, value := range values {
+			environmentItems[index] = C.CString(value)
+			defer C.free(unsafe.Pointer(environmentItems[index]))
+		}
+		environmentItems[len(values)] = nil
+	}
 	var directory *C.char
 	if workingDirectory != "" {
 		directory = C.CString(workingDirectory)
@@ -76,9 +97,33 @@ func (terminal *vteTerminal) SpawnInDirectory(executable string, args []string, 
 	C.e9s_vte_terminal_spawn(
 		(*C.GtkWidget)(unsafe.Pointer(coreglib.BaseObject(terminal.widget).Native())),
 		(**C.char)(native),
+		(**C.char)(nativeEnvironment),
 		directory,
 	)
 	return nil
+}
+
+func environmentVector(overrides map[string]string) []string {
+	merged := make(map[string]string)
+	for _, value := range os.Environ() {
+		name, current, found := strings.Cut(value, "=")
+		if found {
+			merged[name] = current
+		}
+	}
+	for name, value := range overrides {
+		merged[name] = value
+	}
+	names := make([]string, 0, len(merged))
+	for name := range merged {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	values := make([]string, 0, len(names))
+	for _, name := range names {
+		values = append(values, name+"="+merged[name])
+	}
+	return values
 }
 
 func (terminal *vteTerminal) GrabFocus() { terminal.widget.GrabFocus() }

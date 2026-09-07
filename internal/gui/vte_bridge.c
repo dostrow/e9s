@@ -295,7 +295,7 @@ void e9s_vte_terminal_set_motion_suppressed(GtkWidget *widget, gboolean suppress
     e9s_vte_set_motion_suppressed(state, suppressed);
 }
 
-void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_directory) {
+void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, char **envv, const char *working_directory) {
     E9sVteState *state = e9s_vte_state(widget);
     if (state->child_pid != 0) {
         kill(state->child_pid, SIGHUP);
@@ -313,7 +313,7 @@ void e9s_vte_terminal_spawn(GtkWidget *widget, char **argv, const char *working_
         VTE_PTY_DEFAULT,
         working_directory,
         argv,
-        NULL,
+        envv,
         G_SPAWN_DEFAULT,
         NULL,
         NULL,

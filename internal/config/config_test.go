@@ -354,6 +354,7 @@ func TestSaveAndLoad(t *testing.T) {
 	cfg.Defaults.Cluster = "test-cluster"
 	cfg.Defaults.Region = "us-west-2"
 	cfg.AddSSMPrefix("test", "/my/prefix")
+	cfg.Plugins = []PluginEntry{{Name: "Friendly operations", Manifest: "/private/plugin.yaml"}}
 
 	err := cfg.Save()
 	if err != nil {
@@ -377,6 +378,26 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if len(loaded.SSMPrefixes) != 1 {
 		t.Fatalf("Loaded SSMPrefixes count = %d, want 1", len(loaded.SSMPrefixes))
+	}
+	if len(loaded.Plugins) != 1 || loaded.Plugins[0].Name != "Friendly operations" || loaded.Plugins[0].Manifest != "/private/plugin.yaml" {
+		t.Fatalf("loaded plugins = %#v", loaded.Plugins)
+	}
+	loaded.Plugins = nil
+	if err := loaded.Save(); err != nil {
+		t.Fatalf("Save() after plugin removal: %v", err)
+	}
+	resetConfigPath()
+	withoutPlugins := Load()
+	if len(withoutPlugins.Plugins) != 0 {
+		t.Fatalf("plugins were retained after removal: %#v", withoutPlugins.Plugins)
+	}
+}
+
+func TestValidateRejectsEmptyPluginManifest(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Plugins = []PluginEntry{{Name: "Broken"}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "plugins[0].manifest") {
+		t.Fatalf("expected plugin manifest validation error, got %v", err)
 	}
 }
 

@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"sort"
+	"strings"
 )
 
 // execWrapCmd implements tea.ExecCommand. It runs the subprocess with full
@@ -22,6 +25,38 @@ func NewExecWrap(pluginPath string, args []string) *execWrapCmd {
 	return &execWrapCmd{
 		cmd: exec.Command(pluginPath, args...),
 	}
+}
+
+func NewExecWrapInDirectory(executable string, args []string, directory string, environment map[string]string) *execWrapCmd {
+	command := exec.Command(executable, args...)
+	command.Dir = directory
+	if len(environment) > 0 {
+		command.Env = mergeEnvironment(os.Environ(), environment)
+	}
+	return &execWrapCmd{cmd: command}
+}
+
+func mergeEnvironment(base []string, overrides map[string]string) []string {
+	merged := make(map[string]string, len(base)+len(overrides))
+	for _, value := range base {
+		name, current, found := strings.Cut(value, "=")
+		if found {
+			merged[name] = current
+		}
+	}
+	for name, value := range overrides {
+		merged[name] = value
+	}
+	names := make([]string, 0, len(merged))
+	for name := range merged {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	values := make([]string, 0, len(names))
+	for _, name := range names {
+		values = append(values, name+"="+merged[name])
+	}
+	return values
 }
 
 func (e *execWrapCmd) SetStdin(r io.Reader)  { e.stdin = r }
