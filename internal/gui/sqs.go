@@ -887,9 +887,8 @@ func (w *mainWindow) promptSaveSQSQueue() {
 			return
 		}
 		dialog.Destroy()
-		w.activeSavedSQSQueue = name
 		w.rebuildSQSRail()
-		w.setBreadcrumb(sqsQueueBreadcrumb(name, queue.Name))
+		w.setBreadcrumb(sqsQueueBreadcrumb(w.activeSavedSQSQueue, queue.Name))
 		w.updateActionSensitivity()
 		w.setStatus("Saved SQS queue "+name, false)
 	})
