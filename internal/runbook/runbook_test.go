@@ -82,8 +82,9 @@ func TestExecutionCommandUsesFixedLoginShellTrampoline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(executable) != "sh" {
-		t.Fatalf("executable = %q, want sh", executable)
+	shellName := strings.TrimSuffix(filepath.Base(executable), filepath.Ext(executable))
+	if shellName != "sh" {
+		t.Fatalf("executable = %q, want sh (with an optional platform extension)", executable)
 	}
 	want := []string{"-lic", `exec "$@"`, "e9s-plugin", "/opt/plugin/release", "--tag", "value with spaces; touch /tmp/nope"}
 	if !reflect.DeepEqual(args, want) {
