@@ -7,8 +7,8 @@ Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubblete
 ## Features
 
 - **Full-screen framed UI** with bordered layout, scrollbar, info bar, and mode label
-- **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to reopen the current mode's entry picker
-- **Context-sensitive help** — press `?` for a full keybinding overlay
+- **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to go to a module, saved bookmark, or loaded resource (its first row reopens the current mode's entry picker)
+- **Command palette and help** — press `:` or `?` to see every command available in the current view with its shortcut, fuzzy-search them, or jump to any module; destructive commands are flagged and still confirm before running
 - **Region switching** — `ctrl+r` to change AWS region on the fly
 - **Config hot-reload** — edit `~/.config/e9s/config.yaml` (or `ctrl+e` to open in `$EDITOR`) and changes apply automatically
 - **Saved bookmarks** — save frequently used paths, filters, queries, and multi-group selections with `W`
@@ -217,6 +217,10 @@ On Ubuntu or Debian, install
 `libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
 prerequisites; AWS's `session-manager-plugin` is required at runtime.
 
+In the GUI, `Ctrl+Shift+P` or `?` opens the same kind of command palette,
+covering the current page's toolbar actions, saved items, plugin actions, and
+every module and sub-view.
+
 See the [GUI development guide](docs/gui-development.md) for distro packages and
 the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
 decision. Deferred Git provenance, OpenTofu ownership indexing, and configurable
@@ -309,8 +313,9 @@ e9s -m SQS -r eu-west-1
 
 | Key | Action |
 | --- | --- |
+| `:` or `?` | Command palette and context help — browse or fuzzy-search the current view's commands, modes, and global actions |
 | `` ` `` | Open mode switcher |
-| `ctrl+p` | Reopen current mode's entry picker |
+| `ctrl+p` | Go-to palette: modules, saved bookmarks, plugin actions, and loaded resources; `enter` on the first row reopens the current mode's entry picker |
 | `ctrl+e` | Edit config in `$EDITOR` |
 | `ctrl+r` | Switch AWS region |
 | `j`/`k` or `↑`/`↓` | Navigate up/down |
@@ -319,8 +324,47 @@ e9s -m SQS -r eu-west-1
 | `q` | Quit |
 | `/` | Filter/search |
 | `R` | Refresh data |
-| `?` | Context-sensitive help overlay |
 | `PgUp`/`PgDn` | Scroll by page |
+
+### Command Palette
+
+Press `:` or `?` to open the palette; it replaces the old help overlay. With
+an empty query it lists the current view's commands, global commands, and "Go to" entries for every enabled
+module, grouped by section with each command's shortcut on the right, plus a
+legend of movement keys. Type to fuzzy-filter: matches favor word starts
+(`fnd` finds **F**orce **n**ew **d**eployment), search also covers the
+selected resource, the view name, and synonyms (`ssh` finds ECS Exec and SSM
+sessions), and typing a command's exact shortcut ranks it first.
+
+- Saved bookmarks from every enabled module (log paths, SSM prefixes, secret
+  filters, bucket and function searches, queues, tables, PartiQL queries,
+  OpenTofu workspaces, and Cost Explorer views) and every configured plugin
+  action are listed too, so `:` then a bookmark name jumps straight there.
+- "Switch AWS region" opens a second, searchable step listing regions
+  (`:` `region` `enter` `euw2` `enter`).
+- Rows already loaded in a module's top-level list this session (clusters,
+  services, queues, functions, buckets, tables, log groups, alarms, projects,
+  instances, repositories, zones, RDS clusters and instances, secrets, and
+  parameters) are searchable too. Type `@` to search only those. Choosing
+  one switches to its list with the row selected; `enter` then opens it, so a
+  jump never fetches data or reveals a value by itself. Resources appear only
+  in search results, never in the unfiltered list.
+- `ctrl+p` opens the palette in go-to mode (modules, saved bookmarks, plugin
+  actions, and resources), led by "Reopen <mode> entry picker" so
+  `ctrl+p` `enter` still opens the mode's prefix/search prompt.
+- `↑`/`↓` (or `ctrl+n`/`ctrl+p`, `tab`/`shift+tab`) move, `enter` runs, `esc` closes.
+- Commands run through the same key handler as their shortcut, so every
+  confirmation still applies. Destructive commands are marked `⚠`.
+- After you run a command that has a shortcut, the status bar shows a tip
+  with its key.
+- Your three most recent commands are repeated in a Recent section right after
+  the current view's commands (they also keep their usual place) and rank
+  higher in searches; history is kept per frontend in
+  `$XDG_STATE_HOME/e9s/palette-tui.json` (default `~/.local/state/e9s`).
+- A precise search for a command that lives in another view shows it dimmed
+  with where it is available, rather than nothing.
+- Rebind the palette with `keybindings: { command_palette: "<key>" }` in the
+  config file.
 
 ### ECS — Service List
 

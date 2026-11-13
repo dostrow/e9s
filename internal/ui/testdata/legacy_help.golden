@@ -1,0 +1,6106 @@
+== state 0 default
+enter	Browse services
+1-9	Quick select
+/	Filter
+T	Task definitions explorer
+R	Refresh
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 0 stopped-more
+enter	Browse services
+1-9	Quick select
+/	Filter
+T	Task definitions explorer
+R	Refresh
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 0 stopped-end
+enter	Browse services
+1-9	Quick select
+/	Filter
+T	Task definitions explorer
+R	Refresh
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 0 metrics-task
+enter	Browse services
+1-9	Quick select
+/	Filter
+T	Task definitions explorer
+R	Refresh
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 0 correlate
+enter	Browse services
+1-9	Quick select
+/	Filter
+T	Task definitions explorer
+R	Refresh
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 1 default
+enter	Browse tasks
+d	Service detail (deployments + events)
+L	Tail logs (all tasks)
+r	Force new deployment
+s	Scale service
+m	CPU/memory metrics + alarms
+I	Toggle scale-in suspension
+S	Standalone tasks (non-service)
+T	Task definitions explorer
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 1 stopped-more
+enter	Browse tasks
+d	Service detail (deployments + events)
+L	Tail logs (all tasks)
+r	Force new deployment
+s	Scale service
+m	CPU/memory metrics + alarms
+I	Toggle scale-in suspension
+S	Standalone tasks (non-service)
+T	Task definitions explorer
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 1 stopped-end
+enter	Browse tasks
+d	Service detail (deployments + events)
+L	Tail logs (all tasks)
+r	Force new deployment
+s	Scale service
+m	CPU/memory metrics + alarms
+I	Toggle scale-in suspension
+S	Standalone tasks (non-service)
+T	Task definitions explorer
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 1 metrics-task
+enter	Browse tasks
+d	Service detail (deployments + events)
+L	Tail logs (all tasks)
+r	Force new deployment
+s	Scale service
+m	CPU/memory metrics + alarms
+I	Toggle scale-in suspension
+S	Standalone tasks (non-service)
+T	Task definitions explorer
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 1 correlate
+enter	Browse tasks
+d	Service detail (deployments + events)
+L	Tail logs (all tasks)
+r	Force new deployment
+s	Scale service
+m	CPU/memory metrics + alarms
+I	Toggle scale-in suspension
+S	Standalone tasks (non-service)
+T	Task definitions explorer
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 2 default
+enter	Task detail
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+x	Stop task
+e	ECS Exec (shell into container)
+m	Task CPU/memory metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 2 stopped-more
+enter	Task detail
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+]	Load 50 more stopped tasks
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 2 stopped-end
+enter	Task detail
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 2 metrics-task
+enter	Task detail
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+x	Stop task
+e	ECS Exec (shell into container)
+m	Task CPU/memory metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 2 correlate
+enter	Task detail
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+x	Stop task
+e	ECS Exec (shell into container)
+m	Task CPU/memory metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 3 default
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+E	View environment variables
+l	Tail logs
+m	Task CPU/memory metrics
+o	Open linked resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 3 stopped-more
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+E	View environment variables
+l	Tail logs
+m	Task CPU/memory metrics
+o	Open linked resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 3 stopped-end
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+E	View environment variables
+l	Tail logs
+m	Task CPU/memory metrics
+o	Open linked resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 3 metrics-task
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+E	View environment variables
+l	Tail logs
+m	Task CPU/memory metrics
+o	Open linked resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 3 correlate
+d	Service detail
+S	Toggle standalone tasks
+T	Task definitions explorer
+E	View environment variables
+l	Tail logs
+m	Task CPU/memory metrics
+o	Open linked resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 4 default
+enter	Task definition detail
+/	Filter
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 4 stopped-more
+enter	Task definition detail
+/	Filter
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 4 stopped-end
+enter	Task definition detail
+/	Filter
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 4 metrics-task
+enter	Task definition detail
+/	Filter
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 4 correlate
+enter	Task definition detail
+/	Filter
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 5 default
+tab	Switch Summary/JSON
+E	View environment variables
+d	Diff against previous active revision
+e	Edit in $EDITOR and register revision
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 5 stopped-more
+tab	Switch Summary/JSON
+E	View environment variables
+d	Diff against previous active revision
+e	Edit in $EDITOR and register revision
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 5 stopped-end
+tab	Switch Summary/JSON
+E	View environment variables
+d	Diff against previous active revision
+e	Edit in $EDITOR and register revision
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 5 metrics-task
+tab	Switch Summary/JSON
+E	View environment variables
+d	Diff against previous active revision
+e	Edit in $EDITOR and register revision
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 5 correlate
+tab	Switch Summary/JSON
+E	View environment variables
+d	Diff against previous active revision
+e	Edit in $EDITOR and register revision
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 6 default
+tab	Switch between Deployments and Events
+o	Open linked resource
+S	Toggle standalone tasks
+T	Task definitions explorer
+d	Task definition deployment diff
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 6 stopped-more
+tab	Switch between Deployments and Events
+o	Open linked resource
+S	Toggle standalone tasks
+T	Task definitions explorer
+d	Task definition deployment diff
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 6 stopped-end
+tab	Switch between Deployments and Events
+o	Open linked resource
+S	Toggle standalone tasks
+T	Task definitions explorer
+d	Task definition deployment diff
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 6 metrics-task
+tab	Switch between Deployments and Events
+o	Open linked resource
+S	Toggle standalone tasks
+T	Task definitions explorer
+d	Task definition deployment diff
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 6 correlate
+tab	Switch between Deployments and Events
+o	Open linked resource
+S	Toggle standalone tasks
+T	Task definitions explorer
+d	Task definition deployment diff
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 7 default
+f	Toggle follow mode
+t	Cycle timestamps (relative/local/UTC)
+/	Search — jump with n/N
+n/N	Next/previous match
+[/]	Load older/newer logs
+w	Save buffer to file
+y	Copy buffer to clipboard
+o	Open buffer in $EDITOR
+h	Manage highlight rules
+v	Show/hide buffered streams
+g/G	Jump to top/bottom
+PgUp/PgDn	Scroll by page
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 7 stopped-more
+f	Toggle follow mode
+t	Cycle timestamps (relative/local/UTC)
+/	Search — jump with n/N
+n/N	Next/previous match
+[/]	Load older/newer logs
+w	Save buffer to file
+y	Copy buffer to clipboard
+o	Open buffer in $EDITOR
+h	Manage highlight rules
+v	Show/hide buffered streams
+g/G	Jump to top/bottom
+PgUp/PgDn	Scroll by page
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 7 stopped-end
+f	Toggle follow mode
+t	Cycle timestamps (relative/local/UTC)
+/	Search — jump with n/N
+n/N	Next/previous match
+[/]	Load older/newer logs
+w	Save buffer to file
+y	Copy buffer to clipboard
+o	Open buffer in $EDITOR
+h	Manage highlight rules
+v	Show/hide buffered streams
+g/G	Jump to top/bottom
+PgUp/PgDn	Scroll by page
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 7 metrics-task
+f	Toggle follow mode
+t	Cycle timestamps (relative/local/UTC)
+/	Search — jump with n/N
+n/N	Next/previous match
+[/]	Load older/newer logs
+w	Save buffer to file
+y	Copy buffer to clipboard
+o	Open buffer in $EDITOR
+h	Manage highlight rules
+v	Show/hide buffered streams
+g/G	Jump to top/bottom
+PgUp/PgDn	Scroll by page
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 7 correlate
+f	Toggle follow mode
+t	Cycle timestamps (relative/local/UTC)
+/	Search — jump with n/N
+n/N	Next/previous match
+[/]	Load older/newer logs
+w	Save buffer to file
+y	Copy buffer to clipboard
+o	Open buffer in $EDITOR
+h	Manage highlight rules
+v	Show/hide buffered streams
+g/G	Jump to top/bottom
+PgUp/PgDn	Scroll by page
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 8 default
+enter	Task detail
+S	Return to services/tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+a	Run standalone task
+x	Stop task
+e	ECS Exec (shell into container)
+m	Task CPU/memory metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 8 stopped-more
+enter	Task detail
+S	Return to services/tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+a	Run standalone task
+]	Load 50 more stopped tasks
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 8 stopped-end
+enter	Task detail
+S	Return to services/tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+a	Run standalone task
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 8 metrics-task
+enter	Task detail
+S	Return to services/tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+a	Run standalone task
+x	Stop task
+e	ECS Exec (shell into container)
+m	Task CPU/memory metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 8 correlate
+enter	Task detail
+S	Return to services/tasks
+T	Task definitions explorer
+l	Tail logs
+tab	Switch Active/Recently stopped
+a	Run standalone task
+x	Stop task
+e	ECS Exec (shell into container)
+m	Task CPU/memory metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 9 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 9 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 9 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 9 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 9 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 10 default
+R	Refresh metrics
+I	Toggle scale-in suspension
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 10 stopped-more
+R	Refresh metrics
+I	Toggle scale-in suspension
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 10 stopped-end
+R	Refresh metrics
+I	Toggle scale-in suspension
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 10 metrics-task
+R	Refresh metrics
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 10 correlate
+R	Refresh metrics
+I	Toggle scale-in suspension
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 11 default
+enter	View parameter value
+e	Edit parameter value
+W	Save prefix for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 11 stopped-more
+enter	View parameter value
+e	Edit parameter value
+W	Save prefix for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 11 stopped-end
+enter	View parameter value
+e	Edit parameter value
+W	Save prefix for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 11 metrics-task
+enter	View parameter value
+e	Edit parameter value
+W	Save prefix for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 11 correlate
+enter	View parameter value
+e	Edit parameter value
+W	Save prefix for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 12 default
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 12 stopped-more
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 12 stopped-end
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 12 metrics-task
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 12 correlate
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 13 default
+enter	View secret value
+e	Edit secret value
+c	Clone secret to new name
+y	Copy ARN to clipboard
+W	Save filter for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 13 stopped-more
+enter	View secret value
+e	Edit secret value
+c	Clone secret to new name
+y	Copy ARN to clipboard
+W	Save filter for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 13 stopped-end
+enter	View secret value
+e	Edit secret value
+c	Clone secret to new name
+y	Copy ARN to clipboard
+W	Save filter for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 13 metrics-task
+enter	View secret value
+e	Edit secret value
+c	Clone secret to new name
+y	Copy ARN to clipboard
+W	Save filter for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 13 correlate
+enter	View secret value
+e	Edit secret value
+c	Clone secret to new name
+y	Copy ARN to clipboard
+W	Save filter for quick access
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 14 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 14 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 14 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 14 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 14 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 15 default
+enter	Browse bucket
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 15 stopped-more
+enter	Browse bucket
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 15 stopped-end
+enter	Browse bucket
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 15 metrics-task
+enter	Browse bucket
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 15 correlate
+enter	Browse bucket
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 16 default
+enter	Open folder / view detail
+i	View detail + tags
+s	Search by key prefix
+D	Download object or folder
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 16 stopped-more
+enter	Open folder / view detail
+i	View detail + tags
+s	Search by key prefix
+D	Download object or folder
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 16 stopped-end
+enter	Open folder / view detail
+i	View detail + tags
+s	Search by key prefix
+D	Download object or folder
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 16 metrics-task
+enter	Open folder / view detail
+i	View detail + tags
+s	Search by key prefix
+D	Download object or folder
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 16 correlate
+enter	Open folder / view detail
+i	View detail + tags
+s	Search by key prefix
+D	Download object or folder
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 17 default
+D	Download
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 17 stopped-more
+D	Download
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 17 stopped-end
+D	Download
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 17 metrics-task
+D	Download
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 17 correlate
+D	Download
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 18 default
+enter	Function detail
+l	Tail function logs (live)
+L	Browse log streams (historical)
+s	Search function logs
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 18 stopped-more
+enter	Function detail
+l	Tail function logs (live)
+L	Browse log streams (historical)
+s	Search function logs
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 18 stopped-end
+enter	Function detail
+l	Tail function logs (live)
+L	Browse log streams (historical)
+s	Search function logs
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 18 metrics-task
+enter	Function detail
+l	Tail function logs (live)
+L	Browse log streams (historical)
+s	Search function logs
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 18 correlate
+enter	Function detail
+l	Tail function logs (live)
+L	Browse log streams (historical)
+s	Search function logs
+W	Save search
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 19 default
+c	Edit code (download, $EDITOR, deploy)
+E	View environment variables
+l	Tail logs (live)
+L	Browse log streams (historical)
+s	Search logs
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 19 stopped-more
+c	Edit code (download, $EDITOR, deploy)
+E	View environment variables
+l	Tail logs (live)
+L	Browse log streams (historical)
+s	Search logs
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 19 stopped-end
+c	Edit code (download, $EDITOR, deploy)
+E	View environment variables
+l	Tail logs (live)
+L	Browse log streams (historical)
+s	Search logs
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 19 metrics-task
+c	Edit code (download, $EDITOR, deploy)
+E	View environment variables
+l	Tail logs (live)
+L	Browse log streams (historical)
+s	Search logs
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 19 correlate
+c	Edit code (download, $EDITOR, deploy)
+E	View environment variables
+l	Tail logs (live)
+L	Browse log streams (historical)
+s	Search logs
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 20 default
+enter	Browse table
+W	Save table
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 20 stopped-more
+enter	Browse table
+W	Save table
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 20 stopped-end
+enter	Browse table
+W	Save table
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 20 metrics-task
+enter	Browse table
+W	Save table
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 20 correlate
+enter	Browse table
+W	Save table
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 21 default
+enter	View item detail
+f	Filter scan (attribute + operator + value)
+p	PartiQL query
+]	Load next page
+W	Save PartiQL query
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 21 stopped-more
+enter	View item detail
+f	Filter scan (attribute + operator + value)
+p	PartiQL query
+]	Load next page
+W	Save PartiQL query
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 21 stopped-end
+enter	View item detail
+f	Filter scan (attribute + operator + value)
+p	PartiQL query
+]	Load next page
+W	Save PartiQL query
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 21 metrics-task
+enter	View item detail
+f	Filter scan (attribute + operator + value)
+p	PartiQL query
+]	Load next page
+W	Save PartiQL query
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 21 correlate
+enter	View item detail
+f	Filter scan (attribute + operator + value)
+p	PartiQL query
+]	Load next page
+W	Save PartiQL query
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 22 default
+e	Edit field value
+c	Clone item
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 22 stopped-more
+e	Edit field value
+c	Clone item
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 22 stopped-end
+e	Edit field value
+c	Clone item
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 22 metrics-task
+e	Edit field value
+c	Clone item
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 22 correlate
+e	Edit field value
+c	Clone item
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 23 default
+enter	Queue detail
+W	Save queue
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 23 stopped-more
+enter	Queue detail
+W	Save queue
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 23 stopped-end
+enter	Queue detail
+W	Save queue
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 23 metrics-task
+enter	Queue detail
+W	Save queue
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 23 correlate
+enter	Queue detail
+W	Save queue
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 24 default
+m	Browse messages
+s	Send new message
+n	Navigate to dead letter queue
+R	Refresh stats
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 24 stopped-more
+m	Browse messages
+s	Send new message
+n	Navigate to dead letter queue
+R	Refresh stats
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 24 stopped-end
+m	Browse messages
+s	Send new message
+n	Navigate to dead letter queue
+R	Refresh stats
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 24 metrics-task
+m	Browse messages
+s	Send new message
+n	Navigate to dead letter queue
+R	Refresh stats
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 24 correlate
+m	Browse messages
+s	Send new message
+n	Navigate to dead letter queue
+R	Refresh stats
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 25 default
+enter	Message detail
+p	Configure and poll for messages
+s	Send new message
+r	Release message now
+x	Acknowledge / delete message
+X	Clear local list (does not release)
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 25 stopped-more
+enter	Message detail
+p	Configure and poll for messages
+s	Send new message
+r	Release message now
+x	Acknowledge / delete message
+X	Clear local list (does not release)
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 25 stopped-end
+enter	Message detail
+p	Configure and poll for messages
+s	Send new message
+r	Release message now
+x	Acknowledge / delete message
+X	Clear local list (does not release)
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 25 metrics-task
+enter	Message detail
+p	Configure and poll for messages
+s	Send new message
+r	Release message now
+x	Acknowledge / delete message
+X	Clear local list (does not release)
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 25 correlate
+enter	Message detail
+p	Configure and poll for messages
+s	Send new message
+r	Release message now
+x	Acknowledge / delete message
+X	Clear local list (does not release)
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 26 default
+c	Clone & send
+r	Release message now
+x	Acknowledge / delete message
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 26 stopped-more
+c	Clone & send
+r	Release message now
+x	Acknowledge / delete message
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 26 stopped-end
+c	Clone & send
+r	Release message now
+x	Acknowledge / delete message
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 26 metrics-task
+c	Clone & send
+r	Release message now
+x	Acknowledge / delete message
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 26 correlate
+c	Clone & send
+r	Release message now
+x	Acknowledge / delete message
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 27 default
+enter	Browse streams
+space	Multi-select groups
+l	Tail entire log group
+s	Search selected groups
+W	Save log path / group selection
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 27 stopped-more
+enter	Browse streams
+space	Multi-select groups
+l	Tail entire log group
+s	Search selected groups
+W	Save log path / group selection
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 27 stopped-end
+enter	Browse streams
+space	Multi-select groups
+l	Tail entire log group
+s	Search selected groups
+W	Save log path / group selection
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 27 metrics-task
+enter	Browse streams
+space	Multi-select groups
+l	Tail entire log group
+s	Search selected groups
+W	Save log path / group selection
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 27 correlate
+enter	Browse streams
+space	Multi-select groups
+l	Tail entire log group
+s	Search selected groups
+W	Save log path / group selection
+c	Correlate selected groups
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 28 default
+enter	Peek (last 1 min, paused)
+space	Multi-select streams
+l	Tail stream
+L	Tail entire log group
+s	Search selected streams
+W	Save log path
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 28 stopped-more
+enter	Peek (last 1 min, paused)
+space	Multi-select streams
+l	Tail stream
+L	Tail entire log group
+s	Search selected streams
+W	Save log path
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 28 stopped-end
+enter	Peek (last 1 min, paused)
+space	Multi-select streams
+l	Tail stream
+L	Tail entire log group
+s	Search selected streams
+W	Save log path
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 28 metrics-task
+enter	Peek (last 1 min, paused)
+space	Multi-select streams
+l	Tail stream
+L	Tail entire log group
+s	Search selected streams
+W	Save log path
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 28 correlate
+enter	Peek (last 1 min, paused)
+space	Multi-select streams
+l	Tail stream
+L	Tail entire log group
+s	Search selected streams
+W	Save log path
+c	Correlate selected streams
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 29 default
+enter	Jump to log at timestamp
+c	Correlate selected result
+t	Toggle timestamps
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 29 stopped-more
+enter	Jump to log at timestamp
+c	Correlate selected result
+t	Toggle timestamps
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 29 stopped-end
+enter	Jump to log at timestamp
+c	Correlate selected result
+t	Toggle timestamps
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 29 metrics-task
+enter	Jump to log at timestamp
+c	Correlate selected result
+t	Toggle timestamps
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 29 correlate
+enter	Jump to log at timestamp
+c	Correlate selected result
+t	Toggle timestamps
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 30 default
+enter	View alarm detail
+t	Toggle local/UTC timestamps
+/	Filter alarms
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 30 stopped-more
+enter	View alarm detail
+t	Toggle local/UTC timestamps
+/	Filter alarms
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 30 stopped-end
+enter	View alarm detail
+t	Toggle local/UTC timestamps
+/	Filter alarms
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 30 metrics-task
+enter	View alarm detail
+t	Toggle local/UTC timestamps
+/	Filter alarms
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 30 correlate
+enter	View alarm detail
+t	Toggle local/UTC timestamps
+/	Filter alarms
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 31 default
+a	Enable/disable alarm actions
+S	Set alarm state (testing)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 31 stopped-more
+a	Enable/disable alarm actions
+S	Set alarm state (testing)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 31 stopped-end
+a	Enable/disable alarm actions
+S	Set alarm state (testing)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 31 metrics-task
+a	Enable/disable alarm actions
+S	Set alarm state (testing)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 31 correlate
+a	Enable/disable alarm actions
+S	Set alarm state (testing)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 32 default
+enter	View builds
+b	Start new build
+/	Filter projects
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 32 stopped-more
+enter	View builds
+b	Start new build
+/	Filter projects
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 32 stopped-end
+enter	View builds
+b	Start new build
+/	Filter projects
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 32 metrics-task
+enter	View builds
+b	Start new build
+/	Filter projects
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 32 correlate
+enter	View builds
+b	Start new build
+/	Filter projects
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 33 default
+enter	View build detail
+b	Start new build
+t	Toggle local/UTC timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 33 stopped-more
+enter	View build detail
+b	Start new build
+t	Toggle local/UTC timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 33 stopped-end
+enter	View build detail
+b	Start new build
+t	Toggle local/UTC timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 33 metrics-task
+enter	View build detail
+b	Start new build
+t	Toggle local/UTC timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 33 correlate
+enter	View build detail
+b	Start new build
+t	Toggle local/UTC timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 34 default
+l	View build logs (buffer)
+s	Search build logs (full)
+b	Start new build
+x	Stop build (if in progress)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 34 stopped-more
+l	View build logs (buffer)
+s	Search build logs (full)
+b	Start new build
+x	Stop build (if in progress)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 34 stopped-end
+l	View build logs (buffer)
+s	Search build logs (full)
+b	Start new build
+x	Stop build (if in progress)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 34 metrics-task
+l	View build logs (buffer)
+s	Search build logs (full)
+b	Start new build
+x	Stop build (if in progress)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 34 correlate
+l	View build logs (buffer)
+s	Search build logs (full)
+b	Start new build
+x	Stop build (if in progress)
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 35 default
+enter	View instance detail
+/	Filter instances
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 35 stopped-more
+enter	View instance detail
+/	Filter instances
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 35 stopped-end
+enter	View instance detail
+/	Filter instances
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 35 metrics-task
+enter	View instance detail
+/	Filter instances
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 35 correlate
+enter	View instance detail
+/	Filter instances
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 36 default
+e	SSM session (shell into instance)
+c	View console output
+S	Start instance
+X	Stop instance
+r	Reboot instance
+T	Terminate instance
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 36 stopped-more
+e	SSM session (shell into instance)
+c	View console output
+S	Start instance
+X	Stop instance
+r	Reboot instance
+T	Terminate instance
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 36 stopped-end
+e	SSM session (shell into instance)
+c	View console output
+S	Start instance
+X	Stop instance
+r	Reboot instance
+T	Terminate instance
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 36 metrics-task
+e	SSM session (shell into instance)
+c	View console output
+S	Start instance
+X	Stop instance
+r	Reboot instance
+T	Terminate instance
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 36 correlate
+e	SSM session (shell into instance)
+c	View console output
+S	Start instance
+X	Stop instance
+r	Reboot instance
+T	Terminate instance
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 37 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 37 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 37 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 37 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 37 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 38 default
+enter	View security group detail
+/	Filter security groups
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 38 stopped-more
+enter	View security group detail
+/	Filter security groups
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 38 stopped-end
+enter	View security group detail
+/	Filter security groups
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 38 metrics-task
+enter	View security group detail
+/	Filter security groups
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 38 correlate
+enter	View security group detail
+/	Filter security groups
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 39 default
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 39 stopped-more
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 39 stopped-end
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 39 metrics-task
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 39 correlate
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 40 default
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 40 stopped-more
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 40 stopped-end
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 40 metrics-task
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 40 correlate
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 41 default
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 41 stopped-more
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 41 stopped-end
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 41 metrics-task
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 41 correlate
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 42 default
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 42 stopped-more
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 42 stopped-end
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 42 metrics-task
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 42 correlate
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 43 default
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 43 stopped-more
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 43 stopped-end
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 43 metrics-task
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 43 correlate
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 44 default
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 44 stopped-more
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 44 stopped-end
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 44 metrics-task
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 44 correlate
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 45 default
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 45 stopped-more
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 45 stopped-end
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 45 metrics-task
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 45 correlate
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 46 default
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 46 stopped-more
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 46 stopped-end
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 46 metrics-task
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 46 correlate
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 47 default
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 47 stopped-more
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 47 stopped-end
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 47 metrics-task
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 47 correlate
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 48 default
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 48 stopped-more
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 48 stopped-end
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 48 metrics-task
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 48 correlate
+enter	View detail
+/	Filter resources
+tab	Switch EC2 resource
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 49 default
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 49 stopped-more
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 49 stopped-end
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 49 metrics-task
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 49 correlate
+o	Open linked resource
+tab	Switch EC2 resource
+j/k	Scroll
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 50 default
+enter	View images
+/	Filter repositories
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 50 stopped-more
+enter	View images
+/	Filter repositories
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 50 stopped-end
+enter	View images
+/	Filter repositories
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 50 metrics-task
+enter	View images
+/	Filter repositories
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 50 correlate
+enter	View images
+/	Filter repositories
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 51 default
+enter	View scan findings
+s	Start scan
+y	Copy image URI to clipboard
+x	Delete image
+/	Filter by tag or digest
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 51 stopped-more
+enter	View scan findings
+s	Start scan
+y	Copy image URI to clipboard
+x	Delete image
+/	Filter by tag or digest
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 51 stopped-end
+enter	View scan findings
+s	Start scan
+y	Copy image URI to clipboard
+x	Delete image
+/	Filter by tag or digest
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 51 metrics-task
+enter	View scan findings
+s	Start scan
+y	Copy image URI to clipboard
+x	Delete image
+/	Filter by tag or digest
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 51 correlate
+enter	View scan findings
+s	Start scan
+y	Copy image URI to clipboard
+x	Delete image
+/	Filter by tag or digest
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 52 default
+/	Filter findings
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 52 stopped-more
+/	Filter findings
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 52 stopped-end
+/	Filter findings
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 52 metrics-task
+/	Filter findings
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 52 correlate
+/	Filter findings
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 53 default
+enter	View resource state
+p	Run plan (parsed view)
+a	Run apply (interactive)
+i	Run init
+W	Save workspace
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 53 stopped-more
+enter	View resource state
+p	Run plan (parsed view)
+a	Run apply (interactive)
+i	Run init
+W	Save workspace
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 53 stopped-end
+enter	View resource state
+p	Run plan (parsed view)
+a	Run apply (interactive)
+i	Run init
+W	Save workspace
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 53 metrics-task
+enter	View resource state
+p	Run plan (parsed view)
+a	Run apply (interactive)
+i	Run init
+W	Save workspace
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 53 correlate
+enter	View resource state
+p	Run plan (parsed view)
+a	Run apply (interactive)
+i	Run init
+W	Save workspace
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 54 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 54 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 54 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 54 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 54 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 55 default
+enter	View change detail
+a	Run apply (interactive)
+/	Filter changes
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 55 stopped-more
+enter	View change detail
+a	Run apply (interactive)
+/	Filter changes
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 55 stopped-end
+enter	View change detail
+a	Run apply (interactive)
+/	Filter changes
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 55 metrics-task
+enter	View change detail
+a	Run apply (interactive)
+/	Filter changes
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 55 correlate
+enter	View change detail
+a	Run apply (interactive)
+/	Filter changes
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 56 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 56 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 56 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 56 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 56 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 57 default
+enter	View records
+/	Filter zones
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 57 stopped-more
+enter	View records
+/	Filter zones
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 57 stopped-end
+enter	View records
+/	Filter zones
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 57 metrics-task
+enter	View records
+/	Filter zones
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 57 correlate
+enter	View records
+/	Filter zones
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 58 default
+enter	View record detail
+n	Create new record
+/	Filter records
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 58 stopped-more
+enter	View record detail
+n	Create new record
+/	Filter records
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 58 stopped-end
+enter	View record detail
+n	Create new record
+/	Filter records
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 58 metrics-task
+enter	View record detail
+n	Create new record
+/	Filter records
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 58 correlate
+enter	View record detail
+n	Create new record
+/	Filter records
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 59 default
+t	Test DNS resolution
+e	Edit record
+x	Delete record
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 59 stopped-more
+t	Test DNS resolution
+e	Edit record
+x	Delete record
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 59 stopped-end
+t	Test DNS resolution
+e	Edit record
+x	Delete record
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 59 metrics-task
+t	Test DNS resolution
+e	Edit record
+x	Delete record
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 59 correlate
+t	Test DNS resolution
+e	Edit record
+x	Delete record
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 60 default
+enter	Browse member instances
+tab	Switch to all instances
+/	Filter clusters
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 60 stopped-more
+enter	Browse member instances
+tab	Switch to all instances
+/	Filter clusters
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 60 stopped-end
+enter	Browse member instances
+tab	Switch to all instances
+/	Filter clusters
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 60 metrics-task
+enter	Browse member instances
+tab	Switch to all instances
+/	Filter clusters
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 60 correlate
+enter	Browse member instances
+tab	Switch to all instances
+/	Filter clusters
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 61 default
+enter	View instance detail + metrics
+/	Filter instances
+T	Toggle relative/absolute timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 61 stopped-more
+enter	View instance detail + metrics
+/	Filter instances
+T	Toggle relative/absolute timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 61 stopped-end
+enter	View instance detail + metrics
+/	Filter instances
+T	Toggle relative/absolute timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 61 metrics-task
+enter	View instance detail + metrics
+/	Filter instances
+T	Toggle relative/absolute timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 61 correlate
+enter	View instance detail + metrics
+/	Filter instances
+T	Toggle relative/absolute timestamps
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 62 default
+o	Open linked EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 62 stopped-more
+o	Open linked EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 62 stopped-end
+o	Open linked EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 62 metrics-task
+o	Open linked EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 62 correlate
+o	Open linked EC2 resource
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 63 default
+v	Select overview, breakdown, anomalies, resources, or a saved view
+R	Force paid refresh (confirmation required)
+/	Filter current rows
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 63 stopped-more
+v	Select overview, breakdown, anomalies, resources, or a saved view
+R	Force paid refresh (confirmation required)
+/	Filter current rows
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 63 stopped-end
+v	Select overview, breakdown, anomalies, resources, or a saved view
+R	Force paid refresh (confirmation required)
+/	Filter current rows
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 63 metrics-task
+v	Select overview, breakdown, anomalies, resources, or a saved view
+R	Force paid refresh (confirmation required)
+/	Filter current rows
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 63 correlate
+v	Select overview, breakdown, anomalies, resources, or a saved view
+R	Force paid refresh (confirmation required)
+/	Filter current rows
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 64 default
+enter	View cache details and current metrics
+1/2/3	Replication groups / cache clusters / serverless caches
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 64 stopped-more
+enter	View cache details and current metrics
+1/2/3	Replication groups / cache clusters / serverless caches
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 64 stopped-end
+enter	View cache details and current metrics
+1/2/3	Replication groups / cache clusters / serverless caches
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 64 metrics-task
+enter	View cache details and current metrics
+1/2/3	Replication groups / cache clusters / serverless caches
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 64 correlate
+enter	View cache details and current metrics
+1/2/3	Replication groups / cache clusters / serverless caches
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 65 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 65 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 65 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 65 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 65 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 66 default
+enter	View stages, routes, integrations, mappings, and metrics
+1/2/3/4	REST / HTTP / WebSocket APIs / custom domains
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 66 stopped-more
+enter	View stages, routes, integrations, mappings, and metrics
+1/2/3/4	REST / HTTP / WebSocket APIs / custom domains
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 66 stopped-end
+enter	View stages, routes, integrations, mappings, and metrics
+1/2/3/4	REST / HTTP / WebSocket APIs / custom domains
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 66 metrics-task
+enter	View stages, routes, integrations, mappings, and metrics
+1/2/3/4	REST / HTTP / WebSocket APIs / custom domains
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 66 correlate
+enter	View stages, routes, integrations, mappings, and metrics
+1/2/3/4	REST / HTTP / WebSocket APIs / custom domains
+/	Filter resources
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 67 default
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 67 stopped-more
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 67 stopped-end
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 67 metrics-task
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 67 correlate
+j/k	Scroll
+g/G	Top/bottom
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 68 default
+enter	Open a new query tab for selected connection
+t	Return to open tabs
+/	Filter connections
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 68 stopped-more
+enter	Open a new query tab for selected connection
+t	Return to open tabs
+/	Filter connections
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 68 stopped-end
+enter	Open a new query tab for selected connection
+t	Return to open tabs
+/	Filter connections
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 68 metrics-task
+enter	Open a new query tab for selected connection
+t	Return to open tabs
+/	Filter connections
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 68 correlate
+enter	Open a new query tab for selected connection
+t	Return to open tabs
+/	Filter connections
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 69 default
+e	Edit query (Esc returns to commands)
+o	Toggle database object browser
+r	Run all statements
+c	Run statement at cursor
+R	Reconnect
+[/]	Previous/next tab
+n	Connection browser / new tab
+t	Rename tab
+d	Close tab
+x	Export latest result as CSV
+w	Toggle per-tab write break-glass
+enter	Expand selected schema, category, table, or view in object browser
+i/I	Insert selected object name / qualified name
+j/k	Scroll result rows or object browser
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 69 stopped-more
+e	Edit query (Esc returns to commands)
+o	Toggle database object browser
+r	Run all statements
+c	Run statement at cursor
+R	Reconnect
+[/]	Previous/next tab
+n	Connection browser / new tab
+t	Rename tab
+d	Close tab
+x	Export latest result as CSV
+w	Toggle per-tab write break-glass
+enter	Expand selected schema, category, table, or view in object browser
+i/I	Insert selected object name / qualified name
+j/k	Scroll result rows or object browser
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 69 stopped-end
+e	Edit query (Esc returns to commands)
+o	Toggle database object browser
+r	Run all statements
+c	Run statement at cursor
+R	Reconnect
+[/]	Previous/next tab
+n	Connection browser / new tab
+t	Rename tab
+d	Close tab
+x	Export latest result as CSV
+w	Toggle per-tab write break-glass
+enter	Expand selected schema, category, table, or view in object browser
+i/I	Insert selected object name / qualified name
+j/k	Scroll result rows or object browser
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 69 metrics-task
+e	Edit query (Esc returns to commands)
+o	Toggle database object browser
+r	Run all statements
+c	Run statement at cursor
+R	Reconnect
+[/]	Previous/next tab
+n	Connection browser / new tab
+t	Rename tab
+d	Close tab
+x	Export latest result as CSV
+w	Toggle per-tab write break-glass
+enter	Expand selected schema, category, table, or view in object browser
+i/I	Insert selected object name / qualified name
+j/k	Scroll result rows or object browser
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 69 correlate
+e	Edit query (Esc returns to commands)
+o	Toggle database object browser
+r	Run all statements
+c	Run statement at cursor
+R	Reconnect
+[/]	Previous/next tab
+n	Connection browser / new tab
+t	Rename tab
+d	Close tab
+x	Export latest result as CSV
+w	Toggle per-tab write break-glass
+enter	Expand selected schema, category, table, or view in object browser
+i/I	Insert selected object name / qualified name
+j/k	Scroll result rows or object browser
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 70 default
+enter	Configure and run selected plugin action
+/	Filter plugin actions
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 70 stopped-more
+enter	Configure and run selected plugin action
+/	Filter plugin actions
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 70 stopped-end
+enter	Configure and run selected plugin action
+/	Filter plugin actions
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 70 metrics-task
+enter	Configure and run selected plugin action
+/	Filter plugin actions
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 70 correlate
+enter	Configure and run selected plugin action
+/	Filter plugin actions
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 71 default
+a	Add and validate a plugin
+enter/e	Edit selected plugin
+d	Remove selected plugin registration
+ctrl+e	Edit raw configuration
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 71 stopped-more
+a	Add and validate a plugin
+enter/e	Edit selected plugin
+d	Remove selected plugin registration
+ctrl+e	Edit raw configuration
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 71 stopped-end
+a	Add and validate a plugin
+enter/e	Edit selected plugin
+d	Remove selected plugin registration
+ctrl+e	Edit raw configuration
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 71 metrics-task
+a	Add and validate a plugin
+enter/e	Edit selected plugin
+d	Remove selected plugin registration
+ctrl+e	Edit raw configuration
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help
+== state 71 correlate
+a	Add and validate a plugin
+enter/e	Edit selected plugin
+d	Remove selected plugin registration
+ctrl+e	Edit raw configuration
+	
+!	Show the full error (when present)
+`	Switch mode
+ctrl+p	Reopen mode picker
+ctrl+s	Pause/resume polling
+ctrl+e	Edit config
+ctrl+r	Switch AWS region
+R	Refresh data
+/	Filter/search
+esc	Go back
+q	Quit
+?	Toggle this help

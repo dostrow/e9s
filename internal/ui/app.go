@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	e9saws "github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/command"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/refreshpolicy"
@@ -346,7 +347,7 @@ type App struct {
 	confirm      ConfirmModel
 	input        InputModel
 	picker       PickerModel
-	help         HelpModel
+	palette      PaletteModel
 	errorDetails ErrorDetailsModel
 	modeSwitcher ModeSwitcherModel
 
@@ -361,6 +362,8 @@ type App struct {
 	manualPause   bool // true when paused via ctrl+s (not auto-resumed by keypress)
 	refreshSec    int
 	kb            KeyBindings
+	recency       *command.Recency
+	recencyPath   string
 	loading       bool
 	err           error
 	flashMessage  string
@@ -431,6 +434,8 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster, profile s
 		idleTimeout:         idleTimeout,
 		pendingPluginDelete: -1,
 	}
+	app.recencyPath = command.DefaultRecencyPath("tui")
+	app.recency = command.LoadRecency(app.recencyPath)
 	app.pluginSettingsView = NewPluginSettings(cfg.Plugins)
 	passwords := newSQLPasswordCache()
 	sqlState, _ := sqlworkbench.LoadState("")
@@ -640,6 +645,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
 		a.logSearchView = a.logSearchView.SetSize(w, h)
 		a.errorDetails = a.errorDetails.SetSize(wsm.Width, wsm.Height)
+		a.palette = a.palette.SetHeight(wsm.Height)
 		return a, nil
 	}
 
@@ -655,10 +661,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	}
-	if a.help.Active {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			a.help.Active = false
-			return a, nil
+	if a.palette.Active {
+		// The palette captures keys only; data messages keep flowing so
+		// views stay current behind it.
+		if km, ok := msg.(tea.KeyMsg); ok {
+			a.lastActivity = time.Now()
+			var cmd tea.Cmd
+			a.palette, cmd = a.palette.Update(km)
+			return a, cmd
 		}
 	}
 	if a.modeSwitcher.Active {
@@ -1662,6 +1672,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ModeSwitchSelectedMsg:
 		return a.switchMode(msg.Mode)
 
+	case paletteRunMsg:
+		return a.runPaletteItem(msg.item)
+
 	case views.RegionSwitchMsg:
 		return a, a.switchRegion(msg.Region)
 
@@ -2240,9 +2253,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.err = nil
 				return a.drillDown()
 			}
-		case key.Matches(msg, theme.Keys.Help):
-			a.help.Active = true
-			return a, nil
+		case msg.String() == a.kb.CommandPalette, key.Matches(msg, theme.Keys.Help):
+			// ? and : open the same palette: with an empty query it is the
+			// view's help, and typing turns it into a command search.
+			return a.openPalette(), nil
 		case msg.String() == a.kb.SwitchRegion:
 			a.regionPicker = views.NewRegionPicker(a.client.Region())
 			return a, nil
@@ -2252,7 +2266,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == a.kb.EditConfig:
 			return a.openConfigEditor()
 		case msg.String() == a.kb.ReopenPicker:
-			return a.reopenModePicker()
+			// The go-to palette leads with this mode's entry picker, so
+			// ctrl+p then enter behaves as before.
+			return a.openGoToPalette(), nil
 		}
 
 		// Number keys 1-9: quick select and drill down on list views
@@ -3139,9 +3155,8 @@ func (a App) View() string {
 	fullView := renderFrame(a.width, a.height, infoBar, content, actionBar, modeLabel)
 
 	// Overlay modal dialogs on top of the frame
-	if a.help.Active {
-		helpContent := RenderHelp(a.contextHelpLines(), a.width-10)
-		return renderOverlay(fullView, helpContent, a.width, a.height)
+	if a.palette.Active {
+		return renderOverlay(fullView, a.palette.View(a.width), a.width, a.height)
 	}
 	if a.errorDetails.Active {
 		return renderOverlay(fullView, a.errorDetails.View(), a.width, a.height)
@@ -3344,485 +3359,9 @@ func (a App) helpText() string {
 		primary = "[o] linked resources"
 	}
 	if primary != "" {
-		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
+		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] commands", primary)
 	}
-	return "  [esc] back  [q] quit  [?] help"
-}
-
-// contextHelpLines returns the full keybinding list for the current view,
-// used by the help overlay.
-func (a App) contextHelpLines() []struct{ key, desc string } {
-	type kv = struct{ key, desc string }
-
-	global := []kv{
-		{a.kb.ErrorDetails, "Show the full error (when present)"},
-		{a.kb.SwitchMode, "Switch mode"},
-		{a.kb.ReopenPicker, "Reopen mode picker"},
-		{a.kb.PauseResume, "Pause/resume polling"},
-		{a.kb.EditConfig, "Edit config"},
-		{a.kb.SwitchRegion, "Switch AWS region"},
-		{"R", "Refresh data"},
-		{"/", "Filter/search"},
-		{"esc", "Go back"},
-		{"q", "Quit"},
-		{"?", "Toggle this help"},
-	}
-
-	var context []kv
-	kb := a.kb
-	switch a.state {
-	case viewClusters:
-		context = []kv{
-			{"enter", "Browse services"},
-			{"1-9", "Quick select"},
-			{"/", "Filter"},
-			{kb.TaskDefinitions, "Task definitions explorer"},
-			{"R", "Refresh"},
-		}
-	case viewServices:
-		context = []kv{
-			{"enter", "Browse tasks"},
-			{kb.ServiceDetail, "Service detail (deployments + events)"},
-			{kb.ServiceLogs, "Tail logs (all tasks)"},
-			{kb.ForceRedeploy, "Force new deployment"},
-			{kb.Scale, "Scale service"},
-			{kb.Metrics, "CPU/memory metrics + alarms"},
-			{kb.ToggleScaleIn, "Toggle scale-in suspension"},
-			{kb.StandaloneTasks, "Standalone tasks (non-service)"},
-			{kb.TaskDefinitions, "Task definitions explorer"},
-		}
-	case viewTasks:
-		context = []kv{
-			{"enter", "Task detail"},
-			{kb.ServiceDetail, "Service detail"},
-			{kb.StandaloneTasks, "Toggle standalone tasks"},
-			{kb.TaskDefinitions, "Task definitions explorer"},
-			{kb.TaskLogs, "Tail logs"},
-			{kb.TaskScope, "Switch Active/Recently stopped"},
-		}
-		if a.taskScopeStopped {
-			if a.taskNextToken != "" {
-				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
-			}
-		} else {
-			context = append(context,
-				kv{kb.StopTask, "Stop task"},
-				kv{kb.ECSExec, "ECS Exec (shell into container)"},
-				kv{kb.Metrics, "Task CPU/memory metrics"},
-			)
-		}
-	case viewTaskDetail:
-		context = []kv{
-			{kb.ServiceDetail, "Service detail"},
-			{kb.StandaloneTasks, "Toggle standalone tasks"},
-			{kb.TaskDefinitions, "Task definitions explorer"},
-			{kb.EnvVars, "View environment variables"},
-			{kb.TaskLogs, "Tail logs"},
-			{kb.Metrics, "Task CPU/memory metrics"},
-			{kb.OpenResource, "Open linked resource"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewTaskDefs:
-		context = []kv{
-			{"enter", "Task definition detail"},
-			{"/", "Filter"},
-		}
-	case viewTaskDefDetail:
-		context = []kv{
-			{"tab", "Switch Summary/JSON"},
-			{kb.EnvVars, "View environment variables"},
-			{kb.TaskDefDiff, "Diff against previous active revision"},
-			{kb.TaskDefEdit, "Edit in $EDITOR and register revision"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewServiceDetail:
-		context = []kv{
-			{"tab", "Switch between Deployments and Events"},
-			{kb.OpenResource, "Open linked resource"},
-			{kb.StandaloneTasks, "Toggle standalone tasks"},
-			{kb.TaskDefinitions, "Task definitions explorer"},
-			{kb.TaskDefDiff, "Task definition deployment diff"},
-			{"j/k", "Scroll"},
-		}
-	case viewLogs:
-		context = []kv{
-			{kb.LogFollow, "Toggle follow mode"},
-			{kb.LogTimestamp, "Cycle timestamps (relative/local/UTC)"},
-			{"/", "Search — jump with n/N"},
-			{"n/N", "Next/previous match"},
-			{kb.LogOlder + "/" + kb.LogNewer, "Load older/newer logs"},
-			{kb.LogSave, "Save buffer to file"},
-			{kb.LogCopy, "Copy buffer to clipboard"},
-			{kb.LogOpenEditor, "Open buffer in $EDITOR"},
-			{kb.LogHighlights, "Manage highlight rules"},
-			{kb.LogStreams, "Show/hide buffered streams"},
-			{"g/G", "Jump to top/bottom"},
-			{"PgUp/PgDn", "Scroll by page"},
-		}
-	case viewStandaloneTasks:
-		context = []kv{
-			{"enter", "Task detail"},
-			{kb.StandaloneTasks, "Return to services/tasks"},
-			{kb.TaskDefinitions, "Task definitions explorer"},
-			{kb.TaskLogs, "Tail logs"},
-			{kb.TaskScope, "Switch Active/Recently stopped"},
-			{kb.RunTask, "Run standalone task"},
-		}
-		if a.taskScopeStopped {
-			if a.taskNextToken != "" {
-				context = append(context, kv{kb.LoadMore, "Load 50 more stopped tasks"})
-			}
-		} else {
-			context = append(context,
-				kv{kb.StopTask, "Stop task"},
-				kv{kb.ECSExec, "ECS Exec (shell into container)"},
-				kv{kb.Metrics, "Task CPU/memory metrics"},
-			)
-		}
-	case viewTaskDefDiff:
-		context = []kv{
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewMetrics:
-		context = []kv{
-			{"R", "Refresh metrics"},
-		}
-		if !a.metricsTaskScope {
-			context = append(context, kv{kb.ToggleScaleIn, "Toggle scale-in suspension"})
-		}
-	case viewSSM:
-		context = []kv{
-			{"enter", "View parameter value"},
-			{kb.EditValue, "Edit parameter value"},
-			{kb.Save, "Save prefix for quick access"},
-		}
-	case viewSecrets:
-		context = []kv{
-			{"enter", "View secret value"},
-			{kb.EditValue, "Edit secret value"},
-			{kb.CloneSecret, "Clone secret to new name"},
-			{kb.CopyARN, "Copy ARN to clipboard"},
-			{kb.Save, "Save filter for quick access"},
-		}
-	case viewSecretValue:
-		context = []kv{
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewS3Buckets:
-		context = []kv{
-			{"enter", "Browse bucket"},
-			{kb.Save, "Save search"},
-		}
-	case viewS3Objects:
-		context = []kv{
-			{"enter", "Open folder / view detail"},
-			{"i", "View detail + tags"},
-			{kb.Search, "Search by key prefix"},
-			{kb.Download, "Download object or folder"},
-		}
-	case viewS3Detail:
-		context = []kv{
-			{kb.Download, "Download"},
-		}
-	case viewLambdaList:
-		context = []kv{
-			{"enter", "Function detail"},
-			{kb.TailStream, "Tail function logs (live)"},
-			{kb.BrowseStreams, "Browse log streams (historical)"},
-			{kb.Search, "Search function logs"},
-			{kb.Save, "Save search"},
-		}
-	case viewLambdaDetail:
-		context = []kv{
-			{kb.EditCode, "Edit code (download, $EDITOR, deploy)"},
-			{kb.EnvVars, "View environment variables"},
-			{kb.TailStream, "Tail logs (live)"},
-			{kb.BrowseStreams, "Browse log streams (historical)"},
-			{kb.Search, "Search logs"},
-		}
-	case viewDynamoTables:
-		context = []kv{
-			{"enter", "Browse table"},
-			{kb.Save, "Save table"},
-		}
-	case viewDynamoItems:
-		context = []kv{
-			{"enter", "View item detail"},
-			{kb.FilterScan, "Filter scan (attribute + operator + value)"},
-			{kb.PartiQL, "PartiQL query"},
-			{kb.NextPage, "Load next page"},
-			{kb.Save, "Save PartiQL query"},
-		}
-	case viewDynamoItemDetail:
-		context = []kv{
-			{kb.EditField, "Edit field value"},
-			{kb.CloneItem, "Clone item"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewSQSQueues:
-		context = []kv{
-			{"enter", "Queue detail"},
-			{kb.Save, "Save queue"},
-		}
-	case viewSQSDetail:
-		context = []kv{
-			{kb.Messages, "Browse messages"},
-			{kb.SendMessage, "Send new message"},
-			{kb.NavigateDLQ, "Navigate to dead letter queue"},
-			{"R", "Refresh stats"},
-		}
-	case viewSQSMessages:
-		context = []kv{
-			{"enter", "Message detail"},
-			{kb.PollMessages, "Configure and poll for messages"},
-			{kb.SendMessage, "Send new message"},
-			{kb.ReleaseMsg, "Release message now"},
-			{kb.DeleteMsg, "Acknowledge / delete message"},
-			{"X", "Clear local list (does not release)"},
-		}
-	case viewSQSMessageDetail:
-		context = []kv{
-			{kb.CloneSend, "Clone & send"},
-			{kb.ReleaseMsg, "Release message now"},
-			{kb.DeleteMsg, "Acknowledge / delete message"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewEnvVars:
-		if a.envVarsView.HasSecrets() {
-			if a.envVarsView.SecretsResolved() {
-				context = []kv{{"a", "Toggle secret references/values"}}
-			} else {
-				context = []kv{{kb.RevealSecrets, "Resolve and reveal secret values"}}
-			}
-		}
-	case viewLogGroups:
-		context = []kv{
-			{"enter", "Browse streams"},
-			{"space", "Multi-select groups"},
-			{kb.TailStream, "Tail entire log group"},
-			{kb.Search, "Search selected groups"},
-			{kb.Save, "Save log path / group selection"},
-		}
-		if a.logCorrelationActive {
-			context = append(context, kv{kb.LogCorrelate, "Correlate selected groups"})
-		}
-	case viewLogStreams:
-		context = []kv{
-			{"enter", "Peek (last 1 min, paused)"},
-			{"space", "Multi-select streams"},
-			{kb.TailStream, "Tail stream"},
-			{kb.TailGroup, "Tail entire log group"},
-			{kb.Search, "Search selected streams"},
-			{kb.Save, "Save log path"},
-		}
-		if a.logCorrelationActive {
-			context = append(context, kv{kb.LogCorrelate, "Correlate selected streams"})
-		}
-	case viewLogSearch:
-		context = []kv{
-			{"enter", "Jump to log at timestamp"},
-			{kb.LogCorrelate, "Correlate selected result"},
-			{kb.Timestamp, "Toggle timestamps"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewAlarms:
-		context = []kv{
-			{"enter", "View alarm detail"},
-			{kb.Timestamp, "Toggle local/UTC timestamps"},
-			{"/", "Filter alarms"},
-		}
-	case viewAlarmDetail:
-		context = []kv{
-			{kb.ToggleActions, "Enable/disable alarm actions"},
-			{kb.SetAlarmState, "Set alarm state (testing)"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewCBProjects:
-		context = []kv{
-			{"enter", "View builds"},
-			{kb.StartBuild, "Start new build"},
-			{"/", "Filter projects"},
-		}
-	case viewCBBuilds:
-		context = []kv{
-			{"enter", "View build detail"},
-			{kb.StartBuild, "Start new build"},
-			{kb.Timestamp, "Toggle local/UTC timestamps"},
-		}
-	case viewCBBuildDetail:
-		context = []kv{
-			{kb.ViewLogs, "View build logs (buffer)"},
-			{kb.Search, "Search build logs (full)"},
-			{kb.StartBuild, "Start new build"},
-			{kb.StopBuild, "Stop build (if in progress)"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewTofuResources:
-		context = []kv{
-			{"enter", "View resource state"},
-			{kb.RunPlan, "Run plan (parsed view)"},
-			{kb.RunApply, "Run apply (interactive)"},
-			{kb.RunInit, "Run init"},
-			{kb.Save, "Save workspace"},
-			{"/", "Filter resources"},
-		}
-	case viewTofuPlan:
-		context = []kv{
-			{"enter", "View change detail"},
-			{kb.RunApply, "Run apply (interactive)"},
-			{"/", "Filter changes"},
-		}
-	case viewTofuPlanDetail:
-		context = []kv{
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewTofuStateDetail:
-		context = []kv{
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewECRRepos:
-		context = []kv{
-			{"enter", "View images"},
-			{"/", "Filter repositories"},
-		}
-	case viewECRImages:
-		context = []kv{
-			{"enter", "View scan findings"},
-			{kb.StartScan, "Start scan"},
-			{kb.CopyURI, "Copy image URI to clipboard"},
-			{kb.DeleteImage, "Delete image"},
-			{"/", "Filter by tag or digest"},
-		}
-	case viewECRFindings:
-		context = []kv{
-			{"/", "Filter findings"},
-		}
-	case viewR53Zones:
-		context = []kv{
-			{"enter", "View records"},
-			{"/", "Filter zones"},
-		}
-	case viewR53Records:
-		context = []kv{
-			{"enter", "View record detail"},
-			{kb.NewRecord, "Create new record"},
-			{"/", "Filter records"},
-		}
-	case viewR53RecordDetail:
-		context = []kv{
-			{kb.TestDNS, "Test DNS resolution"},
-			{kb.EditRecord, "Edit record"},
-			{kb.DeleteRecord, "Delete record"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewRDSInstances:
-		context = []kv{
-			{"enter", "View instance detail + metrics"},
-			{"/", "Filter instances"},
-			{"T", "Toggle relative/absolute timestamps"},
-		}
-	case viewRDSClusters:
-		context = []kv{
-			{"enter", "Browse member instances"},
-			{"tab", "Switch to all instances"},
-			{"/", "Filter clusters"},
-		}
-	case viewRDSDetail:
-		context = []kv{
-			{kb.OpenResource, "Open linked EC2 resource"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewCostExplorer:
-		context = []kv{
-			{"v", "Select overview, breakdown, anomalies, resources, or a saved view"},
-			{"R", "Force paid refresh (confirmation required)"},
-			{"/", "Filter current rows"},
-		}
-	case viewElastiCache:
-		context = []kv{{"enter", "View cache details and current metrics"}, {"1/2/3", "Replication groups / cache clusters / serverless caches"}, {"/", "Filter resources"}}
-	case viewElastiCacheDetail:
-		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
-	case viewAPIGateway:
-		context = []kv{{"enter", "View stages, routes, integrations, mappings, and metrics"}, {"1/2/3/4", "REST / HTTP / WebSocket APIs / custom domains"}, {"/", "Filter resources"}}
-	case viewAPIGatewayDetail:
-		context = []kv{{"j/k", "Scroll"}, {"g/G", "Top/bottom"}}
-	case viewSQLConnections:
-		context = []kv{{"enter", "Open a new query tab for selected connection"}, {"t", "Return to open tabs"}, {"/", "Filter connections"}}
-	case viewSQLWorkbench:
-		context = []kv{
-			{"e", "Edit query (Esc returns to commands)"}, {"o", "Toggle database object browser"}, {"r", "Run all statements"}, {"c", "Run statement at cursor"},
-			{"R", "Reconnect"}, {"[/]", "Previous/next tab"}, {"n", "Connection browser / new tab"},
-			{"t", "Rename tab"}, {"d", "Close tab"}, {"x", "Export latest result as CSV"}, {"w", "Toggle per-tab write break-glass"},
-			{"enter", "Expand selected schema, category, table, or view in object browser"},
-			{"i/I", "Insert selected object name / qualified name"}, {"j/k", "Scroll result rows or object browser"},
-		}
-	case viewPlugins:
-		context = []kv{{"enter", "Configure and run selected plugin action"}, {"/", "Filter plugin actions"}}
-	case viewPluginSettings:
-		context = []kv{{"a", "Add and validate a plugin"}, {"enter/e", "Edit selected plugin"}, {"d", "Remove selected plugin registration"}, {"ctrl+e", "Edit raw configuration"}}
-	case viewEC2Instances:
-		context = []kv{
-			{"enter", "View instance detail"},
-			{"/", "Filter instances"},
-			{kb.EC2Resource, "Switch EC2 resource"},
-		}
-	case viewEC2Detail:
-		context = []kv{
-			{kb.SSMSession, "SSM session (shell into instance)"},
-			{kb.ConsoleOutput, "View console output"},
-			{kb.StartInstance, "Start instance"},
-			{kb.StopInstance, "Stop instance"},
-			{kb.RebootInstance, "Reboot instance"},
-			{kb.TermInstance, "Terminate instance"},
-			{kb.OpenResource, "Open linked resource"},
-			{kb.EC2Resource, "Switch EC2 resource"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewEC2Console:
-		context = []kv{
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewEC2SecurityGroups:
-		context = []kv{
-			{"enter", "View security group detail"},
-			{"/", "Filter security groups"},
-			{kb.EC2Resource, "Switch EC2 resource"},
-		}
-	case viewEC2SecurityGroupDetail:
-		context = []kv{
-			{kb.OpenResource, "Open linked resource"},
-			{kb.EC2Resource, "Switch EC2 resource"},
-			{"j/k", "Scroll"},
-			{"g/G", "Top/bottom"},
-		}
-	case viewEC2VPCs, viewEC2Subnets, viewEC2Volumes, viewEC2LoadBalancers, viewEC2TargetGroups:
-		context = []kv{{"enter", "View detail"}, {"/", "Filter resources"}, {kb.EC2Resource, "Switch EC2 resource"}}
-	case viewEC2VPCDetail, viewEC2SubnetDetail, viewEC2VolumeDetail, viewEC2LoadBalancerDetail, viewEC2TargetGroupDetail:
-		context = []kv{{kb.OpenResource, "Open linked resource"}, {kb.EC2Resource, "Switch EC2 resource"}, {"j/k", "Scroll"}}
-	}
-
-	// Combine: context first, then separator, then global
-	var all []kv
-	if len(context) > 0 {
-		all = append(all, context...)
-		all = append(all, kv{"", ""})
-	}
-	all = append(all, global...)
-	return all
+	return "  [esc] back  [q] quit  [?] commands"
 }
 
 // --- Navigation ---
