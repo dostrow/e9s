@@ -3,16 +3,20 @@ package ui
 import (
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/command"
 )
 
-// paletteItem is a TUI command: shared command metadata plus the keys that
-// run it in this frontend. Legend items document movement keys and are never
-// runnable.
+// paletteItem is a TUI command: shared command metadata plus how this
+// frontend runs it. Items with keys run by replaying keys[0] through Update,
+// so the palette and the keyboard share one dispatch path (including every
+// confirmation dialog). Items with run set are invoked directly instead.
+// Legend items document movement keys and are never runnable.
 type paletteItem struct {
 	command.Entry
 	keys   []string
 	legend bool
+	run    func(App) (App, tea.Cmd)
 }
 
 func act(id, key, title string) paletteItem {
@@ -38,6 +42,14 @@ func (p paletteItem) alt(keys ...string) paletteItem {
 }
 
 func (p paletteItem) displayKey() string { return strings.Join(p.keys, "/") }
+
+// runKey is the key replayed to run the item, or "" when it has none.
+func (p paletteItem) runKey() string {
+	if p.legend || len(p.keys) == 0 {
+		return ""
+	}
+	return p.keys[0]
+}
 
 var (
 	scrollLegend = legendItem("j/k", "Scroll")

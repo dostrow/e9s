@@ -101,8 +101,14 @@ func TestFilterShowsUnavailableOnlyForStrongTitleMatches(t *testing.T) {
 		{Command: Command{ID: "a", Title: "Tail logs"}, Section: SectionView},
 		{Command: Command{ID: "b", Title: "Delete image"}, Section: SectionView, Disabled: "Available in ECR › Images"},
 	}
-	if got := ids(Filter(entries, "dl", nil)); len(got) != 0 {
+	if got := ids(Filter(entries, "ei", nil)); len(got) != 0 {
 		t.Fatalf("weak query should hide unavailable entries, got %v", got)
+	}
+	if got := ids(Filter(entries, "dl img", nil)); len(got) != 1 {
+		t.Fatalf("abbreviations should count as strong, got %v", got)
+	}
+	if got := ids(Filter(entries, "eim", nil)); len(got) != 0 {
+		t.Fatalf("matches scattered across words are weak, got %v", got)
 	}
 	results := Filter(entries, "del im", nil)
 	if len(results) != 1 || results[0].ID != "b" || results[0].Section != SectionUnavailable {

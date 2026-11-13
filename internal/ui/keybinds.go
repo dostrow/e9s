@@ -5,12 +5,13 @@ package ui
 // Defaults are set in NewKeyBindings, then overridden from config.
 type KeyBindings struct {
 	// Global
-	SwitchMode   string
-	ReopenPicker string
-	PauseResume  string
-	EditConfig   string
-	SwitchRegion string
-	ErrorDetails string
+	SwitchMode     string
+	CommandPalette string
+	ReopenPicker   string
+	PauseResume    string
+	EditConfig     string
+	SwitchRegion   string
+	ErrorDetails   string
 
 	// ECS
 	ForceRedeploy   string
@@ -122,12 +123,13 @@ type KeyBindings struct {
 func NewKeyBindings() KeyBindings {
 	return KeyBindings{
 		// Global
-		SwitchMode:   "`",
-		ReopenPicker: "ctrl+p",
-		PauseResume:  "ctrl+s",
-		EditConfig:   "ctrl+e",
-		SwitchRegion: "ctrl+r",
-		ErrorDetails: "!",
+		SwitchMode:     "`",
+		CommandPalette: ":",
+		ReopenPicker:   "ctrl+p",
+		PauseResume:    "ctrl+s",
+		EditConfig:     "ctrl+e",
+		SwitchRegion:   "ctrl+r",
+		ErrorDetails:   "!",
 
 		// ECS
 		ForceRedeploy:   "r",
@@ -246,6 +248,8 @@ func (kb *KeyBindings) ApplyOverrides(overrides map[string]string) {
 		// Global
 		case "switch_mode":
 			kb.SwitchMode = key
+		case "command_palette":
+			kb.CommandPalette = key
 		case "reopen_picker":
 			kb.ReopenPicker = key
 		case "pause_resume":

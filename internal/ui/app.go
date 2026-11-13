@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	e9saws "github.com/dostrow/e9s/internal/aws"
+	"github.com/dostrow/e9s/internal/command"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/refreshpolicy"
@@ -347,6 +348,7 @@ type App struct {
 	input        InputModel
 	picker       PickerModel
 	help         HelpModel
+	palette      PaletteModel
 	errorDetails ErrorDetailsModel
 	modeSwitcher ModeSwitcherModel
 
@@ -361,6 +363,8 @@ type App struct {
 	manualPause   bool // true when paused via ctrl+s (not auto-resumed by keypress)
 	refreshSec    int
 	kb            KeyBindings
+	recency       *command.Recency
+	recencyPath   string
 	loading       bool
 	err           error
 	flashMessage  string
@@ -431,6 +435,8 @@ func NewApp(client *e9saws.Client, cfg *config.Config, defaultCluster, profile s
 		idleTimeout:         idleTimeout,
 		pendingPluginDelete: -1,
 	}
+	app.recencyPath = command.DefaultRecencyPath("tui")
+	app.recency = command.LoadRecency(app.recencyPath)
 	app.pluginSettingsView = NewPluginSettings(cfg.Plugins)
 	passwords := newSQLPasswordCache()
 	sqlState, _ := sqlworkbench.LoadState("")
@@ -640,6 +646,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.logStreamsView = a.logStreamsView.SetSize(w, h)
 		a.logSearchView = a.logSearchView.SetSize(w, h)
 		a.errorDetails = a.errorDetails.SetSize(wsm.Width, wsm.Height)
+		a.palette = a.palette.SetHeight(wsm.Height)
 		return a, nil
 	}
 
@@ -654,6 +661,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.errorDetails = a.errorDetails.Update(km)
 		}
 		return a, nil
+	}
+	if a.palette.Active {
+		// The palette captures keys only; data messages keep flowing so
+		// views stay current behind it.
+		if km, ok := msg.(tea.KeyMsg); ok {
+			a.lastActivity = time.Now()
+			var cmd tea.Cmd
+			a.palette, cmd = a.palette.Update(km)
+			return a, cmd
+		}
 	}
 	if a.help.Active {
 		if _, ok := msg.(tea.KeyMsg); ok {
@@ -1662,6 +1679,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ModeSwitchSelectedMsg:
 		return a.switchMode(msg.Mode)
 
+	case paletteRunMsg:
+		return a.runPaletteItem(msg.item)
+
 	case views.RegionSwitchMsg:
 		return a, a.switchRegion(msg.Region)
 
@@ -2240,6 +2260,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.err = nil
 				return a.drillDown()
 			}
+		case msg.String() == a.kb.CommandPalette:
+			return a.openPalette(), nil
 		case key.Matches(msg, theme.Keys.Help):
 			a.help.Active = true
 			return a, nil
@@ -3139,6 +3161,9 @@ func (a App) View() string {
 	fullView := renderFrame(a.width, a.height, infoBar, content, actionBar, modeLabel)
 
 	// Overlay modal dialogs on top of the frame
+	if a.palette.Active {
+		return renderOverlay(fullView, a.palette.View(a.width), a.width, a.height)
+	}
 	if a.help.Active {
 		helpContent := RenderHelp(a.contextHelpLines(), a.width-10)
 		return renderOverlay(fullView, helpContent, a.width, a.height)

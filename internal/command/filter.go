@@ -178,8 +178,10 @@ func matchEntry(tokens []string, e Entry) (int, []int, bool) {
 	return total, uniqueSorted(positions), true
 }
 
-// strongTitleMatch reports whether every token is a prefix of some word in
-// title, case-insensitively.
+// strongTitleMatch reports whether every token abbreviates a single word of
+// title: the token starts with the word's first letter and its remaining
+// letters appear in order within that word ("del", "msg" for "delete
+// message"). Scattered matches across words do not count.
 func strongTitleMatch(tokens []string, title string) bool {
 	words := strings.FieldsFunc(strings.ToLower(title), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
@@ -188,7 +190,7 @@ func strongTitleMatch(tokens []string, title string) bool {
 		tok = strings.ToLower(tok)
 		found := false
 		for _, w := range words {
-			if strings.HasPrefix(w, tok) {
+			if abbreviates(tok, w) {
 				found = true
 				break
 			}
@@ -198,6 +200,20 @@ func strongTitleMatch(tokens []string, title string) bool {
 		}
 	}
 	return true
+}
+
+func abbreviates(tok, word string) bool {
+	t, w := []rune(tok), []rune(word)
+	if len(t) == 0 || len(w) == 0 || t[0] != w[0] {
+		return false
+	}
+	i := 1
+	for _, r := range w[1:] {
+		if i < len(t) && r == t[i] {
+			i++
+		}
+	}
+	return i == len(t)
 }
 
 func uniqueSorted(values []int) []int {

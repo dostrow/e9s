@@ -6,7 +6,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -132,4 +134,25 @@ func (r *Recency) prune() {
 	for _, s := range all[:len(all)-maxRecencyEntries] {
 		delete(r.entries, s.id)
 	}
+}
+
+// DefaultRecencyPath returns where a frontend ("tui", "gui") keeps its
+// palette history: $XDG_STATE_HOME/e9s, ~/.local/state/e9s, or the user
+// config directory on Windows. Each frontend has its own file so concurrent
+// TUI and GUI sessions never race on one history.
+func DefaultRecencyPath(frontend string) string {
+	name := "palette-" + frontend + ".json"
+	if dir := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); dir != "" {
+		return filepath.Join(dir, "e9s", name)
+	}
+	if runtime.GOOS == "windows" {
+		if dir, err := os.UserConfigDir(); err == nil {
+			return filepath.Join(dir, "e9s", name)
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "state", "e9s", name)
 }

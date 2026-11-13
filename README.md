@@ -8,6 +8,7 @@ Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubblete
 
 - **Full-screen framed UI** with bordered layout, scrollbar, info bar, and mode label
 - **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to reopen the current mode's entry picker
+- **Command palette** — press `:` to fuzzy-search every command available in the current view, jump to any module, and see each command's shortcut; destructive commands are flagged and still confirm before running
 - **Context-sensitive help** — press `?` for a full keybinding overlay
 - **Region switching** — `ctrl+r` to change AWS region on the fly
 - **Config hot-reload** — edit `~/.config/e9s/config.yaml` (or `ctrl+e` to open in `$EDITOR`) and changes apply automatically
@@ -309,6 +310,7 @@ e9s -m SQS -r eu-west-1
 
 | Key | Action |
 | --- | --- |
+| `:` | Command palette — fuzzy-search commands for the current view, modes, and global actions |
 | `` ` `` | Open mode switcher |
 | `ctrl+p` | Reopen current mode's entry picker |
 | `ctrl+e` | Edit config in `$EDITOR` |
@@ -321,6 +323,28 @@ e9s -m SQS -r eu-west-1
 | `R` | Refresh data |
 | `?` | Context-sensitive help overlay |
 | `PgUp`/`PgDn` | Scroll by page |
+
+### Command Palette
+
+Press `:` to open the palette. With an empty query it lists the current
+view's commands, global commands, and "Go to" entries for every enabled
+module, grouped by section with each command's shortcut on the right, plus a
+legend of movement keys. Type to fuzzy-filter: matches favor word starts
+(`fnd` finds **F**orce **n**ew **d**eployment), search also covers the
+selected resource, the view name, and synonyms (`ssh` finds ECS Exec and SSM
+sessions), and typing a command's exact shortcut ranks it first.
+
+- `↑`/`↓` (or `ctrl+n`/`ctrl+p`, `tab`/`shift+tab`) move, `enter` runs, `esc` closes.
+- Commands run through the same key handler as their shortcut, so every
+  confirmation still applies. Destructive commands are marked `⚠`.
+- After you run a command that has a shortcut, the status bar shows a tip
+  with its key.
+- Recently used commands lead the list; history is kept per frontend in
+  `$XDG_STATE_HOME/e9s/palette-tui.json` (default `~/.local/state/e9s`).
+- A precise search for a command that lives in another view shows it dimmed
+  with where it is available, rather than nothing.
+- Rebind the palette with `keybindings: { command_palette: "<key>" }` in the
+  config file.
 
 ### ECS — Service List
 
