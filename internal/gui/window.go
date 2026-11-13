@@ -16,6 +16,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 	"github.com/diamondburned/gotk4/pkg/pangocairo"
+	"github.com/dostrow/e9s/internal/command"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/runbook"
@@ -81,7 +82,6 @@ const (
 	detailService          = "service"
 	detailTask             = "task"
 	detailTaskEnvironment  = "task-environment"
-	detailHelp             = "help"
 	detailError            = "error"
 	detailLogGroup         = "log-group"
 	detailLogStream        = "log-stream"
@@ -122,9 +122,17 @@ const (
 )
 
 type mainWindow struct {
-	ctx     context.Context
-	options Options
-	window  *gtk.ApplicationWindow
+	ctx         context.Context
+	options     Options
+	window      *gtk.ApplicationWindow
+	application *gtk.Application
+
+	// Command palette (Ctrl+Shift+P or ?).
+	palette            *commandPalette
+	paletteRecency     *command.Recency
+	paletteRecencyPath string
+	refreshButton      *gtk.Button
+	moduleRail         *gtk.Box
 
 	requestCancel context.CancelFunc
 	generation    uint64
@@ -1135,6 +1143,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 
 	refresh := gtk.NewButtonWithLabel("Refresh")
 	refresh.ConnectClicked(w.refresh)
+	w.refreshButton = refresh
 	w.refreshPauseButton = gtk.NewToggleButtonWithLabel("Pause refresh")
 	w.refreshPauseButton.SetTooltipText("Pause automatic AWS polling; manual Refresh remains available")
 	w.refreshPauseButton.ConnectToggled(func() {
@@ -2140,6 +2149,7 @@ func (w *mainWindow) buildLayout() gtk.Widgetter {
 	sidebarShell.Append(sidebarScroll)
 	sidebarShell.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 	sidebarShell.Append(w.settingsNavButton)
+	w.moduleRail = sidebarShell
 	mainSplit.SetStartChild(sidebarShell)
 	mainSplit.SetEndChild(w.terminalDockSplit)
 	mainSplit.SetPosition(moduleRailInitialWidth)
@@ -2224,6 +2234,7 @@ func newSavedModuleRailButton(label string, activate func()) *gtk.ToggleButton {
 }
 
 func (w *mainWindow) installActions(app *gtk.Application) {
+	w.application = app
 	w.addAction(app, "refresh", []string{"<Control>r"}, w.refresh)
 	w.addAction(app, "search", nil, func() {
 		if w.showingLogs {
@@ -2246,18 +2257,9 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	w.addAction(app, "terminal-previous-pane", []string{"<Control><Alt>Left", "<Control><Alt>Up"}, func() { w.selectAdjacentTerminalDockPane(-1) })
 	w.addAction(app, "terminal-next-pane", []string{"<Control><Alt>Right", "<Control><Alt>Down"}, func() { w.selectAdjacentTerminalDockPane(1) })
 	w.addAction(app, "settings", []string{"<Control>comma"}, w.showSettings)
-	w.addAction(app, "help", nil, func() {
-		if w.showingTerminal {
-			w.setStatus("Disconnect the terminal session before opening help", false)
-			return
-		}
-		if w.showingEditor {
-			w.setStatus("Close the editor before opening help", false)
-			return
-		}
-		w.setDetail("KEYBOARD SHORTCUTS\n\nEnter          Open selected row or task\nEscape         Back / close auxiliary view\n/              Focus active filter\nCtrl++/-       Zoom active pane in/out\nCtrl+0         Reset active pane zoom\nCtrl+R         Refresh\nCtrl+,         Open settings\nCtrl+` / F12   Toggle local terminal dock\nCtrl+Shift+T   Open a new local terminal tab\nCtrl+Shift+W   Close the focused terminal pane\nCtrl+PgUp/Dn   Select the adjacent terminal tab\nCtrl+Alt+R     Split the focused terminal right\nCtrl+Alt+D     Split the focused terminal down\nCtrl+Alt+Arrow Focus the adjacent terminal pane\nShift+S        Toggle standalone/service tasks\nCtrl+Enter     Run standalone task\nShift+T        Browse task definitions\nE              Task-definition environment\nD              Diff previous revision\nCtrl+E         Edit task-definition JSON\nCtrl+S         Save/register active editor\nCtrl+Shift+E   ECS Exec in embedded terminal\nM              Service or selected-task metrics\nShift+L        Follow service logs\nCtrl+Shift+L   Follow selected task logs\nCtrl+Space     Pause/resume logs\nT              Cycle log timestamps\nCtrl+Shift+C   Copy log buffer\nCtrl+L         Clear log buffer\nCtrl+Shift+S   Scale service\nCtrl+Shift+A   Toggle scale-in suspension\nCtrl+Shift+X   Stop selected task\nCtrl+Shift+R   Force deployment\nCtrl+P         Open module picker\n] / PgDn       Load more DynamoDB items\n?              Show this help", detailHelp)
-		w.detailStack.SetVisibleChildName("detail")
-	})
+	// ? and Ctrl+Shift+P open the command palette, which lists every
+	// available command with its shortcut and replaces the static help text.
+	w.addAction(app, "command-palette", []string{paletteAccel}, w.showCommandPalette)
 	w.addAction(app, "logs", nil, w.openServiceLogs)
 	w.addAction(app, "task-logs", []string{"<Control><Shift>l"}, w.openTaskLogs)
 	w.addAction(app, "standalone-tasks", nil, w.toggleStandaloneTasks)
@@ -2345,30 +2347,9 @@ func (w *mainWindow) installPrintableShortcuts(app *gtk.Application) {
 
 func printableShortcutAction(keyval uint, state gdk.ModifierType) string {
 	modifiers := state & (gdk.ShiftMask | gdk.ControlMask | gdk.AltMask | gdk.SuperMask | gdk.HyperMask | gdk.MetaMask)
-	if modifiers == 0 {
-		switch keyval {
-		case gdk.KEY_slash:
-			return "search"
-		case gdk.KEY_m:
-			return "metrics"
-		case gdk.KEY_e:
-			return "task-definition-env"
-		case gdk.KEY_d:
-			return "task-definition-diff"
-		case gdk.KEY_t:
-			return "log-timestamps"
-		}
-	}
-	if modifiers == gdk.ShiftMask {
-		switch keyval {
-		case gdk.KEY_question:
-			return "help"
-		case gdk.KEY_L:
-			return "logs"
-		case gdk.KEY_S:
-			return "standalone-tasks"
-		case gdk.KEY_T:
-			return "task-definitions"
+	for _, shortcut := range printableShortcuts {
+		if shortcut.keyval == keyval && shortcut.mods == modifiers {
+			return shortcut.action
 		}
 	}
 	return ""

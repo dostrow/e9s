@@ -217,6 +217,10 @@ On Ubuntu or Debian, install
 `libgtksourceview-5-dev` and `libvte-2.91-gtk4-dev` in addition to the GTK
 prerequisites; AWS's `session-manager-plugin` is required at runtime.
 
+In the GUI, `Ctrl+Shift+P` or `?` opens the same kind of command palette,
+covering the current page's toolbar actions, saved items, plugin actions, and
+every module and sub-view.
+
 See the [GUI development guide](docs/gui-development.md) for distro packages and
 the [PoC results](docs/gui-poc-results.md) for measurements and the go/no-go
 decision. Deferred Git provenance, OpenTofu ownership indexing, and configurable

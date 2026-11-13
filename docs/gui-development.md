@@ -83,6 +83,23 @@ for SQS, **Hosted zones** for Route53, and **Workspaces** for OpenTofu. Use
 `Ctrl+P` to reopen the picker
 from anywhere.
 
+Press `Ctrl+Shift+P` or `?` to open the command palette. With an empty query it
+lists the commands for the current page (every visible toolbar button plus the
+matching keyboard actions), saved items and plugin actions from the Module Rail,
+global commands, and a "Go to" entry for every module and sub-view, each with
+its keyboard shortcut. Typing fuzzy-filters the list across titles, modules, and
+synonyms; a precise search for a command that is not available on the current
+page shows it dimmed with the reason. Destructive commands are marked and still
+confirm before running. After a palette run of a command that has a shortcut,
+the status bar shows that shortcut. History for recency ranking is kept in
+`$XDG_STATE_HOME/e9s/palette-gui.json` (default `~/.local/state/e9s`). The
+palette replaces the previous static shortcut list.
+
+Tests that map real windows (including the palette's end-to-end test) only run
+with `E9S_GUI_WINDOW_TESTS=1`, so `go test -tags gui` never opens windows on a
+desktop session. To run them headlessly, start `gtk4-broadwayd :7` and run the
+tests with `GDK_BACKEND=broadway BROADWAY_DISPLAY=:7 E9S_GUI_WINDOW_TESTS=1`.
+
 The GUI honors the same implemented-module names and aliases as the TUI, including
 `ECS`, `CWL`/`CW`/`cloudwatch`, `CWA`, `SSM`, `SM`/`secrets`, and `Lambda`/`λ`.
 `CB` and `CodeBuild` select the CodeBuild project browser; `EC2` and `EC2i`
@@ -179,7 +196,9 @@ memory than a cached rebuild.
    `xwayland: false` for `io.github.dostrow.e9s`.
 2. Exercise 960x720, 1280x800, and a normal tiled size.
 3. Repeat on monitors at scale 1.0 and a fractional scale such as 1.25.
-4. Check keyboard focus for `/`, `Enter`, `Escape`, `Ctrl+R`, `Ctrl+P`, and `?`.
+4. Check keyboard focus for `/`, `Enter`, `Escape`, `Ctrl+R`, `Ctrl+P`,
+   `Ctrl+Shift+P`, and `?`; confirm the command palette is centered over the
+   main window and closes on `Escape`.
 5. Start a refresh or log follow, navigate away, and confirm no stale result
    replaces the current view.
 6. Copy logs and paste into another native Wayland application.

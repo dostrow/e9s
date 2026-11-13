@@ -281,3 +281,13 @@ checkbutton.e9s-check > check:disabled {
 .e9s-zoom-180 { font-size: 1.8em; }
 .e9s-zoom-190 { font-size: 1.9em; }
 .e9s-zoom-200 { font-size: 2em; }
+
+/* Command palette: an undecorated popup, so it draws its own frame. */
+window.command-palette {
+  border: 1px solid alpha(currentColor, 0.22);
+  border-radius: 12px;
+}
+
+.command-palette-list {
+  border-radius: 8px;
+}
