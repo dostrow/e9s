@@ -9,8 +9,47 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine build version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != push ]; then
+            echo "version=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          elif [[ $latest =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            next="v${BASH_REMATCH[1]}.$((BASH_REMATCH[2] + 1)).0"
+          else
+            echo "latest version tag has an unsupported format: $latest" >&2
+            exit 1
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: $next"
+
   test:
+    needs: metadata
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +63,6 @@ jobs:
       - name: Download Go modules
         run: bash .github/scripts/download-go-modules.sh
 
-      - name: Build
-        run: go build -o e9s .
-
       - name: Test
         run: go test ./...
 
@@ -39,6 +75,7 @@ jobs:
           version: latest
 
   gui:
+    needs: metadata
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -60,51 +97,107 @@ jobs:
       - name: Test GUI adapters
         run: go test -tags gui ./internal/gui
 
-      - name: Build full GUI
-        run: make build-gui
+      - name: Build full GUI on pull requests
+        if: github.event_name == 'pull_request'
+        run: make build-gui VERSION=${{ needs.metadata.outputs.version }}
+
+  windows-gui:
+    name: Windows GUI / UCRT64 / amd64
+    if: github.event_name == 'pull_request'
+    needs: metadata
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Preserve repository line endings
+        shell: powershell
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gobject-introspection
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-gtksourceview5
+            mingw-w64-ucrt-x86_64-pkgconf
+
+      - name: Test shared application code
+        run: go test ./...
+
+      - name: Test GTK frontend
+        run: go test -tags "gui sourceview" ./internal/gui
+
+      - name: Build Windows GUI
+        run: make build-gui-windows-amd64 VERSION=${{ needs.metadata.outputs.version }}
+
+      - name: Inspect executable dependencies
+        run: ldd e9s-gui-windows-amd64.exe
+
+  build-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: metadata
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.metadata.outputs.release_tag }}
+      publish: false
+    secrets: inherit
 
   auto-release:
-    needs: [test, gui]
+    needs: [metadata, test, gui, build-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
+      tag: ${{ needs.metadata.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get latest tag and bump minor version
-        id: version
-        run: |
-          latest=$(git tag --list 'v*' --sort=-v:refname | head -1)
-          if [ -z "$latest" ]; then
-            next="v0.1.0"
-          else
-            # Parse vMAJOR.MINOR.PATCH and increment MINOR
-            major=$(echo "$latest" | sed 's/v//' | cut -d. -f1)
-            minor=$(echo "$latest" | sed 's/v//' | cut -d. -f2)
-            patch=$(echo "$latest" | sed 's/v//' | cut -d. -f3)
-            next="v${major}.$((minor + 1)).0"
-          fi
-          echo "tag=$next" >> "$GITHUB_OUTPUT"
-          echo "Next version: $next"
-
       - name: Create and push tag
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
 
-  package-release:
+  publish-release:
     needs: auto-release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    uses: ./.github/workflows/release.yml
-    with:
-      release_tag: ${{ needs.auto-release.outputs.tag }}
-    secrets: inherit
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: artifacts
+        run: find . -maxdepth 1 -type f ! -name checksums.txt -printf '%f\n' | sort | xargs sha256sum > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          tag_name: ${{ needs.auto-release.outputs.tag }}
+          files: artifacts/*

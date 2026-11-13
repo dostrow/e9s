@@ -43,12 +43,23 @@ else
   install -m 0755 "$repo_dir/e9s-gui-windows-amd64.exe" "$bundle_dir/e9s-gui.exe"
 fi
 
-install -m 0644 "$repo_dir/LICENSE" "$bundle_dir/licenses/e9s/LICENSE"
-install -m 0644 "$repo_dir/assets/icons/io.github.dostrow.e9s.ico" "$bundle_dir/e9s.ico"
-install -m 0644 "$repo_dir/assets/fonts/README.md" "$bundle_dir/share/e9s/fonts/README.md"
-install -m 0644 "$repo_dir/assets/fonts/"*.ttf "$bundle_dir/share/e9s/fonts/"
-install -m 0644 "$repo_dir/assets/fonts/licenses/"* "$bundle_dir/licenses/e9s/fonts/"
-install -m 0644 "$script_dir/README.txt" "$bundle_dir/README.txt"
+runtime_cache_root=${E9S_WINDOWS_RUNTIME_CACHE:-}
+runtime_cache_payload=
+runtime_cache_hit=false
+if [[ -n $runtime_cache_root ]]; then
+  runtime_signature=$(
+    {
+      printf '%s\n' 'e9s-windows-runtime-v1'
+      pacman -Q | awk '$1 ~ /^mingw-w64-ucrt-x86_64-/ { print }' | LC_ALL=C sort
+    } | sha256sum | awk '{ print $1 }'
+  )
+  runtime_cache_payload=$runtime_cache_root/$runtime_signature
+  if [[ -f $runtime_cache_payload/.complete ]]; then
+    cp -a "$runtime_cache_payload/." "$bundle_dir/"
+    runtime_cache_hit=true
+    printf 'Reused cached Windows runtime payload %s\n' "$runtime_signature"
+  fi
+fi
 
 # Preserve the runtime prefix layout. GLib, GTK, Fontconfig, GdkPixbuf, and
 # GtkSourceView all derive data paths from the DLL installation prefix on
@@ -64,23 +75,203 @@ copy_runtime_tree() {
   fi
 }
 
-for relative in \
-  etc/fonts \
-  etc/gtk-4.0 \
-  lib/gdk-pixbuf-2.0 \
-  lib/gio/modules \
-  lib/gtk-4.0 \
-  lib/pango \
-  share/fontconfig \
-  share/glib-2.0/schemas \
-  share/gtk-4.0 \
-  share/gtksourceview-5 \
-  share/icons/Adwaita \
-  share/icons/hicolor \
-  share/mime \
-  share/themes; do
-  copy_runtime_tree "$relative"
-done
+if [[ $runtime_cache_hit == false ]]; then
+  for relative in \
+    etc/fonts \
+    etc/gtk-4.0 \
+    lib/gdk-pixbuf-2.0 \
+    lib/gio/modules \
+    lib/gtk-4.0 \
+    lib/pango \
+    share/fontconfig \
+    share/glib-2.0/schemas \
+    share/gtk-4.0 \
+    share/gtksourceview-5 \
+    share/icons/Adwaita \
+    share/icons/hicolor \
+    share/mime \
+    share/themes; do
+    copy_runtime_tree "$relative"
+  done
+
+  # GLib uses the spawn helpers at runtime. The cache utilities are retained so
+  # the next portability phase can refresh relocatable module caches during a
+  # clean-machine launch without requiring MSYS2.
+  for helper in \
+    gdk-pixbuf-query-loaders.exe \
+    gio-querymodules.exe \
+    glib-compile-schemas.exe \
+    gspawn-win64-helper.exe \
+    gspawn-win64-helper-console.exe; do
+    if [[ -f $runtime_prefix/bin/$helper ]]; then
+      install -m 0755 "$runtime_prefix/bin/$helper" "$bundle_dir/$helper"
+    fi
+  done
+
+  declare -A visited=()
+  declare -A recorded_dependencies=()
+  declare -a queue=("$bundle_dir/e9s-gui.exe")
+  while IFS= read -r helper; do
+    queue+=("$helper")
+  done < <(find "$bundle_dir" -maxdepth 1 -type f -name '*.exe' ! -name 'e9s-gui.exe' -print | sort)
+  while IFS= read -r plugin; do
+    queue+=("$plugin")
+  done < <(find "$bundle_dir/lib" -type f -iname '*.dll' -print 2>/dev/null | sort)
+
+  # ldd reports the complete PE dependency graph. Scanning each runtime root
+  # catches dependencies loaded by GTK plugins as well as the application.
+  # Windows system DLLs are intentionally left to the OS; any dependency on the
+  # MSYS POSIX runtime is a packaging error.
+  while ((${#queue[@]})); do
+    current=${queue[0]}
+    queue=("${queue[@]:1}")
+    current_name=${current##*/}
+    current_key=${current_name,,}
+    if [[ -n ${visited[$current_key]+x} ]]; then
+      continue
+    fi
+    visited[$current_key]=1
+
+    if ! report=$(ldd "$current" 2>&1); then
+      printf '%s\n' "$report" >&2
+      echo "unable to inspect native dependencies for $current" >&2
+      exit 1
+    fi
+    if grep -qi 'not found' <<<"$report"; then
+      printf '%s\n' "$report" >&2
+      echo "unresolved native dependency for $current" >&2
+      exit 1
+    fi
+    if grep -Eq '(^|[[:space:]])/usr/bin/.*\.dll([[:space:]]|$)' <<<"$report"; then
+      printf '%s\n' "$report" >&2
+      echo "native Windows artifact unexpectedly depends on the MSYS runtime" >&2
+      exit 1
+    fi
+
+    while IFS= read -r dependency; do
+      [[ -n $dependency ]] || continue
+      # Cygwin/MSYS ldd can spell the same UCRT64 dependency as /ucrt64/bin,
+      # /d/.../ucrt64/bin, or a drive-qualified path depending on the runner.
+      # Resolve every reported DLL name through the known native prefix so the
+      # bundle closure does not depend on that presentation detail.
+      dependency=${dependency//\\//}
+      dependency_name=${dependency##*/}
+      prefix_dependency=$runtime_prefix/bin/$dependency_name
+      if [[ -f $prefix_dependency ]]; then
+        dependency=$prefix_dependency
+      fi
+      case "$dependency" in
+      "$runtime_prefix"/*)
+        dependency_key=${dependency_name,,}
+        if [[ -n ${recorded_dependencies[$dependency_key]+x} ]]; then
+          continue
+        fi
+        recorded_dependencies[$dependency_key]=1
+        target=$bundle_dir/$dependency_name
+        if [[ ! -e $target ]]; then
+          install -m 0755 "$dependency" "$target"
+        fi
+        printf '%s\n' "$dependency" >>"$dependency_list"
+        ;;
+      esac
+    done < <(
+      awk '
+      $2 == "=>" {
+        print $3
+        print $1
+        next
+      }
+      tolower($1) ~ /\.dll$/ { print $1 }
+    ' <<<"$report" | sort -u
+    )
+  done
+
+  for required_dll in libgtk-4-1.dll libgtksourceview-5-0.dll; do
+    if [[ ! -f $bundle_dir/$required_dll ]]; then
+      echo "native dependency collector did not bundle $required_dll" >&2
+      exit 1
+    fi
+  done
+
+  # Include the packages which own data-only runtime trees; they may not appear
+  # in the executable's DLL closure even though GTK loads their files at runtime.
+  for package in \
+    mingw-w64-ucrt-x86_64-adwaita-icon-theme \
+    mingw-w64-ucrt-x86_64-fontconfig \
+    mingw-w64-ucrt-x86_64-gdk-pixbuf2 \
+    mingw-w64-ucrt-x86_64-glib2 \
+    mingw-w64-ucrt-x86_64-gtk4 \
+    mingw-w64-ucrt-x86_64-gtksourceview5 \
+    mingw-w64-ucrt-x86_64-hicolor-icon-theme \
+    mingw-w64-ucrt-x86_64-shared-mime-info; do
+    if pacman -Q "$package" >/dev/null 2>&1; then
+      printf '%s\n' "$package" >>"$package_list"
+    fi
+  done
+
+  sort -u "$package_list" -o "$package_list"
+  sort -u "$dependency_list" -o "$dependency_list"
+
+  # Query package ownership once for the complete dependency set. Invoking
+  # pacman separately for every repeated DLL reference is particularly costly
+  # under MSYS2 on hosted Windows runners.
+  mapfile -t native_dependencies <"$dependency_list"
+  if ((${#native_dependencies[@]})); then
+    pacman -Qqo "${native_dependencies[@]}" >>"$package_list" || true
+  fi
+  sort -u "$package_list" -o "$package_list"
+
+  while IFS= read -r package; do
+    pacman -Q "$package"
+  done <"$package_list" >"$bundle_dir/THIRD-PARTY-PACKAGES.txt"
+
+  # Copy every license file declared by the packages represented in the bundle.
+  # The package inventory remains useful even for a package without an installed
+  # license directory.
+  while IFS= read -r package; do
+    while IFS= read -r license_path; do
+      [[ -f $license_path ]] || continue
+      relative=${license_path#"$runtime_prefix/share/licenses/"}
+      install -Dm644 "$license_path" "$bundle_dir/licenses/native/$relative"
+    done < <(pacman -Ql "$package" | awk -v prefix="$runtime_prefix/share/licenses/" 'index($2, prefix) == 1 { print $2 }')
+  done <"$package_list"
+
+  if [[ -n $runtime_cache_payload ]]; then
+    cache_stage=$runtime_cache_root/.runtime-$runtime_signature-$$
+    mkdir -p "$runtime_cache_root" "$cache_stage"
+    for relative in etc lib share; do
+      if [[ -e $bundle_dir/$relative ]]; then
+        cp -a "$bundle_dir/$relative" "$cache_stage/"
+      fi
+    done
+    while IFS= read -r runtime_file; do
+      cp -a "$runtime_file" "$cache_stage/"
+    done < <(
+      find "$bundle_dir" -maxdepth 1 -type f \
+        \( -iname '*.dll' -o -name '*.exe' -o -name 'THIRD-PARTY-PACKAGES.txt' \) \
+        ! -name 'e9s-gui.exe' -print
+    )
+    if [[ -d $bundle_dir/licenses/native ]]; then
+      mkdir -p "$cache_stage/licenses"
+      cp -a "$bundle_dir/licenses/native" "$cache_stage/licenses/"
+    fi
+    touch "$cache_stage/.complete"
+    if [[ ! -e $runtime_cache_payload ]]; then
+      mv "$cache_stage" "$runtime_cache_payload"
+      printf 'Cached Windows runtime payload %s\n' "$runtime_signature"
+    else
+      rm -rf -- "$cache_stage"
+    fi
+  fi
+fi
+
+# Add project-owned files after restoring or creating the version-neutral
+# runtime payload so cached native data can never make application assets stale.
+install -m 0644 "$repo_dir/LICENSE" "$bundle_dir/licenses/e9s/LICENSE"
+install -m 0644 "$repo_dir/assets/icons/io.github.dostrow.e9s.ico" "$bundle_dir/e9s.ico"
+install -m 0644 "$repo_dir/assets/fonts/README.md" "$bundle_dir/share/e9s/fonts/README.md"
+install -m 0644 "$repo_dir/assets/fonts/"*.ttf "$bundle_dir/share/e9s/fonts/"
+install -m 0644 "$repo_dir/assets/fonts/licenses/"* "$bundle_dir/licenses/e9s/fonts/"
 
 # Install the e9s icons in the standard hicolor locations as well as carrying
 # the icon themes needed by GTK widgets and dialogs.
@@ -90,147 +281,6 @@ install -Dm644 "$repo_dir/assets/icons/io.github.dostrow.e9s-symbolic.svg" \
   "$bundle_dir/share/icons/hicolor/symbolic/apps/io.github.dostrow.e9s-symbolic.svg"
 install -Dm644 "$repo_dir/assets/icons/io.github.dostrow.e9s-48.png" \
   "$bundle_dir/share/icons/hicolor/48x48/apps/io.github.dostrow.e9s.png"
-
-# GLib uses the spawn helpers at runtime. The cache utilities are retained so
-# the next portability phase can refresh relocatable module caches during a
-# clean-machine launch without requiring MSYS2.
-for helper in \
-  gdk-pixbuf-query-loaders.exe \
-  gio-querymodules.exe \
-  glib-compile-schemas.exe \
-  gspawn-win64-helper.exe \
-  gspawn-win64-helper-console.exe; do
-  if [[ -f $runtime_prefix/bin/$helper ]]; then
-    install -m 0755 "$runtime_prefix/bin/$helper" "$bundle_dir/$helper"
-  fi
-done
-
-declare -A visited=()
-declare -a queue=("$bundle_dir/e9s-gui.exe")
-while IFS= read -r helper; do
-  queue+=("$helper")
-done < <(find "$bundle_dir" -maxdepth 1 -type f -name '*.exe' ! -name 'e9s-gui.exe' -print | sort)
-while IFS= read -r plugin; do
-  queue+=("$plugin")
-done < <(find "$bundle_dir/lib" -type f -iname '*.dll' -print 2>/dev/null | sort)
-
-record_package_owner() {
-  local path=$1
-  local owner
-  owner=$(pacman -Qqo "$path" 2>/dev/null || true)
-  if [[ -n $owner ]]; then
-    printf '%s\n' "$owner" >>"$package_list"
-  fi
-}
-
-# ldd reports the complete PE dependency graph, but processing newly copied
-# DLLs too makes the closure explicit and catches a missing transitive library
-# before publishing the archive. Windows system DLLs are intentionally left to
-# the OS; any dependency on the MSYS POSIX runtime is a packaging error.
-while ((${#queue[@]})); do
-  current=${queue[0]}
-  queue=("${queue[@]:1}")
-  current_key=$(basename "$current" | tr '[:upper:]' '[:lower:]')
-  if [[ -n ${visited[$current_key]+x} ]]; then
-    continue
-  fi
-  visited[$current_key]=1
-
-  if ! report=$(ldd "$current" 2>&1); then
-    printf '%s\n' "$report" >&2
-    echo "unable to inspect native dependencies for $current" >&2
-    exit 1
-  fi
-  if grep -qi 'not found' <<<"$report"; then
-    printf '%s\n' "$report" >&2
-    echo "unresolved native dependency for $current" >&2
-    exit 1
-  fi
-  if grep -Eq '(^|[[:space:]])/usr/bin/.*\.dll([[:space:]]|$)' <<<"$report"; then
-    printf '%s\n' "$report" >&2
-    echo "native Windows artifact unexpectedly depends on the MSYS runtime" >&2
-    exit 1
-  fi
-
-  while IFS= read -r dependency; do
-    [[ -n $dependency ]] || continue
-    # Cygwin/MSYS ldd can spell the same UCRT64 dependency as /ucrt64/bin,
-    # /d/.../ucrt64/bin, or a drive-qualified path depending on the runner.
-    # Resolve every reported DLL name through the known native prefix so the
-    # bundle closure does not depend on that presentation detail.
-    dependency=${dependency//\\//}
-    dependency_name=$(basename "$dependency")
-    prefix_dependency=$runtime_prefix/bin/$dependency_name
-    if [[ -f $prefix_dependency ]]; then
-      dependency=$prefix_dependency
-    fi
-    case "$dependency" in
-      "$runtime_prefix"/*)
-        target=$bundle_dir/$(basename "$dependency")
-        # Repeated references to the same DLL are expected while walking the
-        # transitive graph. dependency has already been canonicalized to the
-        # one authoritative file in MINGW_PREFIX/bin, so an existing target is
-        # the previously installed copy rather than a competing library.
-        if [[ ! -e $target ]]; then
-          install -m 0755 "$dependency" "$target"
-        fi
-        printf '%s\n' "$dependency" >>"$dependency_list"
-        record_package_owner "$dependency"
-        queue+=("$target")
-        ;;
-    esac
-  done < <(
-    awk '
-      $2 == "=>" {
-        print $3
-        print $1
-        next
-      }
-      tolower($1) ~ /\.dll$/ { print $1 }
-    ' <<<"$report" | sort -u
-  )
-done
-
-for required_dll in libgtk-4-1.dll libgtksourceview-5-0.dll; do
-  if [[ ! -f $bundle_dir/$required_dll ]]; then
-    echo "native dependency collector did not bundle $required_dll" >&2
-    exit 1
-  fi
-done
-
-# Include the packages which own data-only runtime trees; they may not appear
-# in the executable's DLL closure even though GTK loads their files at runtime.
-for package in \
-  mingw-w64-ucrt-x86_64-adwaita-icon-theme \
-  mingw-w64-ucrt-x86_64-fontconfig \
-  mingw-w64-ucrt-x86_64-gdk-pixbuf2 \
-  mingw-w64-ucrt-x86_64-glib2 \
-  mingw-w64-ucrt-x86_64-gtk4 \
-  mingw-w64-ucrt-x86_64-gtksourceview5 \
-  mingw-w64-ucrt-x86_64-hicolor-icon-theme \
-  mingw-w64-ucrt-x86_64-shared-mime-info; do
-  if pacman -Q "$package" >/dev/null 2>&1; then
-    printf '%s\n' "$package" >>"$package_list"
-  fi
-done
-
-sort -u "$package_list" -o "$package_list"
-sort -u "$dependency_list" -o "$dependency_list"
-
-while IFS= read -r package; do
-  pacman -Q "$package"
-done <"$package_list" >"$bundle_dir/THIRD-PARTY-PACKAGES.txt"
-
-# Copy every license file declared by the packages represented in the bundle.
-# The package inventory remains useful even for a package without an installed
-# license directory.
-while IFS= read -r package; do
-  while IFS= read -r license_path; do
-    [[ -f $license_path ]] || continue
-    relative=${license_path#"$runtime_prefix/share/licenses/"}
-    install -Dm644 "$license_path" "$bundle_dir/licenses/native/$relative"
-  done < <(pacman -Ql "$package" | awk -v prefix="$runtime_prefix/share/licenses/" 'index($2, prefix) == 1 { print $2 }')
-done <"$package_list"
 
 sed "s/@VERSION@/$input_version/g" "$script_dir/README.txt" >"$bundle_dir/README.txt.tmp"
 mv "$bundle_dir/README.txt.tmp" "$bundle_dir/README.txt"
@@ -243,4 +293,4 @@ test -s "$archive"
 printf 'Created %s\n' "$archive"
 printf 'Bundled %s native DLLs from %s packages\n' \
   "$(find "$bundle_dir" -type f -iname '*.dll' | wc -l | tr -d ' ')" \
-  "$(wc -l <"$package_list" | tr -d ' ')"
+  "$(wc -l <"$bundle_dir/THIRD-PARTY-PACKAGES.txt" | tr -d ' ')"
