@@ -31,9 +31,6 @@ type PaletteModel struct {
 	// flat hides section headers, for nested steps with a single kind of
 	// item (a region list).
 	flat bool
-	// stableBrowse keeps the browse view in registration order without a
-	// Recent section, so the first row is predictable (ctrl+p then enter).
-	stableBrowse bool
 }
 
 func newPalette(items []paletteItem, legend []paletteItem, recency *command.Recency, prompt string, height int) PaletteModel {
@@ -77,9 +74,6 @@ func (p *PaletteModel) refilter() {
 				entries = append(entries, e)
 			}
 		}
-	}
-	if p.stableBrowse && strings.TrimSpace(query) == "" {
-		recency = nil
 	}
 	if resourcesOnly && strings.TrimSpace(query) == "" {
 		p.results = make([]command.Result, 0, len(entries))

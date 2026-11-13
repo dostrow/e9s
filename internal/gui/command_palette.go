@@ -328,7 +328,7 @@ func (w *mainWindow) harvestToolbarCommands(category string, represented map[uin
 		}
 		out = append(out, paletteCommand{Entry: entry, run: func() {
 			if base.IsSensitive() && base.IsDrawable() {
-				base.Activate()
+				clickButton(base)
 			}
 		}})
 		return false
@@ -405,7 +405,13 @@ func (w *mainWindow) railCommands() []paletteCommand {
 				entry.Section = command.SectionGoTo
 				entry.Keywords = section.aliases
 			}
-			out = append(out, paletteCommand{Entry: entry, run: func() { base.Activate() }})
+			expander := section.expander
+			out = append(out, paletteCommand{Entry: entry, run: func() {
+				// A user must expand a section before clicking its items;
+				// do the same so the rail shows where the command went.
+				expander.SetExpanded(true)
+				clickButton(base)
+			}})
 			return false
 		})
 	}
@@ -450,6 +456,13 @@ func walkWidgets(widget gtk.Widgetter, visit func(gtk.Widgetter) bool) {
 // distinct Go wrappers for the same object.
 func nativeID(widget glib.Objector) uintptr {
 	return glib.BaseObject(widget).Native()
+}
+
+// clickButton emits a button's clicked signal. gtk_widget_activate would be
+// ignored for buttons that are not realized, which includes every item in a
+// collapsed Module Rail section.
+func clickButton(widget gtk.Widgetter) {
+	glib.BaseObject(widget).Emit("clicked")
 }
 
 func asButton(widget gtk.Widgetter) *gtk.Button {

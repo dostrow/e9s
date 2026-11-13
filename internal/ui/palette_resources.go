@@ -178,8 +178,6 @@ func (a App) openGoToPalette() App {
 		}
 	}
 	a.palette = newPalette(goTo, nil, a.recency, "go to ›", a.height)
-	a.palette.stableBrowse = true
-	a.palette.refilter()
 	return a
 }
 

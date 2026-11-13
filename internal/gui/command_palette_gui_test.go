@@ -88,18 +88,57 @@ func TestCommandPaletteInRealWindow(t *testing.T) {
 		installStyles()
 		cfg := &config.Config{}
 		cfg.SSMPrefixes = []config.SSMPrefix{{Name: "prod-db", Prefix: "/prod/db"}}
+		cfg.LogPaths = []config.LogPathEntry{{Name: "Production Connectors", LogGroup: "/prod/connectors"}}
 		w := newMainWindow(context.Background(), app, Options{Config: cfg})
 		installSemanticStyles(w)
 		w.window.SetDefaultSize(1280, 800)
 		w.window.Present()
 
 		glib.TimeoutAdd(500, func() bool {
+			// Saved items live in collapsed rail expanders, whose buttons
+			// are unrealized; running one must still navigate.
+			ran := false
+			for _, c := range w.paletteCommands() {
+				if c.Section == command.SectionSaved && c.Title == "Production Connectors" {
+					w.runPaletteCommand(c)
+					ran = true
+				}
+			}
+			if !ran {
+				fail("saved log path missing from palette commands")
+			} else if w.activeSavedLog != "Production Connectors" {
+				fail("running a saved log from the palette did not open it (activeSavedLog=%q)", w.activeSavedLog)
+			}
+			for _, section := range w.moduleSections {
+				if section.name == "CloudWatch Logs" && !section.expander.Expanded() {
+					fail("the saved log's rail section should expand to show where it went")
+				}
+			}
+
 			app.ActivateAction("command-palette", nil)
 			p := w.palette
 			if p == nil {
 				fail("Ctrl+Shift+P action did not open the palette")
 				app.Quit()
 				return false
+			}
+			// The saved log just ran: it is repeated in Recent, which follows
+			// This view, and keeps its own row under Saved.
+			var order []command.Section
+			savedRows := map[command.Section]bool{}
+			for _, r := range p.results {
+				if len(order) == 0 || order[len(order)-1] != r.Section {
+					order = append(order, r.Section)
+				}
+				if r.Title == "Production Connectors" {
+					savedRows[r.Section] = true
+				}
+			}
+			if len(order) < 2 || order[0] != command.SectionView || order[1] != command.SectionRecent {
+				fail("browse section order = %v, want This view then Recent", order)
+			}
+			if !savedRows[command.SectionRecent] || !savedRows[command.SectionSaved] {
+				fail("recent saved log should appear under Recent and Saved, got %v", savedRows)
 			}
 			byID := map[string]command.Result{}
 			for _, r := range p.results {

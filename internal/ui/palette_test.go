@@ -404,3 +404,49 @@ func TestCtrlPOpensGoToPaletteLedByEntryPicker(t *testing.T) {
 		t.Fatal("ctrl+p then enter should still open the SSM path prompt")
 	}
 }
+
+func TestPaletteSavedLogPathOpensLogStreams(t *testing.T) {
+	a := paletteTestApp(viewClusters, modeECS, modeCWLogs)
+	a.cfg = &config.Config{LogPaths: []config.LogPathEntry{{Name: "Production Connectors", LogGroup: "/prod/connectors"}}}
+	items, _ := a.paletteItems()
+	saved, ok := itemByID(items, "saved.log-paths.production-connectors")
+	if !ok {
+		t.Fatal("saved log path missing from palette")
+	}
+	m, cmd := a.runPaletteItem(saved)
+	a = m.(App)
+	if a.mode != modeCWLogs || a.state == viewClusters || cmd == nil {
+		t.Fatalf("saved log path did not navigate: mode=%v state=%v cmd=%v", a.mode, a.state, cmd != nil)
+	}
+	t.Logf("saved log path opened state %s", viewCategory(a.state))
+}
+
+func TestPaletteRecentFollowsThisViewAndKeepsOriginalRow(t *testing.T) {
+	a := paletteTestApp(viewServices, modeECS)
+	a.recency.Record("app.edit-config")
+	a, _ = press(t, a, ":")
+
+	var sections []command.Section
+	count := 0
+	for _, r := range a.palette.results {
+		if len(sections) == 0 || sections[len(sections)-1] != r.Section {
+			sections = append(sections, r.Section)
+		}
+		if r.ID == "app.edit-config" {
+			count++
+		}
+	}
+	if len(sections) < 3 || sections[0] != command.SectionView || sections[1] != command.SectionRecent {
+		t.Fatalf("section order = %v, want This view, Recent, ...", sections)
+	}
+	if count != 2 {
+		t.Fatalf("a recent command should appear in Recent and in Global, found %d rows", count)
+	}
+	if got := a.palette.results[a.palette.cursor].Section; got != command.SectionView {
+		t.Fatalf("cursor should start on this view's first command, got section %v", got)
+	}
+	view := a.palette.View(a.width)
+	if strings.Index(view, "THIS VIEW") > strings.Index(view, "RECENT") {
+		t.Fatalf("RECENT rendered above THIS VIEW:\n%s", view)
+	}
+}

@@ -42,9 +42,11 @@ var sectionBonus = map[Section]int{
 // Filter returns the entries to show for query.
 //
 // With an empty query it returns every available entry grouped by section in
-// a stable order, so the palette doubles as a scannable help screen; the most
-// recently used commands are lifted into a leading Recent section. Resource
-// entries are left out of this browse view (except as Recent).
+// a stable order, so the palette doubles as a scannable help screen. The most
+// recently used commands are also repeated in a Recent section that follows
+// the current view's commands; they keep their place in their own section so
+// the layout stays predictable. Resource entries are left out of this browse
+// view (except as Recent).
 //
 // With a query, each whitespace-separated token must match the entry's title,
 // target, category, keywords, or exact key. Results are ranked by match
@@ -112,7 +114,6 @@ func dedupe(entries []Entry) []Entry {
 }
 
 func browse(entries []Entry, recency *Recency) []Result {
-	recent := map[string]bool{}
 	var results []Result
 	if recency != nil {
 		var candidates []Entry
@@ -125,22 +126,22 @@ func browse(entries []Entry, recency *Recency) []Result {
 			return recency.Score(candidates[i].ID) > recency.Score(candidates[j].ID)
 		})
 		for _, e := range candidates[:min(len(candidates), MaxRecent)] {
-			recent[e.ID] = true
 			e.Section = SectionRecent
 			results = append(results, Result{Entry: e})
 		}
 	}
-	var rest []Result
 	for _, e := range entries {
 		// Resources can number in the thousands; they are found by search
 		// (or listed as Recent), never browsed.
-		if !e.Available() || recent[e.ID] || e.Section == SectionResources {
+		if !e.Available() || e.Section == SectionResources {
 			continue
 		}
-		rest = append(rest, Result{Entry: e})
+		results = append(results, Result{Entry: e})
 	}
-	sort.SliceStable(rest, func(i, j int) bool { return rest[i].Section < rest[j].Section })
-	return append(results, rest...)
+	// Stable, so Recent keeps its most-recent-first order and every other
+	// section keeps registration order.
+	sort.SliceStable(results, func(i, j int) bool { return results[i].Section < results[j].Section })
+	return results
 }
 
 func matchEntry(tokens []string, e Entry) (int, []int, bool) {

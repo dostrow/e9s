@@ -91,7 +91,8 @@ its keyboard shortcut. Typing fuzzy-filters the list across titles, modules, and
 synonyms; a precise search for a command that is not available on the current
 page shows it dimmed with the reason. Destructive commands are marked and still
 confirm before running. After a palette run of a command that has a shortcut,
-the status bar shows that shortcut. History for recency ranking is kept in
+the status bar shows that shortcut. The three most recent commands are repeated
+in a Recent section after the page's own commands. History for recency ranking is kept in
 `$XDG_STATE_HOME/e9s/palette-gui.json` (default `~/.local/state/e9s`). The
 palette replaces the previous static shortcut list.
 

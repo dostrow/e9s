@@ -59,19 +59,34 @@ func TestFilterBrowseGroupsBySectionAndOmitsUnavailable(t *testing.T) {
 	}
 }
 
-func TestFilterBrowseLiftsRecentCommands(t *testing.T) {
+func TestFilterBrowseRepeatsRecentCommandsAfterTheView(t *testing.T) {
 	rec := NewRecency()
 	rec.Record("g")
+	rec.Record("s")
+	rec.Record("s")
 	entries := []Entry{
 		{Command: Command{ID: "v1", Title: "Stop task"}, Section: SectionView},
+		{Command: Command{ID: "s", Title: "prod db"}, Section: SectionSaved},
 		{Command: Command{ID: "g", Title: "Quit"}, Section: SectionGlobal},
 	}
 	results := Filter(entries, "", rec)
-	if got := ids(results); !reflect.DeepEqual(got, []string{"g", "v1"}) {
-		t.Fatalf("order = %v", got)
+	type row struct {
+		id      string
+		section Section
 	}
-	if results[0].Section != SectionRecent {
-		t.Fatalf("recent entry section = %v", results[0].Section)
+	var got []row
+	for _, r := range results {
+		got = append(got, row{r.ID, r.Section})
+	}
+	want := []row{
+		{"v1", SectionView},
+		{"s", SectionRecent}, // most recent first
+		{"g", SectionRecent},
+		{"s", SectionSaved}, // recent commands keep their original place too
+		{"g", SectionGlobal},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("browse rows = %v, want %v", got, want)
 	}
 }
 

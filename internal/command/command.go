@@ -19,8 +19,8 @@ type Command struct {
 type Section int
 
 const (
-	SectionRecent Section = iota
-	SectionView
+	SectionView Section = iota
+	SectionRecent
 	SectionSaved
 	SectionPlugins
 	SectionGlobal

@@ -357,7 +357,9 @@ sessions), and typing a command's exact shortcut ranks it first.
   confirmation still applies. Destructive commands are marked `⚠`.
 - After you run a command that has a shortcut, the status bar shows a tip
   with its key.
-- Recently used commands lead the list; history is kept per frontend in
+- Your three most recent commands are repeated in a Recent section right after
+  the current view's commands (they also keep their usual place) and rank
+  higher in searches; history is kept per frontend in
   `$XDG_STATE_HOME/e9s/palette-tui.json` (default `~/.local/state/e9s`).
 - A precise search for a command that lives in another view shows it dimmed
   with where it is available, rather than nothing.
