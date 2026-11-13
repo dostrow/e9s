@@ -80,8 +80,8 @@ Parameter Store, **Secrets** for Secrets Manager, **Functions** for Lambda,
 **Projects** for CodeBuild, **Instances** for EC2, **Repositories** for ECR,
 **Clusters** for RDS, **Buckets** for S3, **Tables** for DynamoDB, **Queues**
 for SQS, **Hosted zones** for Route53, and **Workspaces** for OpenTofu. Use
-`Ctrl+P` to reopen the picker
-from anywhere.
+`Ctrl+P` from anywhere to open the command palette in go-to mode, which lists
+modules and their sub-views, saved items, and plugin actions.
 
 Press `Ctrl+Shift+P` or `?` to open the command palette. With an empty query it
 lists the commands for the current page (every visible toolbar button plus the

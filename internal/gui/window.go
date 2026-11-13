@@ -2246,7 +2246,9 @@ func (w *mainWindow) installActions(app *gtk.Application) {
 	// Escape is handled by the window key controller so focused VTE terminals
 	// can deliver it to their child process instead of activating Back.
 	w.addAction(app, "back", nil, w.goBack)
-	w.addAction(app, "modes", []string{"<Control>p"}, w.showModulePicker)
+	// Ctrl+P is the palette's go-to mode; the module picker dialog remains
+	// for first launch without a default module.
+	w.addAction(app, "modes", []string{"<Control>p"}, w.showGoToPalette)
 	w.addAction(app, "terminal-dock", []string{"<Control>grave", "F12"}, w.toggleTerminalDock)
 	w.addAction(app, "terminal-new-tab", []string{"<Control><Shift>t"}, w.openNewTerminalDockTab)
 	w.addAction(app, "terminal-close-pane", []string{"<Control><Shift>w"}, w.confirmCloseActiveTerminalDock)

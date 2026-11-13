@@ -8,7 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/command"
 	"github.com/dostrow/e9s/internal/config"
+	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/runbook"
+	"github.com/dostrow/e9s/internal/ui/views"
 )
 
 func TestKeyMsgFromStringRoundTripsEveryBinding(t *testing.T) {
@@ -301,5 +303,104 @@ func TestPaletteRegionIsANestedStep(t *testing.T) {
 	}
 	if msg, ok := cmd().(paletteRunMsg); !ok || msg.item.run == nil {
 		t.Fatalf("region selection should run its switch, got %#v", msg)
+	}
+}
+
+func resourceTestApp() App {
+	a := paletteTestApp(viewTaskDetail, modeECS, modeSQS, modeSSM)
+	a.cfg = &config.Config{}
+	a.sqsQueuesView = views.NewSQSQueues("").SetQueues([]model.SQSQueue{{Name: "billing-jobs"}, {Name: "orders"}})
+	a.clusterView = views.NewClusterList().SetClusters([]model.Cluster{{Name: "prod"}, {Name: "staging"}})
+	a.serviceView = views.NewServiceList("prod").SetServices([]model.Service{{Name: "api"}, {Name: "worker"}})
+	return a
+}
+
+func TestPaletteResourcesAreSearchableButNotBrowsed(t *testing.T) {
+	a, _ := press(t, resourceTestApp(), ":")
+	for _, r := range a.palette.results {
+		if r.Section == command.SectionResources {
+			t.Fatalf("browse view must not list resources, found %s", r.ID)
+		}
+	}
+	a = typeText(t, a, "bill")
+	if r := a.palette.results[a.palette.cursor]; r.Section != command.SectionResources || r.Title != "billing-jobs" {
+		t.Fatalf("top result = %+v", r.Entry)
+	}
+	a, _ = press(t, a, "esc", ":")
+	a = typeText(t, a, "@")
+	for _, r := range a.palette.results {
+		if r.Section != command.SectionResources {
+			t.Fatalf("@ lists only resources, found %s", r.ID)
+		}
+	}
+	if len(a.palette.results) != 6 {
+		t.Fatalf("@ should list all 6 loaded resources, got %d", len(a.palette.results))
+	}
+}
+
+func TestPaletteGoToResourceSelectsRowWithoutOpeningIt(t *testing.T) {
+	a := resourceTestApp()
+	a, _ = press(t, a, ":")
+	a = typeText(t, a, "@orders")
+	a, cmd := press(t, a, "enter")
+	m, _ := a.Update(cmd())
+	a = m.(App)
+	if a.mode != modeSQS || a.state != viewSQSQueues {
+		t.Fatalf("mode=%v state=%v", a.mode, a.state)
+	}
+	if q := a.sqsQueuesView.SelectedQueue(); q == nil || q.Name != "orders" {
+		t.Fatalf("selected queue = %+v", q)
+	}
+	if !strings.Contains(a.flashMessage, "Selected orders") {
+		t.Fatalf("flash = %q", a.flashMessage)
+	}
+}
+
+func TestPaletteGoToServiceRestoresItsCluster(t *testing.T) {
+	a := resourceTestApp()
+	a.state = viewSQSQueues
+	a.mode = modeSQS
+	items, _ := a.paletteItems()
+	worker, ok := itemByID(items, "resource.ecs-services.worker")
+	if !ok {
+		t.Fatal("loaded service should be a resource")
+	}
+	m, _ := a.runPaletteItem(worker)
+	a = m.(App)
+	if a.state != viewServices || a.selectedCluster == nil || a.selectedCluster.Name != "prod" {
+		t.Fatalf("state=%v cluster=%+v", a.state, a.selectedCluster)
+	}
+	if s := a.serviceView.SelectedService(); s == nil || s.Name != "worker" {
+		t.Fatalf("selected service = %+v", s)
+	}
+
+	a.clusterView = views.NewClusterList().SetClusters([]model.Cluster{{Name: "staging"}})
+	items, _ = a.paletteItems()
+	if _, ok := itemByID(items, "resource.ecs-services.worker"); ok {
+		t.Fatal("services whose cluster is no longer loaded must not be offered")
+	}
+}
+
+func TestCtrlPOpensGoToPaletteLedByEntryPicker(t *testing.T) {
+	a := resourceTestApp()
+	a.mode, a.state = modeSSM, viewSSM
+	a.recency.Record("mode.sqs") // a Recent section must not displace the first row
+	a, _ = press(t, a, "ctrl+p")
+	if !a.palette.Active || a.palette.prompt != "go to ›" {
+		t.Fatalf("ctrl+p should open the go-to palette, prompt=%q", a.palette.prompt)
+	}
+	if got := a.palette.results[0].ID; got != "app.reopen-entry-picker" {
+		t.Fatalf("first go-to row = %q", got)
+	}
+	for _, r := range a.palette.results {
+		if r.Section == command.SectionGlobal {
+			t.Fatalf("go-to mode should not list global commands, found %s", r.ID)
+		}
+	}
+	a, cmd := press(t, a, "enter")
+	m, _ := a.Update(cmd())
+	a = m.(App)
+	if !a.input.Active {
+		t.Fatal("ctrl+p then enter should still open the SSM path prompt")
 	}
 }

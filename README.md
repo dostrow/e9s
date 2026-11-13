@@ -7,7 +7,7 @@ Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubblete
 ## Features
 
 - **Full-screen framed UI** with bordered layout, scrollbar, info bar, and mode label
-- **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to reopen the current mode's entry picker
+- **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to go to a module, saved bookmark, or loaded resource (its first row reopens the current mode's entry picker)
 - **Command palette and help** — press `:` or `?` to see every command available in the current view with its shortcut, fuzzy-search them, or jump to any module; destructive commands are flagged and still confirm before running
 - **Region switching** — `ctrl+r` to change AWS region on the fly
 - **Config hot-reload** — edit `~/.config/e9s/config.yaml` (or `ctrl+e` to open in `$EDITOR`) and changes apply automatically
@@ -315,7 +315,7 @@ e9s -m SQS -r eu-west-1
 | --- | --- |
 | `:` or `?` | Command palette and context help — browse or fuzzy-search the current view's commands, modes, and global actions |
 | `` ` `` | Open mode switcher |
-| `ctrl+p` | Reopen current mode's entry picker |
+| `ctrl+p` | Go-to palette: modules, saved bookmarks, plugin actions, and loaded resources; `enter` on the first row reopens the current mode's entry picker |
 | `ctrl+e` | Edit config in `$EDITOR` |
 | `ctrl+r` | Switch AWS region |
 | `j`/`k` or `↑`/`↓` | Navigate up/down |
@@ -342,6 +342,16 @@ sessions), and typing a command's exact shortcut ranks it first.
   action are listed too, so `:` then a bookmark name jumps straight there.
 - "Switch AWS region" opens a second, searchable step listing regions
   (`:` `region` `enter` `euw2` `enter`).
+- Rows already loaded in a module's top-level list this session (clusters,
+  services, queues, functions, buckets, tables, log groups, alarms, projects,
+  instances, repositories, zones, RDS clusters and instances, secrets, and
+  parameters) are searchable too. Type `@` to search only those. Choosing
+  one switches to its list with the row selected; `enter` then opens it, so a
+  jump never fetches data or reveals a value by itself. Resources appear only
+  in search results, never in the unfiltered list.
+- `ctrl+p` opens the palette in go-to mode (modules, saved bookmarks, plugin
+  actions, and resources), led by "Reopen <mode> entry picker" so
+  `ctrl+p` `enter` still opens the mode's prefix/search prompt.
 - `↑`/`↓` (or `ctrl+n`/`ctrl+p`, `tab`/`shift+tab`) move, `enter` runs, `esc` closes.
 - Commands run through the same key handler as their shortcut, so every
   confirmation still applies. Destructive commands are marked `⚠`.

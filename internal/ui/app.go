@@ -2266,7 +2266,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == a.kb.EditConfig:
 			return a.openConfigEditor()
 		case msg.String() == a.kb.ReopenPicker:
-			return a.reopenModePicker()
+			// The go-to palette leads with this mode's entry picker, so
+			// ctrl+p then enter behaves as before.
+			return a.openGoToPalette(), nil
 		}
 
 		// Number keys 1-9: quick select and drill down on list views

@@ -65,7 +65,7 @@ var paletteActionSpecs = []actionSpec{
 		button: func(w *mainWindow) *gtk.Button { return w.refreshButton }},
 	{action: "search", id: "app.filter", title: "Focus filter", keywords: []string{"find", "search"}, available: always},
 	{action: "back", id: "app.back", title: "Go back", keywords: []string{"close", "up"}, available: always},
-	{action: "modes", id: "app.switch-mode", title: "Choose module…", keywords: []string{"module", "mode", "picker"}, available: always},
+	{action: "modes", id: "app.switch-mode", title: "Go to module, view, or saved item…", keywords: []string{"module", "mode", "picker", "goto"}, available: always},
 	{action: "settings", id: "app.settings", title: "Open settings", keywords: []string{"preferences", "config", "theme", "font"}, available: func(w *mainWindow) string {
 		if w.settingsOpen {
 			return "Settings are already open"
@@ -572,7 +572,13 @@ func (w *mainWindow) ensurePaletteRecency() {
 }
 
 // showCommandPalette opens the palette over the main window.
-func (w *mainWindow) showCommandPalette() {
+func (w *mainWindow) showCommandPalette() { w.openPalette(false) }
+
+// showGoToPalette opens the palette limited to navigation: modules and
+// their sub-views, saved items, and plugin actions (Ctrl+P).
+func (w *mainWindow) showGoToPalette() { w.openPalette(true) }
+
+func (w *mainWindow) openPalette(goTo bool) {
 	if w.palette != nil {
 		w.palette.window.Present()
 		return
@@ -581,6 +587,9 @@ func (w *mainWindow) showCommandPalette() {
 	p := &commandPalette{w: w, commands: map[string]paletteCommand{}}
 	for _, c := range w.paletteCommands() {
 		if c.ID == "" {
+			continue
+		}
+		if goTo && c.Section != command.SectionGoTo && c.Section != command.SectionSaved && c.Section != command.SectionPlugins {
 			continue
 		}
 		if _, dup := p.commands[c.ID]; dup {
@@ -607,7 +616,11 @@ func (w *mainWindow) showCommandPalette() {
 	box.SetMarginEnd(12)
 
 	p.entry = gtk.NewSearchEntry()
-	p.entry.SetPlaceholderText("Type to search commands, modules, and saved items…")
+	if goTo {
+		p.entry.SetPlaceholderText("Go to a module, view, saved item, or plugin action…")
+	} else {
+		p.entry.SetPlaceholderText("Type to search commands, modules, and saved items…")
+	}
 	p.entry.SetHExpand(true)
 	p.entry.ConnectSearchChanged(p.refilter)
 	p.entry.ConnectStopSearch(p.close)

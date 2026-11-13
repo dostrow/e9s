@@ -120,6 +120,25 @@ func TestCommandPaletteInRealWindow(t *testing.T) {
 				fail("saved SSM prefix missing from Saved section: %+v (have %v)", r, keys(byID))
 			}
 
+			// Ctrl+P (the "modes" action) opens the go-to subset.
+			p.close()
+			app.ActivateAction("modes", nil)
+			if w.palette == nil {
+				fail("Ctrl+P did not open the go-to palette")
+				app.Quit()
+				return false
+			}
+			for _, r := range w.palette.results {
+				switch r.Section {
+				case command.SectionGoTo, command.SectionSaved, command.SectionPlugins, command.SectionRecent:
+				default:
+					fail("go-to palette listed %s from section %v", r.ID, r.Section)
+				}
+			}
+			w.palette.close()
+			app.ActivateAction("command-palette", nil)
+			p = w.palette
+
 			p.entry.SetText("force deploy")
 			p.refilter()
 			if len(p.results) == 0 || p.results[0].ID != "ecs.force-redeploy" || p.results[0].Available() {

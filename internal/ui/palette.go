@@ -31,13 +31,16 @@ type PaletteModel struct {
 	// flat hides section headers, for nested steps with a single kind of
 	// item (a region list).
 	flat bool
+	// stableBrowse keeps the browse view in registration order without a
+	// Recent section, so the first row is predictable (ctrl+p then enter).
+	stableBrowse bool
 }
 
 func newPalette(items []paletteItem, legend []paletteItem, recency *command.Recency, prompt string, height int) PaletteModel {
 	ti := textinput.New()
 	ti.Prompt = prompt + " "
 	ti.PromptStyle = lipgloss.NewStyle().Foreground(theme.ColorCyan).Bold(true)
-	ti.Placeholder = "Type to search commands"
+	ti.Placeholder = "Type to search commands · @ for loaded resources"
 	ti.CharLimit = 120
 	ti.Focus()
 
@@ -65,7 +68,27 @@ func newPalette(items []paletteItem, legend []paletteItem, recency *command.Rece
 }
 
 func (p *PaletteModel) refilter() {
-	p.results = command.Filter(p.entries, p.input.Value(), p.recency)
+	query, resourcesOnly := resourceQuery(p.input.Value())
+	entries, recency := p.entries, p.recency
+	if resourcesOnly {
+		entries = nil
+		for _, e := range p.entries {
+			if e.Section == command.SectionResources {
+				entries = append(entries, e)
+			}
+		}
+	}
+	if p.stableBrowse && strings.TrimSpace(query) == "" {
+		recency = nil
+	}
+	if resourcesOnly && strings.TrimSpace(query) == "" {
+		p.results = make([]command.Result, 0, len(entries))
+		for _, e := range entries {
+			p.results = append(p.results, command.Result{Entry: e})
+		}
+	} else {
+		p.results = command.Filter(entries, query, recency)
+	}
 	p.cursor, p.offset = 0, 0
 	p.skipUnavailable(1)
 	p.scrollToCursor()
@@ -172,7 +195,8 @@ func (p PaletteModel) maxRows() int {
 }
 
 func (p PaletteModel) browsing() bool {
-	return strings.TrimSpace(p.input.Value()) == ""
+	query, resourcesOnly := resourceQuery(p.input.Value())
+	return !resourcesOnly && strings.TrimSpace(query) == ""
 }
 
 // scrollToCursor adjusts the scroll offset so the cursor row is visible,

@@ -43,7 +43,8 @@ var sectionBonus = map[Section]int{
 //
 // With an empty query it returns every available entry grouped by section in
 // a stable order, so the palette doubles as a scannable help screen; the most
-// recently used commands are lifted into a leading Recent section.
+// recently used commands are lifted into a leading Recent section. Resource
+// entries are left out of this browse view (except as Recent).
 //
 // With a query, each whitespace-separated token must match the entry's title,
 // target, category, keywords, or exact key. Results are ranked by match
@@ -131,7 +132,9 @@ func browse(entries []Entry, recency *Recency) []Result {
 	}
 	var rest []Result
 	for _, e := range entries {
-		if !e.Available() || recent[e.ID] {
+		// Resources can number in the thousands; they are found by search
+		// (or listed as Recent), never browsed.
+		if !e.Available() || recent[e.ID] || e.Section == SectionResources {
 			continue
 		}
 		rest = append(rest, Result{Entry: e})

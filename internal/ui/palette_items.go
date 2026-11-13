@@ -58,6 +58,7 @@ func (a App) paletteItems() ([]paletteItem, []paletteItem) {
 	items = append(items, a.savedItems()...)
 	items = append(items, a.pluginItems()...)
 	items = append(items, a.modeItems()...)
+	items = append(items, a.resourceItems()...)
 	items = append(items, a.unavailableItems(items)...)
 	return items, legend
 }
