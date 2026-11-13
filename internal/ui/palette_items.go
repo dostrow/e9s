@@ -55,6 +55,8 @@ func (a App) paletteItems() ([]paletteItem, []paletteItem) {
 		items = append(items, item)
 	}
 
+	items = append(items, a.savedItems()...)
+	items = append(items, a.pluginItems()...)
 	items = append(items, a.modeItems()...)
 	items = append(items, a.unavailableItems(items)...)
 	return items, legend
@@ -128,6 +130,11 @@ func (a App) unavailableItems(available []paletteItem) []paletteItem {
 // runPaletteItem executes an item the palette returned, records it for
 // recency ranking, and, when it has a shortcut, teaches that shortcut.
 func (a App) runPaletteItem(item paletteItem) (tea.Model, tea.Cmd) {
+	if item.children != nil {
+		a.palette = newPalette(item.children(a), nil, a.recency, item.Title+" ›", a.height)
+		a.palette.flat = true
+		return a, nil
+	}
 	a.recency.Record(item.ID)
 	save := a.saveRecencyCmd()
 	if item.run != nil {

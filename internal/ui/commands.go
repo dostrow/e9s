@@ -17,6 +17,9 @@ type paletteItem struct {
 	keys   []string
 	legend bool
 	run    func(App) (App, tea.Cmd)
+	// children, when set, makes running the item open a second palette step
+	// listing these items (for example, regions) instead of running a key.
+	children func(App) []paletteItem
 }
 
 func act(id, key, title string) paletteItem {
@@ -38,6 +41,11 @@ func (p paletteItem) kw(words ...string) paletteItem {
 // ("enter/e") but only the first key is replayed.
 func (p paletteItem) alt(keys ...string) paletteItem {
 	p.keys = append(append([]string(nil), p.keys...), keys...)
+	return p
+}
+
+func (p paletteItem) withChildren(children func(App) []paletteItem) paletteItem {
+	p.children = children
 	return p
 }
 
@@ -65,7 +73,7 @@ func (a App) globalItems() []paletteItem {
 		act("app.reopen-picker", kb.ReopenPicker, "Reopen mode picker").kw("entry", "prefix"),
 		act("app.pause", kb.PauseResume, "Pause/resume polling").kw("refresh", "stop polling"),
 		act("app.edit-config", kb.EditConfig, "Edit config").kw("settings", "yaml", "editor"),
-		act("app.switch-region", kb.SwitchRegion, "Switch AWS region").kw("region"),
+		act("app.switch-region", kb.SwitchRegion, "Switch AWS region").kw("region").withChildren(App.regionChildren),
 		act("app.refresh", "R", "Refresh data").kw("reload"),
 		act("app.filter", "/", "Filter/search").kw("find"),
 		act("app.back", "esc", "Go back"),

@@ -336,6 +336,12 @@ legend of movement keys. Type to fuzzy-filter: matches favor word starts
 selected resource, the view name, and synonyms (`ssh` finds ECS Exec and SSM
 sessions), and typing a command's exact shortcut ranks it first.
 
+- Saved bookmarks from every enabled module (log paths, SSM prefixes, secret
+  filters, bucket and function searches, queues, tables, PartiQL queries,
+  OpenTofu workspaces, and Cost Explorer views) and every configured plugin
+  action are listed too, so `:` then a bookmark name jumps straight there.
+- "Switch AWS region" opens a second, searchable step listing regions
+  (`:` `region` `enter` `euw2` `enter`).
 - `↑`/`↓` (or `ctrl+n`/`ctrl+p`, `tab`/`shift+tab`) move, `enter` runs, `esc` closes.
 - Commands run through the same key handler as their shortcut, so every
   confirmation still applies. Destructive commands are marked `⚠`.

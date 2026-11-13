@@ -7,6 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/command"
+	"github.com/dostrow/e9s/internal/config"
+	"github.com/dostrow/e9s/internal/runbook"
 )
 
 func TestKeyMsgFromStringRoundTripsEveryBinding(t *testing.T) {
@@ -213,5 +215,91 @@ func TestHighlightRunesMarksPositions(t *testing.T) {
 	}
 	if truncateRunes("Force new deployment", 6) != "Force…" {
 		t.Fatal("truncate")
+	}
+}
+
+func savedTestConfig() *config.Config {
+	cfg := &config.Config{}
+	cfg.SSMPrefixes = []config.SSMPrefix{{Name: "prod db", Prefix: "/prod/db"}}
+	cfg.DynamoQueries = []config.DynamoQuery{{Name: "recent orders", Statement: `SELECT * FROM "orders"`}}
+	cfg.SQSQueues = []config.SQSQueueEntry{{Name: "jobs", URL: "https://sqs.example/jobs"}}
+	return cfg
+}
+
+func TestPaletteListsSavedItemsFromEnabledModes(t *testing.T) {
+	a := paletteTestApp(viewClusters, modeECS, modeSSM, modeDynamoDB)
+	a.cfg = savedTestConfig()
+	items, _ := a.paletteItems()
+
+	ssm, ok := itemByID(items, "saved.prefixes.prod-db")
+	if !ok || ssm.Section != command.SectionSaved || ssm.Target != "/prod/db" || ssm.run == nil {
+		t.Fatalf("saved SSM prefix = %+v", ssm)
+	}
+	if query, ok := itemByID(items, "saved.queries.recent-orders"); !ok || query.Available() {
+		t.Fatalf("saved PartiQL outside a table should be unavailable: %+v", query)
+	}
+	if _, ok := itemByID(items, "saved.queues.jobs"); ok {
+		t.Fatal("SQS is disabled; its saved queues must not be listed")
+	}
+
+	a.state = viewDynamoItems
+	items, _ = a.paletteItems()
+	if query, _ := itemByID(items, "saved.queries.recent-orders"); !query.Available() {
+		t.Fatal("saved PartiQL should run from a table's item list")
+	}
+}
+
+func TestPaletteSavedItemOpensThroughPickerPath(t *testing.T) {
+	a := paletteTestApp(viewClusters, modeECS, modeSSM)
+	a.cfg = savedTestConfig()
+	items, _ := a.paletteItems()
+	ssm, _ := itemByID(items, "saved.prefixes.prod-db")
+	m, cmd := a.runPaletteItem(ssm)
+	a = m.(App)
+	if a.mode != modeSSM || a.state != viewSSM || cmd == nil {
+		t.Fatalf("saved prefix should open SSM: mode=%v state=%v cmd=%v", a.mode, a.state, cmd != nil)
+	}
+	if got := a.ssmView.PathPrefix(); got != "/prod/db" {
+		t.Fatalf("path prefix = %q", got)
+	}
+}
+
+func TestPalettePluginItemsOpenRunbookForm(t *testing.T) {
+	a := paletteTestApp(viewClusters, modeECS, modePlugins)
+	a.runbookActions = []runbook.ConfiguredAction{{
+		PluginName: "ops", PluginDisplayName: "Ops tools",
+		Action: runbook.Action{ID: "rotate", Title: "Rotate credentials", Description: "Rotate service keys", Risk: "destructive"},
+	}}
+	items, _ := a.paletteItems()
+	item, ok := itemByID(items, "plugin.ops-rotate")
+	if !ok || item.Section != command.SectionPlugins || !item.Danger {
+		t.Fatalf("plugin item = %+v", item)
+	}
+	m, _ := a.runPaletteItem(item)
+	a = m.(App)
+	if !a.runbookForm.Active || a.mode != modePlugins {
+		t.Fatal("plugin item should open its runbook form")
+	}
+}
+
+func TestPaletteRegionIsANestedStep(t *testing.T) {
+	a := paletteTestApp(viewClusters, modeECS)
+	items, _ := a.paletteItems()
+	region, _ := itemByID(items, "app.switch-region")
+	m, cmd := a.runPaletteItem(region)
+	a = m.(App)
+	if !a.palette.Active || !a.palette.flat || cmd != nil {
+		t.Fatal("switch region from the palette should open a nested region list")
+	}
+	a = typeText(t, a, "euw2")
+	if got := a.palette.results[a.palette.cursor].ID; got != "region.eu-west-2" {
+		t.Fatalf("top region = %q", got)
+	}
+	a, cmd = press(t, a, "enter")
+	if a.palette.Active || cmd == nil {
+		t.Fatal("choosing a region should close the palette")
+	}
+	if msg, ok := cmd().(paletteRunMsg); !ok || msg.item.run == nil {
+		t.Fatalf("region selection should run its switch, got %#v", msg)
 	}
 }

@@ -28,6 +28,9 @@ type PaletteModel struct {
 	offset  int
 	height  int
 	prompt  string
+	// flat hides section headers, for nested steps with a single kind of
+	// item (a region list).
+	flat bool
 }
 
 func newPalette(items []paletteItem, legend []paletteItem, recency *command.Recency, prompt string, height int) PaletteModel {
@@ -194,7 +197,7 @@ func (p PaletteModel) isHeaderLine(index int, browsing bool) bool {
 	line := 0
 	section := command.Section(-1)
 	for i, r := range p.results {
-		if (browsing || r.Section == command.SectionUnavailable) && r.Section != section {
+		if !p.flat && (browsing || r.Section == command.SectionUnavailable) && r.Section != section {
 			section = r.Section
 			if browsing && i > 0 {
 				if line == index {
@@ -269,7 +272,7 @@ func (p PaletteModel) renderRows(inner int, browsing bool) []paletteLine {
 	var lines []paletteLine
 	section := command.Section(-1)
 	for i, r := range p.results {
-		if (browsing || r.Section == command.SectionUnavailable) && r.Section != section {
+		if !p.flat && (browsing || r.Section == command.SectionUnavailable) && r.Section != section {
 			section = r.Section
 			if browsing && i > 0 {
 				lines = append(lines, paletteLine{text: "", header: true})
@@ -288,7 +291,7 @@ func (p PaletteModel) cursorLine(browsing bool) int {
 	line := 0
 	section := command.Section(-1)
 	for i, r := range p.results {
-		if (browsing || r.Section == command.SectionUnavailable) && r.Section != section {
+		if !p.flat && (browsing || r.Section == command.SectionUnavailable) && r.Section != section {
 			section = r.Section
 			if browsing && i > 0 {
 				line++
