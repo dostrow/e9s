@@ -130,11 +130,18 @@ and packaging steps, so it always describes the final downloadable bytes.
 
 ## CI boundary
 
-`.github/workflows/windows-gui.yml` performs the same build on a native Windows
-runner using MSYS2 UCRT64. It runs the shared test suite, the GTK-tagged GUI
-tests, validates the executable's dynamic dependencies, assembles the portable
-ZIP, extracts it, removes MSYS2 from `PATH`, runs the packaged runtime self-test,
-and uploads both the archive and the raw compile artifact for inspection.
+The Windows job in `.github/workflows/ci.yml` uses a native Windows runner with
+MSYS2 UCRT64. Pull requests run the shared suite, GTK-tagged GUI tests, a GUI
+build, and dynamic-dependency inspection without paying the cost of assembling
+and installing release packages.
+
+On `main`, `.github/workflows/release.yml` builds the versioned Windows GUI,
+assembles and smoke-tests the portable ZIP, builds and exercises the installer,
+and uploads the final artifacts once. CI creates the release tag only after all
+platform artifacts and tests succeed, then publishes those same artifacts
+without rebuilding them. The version-independent GTK runtime payload is cached
+using the resolved UCRT64 package versions and native dependency inputs; a cache
+miss reconstructs and saves it during portable packaging.
 
 VTE must not be added to the Windows build tags. GtkSourceView language
 definitions and style schemes are included in the portable runtime.
