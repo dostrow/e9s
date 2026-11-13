@@ -347,7 +347,6 @@ type App struct {
 	confirm      ConfirmModel
 	input        InputModel
 	picker       PickerModel
-	help         HelpModel
 	palette      PaletteModel
 	errorDetails ErrorDetailsModel
 	modeSwitcher ModeSwitcherModel
@@ -670,12 +669,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.palette, cmd = a.palette.Update(km)
 			return a, cmd
-		}
-	}
-	if a.help.Active {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			a.help.Active = false
-			return a, nil
 		}
 	}
 	if a.modeSwitcher.Active {
@@ -2260,11 +2253,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.err = nil
 				return a.drillDown()
 			}
-		case msg.String() == a.kb.CommandPalette:
+		case msg.String() == a.kb.CommandPalette, key.Matches(msg, theme.Keys.Help):
+			// ? and : open the same palette: with an empty query it is the
+			// view's help, and typing turns it into a command search.
 			return a.openPalette(), nil
-		case key.Matches(msg, theme.Keys.Help):
-			a.help.Active = true
-			return a, nil
 		case msg.String() == a.kb.SwitchRegion:
 			a.regionPicker = views.NewRegionPicker(a.client.Region())
 			return a, nil
@@ -3164,10 +3156,6 @@ func (a App) View() string {
 	if a.palette.Active {
 		return renderOverlay(fullView, a.palette.View(a.width), a.width, a.height)
 	}
-	if a.help.Active {
-		helpContent := RenderHelp(a.contextHelpLines(), a.width-10)
-		return renderOverlay(fullView, helpContent, a.width, a.height)
-	}
 	if a.errorDetails.Active {
 		return renderOverlay(fullView, a.errorDetails.View(), a.width, a.height)
 	}
@@ -3369,9 +3357,9 @@ func (a App) helpText() string {
 		primary = "[o] linked resources"
 	}
 	if primary != "" {
-		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] help", primary)
+		return fmt.Sprintf("  %s  [esc] back  [q] quit  [?] commands", primary)
 	}
-	return "  [esc] back  [q] quit  [?] help"
+	return "  [esc] back  [q] quit  [?] commands"
 }
 
 // --- Navigation ---

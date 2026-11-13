@@ -70,7 +70,6 @@ func (a App) globalItems() []paletteItem {
 		act("app.filter", "/", "Filter/search").kw("find"),
 		act("app.back", "esc", "Go back"),
 		act("app.quit", "q", "Quit").kw("exit"),
-		act("app.help", "?", "Toggle this help").kw("keys", "shortcuts"),
 	}
 }
 
@@ -544,21 +543,4 @@ func (a App) taskScopeItems() []paletteItem {
 		act("ecs.exec", kb.ECSExec, "ECS Exec (shell into container)").kw("ssh", "shell", "exec", "connect"),
 		act("ecs.metrics", kb.Metrics, "Task CPU/memory metrics").kw("cloudwatch", "utilization"),
 	}
-}
-
-// contextHelpLines returns the full keybinding list for the current view:
-// view commands, a blank separator, then global commands.
-func (a App) contextHelpLines() []struct{ key, desc string } {
-	type kv = struct{ key, desc string }
-	var all []kv
-	if context := a.viewItems(a.state); len(context) > 0 {
-		for _, item := range context {
-			all = append(all, kv{item.displayKey(), item.Title})
-		}
-		all = append(all, kv{"", ""})
-	}
-	for _, item := range a.globalItems() {
-		all = append(all, kv{item.displayKey(), item.Title})
-	}
-	return all
 }

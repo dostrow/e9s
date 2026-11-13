@@ -8,8 +8,7 @@ Inspired by [k9s](https://k9scli.io/) for Kubernetes. Built in Go with [bubblete
 
 - **Full-screen framed UI** with bordered layout, scrollbar, info bar, and mode label
 - **Mode switcher** — press `` ` `` to pick a module, or `ctrl+p` to reopen the current mode's entry picker
-- **Command palette** — press `:` to fuzzy-search every command available in the current view, jump to any module, and see each command's shortcut; destructive commands are flagged and still confirm before running
-- **Context-sensitive help** — press `?` for a full keybinding overlay
+- **Command palette and help** — press `:` or `?` to see every command available in the current view with its shortcut, fuzzy-search them, or jump to any module; destructive commands are flagged and still confirm before running
 - **Region switching** — `ctrl+r` to change AWS region on the fly
 - **Config hot-reload** — edit `~/.config/e9s/config.yaml` (or `ctrl+e` to open in `$EDITOR`) and changes apply automatically
 - **Saved bookmarks** — save frequently used paths, filters, queries, and multi-group selections with `W`
@@ -310,7 +309,7 @@ e9s -m SQS -r eu-west-1
 
 | Key | Action |
 | --- | --- |
-| `:` | Command palette — fuzzy-search commands for the current view, modes, and global actions |
+| `:` or `?` | Command palette and context help — browse or fuzzy-search the current view's commands, modes, and global actions |
 | `` ` `` | Open mode switcher |
 | `ctrl+p` | Reopen current mode's entry picker |
 | `ctrl+e` | Edit config in `$EDITOR` |
@@ -321,13 +320,12 @@ e9s -m SQS -r eu-west-1
 | `q` | Quit |
 | `/` | Filter/search |
 | `R` | Refresh data |
-| `?` | Context-sensitive help overlay |
 | `PgUp`/`PgDn` | Scroll by page |
 
 ### Command Palette
 
-Press `:` to open the palette. With an empty query it lists the current
-view's commands, global commands, and "Go to" entries for every enabled
+Press `:` or `?` to open the palette; it replaces the old help overlay. With
+an empty query it lists the current view's commands, global commands, and "Go to" entries for every enabled
 module, grouped by section with each command's shortcut on the right, plus a
 legend of movement keys. Type to fuzzy-filter: matches favor word starts
 (`fnd` finds **F**orce **n**ew **d**eployment), search also covers the

@@ -21,11 +21,16 @@ var helpVariants = map[string]func(*App){
 
 type helpLine struct{ key, desc string }
 
+// retiredHelpLines are legacy help entries removed on purpose.
+var retiredHelpLines = map[helpLine]string{
+	{"?", "Toggle this help"}: "? now opens the command palette, which replaced the help overlay",
+}
+
 // TestRegistryCoversLegacyHelp guarantees the command registry documents
 // every key the legacy help overlay did, in every view and state variant.
 // A legacy line passes when the registry has the same key and description,
-// or when its key was compound ("[/]", "1/2/3") and every component key is
-// now registered on its own.
+// when its key was compound ("[/]", "1/2/3") and every component key is now
+// registered on its own, or when it is listed in retiredHelpLines.
 func TestRegistryCoversLegacyHelp(t *testing.T) {
 	golden := readLegacyHelpGolden(t)
 	if len(golden) == 0 {
@@ -49,7 +54,7 @@ func TestRegistryCoversLegacyHelp(t *testing.T) {
 			}
 		}
 		for _, line := range legacy {
-			if line.key == "" || exact[line] {
+			if line.key == "" || exact[line] || retiredHelpLines[line] != "" {
 				continue
 			}
 			if !strings.Contains(line.key, "/") || line.key == "/" {

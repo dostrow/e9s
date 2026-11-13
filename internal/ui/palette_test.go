@@ -121,8 +121,8 @@ func TestPaletteOpensSearchesAndRunsThroughKeyHandler(t *testing.T) {
 		t.Fatalf("browse view missing sections or legend:\n%s", view)
 	}
 
-	a = typeText(t, a, "toggle help")
-	if got := a.palette.results[a.palette.cursor].ID; got != "app.help" {
+	a = typeText(t, a, "switch mode")
+	if got := a.palette.results[a.palette.cursor].ID; got != "app.switch-mode" {
 		t.Fatalf("top result = %q", got)
 	}
 	a, cmd := press(t, a, "enter")
@@ -131,11 +131,25 @@ func TestPaletteOpensSearchesAndRunsThroughKeyHandler(t *testing.T) {
 	}
 	m, _ := a.Update(cmd())
 	a = m.(App)
-	if !a.help.Active {
-		t.Fatal("running the help command should replay ? and open help")
+	if !a.modeSwitcher.Active {
+		t.Fatal("running switch mode should replay ` and open the mode switcher")
 	}
-	if a.recency.Score("app.help") == 0 {
+	if a.recency.Score("app.switch-mode") == 0 {
 		t.Fatal("run should be recorded for recency")
+	}
+}
+
+func TestQuestionMarkOpensPaletteAsHelp(t *testing.T) {
+	a, _ := press(t, paletteTestApp(viewServices, modeECS), "?")
+	if !a.palette.Active || a.palette.input.Value() != "" {
+		t.Fatal("? should open the palette in browse mode")
+	}
+	if got := a.palette.results[0]; got.Section != command.SectionView || got.ID != "ecs.open-service" {
+		t.Fatalf("browse view should start with this view's commands, got %+v", got.Entry)
+	}
+	a = typeText(t, a, "?")
+	if a.palette.input.Value() != "?" || !a.palette.Active {
+		t.Fatal("? typed inside the palette is query text")
 	}
 }
 
