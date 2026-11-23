@@ -251,6 +251,7 @@ type App struct {
 	sqlPending                 bool
 	sqlPendingRun              sqlTUIRunMode
 	sqlPendingProfile          string
+	sqlConfirmTab              string // the SQL tab a pending confirmation acts on
 	regionPicker               views.RegionPickerModel
 	runbookActions             []runbook.ConfiguredAction
 	runbooksView               views.RunbooksModel
@@ -1687,17 +1688,42 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sqlExecutedMsg:
 		a.sqlPending = false
 		a.loading = false
+		a.sqlWorkbenchView.SetSessionFor(msg.tabID, a.sqlExecutor.SessionStatus(msg.tabID))
 		if msg.err != nil {
 			a.err = msg.err
 			return a, nil
 		}
-		a.sqlWorkbenchView.SetResultsFor(msg.tabID, msg.results)
+		a.err = nil
+		a.sqlWorkbenchView.SetRunFor(msg.tabID, msg.outcome)
 		a.lastRefresh = time.Now()
+		return a, nil
+
+	case QuitRequestedMsg:
+		if a.confirmQuitWithOpenTransactions() {
+			return a, nil
+		}
+		return a.quit()
+
+	case sqlTransactionEndedMsg:
+		a.sqlPending = false
+		a.loading = false
+		a.sqlWorkbenchView.SetSessionFor(msg.tabID, a.sqlExecutor.SessionStatus(msg.tabID))
+		if msg.err != nil {
+			a.err = msg.err
+			return a, nil
+		}
+		a.err = nil
+		a.flashMessage = "Transaction ended: " + msg.tag
+		if msg.commit && msg.tag != "COMMIT" {
+			a.flashMessage = "The transaction had failed, so PostgreSQL rolled it back instead of committing (" + msg.tag + ")"
+		}
+		a.flashExpiry = time.Now().Add(8 * time.Second)
 		return a, nil
 
 	case sqlReconnectedMsg:
 		a.sqlPending = false
 		a.loading = false
+		a.sqlWorkbenchView.SetSessionFor(msg.tabID, a.sqlExecutor.SessionStatus(msg.tabID))
 		if msg.err != nil {
 			a.err = msg.err
 			return a, nil
@@ -1846,6 +1872,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sqlWorkbenchView.ToggleWrites()
 			a.saveSQLWorkbenchState()
 			return a, nil
+		case ConfirmSQLCommit, ConfirmSQLCloseTab, ConfirmSQLReconnect:
+			// The confirmation names a tab; act only if it is still active.
+			if tab, found := a.sqlWorkbenchView.ActiveTabValue(); !found || tab.ID != a.sqlConfirmTab {
+				return a, nil
+			}
+			switch msg.Action {
+			case ConfirmSQLCommit:
+				return a.endSQLTransaction(true, true)
+			case ConfirmSQLCloseTab:
+				return a.closeSQLTab(true)
+			default:
+				return a.reconnectSQL(true)
+			}
+		case ConfirmSQLQuit:
+			return a.quit()
 		case ConfirmRunbook:
 			return a.runPendingRunbook()
 		case ConfirmDeletePlugin:
@@ -1972,7 +2013,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.sqlPasswords.Set(profile, msg.Value)
 			if mode == sqlTUIRunNone {
-				return a.reconnectSQL()
+				return a.reconnectSQL(false)
 			}
 			return a.runSQL(mode)
 		case InputSQLExport:
@@ -2166,6 +2207,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
 			return a, cmd
 		}
+		if a.state == viewSQLWorkbench && !a.isFiltering() && msg.String() == "R" {
+			// Reconnect, not the global refresh: a workbench has nothing to
+			// refresh, and the global binding used to shadow this one.
+			return a.reconnectSQL(false)
+		}
 		if a.state == viewSQLWorkbench && a.sqlWorkbenchView.CatalogOpen() {
 			switch msg.String() {
 			case "esc", "o":
@@ -2231,14 +2277,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global keys
 		switch {
 		case key.Matches(msg, theme.Keys.Quit):
-			if a.cancel != nil {
-				a.cancel()
+			if a.confirmQuitWithOpenTransactions() {
+				return a, nil
 			}
-			a.saveSQLWorkbenchState()
-			if a.sqlExecutor != nil {
-				a.sqlExecutor.Close()
-			}
-			return a, tea.Quit
+			return a.quit()
 		case key.Matches(msg, theme.Keys.Back):
 			return a.goBack()
 		case key.Matches(msg, theme.Keys.Refresh):
@@ -2327,8 +2369,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a.runSQL(sqlTUIRunAll)
 				case "c":
 					return a.runSQL(sqlTUIRunCurrent)
-				case "R":
-					return a.reconnectSQL()
 				case "[":
 					a.sqlWorkbenchView.Switch(-1)
 					a.saveSQLWorkbenchState()
@@ -2340,7 +2380,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "n":
 					return a.openSQLConnections()
 				case "d":
-					return a.closeSQLTab()
+					return a.closeSQLTab(false)
+				case "C":
+					return a.endSQLTransaction(true, false)
+				case "B":
+					return a.endSQLTransaction(false, false)
 				case "t":
 					if tab, found := a.sqlWorkbenchView.ActiveTabValue(); found {
 						a.input = NewInput(InputSQLRename, "SQL tab title (blank follows connection name)", tab.Title)
@@ -3336,8 +3380,10 @@ func (a App) helpText() string {
 	case viewSQLWorkbench:
 		if a.sqlWorkbenchView.CatalogOpen() {
 			primary = "[enter] expand  [i/I] insert name/qualified  [o/esc] close objects"
+		} else if a.sqlWorkbenchView.Session().State == sqlworkbench.TxOpen {
+			primary = "[C] commit  [B] roll back  [e] edit  [r/c] run all/current  [</>] results  [x] CSV"
 		} else {
-			primary = "[e] edit  [o] objects  [r/c] run all/current  [[/]] tabs  [n] connections  [x] CSV"
+			primary = "[e] edit  [o] objects  [r/c] run all/current  [</>] results  [[/]] tabs  [n] connections  [x] CSV"
 		}
 	case viewPlugins:
 		primary = "[enter] configure and run"
@@ -3998,4 +4044,17 @@ func (a App) goBack() (App, tea.Cmd) {
 		return a, nil
 	}
 	return a, nil
+}
+
+// quit saves state and closes every SQL session; PostgreSQL rolls back any
+// transaction still open on them.
+func (a App) quit() (tea.Model, tea.Cmd) {
+	if a.cancel != nil {
+		a.cancel()
+	}
+	a.saveSQLWorkbenchState()
+	if a.sqlExecutor != nil {
+		a.sqlExecutor.Close()
+	}
+	return a, tea.Quit
 }

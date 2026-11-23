@@ -617,8 +617,11 @@ SQL Workbench provides connection-scoped PostgreSQL query tabs in both the GTK
 and terminal frontends. Query text and tab names are restored after restart;
 results and credentials remain process-local. The GUI can run the selected
 text, the statement at the cursor, or the full tab. The TUI supports the latter
-two operations from its inline multiline editor. Both frontends can reconnect
-lost sessions and export the latest result to CSV.
+two operations from its inline multiline editor. Every statement of a run keeps
+its result: choose one from the GUI's result list or with `<` and `>` in the
+TUI, and export the selected result set to CSV. When a statement fails, the run
+stops there and shows the error, the line it starts on, and the results of the
+statements before it.
 
 The GTK Browser Pane becomes a lazy PostgreSQL object explorer for the active
 query tab. Expand schemas and then tables, views, materialized views,
@@ -648,7 +651,34 @@ platform or PostgreSQL default trust store.
 
 Queries are read-only by default. Data-changing SQL requires both the global
 `sql.allow_writes` setting and a separately confirmed, per-tab break-glass
-control. The tab control always returns to locked when e9s starts.
+control. The tab control always returns to locked when e9s starts. A locked
+tab's session is also read-only on the server, so a function called from a
+`SELECT` cannot change data either. `ROLLBACK` is allowed in a locked tab.
+
+#### Sessions and transactions
+
+Each query tab has its own PostgreSQL connection, so a transaction belongs to
+the tab that opened it: other tabs on the same connection profile cannot see or
+disturb it. The object browser uses a separate read-only connection per profile
+and never runs inside a tab's transaction.
+
+- **Open transactions are shown.** After `BEGIN`, the tab shows how long the
+  transaction has been open, with Commit (which asks first) and Roll back. In
+  the TUI these are `C` and `B`.
+- **Failed transactions are rolled back.** When a statement fails inside a
+  transaction, e9s rolls the transaction back at once, so its locks are
+  released, and says so.
+- **Nothing discards a transaction silently.** Closing the tab, reconnecting
+  it, or quitting e9s asks first when a transaction is open; going ahead rolls
+  it back. A lost connection is reported, and read-only SQL is run again on a
+  fresh connection only when no transaction was open.
+- **Forgotten transactions end on the server.** Each tab's session sets
+  `idle_in_transaction_session_timeout` (300 seconds by default, or
+  `idle_in_transaction_timeout_seconds` per connection), so PostgreSQL ends a
+  session left idle in a transaction and rolls it back.
+- **Data API connections** run each statement in its own transaction, so e9s
+  refuses `BEGIN`, `COMMIT` and other transaction control there rather than
+  let them do nothing.
 
 ## Configuration
 
@@ -736,6 +766,7 @@ sql:
       pgpass_file: ~/.pgpass-reporting # optional per-profile first choice
       sslmode: verify-full
       sslrootcert: ~/.postgresql/rds-ca-bundle.pem # optional PEM CA bundle
+      idle_in_transaction_timeout_seconds: 300 # optional; ends sessions left in a transaction
 
 exclude_services: []
 ```

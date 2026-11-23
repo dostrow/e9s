@@ -8,6 +8,7 @@ import (
 
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
+	"github.com/dostrow/e9s/internal/sqlworkbench"
 )
 
 func TestSQLProfilePresentationDefaults(t *testing.T) {
@@ -29,11 +30,11 @@ func TestSQLTabExportRequiresResultSchema(t *testing.T) {
 		{name: "none"},
 		{name: "command only", results: []model.SQLQueryResult{{CommandTag: "UPDATE 1"}}},
 		{name: "empty select", results: []model.SQLQueryResult{{Columns: []string{"id"}}}, want: true},
-		{name: "latest statement wins", results: []model.SQLQueryResult{{Columns: []string{"id"}}, {CommandTag: "UPDATE 1"}}},
+		{name: "selected statement wins", results: []model.SQLQueryResult{{Columns: []string{"id"}}, {CommandTag: "UPDATE 1"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			tab := &sqlWorkbenchTab{results: test.results}
+			tab := &sqlWorkbenchTab{run: sqlworkbench.RunOutcome{Results: test.results}, selectedResult: len(test.results) - 1}
 			if got := sqlTabHasExportableResult(tab); got != test.want {
 				t.Fatalf("sqlTabHasExportableResult() = %v, want %v", got, test.want)
 			}
@@ -98,5 +99,29 @@ func TestFormatSQLResultRowsSkipsInvalidPositions(t *testing.T) {
 	}
 	if rows != 1 || got != "7" {
 		t.Fatalf("formatSQLResultRows() = %q, %d rows; want 7, 1 row", got, rows)
+	}
+}
+
+func TestSQLFailureTextNamesTheStatementAndLine(t *testing.T) {
+	text := sqlFailureText(sqlworkbench.StatementFailure{Index: 6, Line: 112, Message: "ERROR: boom (SQLSTATE XX000)\nHINT: try again",
+		SQL: strings.TrimSuffix(strings.Repeat("SELECT 1\n", 20), "\n")})
+	for _, want := range []string{"Statement 7 failed at line 112", "HINT: try again", "… 8 more line(s)"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("failure text lacks %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestSQLTabSelectedResultExcludesTheFailure(t *testing.T) {
+	tab := &sqlWorkbenchTab{run: sqlworkbench.RunOutcome{
+		Results: []model.SQLQueryResult{{Columns: []string{"id"}}},
+		Failure: &sqlworkbench.StatementFailure{Index: 1, Message: "ERROR"},
+	}, selectedResult: 1}
+	if _, ok := sqlTabSelectedResult(tab); ok {
+		t.Fatal("the failed statement has no result set")
+	}
+	tab.selectedResult = 0
+	if _, ok := sqlTabSelectedResult(tab); !ok {
+		t.Fatal("the earlier result should be selectable")
 	}
 }

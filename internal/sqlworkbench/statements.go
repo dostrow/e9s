@@ -55,6 +55,13 @@ func ValidateReadOnly(source string) error {
 		first := words[0]
 		switch first {
 		case "select", "with", "show", "values", "table", "explain":
+		case "rollback", "abort":
+			// Ending a transaction never changes data, and a locked tab must
+			// still be able to discard one. Prepared transactions belong to
+			// the whole server and stay behind the write guard.
+			if containsWord(words[1:], "prepared") {
+				return fmt.Errorf("ROLLBACK PREPARED statements require the per-tab write break-glass control")
+			}
 		default:
 			return fmt.Errorf("%s statements require the per-tab write break-glass control", strings.ToUpper(first))
 		}
@@ -271,4 +278,28 @@ func appendStatement(statements *[]Statement, source string, start, end int) {
 		return
 	}
 	*statements = append(*statements, Statement{SQL: source[trimmedStart:trimmedEnd], Start: trimmedStart, End: trimmedEnd})
+}
+
+// IsTransactionControl reports whether a statement starts, ends or
+// subdivides a transaction.
+func IsTransactionControl(sql string) bool {
+	words := SQLWords(sql)
+	if len(words) == 0 {
+		return false
+	}
+	switch words[0] {
+	case "begin", "commit", "end", "rollback", "abort", "savepoint", "release":
+		return true
+	case "start":
+		return len(words) > 1 && words[1] == "transaction"
+	case "prepare":
+		return len(words) > 1 && words[1] == "transaction"
+	}
+	return false
+}
+
+// StatementLine returns the 1-based line on which byte offset falls.
+func StatementLine(source string, offset int) int {
+	offset = max(0, min(offset, len(source)))
+	return strings.Count(source[:offset], "\n") + 1
 }

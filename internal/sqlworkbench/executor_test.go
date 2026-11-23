@@ -22,12 +22,12 @@ func TestExecutorDataAPIReadOnlyAndStatementSplitting(t *testing.T) {
 	api := &fakeDataAPI{}
 	executor := NewExecutor(ExecutorOptions{DataAPI: api})
 	profile := config.SQLConnection{Name: "analytics", Database: "app", Auth: "data-api", ResourceARN: "cluster", SecretARN: "secret"}
-	results, err := executor.Execute(context.Background(), profile, "select 1; select 2", false)
+	outcome, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", Source: "select 1; select 2"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 2 || len(api.requests) != 2 || api.requests[1].SQL != "select 2" {
-		t.Fatalf("unexpected execution: results=%#v requests=%#v", results, api.requests)
+	if len(outcome.Results) != 2 || len(api.requests) != 2 || api.requests[1].SQL != "select 2" || outcome.Results[1].SQL != "select 2" {
+		t.Fatalf("unexpected execution: outcome=%#v requests=%#v", outcome, api.requests)
 	}
 }
 
@@ -39,15 +39,29 @@ func TestExecutorRequiresBothWriteGuards(t *testing.T) {
 		{false, false}, {true, false}, {false, true},
 	} {
 		executor := NewExecutor(ExecutorOptions{DataAPI: &fakeDataAPI{}, AllowWrites: test.global})
-		_, err := executor.Execute(context.Background(), profile, "delete from records", test.tab)
+		_, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", Source: "delete from records", AllowWrites: test.tab})
 		if err == nil || !strings.Contains(err.Error(), "write") {
 			t.Fatalf("global=%v tab=%v error=%v", test.global, test.tab, err)
 		}
 	}
 	api := &fakeDataAPI{}
 	executor := NewExecutor(ExecutorOptions{DataAPI: api, AllowWrites: true})
-	if _, err := executor.Execute(context.Background(), profile, "delete from records", true); err != nil {
+	if _, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", Source: "delete from records", AllowWrites: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExecutorDataAPIRefusesTransactionControl(t *testing.T) {
+	api := &fakeDataAPI{}
+	executor := NewExecutor(ExecutorOptions{DataAPI: api, AllowWrites: true})
+	profile := config.SQLConnection{Name: "analytics", Database: "app", Auth: "data-api", ResourceARN: "cluster", SecretARN: "secret"}
+	_, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", AllowWrites: true,
+		Source: "select 1;\nbegin;\nupdate records set x = 1;\ncommit;"})
+	if err == nil || !strings.Contains(err.Error(), "line 2") || !strings.Contains(err.Error(), "BEGIN") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(api.requests) != 0 {
+		t.Fatalf("statements ran before the refusal: %#v", api.requests)
 	}
 }
 

@@ -19,6 +19,8 @@ type SQLQueryRequest struct {
 }
 
 type SQLQueryResult struct {
+	// SQL is the statement that produced this result, as it was sent.
+	SQL          string
 	Columns      []string
 	Rows         [][]string
 	CommandTag   string

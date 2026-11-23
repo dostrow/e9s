@@ -308,17 +308,6 @@ FROM pg_catalog.pg_sequence WHERE seqrelid = %s::oid`, object.OID))
 	}
 }
 
-func (e *Executor) catalogQuery(ctx context.Context, profile config.SQLConnection, query string) (model.SQLQueryResult, error) {
-	results, err := e.Execute(ctx, profile, query, false)
-	if err != nil {
-		return model.SQLQueryResult{}, err
-	}
-	if len(results) == 0 {
-		return model.SQLQueryResult{}, nil
-	}
-	return results[len(results)-1], nil
-}
-
 func generatedTableDefinition(detail ObjectDetail) string {
 	lines := make([]string, 0, len(detail.Columns)+len(detail.Constraints))
 	for _, column := range detail.Columns {

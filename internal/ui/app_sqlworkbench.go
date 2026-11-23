@@ -11,7 +11,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dostrow/e9s/internal/config"
-	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
@@ -48,13 +47,21 @@ func (c *sqlPasswordCache) Set(name, password string) {
 
 type sqlExecutedMsg struct {
 	tabID   string
-	results []model.SQLQueryResult
+	outcome sqlworkbench.RunOutcome
 	err     error
 }
 
 type sqlReconnectedMsg struct {
+	tabID   string
 	profile string
 	err     error
+}
+
+type sqlTransactionEndedMsg struct {
+	tabID  string
+	commit bool
+	tag    string
+	err    error
 }
 
 type sqlCatalogSchemasMsg struct {
@@ -224,17 +231,66 @@ func (a App) runSQL(mode sqlTUIRunMode) (App, tea.Cmd) {
 	}
 	a.sqlPending = true
 	a.loading = true
-	tabID := tab.ID
+	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.ID, Source: source, AllowWrites: tab.AllowWrites}
 	executor, ctx := a.sqlExecutor, a.ctx
 	return a, func() tea.Msg {
-		results, err := executor.Execute(ctx, profile, source, tab.AllowWrites)
-		return sqlExecutedMsg{tabID: tabID, results: results, err: err}
+		outcome, err := executor.Run(ctx, request)
+		return sqlExecutedMsg{tabID: request.SessionID, outcome: outcome, err: err}
 	}
 }
 
-func (a App) reconnectSQL() (App, tea.Cmd) {
+// sqlTransactionOpen reports whether the active tab's session holds an open
+// transaction.
+func (a App) sqlTransactionOpen() (sqlworkbench.TabState, bool) {
+	tab, found := a.sqlWorkbenchView.ActiveTabValue()
+	if !found || a.sqlExecutor == nil {
+		return tab, false
+	}
+	return tab, a.sqlExecutor.SessionStatus(tab.ID).State == sqlworkbench.TxOpen
+}
+
+// endSQLTransaction commits or rolls back the active tab's transaction.
+// Commit asks first: its changes cannot be undone.
+func (a App) endSQLTransaction(commit, confirmed bool) (App, tea.Cmd) {
+	tab, open := a.sqlTransactionOpen()
+	if a.sqlPending {
+		return a, nil
+	}
+	if !open {
+		a.err = sqlworkbench.ErrNoTransaction
+		return a, nil
+	}
+	if commit && !confirmed {
+		a.sqlConfirmTab = tab.ID
+		a.confirm = NewConfirm(ConfirmSQLCommit, "Commit the open transaction in "+sqlTabName(tab)+"? Its changes become permanent.")
+		return a, nil
+	}
+	a.sqlPending = true
+	a.loading = true
+	executor, tabID := a.sqlExecutor, tab.ID
+	return a, func() tea.Msg {
+		tag, err := executor.EndTransaction(tabID, commit)
+		return sqlTransactionEndedMsg{tabID: tabID, commit: commit, tag: tag, err: err}
+	}
+}
+
+func sqlTabName(tab sqlworkbench.TabState) string {
+	if title := strings.TrimSpace(tab.Title); title != "" {
+		return title
+	}
+	return tab.ProfileName
+}
+
+// reconnectSQL replaces the active tab's connection. Doing so discards an
+// open transaction, so that needs confirming.
+func (a App) reconnectSQL(discardTransaction bool) (App, tea.Cmd) {
 	tab, found := a.sqlWorkbenchView.ActiveTabValue()
 	if !found || a.sqlPending {
+		return a, nil
+	}
+	if _, open := a.sqlTransactionOpen(); open && !discardTransaction {
+		a.sqlConfirmTab = tab.ID
+		a.confirm = NewConfirm(ConfirmSQLReconnect, "Reconnecting discards the open transaction in "+sqlTabName(tab)+": its changes are rolled back. Reconnect?")
 		return a, nil
 	}
 	profile, found := a.sqlProfileNamed(tab.ProfileName)
@@ -252,10 +308,10 @@ func (a App) reconnectSQL() (App, tea.Cmd) {
 	}
 	a.sqlPending = true
 	a.loading = true
-	executor, ctx := a.sqlExecutor, a.ctx
+	executor, ctx, tabID := a.sqlExecutor, a.ctx, tab.ID
 	return a, func() tea.Msg {
-		err := executor.Reconnect(ctx, profile)
-		return sqlReconnectedMsg{profile: profile.Name, err: err}
+		err := executor.Reconnect(ctx, profile, tabID, discardTransaction)
+		return sqlReconnectedMsg{tabID: tabID, profile: profile.Name, err: err}
 	}
 }
 
@@ -277,9 +333,20 @@ func (a App) toggleSQLWrites() (App, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) closeSQLTab() (App, tea.Cmd) {
+// closeSQLTab closes the active tab and its connection. Closing discards an
+// open transaction, so that needs confirming.
+func (a App) closeSQLTab(discardTransaction bool) (App, tea.Cmd) {
 	if a.sqlPending {
 		return a, nil
+	}
+	tab, open := a.sqlTransactionOpen()
+	if open && !discardTransaction {
+		a.sqlConfirmTab = tab.ID
+		a.confirm = NewConfirm(ConfirmSQLCloseTab, "Closing "+sqlTabName(tab)+" discards its open transaction: its changes are rolled back. Close it?")
+		return a, nil
+	}
+	if a.sqlExecutor != nil {
+		a.sqlExecutor.CloseSession(tab.ID)
 	}
 	a.sqlWorkbenchView.CloseActive()
 	a.saveSQLWorkbenchState()
@@ -289,9 +356,23 @@ func (a App) closeSQLTab() (App, tea.Cmd) {
 	return a, nil
 }
 
+// confirmQuitWithOpenTransactions asks before quitting would discard open
+// transactions. It reports whether it asked.
+func (a *App) confirmQuitWithOpenTransactions() bool {
+	if a.sqlExecutor == nil {
+		return false
+	}
+	open := a.sqlExecutor.OpenTransactions()
+	if len(open) == 0 {
+		return false
+	}
+	a.confirm = NewConfirm(ConfirmSQLQuit, fmt.Sprintf("%d SQL tab(s) have an open transaction. Quitting rolls them back: their changes are not kept. Quit?", len(open)))
+	return true
+}
+
 func (a App) promptSQLExport() (App, tea.Cmd) {
-	if _, found := a.sqlWorkbenchView.LastResult(); !found {
-		a.err = fmt.Errorf("no SQL result is available to export")
+	if _, found := a.sqlWorkbenchView.SelectedResult(); !found {
+		a.err = fmt.Errorf("select a result set to export")
 		return a, nil
 	}
 	directory := a.cfg.SaveDir()
@@ -300,7 +381,7 @@ func (a App) promptSQLExport() (App, tea.Cmd) {
 }
 
 func (a App) exportSQLResult(path string) (App, tea.Cmd) {
-	result, found := a.sqlWorkbenchView.LastResult()
+	result, found := a.sqlWorkbenchView.SelectedResult()
 	if !found {
 		return a, nil
 	}

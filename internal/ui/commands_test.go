@@ -23,7 +23,9 @@ type helpLine struct{ key, desc string }
 
 // retiredHelpLines are legacy help entries removed on purpose.
 var retiredHelpLines = map[helpLine]string{
-	{"?", "Toggle this help"}: "? now opens the command palette, which replaced the help overlay",
+	{"?", "Toggle this help"}:            "? now opens the command palette, which replaced the help overlay",
+	{"R", "Reconnect"}:                   "R is now \"Reconnect this tab\": each SQL tab has its own session",
+	{"x", "Export latest result as CSV"}: "x now exports the selected result set; < and > select it",
 }
 
 // TestRegistryCoversLegacyHelp guarantees the command registry documents

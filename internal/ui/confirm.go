@@ -39,6 +39,10 @@ const (
 	ConfirmTofuApply
 	ConfirmCostRefresh
 	ConfirmSQLWrites
+	ConfirmSQLCommit
+	ConfirmSQLCloseTab
+	ConfirmSQLReconnect
+	ConfirmSQLQuit
 	ConfirmRunbook
 	ConfirmDeletePlugin
 )

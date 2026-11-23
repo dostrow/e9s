@@ -281,7 +281,12 @@ type mainWindow struct {
 	sqlStateSavePending bool
 	sqlActionPending    bool
 	sqlActionGeneration uint64
-	sqlWritesUpdating   bool
+	// sqlActionCancel cancels the SQL run, commit or rollback in flight.
+	sqlActionCancel func()
+	// sqlCloseConfirmed lets the window close after the user agreed to
+	// discard open SQL transactions.
+	sqlCloseConfirmed bool
+	sqlWritesUpdating bool
 
 	allS3Buckets               []model.S3Bucket
 	filteredS3Buckets          []model.S3Bucket
@@ -1107,6 +1112,9 @@ func newMainWindow(ctx context.Context, app *gtk.Application, options Options) *
 			w.noteAWSActivity()
 		}
 		w.scheduleRefresh()
+	})
+	w.window.ConnectCloseRequest(func() bool {
+		return w.confirmCloseWithOpenSQLTransactions()
 	})
 	w.window.ConnectDestroy(func() {
 		w.saveSQLStateNow()
@@ -2604,8 +2612,12 @@ func (w *mainWindow) resetWorkspaceForBrowserChange() {
 		w.generation++
 	}
 	w.requestPending = false
-	w.sqlActionGeneration++
-	w.sqlActionPending = false
+	if w.sqlActionCancel == nil {
+		// A query tab's run keeps going across page changes; only
+		// window-scoped SQL requests such as object previews are dropped.
+		w.sqlActionGeneration++
+		w.sqlActionPending = false
+	}
 	w.spinner.Stop()
 	w.setWorkspaceBusy("", false)
 	if w.logCancel != nil {

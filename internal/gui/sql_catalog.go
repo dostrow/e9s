@@ -421,7 +421,7 @@ func (w *mainWindow) previewSQLObject(tab *sqlWorkbenchTab) {
 				w.setStatus("Preview "+object.QualifiedName()+": "+err.Error(), true)
 				return
 			}
-			tab.results = []model.SQLQueryResult{result}
+			tab.run = sqlworkbench.RunOutcome{Statements: 1, Results: []model.SQLQueryResult{result}}
 			w.renderSQLResults(tab)
 			w.updateSQLControls()
 			w.setStatus(fmt.Sprintf("Previewed %d row(s) from %s", len(result.Rows), object.QualifiedName()), false)

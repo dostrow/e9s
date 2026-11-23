@@ -36,3 +36,28 @@ func TestCurrentStatement(t *testing.T) {
 		t.Fatalf("unexpected statement: %#v, %t", statement, ok)
 	}
 }
+
+func TestValidateReadOnlyAllowsEndingATransaction(t *testing.T) {
+	for _, sql := range []string{"rollback", "ROLLBACK TO SAVEPOINT before_update", "abort"} {
+		if err := ValidateReadOnly(sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	for _, sql := range []string{"commit", "begin", "rollback prepared 'tx1'"} {
+		if err := ValidateReadOnly(sql); err == nil {
+			t.Fatalf("%s passed the read-only check", sql)
+		}
+	}
+}
+
+func TestIsTransactionControl(t *testing.T) {
+	for sql, want := range map[string]bool{
+		"BEGIN": true, "start transaction read only": true, "-- note\ncommit": true, "END": true,
+		"savepoint a": true, "release savepoint a": true, "prepare transaction 'x'": true,
+		"select 'begin'": false, "prepare plan as select 1": false, "start": false, "update t set x = 1": false,
+	} {
+		if got := IsTransactionControl(sql); got != want {
+			t.Fatalf("IsTransactionControl(%q) = %v, want %v", sql, got, want)
+		}
+	}
+}
