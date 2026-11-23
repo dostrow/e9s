@@ -187,16 +187,57 @@ func (s *directSession) run(ctx context.Context, statements []Statement, source 
 			return outcome
 		}
 	}
+	s.runStatements(ctx, statements, source, maxRows, &outcome)
+	s.settle(&outcome, before)
+	return outcome
+}
+
+func (s *directSession) runStatements(ctx context.Context, statements []Statement, source string, maxRows int, outcome *RunOutcome) {
 	for index, statement := range statements {
 		result, err := s.query(ctx, statement.SQL, maxRows)
 		if err != nil {
 			outcome.Failure = newStatementFailure(index, statement, source, err)
-			break
+			return
 		}
 		result.SQL = statement.SQL
+		result.Line = StatementLine(source, statement.Start)
 		outcome.Results = append(outcome.Results, result)
 	}
-	s.settle(&outcome, before)
+}
+
+// runInTransaction runs plan inside a transaction that e9s opens. A dry run
+// always rolls it back; otherwise a transaction that succeeded stays open
+// for the caller to commit or roll back. The session must be idle.
+func (s *directSession) runInTransaction(ctx context.Context, plan transactionPlan, source string, allowWrites bool, maxRows int, mode RunMode) RunOutcome {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	outcome := RunOutcome{Statements: len(plan.body), Mode: mode}
+	if event := plan.event(mode); event != "" {
+		outcome.Events = append(outcome.Events, event)
+	}
+	if err := s.applyWriteMode(ctx, allowWrites); err != nil {
+		outcome.Failure = &StatementFailure{Index: -1, Message: "prepare the session: " + describeError(err)}
+		s.settle(&outcome, TxIdle)
+		return outcome
+	}
+	if _, err := s.connection.Exec(ctx, plan.begin); err != nil {
+		outcome.Failure = &StatementFailure{Index: -1, SQL: plan.begin, Message: "start the transaction: " + describeError(err)}
+		s.settle(&outcome, TxIdle)
+		return outcome
+	}
+	s.runStatements(ctx, plan.body, source, maxRows, &outcome)
+	if mode == RunDryRun && !s.connection.IsClosed() && s.connection.PgConn().TxStatus() == 'T' {
+		if err := s.rollback(); err != nil {
+			outcome.Events = append(outcome.Events, "The dry run could not be rolled back ("+describeError(err)+"). e9s closed the connection, so PostgreSQL rolled it back.")
+			s.discardConnection()
+		} else {
+			outcome.Events = append(outcome.Events, "Dry run: e9s rolled the transaction back, so none of its changes were kept.")
+		}
+	}
+	s.settle(&outcome, TxOpen)
+	if mode == RunInTransaction && outcome.Transaction == TxOpen {
+		outcome.Events = append(outcome.Events, "The transaction is still open. Review the results, then commit or roll it back.")
+	}
 	return outcome
 }
 

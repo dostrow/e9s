@@ -21,7 +21,21 @@ const (
 	sqlTUIRunNone sqlTUIRunMode = iota
 	sqlTUIRunCurrent
 	sqlTUIRunAll
+	sqlTUIDryRun
+	sqlTUIRunInTransaction
 )
+
+// executorMode is the executor's run mode for a TUI run.
+func (m sqlTUIRunMode) executorMode() sqlworkbench.RunMode {
+	switch m {
+	case sqlTUIDryRun:
+		return sqlworkbench.RunDryRun
+	case sqlTUIRunInTransaction:
+		return sqlworkbench.RunInTransaction
+	default:
+		return sqlworkbench.RunAsWritten
+	}
+}
 
 type sqlPasswordCache struct {
 	mu     sync.RWMutex
@@ -231,7 +245,7 @@ func (a App) runSQL(mode sqlTUIRunMode) (App, tea.Cmd) {
 	}
 	a.sqlPending = true
 	a.loading = true
-	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.ID, Source: source, AllowWrites: tab.AllowWrites}
+	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.ID, Source: source, AllowWrites: tab.AllowWrites, Mode: mode.executorMode()}
 	executor, ctx := a.sqlExecutor, a.ctx
 	return a, func() tea.Msg {
 		outcome, err := executor.Run(ctx, request)
@@ -368,6 +382,61 @@ func (a *App) confirmQuitWithOpenTransactions() bool {
 	}
 	a.confirm = NewConfirm(ConfirmSQLQuit, fmt.Sprintf("%d SQL tab(s) have an open transaction. Quitting rolls them back: their changes are not kept. Quit?", len(open)))
 	return true
+}
+
+// promptSQLCommitAfterRun asks to commit a transactional run that left its
+// transaction open, listing what it changed. Declining keeps it open.
+func (a App) promptSQLCommitAfterRun(tabID string, outcome sqlworkbench.RunOutcome) App {
+	tab, found := a.sqlWorkbenchView.ActiveTabValue()
+	if !found || tab.ID != tabID || outcome.Mode != sqlworkbench.RunInTransaction || outcome.Transaction != sqlworkbench.TxOpen {
+		return a
+	}
+	changes := outcome.ChangeSummary()
+	if changes == "" {
+		changes = "no rows were reported changed"
+	}
+	a.sqlConfirmTab = tabID
+	a.confirm = NewConfirm(ConfirmSQLCommit, "The run succeeded ("+changes+"). Commit? No keeps the transaction open for review: commit with C or roll back with B.")
+	return a
+}
+
+func (a App) sqlReportContext(tab sqlworkbench.TabState) sqlworkbench.ReportContext {
+	context := sqlworkbench.ReportContext{Connection: tab.ProfileName, Tab: strings.TrimSpace(tab.Title)}
+	if profile, found := a.sqlProfileNamed(tab.ProfileName); found {
+		context.Database = profile.Database
+	}
+	return context
+}
+
+func (a App) promptSQLReportSave() (App, tea.Cmd) {
+	tab, found := a.sqlWorkbenchView.ActiveTabValue()
+	if _, ok := a.sqlWorkbenchView.Report(a.sqlReportContext(tab)); !found || !ok {
+		a.err = fmt.Errorf("run SQL in this tab before saving a report")
+		return a, nil
+	}
+	name := "sql-report-" + time.Now().Format("20060102-150405") + ".txt"
+	a.input = NewInput(InputSQLReport, "Report output path", filepath.Join(a.cfg.SaveDir(), name))
+	return a, nil
+}
+
+func (a App) saveSQLReport(path string) (App, tea.Cmd) {
+	tab, _ := a.sqlWorkbenchView.ActiveTabValue()
+	report, ok := a.sqlWorkbenchView.Report(a.sqlReportContext(tab))
+	if !ok {
+		return a, nil
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		a.err = fmt.Errorf("report output path cannot be empty")
+		return a, nil
+	}
+	if err := os.WriteFile(path, []byte(report), 0o600); err != nil {
+		a.err = err
+		return a, nil
+	}
+	a.flashMessage = "Saved SQL report to " + path
+	a.flashExpiry = time.Now().Add(5 * time.Second)
+	return a, nil
 }
 
 func (a App) promptSQLExport() (App, tea.Cmd) {

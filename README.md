@@ -655,6 +655,29 @@ control. The tab control always returns to locked when e9s starts. A locked
 tab's session is also read-only on the server, so a function called from a
 `SELECT` cannot change data either. `ROLLBACK` is allowed in a locked tab.
 
+#### Dry runs and reports
+
+Verification and remediation scripts can be checked before anything is kept:
+
+- **Dry run** (`D` in the TUI) runs the whole tab inside a transaction that e9s
+  always rolls back. Temporary tables, row locks and changes all end with it.
+- **Run in transaction** (`A`) runs the whole tab inside a transaction and then
+  asks whether to commit, listing the rows each statement changed. Keep it open
+  to review the results first, then commit or roll back.
+- A script written for psql often brackets itself with `BEGIN` and a final
+  `ROLLBACK` or `COMMIT`. Both modes use the script's `BEGIN`, including any
+  isolation level, and drop its final `COMMIT` or `ROLLBACK`, because e9s
+  decides how the transaction ends. A `COMMIT`, `ROLLBACK` or `BEGIN` anywhere
+  else would end e9s's transaction early, so the run is refused and the line is
+  named; savepoints are fine.
+- The **Report** shows the whole run as text in the style of psql: each
+  statement with its line, its result table or command tag, the failure, and
+  anything e9s did on the session's behalf. Open it with the GUI's Report tab
+  or `v` in the TUI, and save it to a file (`X` in the TUI) to keep a record of
+  a verification run.
+- On Data API connections both modes use a Data API transaction, which the
+  Data API ends after three minutes idle.
+
 #### Sessions and transactions
 
 Each query tab has its own PostgreSQL connection, so a transaction belongs to
@@ -676,9 +699,9 @@ and never runs inside a tab's transaction.
   `idle_in_transaction_session_timeout` (300 seconds by default, or
   `idle_in_transaction_timeout_seconds` per connection), so PostgreSQL ends a
   session left idle in a transaction and rolls it back.
-- **Data API connections** run each statement in its own transaction, so e9s
-  refuses `BEGIN`, `COMMIT` and other transaction control there rather than
-  let them do nothing.
+- **Data API connections** run each statement on its own, so e9s refuses
+  `BEGIN`, `COMMIT` and other transaction control there rather than let them do
+  nothing; use Dry run or Run in transaction instead.
 
 ## Configuration
 

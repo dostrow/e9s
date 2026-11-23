@@ -29,6 +29,23 @@ type DataAPI interface {
 	ExecuteSQLData(context.Context, model.SQLQueryRequest) (model.SQLQueryResult, error)
 }
 
+// DataAPITransactions is implemented by Data API clients that can hold a
+// transaction across statements.
+type DataAPITransactions interface {
+	BeginSQLDataTransaction(context.Context, model.SQLQueryRequest) (string, error)
+	EndSQLDataTransaction(ctx context.Context, request model.SQLQueryRequest, commit bool) (string, error)
+}
+
+// DataAPITransactionTimeout is how long the Data API keeps an idle
+// transaction before ending it.
+const DataAPITransactionTimeout = 3 * time.Minute
+
+// dataAPITransaction is a query tab's open Data API transaction.
+type dataAPITransaction struct {
+	request model.SQLQueryRequest // with TransactionID set
+	since   time.Time
+}
+
 type ExecutorOptions struct {
 	AuthProvider AuthProvider
 	DataAPI      DataAPI
@@ -48,6 +65,8 @@ type Executor struct {
 	options   ExecutorOptions
 	mu        sync.Mutex
 	sessions  map[string]*directSession
+	// dataTx holds query tabs' open Data API transactions by tab ID.
+	dataTx map[string]*dataAPITransaction
 }
 
 // RunRequest is one execution in a query tab.
@@ -58,6 +77,7 @@ type RunRequest struct {
 	Source    string
 	// AllowWrites is the tab's write break-glass control.
 	AllowWrites bool
+	Mode        RunMode
 }
 
 // StatementFailure describes the statement that stopped a run.
@@ -72,6 +92,8 @@ type StatementFailure struct {
 // RunOutcome is everything a run produced, including results from the
 // statements that completed before a failure.
 type RunOutcome struct {
+	Mode       RunMode
+	Started    time.Time
 	Statements int
 	Results    []model.SQLQueryResult
 	Failure    *StatementFailure
@@ -88,7 +110,7 @@ func NewExecutor(options ExecutorOptions) *Executor {
 	if options.MaxRows <= 0 {
 		options.MaxRows = DefaultMaxRows
 	}
-	return &Executor{options: options, sessions: make(map[string]*directSession)}
+	return &Executor{options: options, sessions: make(map[string]*directSession), dataTx: make(map[string]*dataAPITransaction)}
 }
 
 // SetPolicy applies runtime safety and credential-source settings to future
@@ -117,6 +139,14 @@ func writeGuard(readOnlyErr error, globalWrites, tabWrites bool) error {
 // ran: the SQL was refused or no connection could be made. A statement that
 // fails is reported in the outcome together with the results before it.
 func (e *Executor) Run(ctx context.Context, request RunRequest) (RunOutcome, error) {
+	started := time.Now()
+	outcome, err := e.run(ctx, request)
+	outcome.Started = started
+	outcome.Mode = request.Mode
+	return outcome, err
+}
+
+func (e *Executor) run(ctx context.Context, request RunRequest) (RunOutcome, error) {
 	options := e.optionsSnapshot()
 	statements := SplitStatements(request.Source)
 	if len(statements) == 0 {
@@ -129,6 +159,21 @@ func (e *Executor) Run(ctx context.Context, request RunRequest) (RunOutcome, err
 	if err := writeGuard(readOnlyErr, options.AllowWrites, request.AllowWrites); err != nil {
 		return RunOutcome{Statements: len(statements)}, err
 	}
+	var plan transactionPlan
+	if request.Mode != RunAsWritten {
+		var err error
+		if plan, err = planTransaction(statements, request.Source); err != nil {
+			return RunOutcome{Statements: len(statements), Mode: request.Mode}, err
+		}
+		if e.SessionStatus(request.SessionID).State == TxOpen {
+			return RunOutcome{Statements: len(statements), Mode: request.Mode},
+				fmt.Errorf("a transaction is already open in this tab; commit or roll it back before a %s", request.Mode)
+		}
+	}
+	if transaction := e.dataTransaction(request.SessionID); transaction != nil {
+		// Statements join the tab's open Data API transaction.
+		return e.runDataAPI(ctx, request.SessionID, transaction.request, statements, request.Source, options)
+	}
 	key := tabSessionKey(request.SessionID)
 	session := e.existingSession(key)
 	if session == nil || session.txState() == TxIdle {
@@ -139,12 +184,26 @@ func (e *Executor) Run(ctx context.Context, request RunRequest) (RunOutcome, err
 			return RunOutcome{Statements: len(statements)}, err
 		}
 		if resolved.DataAPI {
-			return e.runDataAPI(ctx, resolved, statements, request.Source, options)
+			base, err := dataAPIRequest(resolved, options)
+			if err != nil {
+				return RunOutcome{}, err
+			}
+			if request.Mode != RunAsWritten {
+				return e.runDataAPIInTransaction(ctx, request.SessionID, base, plan, request.Source, options, request.Mode)
+			}
+			return e.runDataAPI(ctx, request.SessionID, base, statements, request.Source, options)
 		}
 		session, err = e.acquire(ctx, key, resolved, false, options)
 		if err != nil {
 			return RunOutcome{Statements: len(statements)}, err
 		}
+	}
+	if request.Mode != RunAsWritten {
+		outcome := session.runInTransaction(ctx, plan, request.Source, request.AllowWrites, options.MaxRows, request.Mode)
+		if outcome.ConnectionLost {
+			e.forget(key, session)
+		}
+		return outcome, nil
 	}
 	before := session.txState()
 	outcome := session.run(ctx, statements, request.Source, request.AllowWrites, options.MaxRows)
@@ -184,40 +243,136 @@ func hasTransactionControl(statements []Statement) bool {
 	return false
 }
 
-// runDataAPI runs each statement as its own Data API call. The Data API
-// gives every call its own transaction, so transaction control cannot span
-// statements and is refused instead of silently doing nothing.
-func (e *Executor) runDataAPI(ctx context.Context, connection ResolvedConnection, statements []Statement, source string, options ExecutorOptions) (RunOutcome, error) {
+func dataAPIRequest(connection ResolvedConnection, options ExecutorOptions) (model.SQLQueryRequest, error) {
 	if options.DataAPI == nil {
-		return RunOutcome{}, fmt.Errorf("RDS Data API execution is unavailable")
+		return model.SQLQueryRequest{}, fmt.Errorf("RDS Data API execution is unavailable")
 	}
 	if strings.TrimSpace(connection.Profile.ResourceARN) == "" || strings.TrimSpace(connection.Profile.SecretARN) == "" {
-		return RunOutcome{}, fmt.Errorf("data API connections require resource_arn and secret_arn")
+		return model.SQLQueryRequest{}, fmt.Errorf("data API connections require resource_arn and secret_arn")
 	}
+	return model.SQLQueryRequest{ResourceARN: connection.Profile.ResourceARN, SecretARN: connection.Profile.SecretARN,
+		Database: connection.Database, MaxRows: options.MaxRows}, nil
+}
+
+// runDataAPI runs each statement as its own Data API call, inside the tab's
+// open Data API transaction when base names one. Transaction control
+// statements cannot span Data API calls, so they are refused instead of
+// silently doing nothing.
+func (e *Executor) runDataAPI(ctx context.Context, sessionID string, base model.SQLQueryRequest, statements []Statement, source string, options ExecutorOptions) (RunOutcome, error) {
 	for _, statement := range statements {
 		if IsTransactionControl(statement.SQL) {
-			return RunOutcome{Statements: len(statements)}, fmt.Errorf("line %d: the RDS Data API runs each statement in its own transaction, so %s cannot span statements; use a direct connection for transactional scripts",
+			return RunOutcome{Statements: len(statements)}, fmt.Errorf("line %d: the RDS Data API runs each statement on its own, so %s cannot span statements; use Dry run or Run in transaction, or a direct connection",
 				StatementLine(source, statement.Start), strings.ToUpper(SQLWords(statement.SQL)[0]))
 		}
 	}
 	outcome := RunOutcome{Statements: len(statements)}
-	for index, statement := range statements {
-		result, err := options.DataAPI.ExecuteSQLData(ctx, model.SQLQueryRequest{ResourceARN: connection.Profile.ResourceARN,
-			SecretARN: connection.Profile.SecretARN, Database: connection.Database, SQL: statement.SQL, MaxRows: options.MaxRows})
-		if err != nil {
-			outcome.Failure = newStatementFailure(index, statement, source, err)
-			break
+	if base.TransactionID != "" {
+		outcome.Transaction = TxOpen
+	}
+	e.runDataAPIStatements(ctx, base, statements, source, options, &outcome)
+	if base.TransactionID != "" && outcome.Failure != nil {
+		// A failed statement ends the usefulness of the transaction, as it
+		// would on a direct connection: roll it back.
+		outcome.Transaction = TxIdle
+		if _, err := e.endDataTransaction(sessionID, false); err != nil {
+			outcome.Events = append(outcome.Events, "The transaction failed and e9s could not roll it back ("+err.Error()+"); the Data API ends it after "+DataAPITransactionTimeout.String()+" idle.")
+		} else {
+			outcome.Events = append(outcome.Events, "The transaction failed, so e9s rolled it back: none of its changes were kept and its locks were released.")
 		}
-		result.SQL = statement.SQL
-		outcome.Results = append(outcome.Results, result)
 	}
 	return outcome, nil
+}
+
+func (e *Executor) runDataAPIStatements(ctx context.Context, base model.SQLQueryRequest, statements []Statement, source string, options ExecutorOptions, outcome *RunOutcome) {
+	for index, statement := range statements {
+		request := base
+		request.SQL = statement.SQL
+		result, err := options.DataAPI.ExecuteSQLData(ctx, request)
+		if err != nil {
+			outcome.Failure = newStatementFailure(index, statement, source, err)
+			return
+		}
+		result.SQL = statement.SQL
+		result.Line = StatementLine(source, statement.Start)
+		outcome.Results = append(outcome.Results, result)
+	}
+}
+
+// runDataAPIInTransaction runs plan inside a Data API transaction.
+func (e *Executor) runDataAPIInTransaction(ctx context.Context, sessionID string, base model.SQLQueryRequest, plan transactionPlan, source string, options ExecutorOptions, mode RunMode) (RunOutcome, error) {
+	transactions, ok := options.DataAPI.(DataAPITransactions)
+	if !ok {
+		return RunOutcome{}, fmt.Errorf("this Data API client cannot hold a transaction across statements")
+	}
+	if !strings.EqualFold(strings.Join(SQLWords(plan.begin), " "), "begin") && !strings.EqualFold(strings.Join(SQLWords(plan.begin), " "), "start transaction") {
+		return RunOutcome{}, fmt.Errorf("the RDS Data API cannot start a transaction with options; remove them from %q", plan.begin)
+	}
+	outcome := RunOutcome{Statements: len(plan.body), Mode: mode}
+	if event := plan.event(mode); event != "" {
+		outcome.Events = append(outcome.Events, event)
+	}
+	id, err := transactions.BeginSQLDataTransaction(ctx, base)
+	if err != nil {
+		return outcome, fmt.Errorf("start the Data API transaction: %w", err)
+	}
+	transaction := base
+	transaction.TransactionID = id
+	e.runDataAPIStatements(ctx, transaction, plan.body, source, options, &outcome)
+	if mode == RunInTransaction && outcome.Failure == nil {
+		e.mu.Lock()
+		e.dataTx[sessionID] = &dataAPITransaction{request: transaction, since: time.Now()}
+		e.mu.Unlock()
+		outcome.Transaction = TxOpen
+		outcome.Events = append(outcome.Events, fmt.Sprintf("The transaction is still open. Review the results, then commit or roll it back; the Data API ends it after %s idle.", DataAPITransactionTimeout))
+		return outcome, nil
+	}
+	cleanup, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	if _, err := transactions.EndSQLDataTransaction(cleanup, transaction, false); err != nil {
+		outcome.Events = append(outcome.Events, "e9s could not roll back the Data API transaction ("+err.Error()+"); the Data API ends it after "+DataAPITransactionTimeout.String()+" idle.")
+	} else if outcome.Failure != nil {
+		outcome.Events = append(outcome.Events, "The transaction failed, so e9s rolled it back: none of its changes were kept and its locks were released.")
+	} else {
+		outcome.Events = append(outcome.Events, "Dry run: e9s rolled the transaction back, so none of its changes were kept.")
+	}
+	return outcome, nil
+}
+
+func (e *Executor) dataTransaction(sessionID string) *dataAPITransaction {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.dataTx[sessionID]
+}
+
+// endDataTransaction commits or rolls back the tab's Data API transaction.
+func (e *Executor) endDataTransaction(sessionID string, commit bool) (string, error) {
+	e.mu.Lock()
+	transaction := e.dataTx[sessionID]
+	delete(e.dataTx, sessionID)
+	e.mu.Unlock()
+	if transaction == nil {
+		return "", ErrNoTransaction
+	}
+	transactions, ok := e.optionsSnapshot().DataAPI.(DataAPITransactions)
+	if !ok {
+		return "", fmt.Errorf("this Data API client cannot end a transaction")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	status, err := transactions.EndSQLDataTransaction(ctx, transaction.request, commit)
+	if err != nil {
+		return "", fmt.Errorf("end the Data API transaction: %w", err)
+	}
+	return status, nil
 }
 
 // EndTransaction commits or rolls back the tab's open transaction and
 // returns PostgreSQL's command tag. COMMIT of a failed transaction reports
 // ROLLBACK.
 func (e *Executor) EndTransaction(sessionID string, commit bool) (string, error) {
+	if e.dataTransaction(sessionID) != nil {
+		return e.endDataTransaction(sessionID, commit)
+	}
 	key := tabSessionKey(sessionID)
 	session := e.existingSession(key)
 	if session == nil {
@@ -232,6 +387,9 @@ func (e *Executor) EndTransaction(sessionID string, commit bool) (string, error)
 
 // SessionStatus reports the tab's session state. It never waits for a run.
 func (e *Executor) SessionStatus(sessionID string) SessionStatus {
+	if transaction := e.dataTransaction(sessionID); transaction != nil {
+		return SessionStatus{Connected: true, State: TxOpen, Since: transaction.since, IdleTimeout: DataAPITransactionTimeout}
+	}
 	session := e.existingSession(tabSessionKey(sessionID))
 	if session == nil {
 		return SessionStatus{}
@@ -250,12 +408,19 @@ func (e *Executor) OpenTransactions() []string {
 			ids = append(ids, id)
 		}
 	}
+	for id := range e.dataTx {
+		ids = append(ids, id)
+	}
 	return ids
 }
 
 // CloseSession closes the tab's connection. PostgreSQL rolls back any open
 // transaction when the connection ends.
 func (e *Executor) CloseSession(sessionID string) {
+	if e.dataTransaction(sessionID) != nil {
+		// The Data API has no connection to close: end the transaction.
+		_, _ = e.endDataTransaction(sessionID, false)
+	}
 	key := tabSessionKey(sessionID)
 	e.mu.Lock()
 	session := e.sessions[key]
@@ -269,7 +434,7 @@ func (e *Executor) CloseSession(sessionID string) {
 // Reconnect replaces the tab's connection and the profile's object browser
 // connection. It refuses to discard an open transaction unless asked to.
 func (e *Executor) Reconnect(ctx context.Context, profile config.SQLConnection, sessionID string, discardTransaction bool) error {
-	if session := e.existingSession(tabSessionKey(sessionID)); session != nil && session.txState() == TxOpen && !discardTransaction {
+	if e.SessionStatus(sessionID).State == TxOpen && !discardTransaction {
 		return ErrTransactionOpen
 	}
 	e.CloseSession(sessionID)
@@ -295,7 +460,14 @@ func (e *Executor) Close() {
 	e.mu.Lock()
 	sessions := e.sessions
 	e.sessions = make(map[string]*directSession)
+	var dataTabs []string
+	for id := range e.dataTx {
+		dataTabs = append(dataTabs, id)
+	}
 	e.mu.Unlock()
+	for _, id := range dataTabs {
+		_, _ = e.endDataTransaction(id, false)
+	}
 	for _, session := range sessions {
 		session.close()
 	}
@@ -320,8 +492,11 @@ func (e *Executor) catalogQuery(ctx context.Context, profile config.SQLConnectio
 		}
 		var outcome RunOutcome
 		if resolved.DataAPI {
-			outcome, err = e.runDataAPI(ctx, resolved, statements, query, options)
+			base, err := dataAPIRequest(resolved, options)
 			if err != nil {
+				return model.SQLQueryResult{}, err
+			}
+			if outcome, err = e.runDataAPI(ctx, "", base, statements, query, options); err != nil {
 				return model.SQLQueryResult{}, err
 			}
 		} else {

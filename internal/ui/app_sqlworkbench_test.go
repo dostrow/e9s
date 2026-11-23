@@ -2,18 +2,25 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	awsclient "github.com/dostrow/e9s/internal/aws"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/sqlworkbench"
 	"github.com/dostrow/e9s/internal/ui/views"
 )
+
+// The executor finds Data API transactions by type assertion; keep the AWS
+// client implementing them.
+var _ sqlworkbench.DataAPITransactions = (*awsclient.Client)(nil)
 
 // sqlTestApp is a terminal app with one SQL tab, writes enabled, on the
 // server in E9S_TEST_POSTGRES_URL. The test is skipped without one.
@@ -120,5 +127,64 @@ func TestSQLTabRunKeepsResultsBeforeAFailure(t *testing.T) {
 	a.sqlWorkbenchView.MoveResult(-1)
 	if result, found := a.sqlWorkbenchView.SelectedResult(); !found || result.Rows[0][0] != "kept" {
 		t.Fatalf("result before the failure: %#v", result)
+	}
+}
+
+func runTabSQLMode(t *testing.T, a App, source string, mode sqlTUIRunMode) App {
+	t.Helper()
+	a.sqlWorkbenchView.SetQuery(source)
+	next, cmd := a.runSQL(mode)
+	return finish(t, next, cmd)
+}
+
+func TestSQLTabDryRunShowsAReportAndKeepsNothing(t *testing.T) {
+	a := sqlTestApp(t)
+	table := fmt.Sprintf("e9s_tui_%d", time.Now().UnixNano())
+	a = runTabSQL(t, a, "CREATE TABLE "+table+" (value int)")
+	t.Cleanup(func() { runTabSQL(t, a, "DROP TABLE IF EXISTS "+table) })
+	a = runTabSQLMode(t, a, "BEGIN;\nINSERT INTO "+table+" VALUES (1);\nSELECT count(*) AS inserted FROM "+table+";\nROLLBACK;", sqlTUIDryRun)
+	if a.err != nil || a.sqlWorkbenchView.Session().State != sqlworkbench.TxIdle || a.confirm.Active {
+		t.Fatalf("dry run: err=%v session=%#v confirm=%v", a.err, a.sqlWorkbenchView.Session(), a.confirm.Active)
+	}
+	a.sqlWorkbenchView.ToggleReport()
+	view := a.sqlWorkbenchView.View()
+	for _, want := range []string{"Report, lines 1-", "-- Mode: dry run", "INSERT 0 1"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("report view lacks %q:\n%s", want, view)
+		}
+	}
+	a.sqlWorkbenchView, _ = a.sqlWorkbenchView.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	if view := a.sqlWorkbenchView.View(); !strings.Contains(view, "Dry run: e9s rolled the transaction back") {
+		t.Fatalf("G did not scroll to the end of the report:\n%s", view)
+	}
+	path := filepath.Join(t.TempDir(), "report.txt")
+	a, _ = a.saveSQLReport(path)
+	if saved, err := os.ReadFile(path); err != nil || !strings.Contains(string(saved), "-- Connection: test (database ") {
+		t.Fatalf("saved report: %v\n%s", err, saved)
+	}
+	a = runTabSQL(t, a, "SELECT count(*) FROM "+table)
+	if result, _ := a.sqlWorkbenchView.SelectedResult(); result.Rows[0][0] != "0" {
+		t.Fatalf("dry run kept its insert: %#v", result)
+	}
+}
+
+func TestSQLTabRunInTransactionAsksToCommit(t *testing.T) {
+	a := sqlTestApp(t)
+	a = runTabSQLMode(t, a, "SELECT 1", sqlTUIRunInTransaction)
+	if !a.confirm.Active || a.confirm.Action != ConfirmSQLCommit || !strings.Contains(a.confirm.Message, "no rows were reported changed") {
+		t.Fatalf("no commit prompt after a transactional run: %#v", a.confirm)
+	}
+	// Declining keeps the transaction open for review. The dialog closes
+	// itself before it reports the answer.
+	a.confirm = ConfirmModel{}
+	model, _ := a.Update(ConfirmResultMsg{Action: ConfirmSQLCommit, Confirmed: false})
+	a = model.(App)
+	if a.sqlWorkbenchView.Session().State != sqlworkbench.TxOpen {
+		t.Fatal("declining the commit should leave the transaction open")
+	}
+	model, cmd := a.Update(ConfirmResultMsg{Action: ConfirmSQLCommit, Confirmed: true})
+	a = finish(t, model.(App), cmd)
+	if a.sqlWorkbenchView.Session().State != sqlworkbench.TxIdle || !strings.Contains(a.flashMessage, "COMMIT") {
+		t.Fatalf("commit: session=%#v flash=%q", a.sqlWorkbenchView.Session(), a.flashMessage)
 	}
 }

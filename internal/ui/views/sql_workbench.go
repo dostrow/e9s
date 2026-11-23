@@ -26,6 +26,8 @@ type SQLWorkbenchModel struct {
 	runs         map[string]*sqlTabRun
 	sessions     map[string]sqlworkbench.SessionStatus
 	resultCursor map[string]int
+	reportView   bool
+	reportOffset map[string]int
 	catalogs     map[string]*SQLCatalogModel
 	status       string
 	width        int
@@ -41,7 +43,7 @@ func NewSQLWorkbench(tabs []sqlworkbench.TabState, activeID string) SQLWorkbench
 	m := SQLWorkbenchModel{
 		tabs: append([]sqlworkbench.TabState(nil), tabs...), editor: editor,
 		runs: make(map[string]*sqlTabRun), sessions: make(map[string]sqlworkbench.SessionStatus),
-		resultCursor: make(map[string]int), catalogs: make(map[string]*SQLCatalogModel),
+		resultCursor: make(map[string]int), reportOffset: make(map[string]int), catalogs: make(map[string]*SQLCatalogModel),
 	}
 	for index := range m.tabs {
 		m.tabs[index].AllowWrites = false
@@ -77,6 +79,10 @@ func (m SQLWorkbenchModel) Update(msg tea.Msg) (SQLWorkbenchModel, tea.Cmd) {
 		m.editor, cmd = m.editor.Update(msg)
 		m.storeActiveQuery()
 		return m, cmd
+	}
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && m.reportView {
+		m.scrollReport(keyMsg.String())
+		return m, nil
 	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		id := m.ActiveID()
@@ -137,6 +143,7 @@ func (m *SQLWorkbenchModel) CloseActive() {
 	id := m.ActiveID()
 	delete(m.runs, id)
 	delete(m.sessions, id)
+	delete(m.reportOffset, id)
 	delete(m.resultCursor, id)
 	delete(m.catalogs, id)
 	m.tabs = append(m.tabs[:m.active], m.tabs[m.active+1:]...)
@@ -265,6 +272,7 @@ func (m *SQLWorkbenchModel) SetRunFor(id string, outcome sqlworkbench.RunOutcome
 	run.selected = max(0, run.entries()-1)
 	m.runs[id] = run
 	m.resultCursor[id] = 0
+	m.reportOffset[id] = 0
 	if id == m.ActiveID() {
 		m.status = run.summary()
 	}
@@ -281,6 +289,59 @@ func (m *SQLWorkbenchModel) SetSessionFor(id string, status sqlworkbench.Session
 func (m SQLWorkbenchModel) Session() sqlworkbench.SessionStatus {
 	return m.sessions[m.ActiveID()]
 }
+
+// ToggleReport switches the result area between the selected result set and
+// the run's full report. It reports whether the report is now shown.
+func (m *SQLWorkbenchModel) ToggleReport() bool {
+	m.reportView = !m.reportView
+	return m.reportView
+}
+
+func (m SQLWorkbenchModel) ReportView() bool { return m.reportView }
+
+// Report renders the active tab's run as a report.
+func (m SQLWorkbenchModel) Report(context sqlworkbench.ReportContext) (string, bool) {
+	run := m.runs[m.ActiveID()]
+	if run == nil || run.entries() == 0 {
+		return "", false
+	}
+	if context.Started.IsZero() {
+		context.Started = run.outcome.Started
+	}
+	return sqlworkbench.FormatReport(run.outcome, context), true
+}
+
+func (m *SQLWorkbenchModel) reportContext() sqlworkbench.ReportContext {
+	tab, _ := m.ActiveTabValue()
+	return sqlworkbench.ReportContext{Connection: tab.ProfileName, Tab: strings.TrimSpace(tab.Title)}
+}
+
+func (m *SQLWorkbenchModel) scrollReport(key string) {
+	id := m.ActiveID()
+	report, ok := m.Report(m.reportContext())
+	if !ok {
+		return
+	}
+	last := max(0, strings.Count(report, "\n")-1)
+	page := max(1, m.reportHeight()-1)
+	switch key {
+	case "j", "down":
+		m.reportOffset[id]++
+	case "k", "up":
+		m.reportOffset[id]--
+	case "ctrl+d", "pgdown", " ":
+		m.reportOffset[id] += page
+	case "ctrl+u", "pgup":
+		m.reportOffset[id] -= page
+	case "g":
+		m.reportOffset[id] = 0
+	case "G":
+		m.reportOffset[id] = last
+	}
+	m.reportOffset[id] = min(max(0, m.reportOffset[id]), last)
+}
+
+func (m SQLWorkbenchModel) reportHeight() int { return max(3, m.height-m.editor.Height()-11) }
 
 // MoveResult selects another entry of the active tab's run.
 func (m *SQLWorkbenchModel) MoveResult(delta int) {
@@ -432,8 +493,19 @@ func (m SQLWorkbenchModel) View() string {
 		}
 		return b.String()
 	}
+	if m.reportView {
+		report, _ := m.Report(m.reportContext())
+		lines := strings.Split(strings.TrimSuffix(report, "\n"), "\n")
+		offset := min(m.reportOffset[m.ActiveID()], max(0, len(lines)-1))
+		end := min(len(lines), offset+m.reportHeight())
+		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  Report, lines %d-%d of %d  [v] results  [X] save", offset+1, end, len(lines))) + "\n")
+		for _, line := range lines[offset:end] {
+			b.WriteString("  " + truncateSQLCell(line, max(20, m.width-4)) + "\n")
+		}
+		return b.String()
+	}
 	b.WriteString(theme.HelpStyle.Render("  "+truncateSQLCell(run.outcome.EntryLabel(run.selected), max(20, m.width-24))) +
-		theme.HelpStyle.Render("  [</>] results") + "\n")
+		theme.HelpStyle.Render("  [</>] results  [v] report") + "\n")
 	visible := max(3, m.height-m.editor.Height()-13-len(run.outcome.Events))
 	if result, ok := m.SelectedResult(); ok {
 		b.WriteString(renderSQLResultTable(result, m.resultCursor[m.ActiveID()], visible))

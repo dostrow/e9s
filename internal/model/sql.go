@@ -16,11 +16,15 @@ type SQLQueryRequest struct {
 	Database    string
 	SQL         string
 	MaxRows     int
+	// TransactionID runs the statement inside a Data API transaction.
+	TransactionID string
 }
 
 type SQLQueryResult struct {
 	// SQL is the statement that produced this result, as it was sent.
-	SQL          string
+	SQL string
+	// Line is the line of the submitted source the statement starts on.
+	Line         int
 	Columns      []string
 	Rows         [][]string
 	CommandTag   string

@@ -1696,7 +1696,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = nil
 		a.sqlWorkbenchView.SetRunFor(msg.tabID, msg.outcome)
 		a.lastRefresh = time.Now()
-		return a, nil
+		return a.promptSQLCommitAfterRun(msg.tabID, msg.outcome), nil
 
 	case QuitRequestedMsg:
 		if a.confirmQuitWithOpenTransactions() {
@@ -2018,6 +2018,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.runSQL(mode)
 		case InputSQLExport:
 			return a.exportSQLResult(msg.Value)
+		case InputSQLReport:
+			return a.saveSQLReport(msg.Value)
 		case InputSQLRename:
 			a.sqlWorkbenchView.Rename(msg.Value)
 			a.saveSQLWorkbenchState()
@@ -2381,6 +2383,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a.openSQLConnections()
 				case "d":
 					return a.closeSQLTab(false)
+				case "D":
+					return a.runSQL(sqlTUIDryRun)
+				case "A":
+					return a.runSQL(sqlTUIRunInTransaction)
+				case "v":
+					a.sqlWorkbenchView.ToggleReport()
+					return a, nil
+				case "X":
+					return a.promptSQLReportSave()
 				case "C":
 					return a.endSQLTransaction(true, false)
 				case "B":
@@ -3383,7 +3394,7 @@ func (a App) helpText() string {
 		} else if a.sqlWorkbenchView.Session().State == sqlworkbench.TxOpen {
 			primary = "[C] commit  [B] roll back  [e] edit  [r/c] run all/current  [</>] results  [x] CSV"
 		} else {
-			primary = "[e] edit  [o] objects  [r/c] run all/current  [</>] results  [[/]] tabs  [n] connections  [x] CSV"
+			primary = "[e] edit  [o] objects  [r/c] run all/current  [D] dry run  [</>] results  [v] report  [[/]] tabs  [x] CSV"
 		}
 	case viewPlugins:
 		primary = "[enter] configure and run"

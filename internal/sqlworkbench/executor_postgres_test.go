@@ -232,3 +232,85 @@ func TestIdleTransactionIsEndedByTheServer(t *testing.T) {
 		t.Fatalf("server did not end the idle transaction: %#v", outcome)
 	}
 }
+
+func runMode(t *testing.T, executor *Executor, profile config.SQLConnection, tab, source string, mode RunMode) RunOutcome {
+	t.Helper()
+	outcome, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: tab, Source: source, AllowWrites: true, Mode: mode})
+	if err != nil {
+		t.Fatalf("Run(%v, %q): %v", mode, source, err)
+	}
+	return outcome
+}
+
+// A dry run of a script written for psql, with its own BEGIN, temporary
+// tables and final ROLLBACK, shows every result and keeps nothing.
+func TestDryRunOfAVerificationScriptKeepsNothing(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int); INSERT INTO "+table+" VALUES (1), (2)", true)
+	script := `BEGIN;
+CREATE TEMP TABLE candidates ON COMMIT DROP AS SELECT value FROM ` + table + `;
+SELECT 'Rows to change' AS section;
+SELECT value FROM candidates ORDER BY value;
+UPDATE ` + table + ` SET value = value * 10 WHERE value IN (SELECT value FROM candidates);
+SELECT 'Rows after the change' AS section;
+SELECT value FROM ` + table + ` ORDER BY value;
+ROLLBACK;`
+	outcome := runMode(t, executor, profile, "tab", script, RunDryRun)
+	if outcome.Failure != nil {
+		t.Fatalf("dry run failed: %s", outcome.Failure.Message)
+	}
+	if len(outcome.Results) != 6 || outcome.Results[5].Rows[1][0] != "20" || outcome.Results[3].CommandTag != "UPDATE 2" {
+		t.Fatalf("results = %#v", outcome.Results)
+	}
+	if outcome.Results[0].Line != 2 || outcome.Transaction != TxIdle || executor.SessionStatus("tab").State != TxIdle {
+		t.Fatalf("line or state wrong: line=%d tx=%v", outcome.Results[0].Line, outcome.Transaction)
+	}
+	if got := scalar(t, run(t, executor, profile, "tab", "SELECT string_agg(value::text, ',' ORDER BY value) FROM "+table, false)); got != "1,2" {
+		t.Fatalf("the dry run kept its changes: %s", got)
+	}
+	// The temporary table went with the transaction, so the same script can
+	// run again at once.
+	if again := runMode(t, executor, profile, "tab", script, RunDryRun); again.Failure != nil {
+		t.Fatalf("second dry run failed: %s", again.Failure.Message)
+	}
+	report := FormatReport(outcome, ReportContext{Connection: profile.Name})
+	if !strings.Contains(report, "UPDATE 2") || !strings.Contains(report, "Dry run: e9s rolled the transaction back") {
+		t.Fatalf("report:\n%s", report)
+	}
+}
+
+func TestRunInTransactionLeavesItOpenForReview(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int)", true)
+	outcome := runMode(t, executor, profile, "tab", "INSERT INTO "+table+" VALUES (1);\nINSERT INTO "+table+" VALUES (2), (3);", RunInTransaction)
+	if outcome.Transaction != TxOpen || outcome.ChangeSummary() != "line 1: INSERT 0 1; line 2: INSERT 0 2" {
+		t.Fatalf("outcome = %#v, changes = %q", outcome, outcome.ChangeSummary())
+	}
+	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "0" {
+		t.Fatalf("uncommitted rows visible elsewhere: %s", got)
+	}
+	if _, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", Source: "SELECT 1", AllowWrites: true, Mode: RunDryRun}); err == nil {
+		t.Fatal("a dry run started inside an open transaction")
+	}
+	if _, err := executor.EndTransaction("tab", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "3" {
+		t.Fatalf("committed rows: %s", got)
+	}
+}
+
+func TestRunInTransactionRollsBackWhenAStatementFails(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int)", true)
+	outcome := runMode(t, executor, profile, "tab", "INSERT INTO "+table+" VALUES (1);\nSELECT 1/0;", RunInTransaction)
+	if outcome.Failure == nil || outcome.Transaction != TxIdle {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "0" {
+		t.Fatalf("a failed transactional run kept rows: %s", got)
+	}
+}

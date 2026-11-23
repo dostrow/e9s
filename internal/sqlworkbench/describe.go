@@ -39,6 +39,12 @@ func (o RunOutcome) Summary() string {
 	if o.Transaction == TxOpen {
 		summary += "; transaction open"
 	}
+	switch o.Mode {
+	case RunDryRun:
+		summary = "Dry run (rolled back): " + summary
+	case RunInTransaction:
+		summary = "In a transaction: " + summary
+	}
 	return summary
 }
 
