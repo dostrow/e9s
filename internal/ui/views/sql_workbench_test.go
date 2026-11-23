@@ -100,3 +100,17 @@ func TestSQLWorkbenchShowsAnOpenTransaction(t *testing.T) {
 		t.Fatal("the transaction indicator leaked into another tab")
 	}
 }
+
+func TestSQLWorkbenchShowsNoticesAndEchoHeadings(t *testing.T) {
+	m := NewSQLWorkbench([]sqlworkbench.TabState{{ID: "one", ProfileName: "primary"}}, "one").SetSize(140, 40)
+	m.SetRunFor("one", sqlworkbench.RunOutcome{Statements: 1, Results: []model.SQLQueryResult{{
+		SQL: "SELECT 1", Heading: "== Study links to restore", Columns: []string{"n"}, Rows: [][]string{{"1"}}, CommandTag: "SELECT 1",
+		Notices: []string{"NOTICE: checked 3 rows"},
+	}}})
+	view := m.View()
+	for _, want := range []string{"== Study links to restore", "(1 notice(s))", "NOTICE: checked 3 rows"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q:\n%s", want, view)
+		}
+	}
+}

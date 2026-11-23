@@ -72,6 +72,7 @@ func TestChangeSummaryCountsDataAPIRowsAffected(t *testing.T) {
 		{CommandTag: "SELECT 2", Columns: []string{"a"}},
 		{CommandTag: "3 rows affected", RowsAffected: 3, Line: 2},
 		{CommandTag: "0 rows affected"},
+		{CommandTag: "UPDATE 0", Line: 4},
 	}}
 	if got := outcome.ChangeSummary(); got != "line 2: 3 rows affected" {
 		t.Fatalf("ChangeSummary() = %q", got)

@@ -314,3 +314,51 @@ func TestRunInTransactionRollsBackWhenAStatementFails(t *testing.T) {
 		t.Fatalf("a failed transactional run kept rows: %s", got)
 	}
 }
+
+// The restore script's psql-only form, with \set, \pset and \echo, dry runs
+// in e9s: headings name the results and notices from DO blocks are kept.
+func TestDryRunOfAPsqlScriptKeepsHeadingsAndNotices(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	script := `\set ON_ERROR_STOP on
+\pset pager off
+
+BEGIN;
+
+DO $$
+BEGIN
+    RAISE NOTICE 'checked % rows', 3;
+END $$;
+
+\echo '== Study links to restore'
+SELECT 'row' AS study;
+
+ROLLBACK;`
+	outcome := runMode(t, executor, profile, "tab", script, RunDryRun)
+	if outcome.Failure != nil {
+		t.Fatalf("dry run failed: %s", outcome.Failure.Message)
+	}
+	if len(outcome.Results) != 2 || outcome.Results[0].CommandTag != "DO" || outcome.Results[1].Heading != "== Study links to restore" {
+		t.Fatalf("results = %#v", outcome.Results)
+	}
+	if notices := outcome.Results[0].Notices; len(notices) != 1 || notices[0] != "NOTICE: checked 3 rows" {
+		t.Fatalf("notices = %#v", notices)
+	}
+	if !strings.Contains(outcome.Events[0], "Ignored psql settings") {
+		t.Fatalf("events = %#v", outcome.Events)
+	}
+	if label := outcome.EntryLabel(1); !strings.Contains(label, "== Study links to restore") {
+		t.Fatalf("entry label = %q", label)
+	}
+	report := FormatReport(outcome, ReportContext{})
+	if !strings.Contains(report, "NOTICE: checked 3 rows\n") || !strings.Contains(report, "\n== Study links to restore\n-- [2/2] line 12\nSELECT 'row' AS study;") {
+		t.Fatalf("report:\n%s", report)
+	}
+}
+
+func TestServerWarningsAreKeptWithTheirStatement(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	outcome := run(t, executor, profile, "tab", "ROLLBACK", false)
+	if len(outcome.Results) != 1 || len(outcome.Results[0].Notices) != 1 || !strings.Contains(outcome.Results[0].Notices[0], "WARNING: there is no transaction in progress") {
+		t.Fatalf("results = %#v", outcome.Results)
+	}
+}

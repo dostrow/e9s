@@ -45,15 +45,22 @@ func FormatReport(outcome RunOutcome, context ReportContext) string {
 	total := max(outcome.Statements, outcome.EntryCount())
 	for index, result := range outcome.Results {
 		b.WriteString("\n")
+		writeEcho(&b, result.Heading)
 		writeStatementHeading(&b, index, total, result.Line, result.SQL)
 		writeResult(&b, result)
+		writeNotices(&b, result.Notices)
 	}
 	if failure := outcome.Failure; failure != nil {
 		b.WriteString("\n")
 		if failure.Index >= 0 {
+			writeEcho(&b, failure.Heading)
 			writeStatementHeading(&b, failure.Index, total, failure.Line, failure.SQL)
 		}
+		writeNotices(&b, failure.Notices)
 		b.WriteString(failure.Message + "\n")
+	} else if outcome.TrailingHeading != "" {
+		b.WriteString("\n")
+		writeEcho(&b, outcome.TrailingHeading)
 	}
 	if len(outcome.Events) > 0 {
 		b.WriteString("\n")
@@ -62,6 +69,19 @@ func FormatReport(outcome RunOutcome, context ReportContext) string {
 		}
 	}
 	return b.String()
+}
+
+// writeEcho prints psql \echo text as psql would, on lines of its own.
+func writeEcho(b *strings.Builder, heading string) {
+	if heading != "" {
+		b.WriteString(heading + "\n")
+	}
+}
+
+func writeNotices(b *strings.Builder, notices []string) {
+	for _, notice := range notices {
+		b.WriteString(notice + "\n")
+	}
 }
 
 func writeStatementHeading(b *strings.Builder, index, total, line int, sql string) {
@@ -136,11 +156,12 @@ func reportCell(value string) string {
 
 // ChangeSummary lists the statements that reported changed rows, such as
 // "line 12: UPDATE 6; line 20: DELETE 2", for confirming a commit.
+// Statements that changed no rows are left out.
 func (o RunOutcome) ChangeSummary() string {
 	var changes []string
 	for _, result := range o.Results {
 		words := strings.Fields(result.CommandTag)
-		if len(words) == 0 {
+		if len(words) == 0 || result.RowsAffected == 0 {
 			continue
 		}
 		switch words[0] {

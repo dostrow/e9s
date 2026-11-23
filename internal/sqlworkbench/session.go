@@ -78,6 +78,33 @@ type directSession struct {
 	state  atomic.Int32
 	since  atomic.Int64
 	closed atomic.Bool
+
+	// notices collects the server's NOTICE and WARNING messages for the
+	// statement being run.
+	noticeMu sync.Mutex
+	notices  []string
+}
+
+func (s *directSession) addNotice(notice *pgconn.Notice) {
+	text := notice.Severity + ": " + notice.Message
+	if notice.Detail != "" {
+		text += "\nDETAIL: " + notice.Detail
+	}
+	if notice.Hint != "" {
+		text += "\nHINT: " + notice.Hint
+	}
+	s.noticeMu.Lock()
+	s.notices = append(s.notices, text)
+	s.noticeMu.Unlock()
+}
+
+// takeNotices returns and clears the notices collected so far.
+func (s *directSession) takeNotices() []string {
+	s.noticeMu.Lock()
+	defer s.noticeMu.Unlock()
+	notices := s.notices
+	s.notices = nil
+	return notices
 }
 
 func (s *directSession) txState() TxState { return TxState(s.state.Load()) }
@@ -133,6 +160,8 @@ func connectSession(ctx context.Context, connection ResolvedConnection, key stri
 	pgxConfig.BuildContextWatcherHandler = func(conn *pgconn.PgConn) ctxwatch.Handler {
 		return &pgconn.CancelRequestContextWatcherHandler{Conn: conn, DeadlineDelay: cancelDeadlineDelay}
 	}
+	session := &directSession{profileName: connection.Profile.Name, profileKey: key, catalog: catalog, idleTimeout: idleTimeout}
+	pgxConfig.OnNotice = func(_ *pgconn.PgConn, notice *pgconn.Notice) { session.addNotice(notice) }
 	var tunnel *Tunnel
 	if connection.Profile.SSMTunnel != nil {
 		tunnel, err = StartSSMTunnel(ctx, *connection.Profile.SSMTunnel, connection.Host, connection.Port,
@@ -152,8 +181,8 @@ func connectSession(ctx context.Context, connection ResolvedConnection, key stri
 		}
 		return nil, err
 	}
-	return &directSession{profileName: connection.Profile.Name, profileKey: key, catalog: catalog,
-		connection: client, tunnel: tunnel, idleTimeout: idleTimeout}, nil
+	session.connection, session.tunnel = client, tunnel
+	return session, nil
 }
 
 // alive reports whether the connection is usable, without waiting for a run
@@ -193,14 +222,18 @@ func (s *directSession) run(ctx context.Context, statements []Statement, source 
 }
 
 func (s *directSession) runStatements(ctx context.Context, statements []Statement, source string, maxRows int, outcome *RunOutcome) {
+	s.takeNotices() // from e9s's own statements, such as its BEGIN
 	for index, statement := range statements {
 		result, err := s.query(ctx, statement.SQL, maxRows)
 		if err != nil {
 			outcome.Failure = newStatementFailure(index, statement, source, err)
+			outcome.Failure.Notices = s.takeNotices()
 			return
 		}
 		result.SQL = statement.SQL
 		result.Line = StatementLine(source, statement.Start)
+		result.Heading = statement.Heading
+		result.Notices = s.takeNotices()
 		outcome.Results = append(outcome.Results, result)
 	}
 }
@@ -398,7 +431,7 @@ func (s *directSession) close() {
 }
 
 func newStatementFailure(index int, statement Statement, source string, err error) *StatementFailure {
-	failure := &StatementFailure{Index: index, SQL: statement.SQL, Message: describeError(err),
+	failure := &StatementFailure{Index: index, SQL: statement.SQL, Heading: statement.Heading, Message: describeError(err),
 		Line: StatementLine(source, statement.Start)}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

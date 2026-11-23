@@ -38,6 +38,7 @@ type sqlWorkbenchTab struct {
 	choosingResult        bool
 	failureLabel          *gtk.Label
 	eventsLabel           *gtk.Label
+	noticesLabel          *gtk.Label
 	run                   sqlworkbench.RunOutcome
 	selectedResult        int
 	transactionBar        *gtk.Box
@@ -355,11 +356,18 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	eventsLabel.SetWrap(true)
 	eventsLabel.AddCSSClass("semantic-warning")
 	eventsLabel.SetVisible(false)
+	noticesLabel := gtk.NewLabel("")
+	noticesLabel.SetXAlign(0)
+	noticesLabel.SetWrap(true)
+	noticesLabel.SetSelectable(true)
+	noticesLabel.AddCSSClass("muted")
+	noticesLabel.SetVisible(false)
 	resultBox := gtk.NewBox(gtk.OrientationVertical, 6)
 	resultBox.SetMarginTop(6)
 	resultBox.Append(resultHeader)
 	resultBox.Append(eventsLabel)
 	resultBox.Append(failureLabel)
+	resultBox.Append(noticesLabel)
 	resultBox.Append(resultScroll)
 
 	transactionLabel := gtk.NewLabel("")
@@ -469,7 +477,7 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	tab := &sqlWorkbenchTab{
 		state: state, editor: editor, page: split, tabLabel: gtk.NewLabel(""),
 		resultTable: resultTable, resultScroll: resultScroll, resultLabel: resultLabel,
-		resultChooser: resultChooser, resultChoices: resultChoices, failureLabel: failureLabel, eventsLabel: eventsLabel,
+		resultChooser: resultChooser, resultChoices: resultChoices, failureLabel: failureLabel, eventsLabel: eventsLabel, noticesLabel: noticesLabel,
 		transactionBar: transactionBar, transactionLabel: transactionLabel, commitButton: commitButton, rollbackButton: rollbackButton,
 		reportBuffer:    reportBuffer,
 		contextNotebook: contextNotebook, structureBuffer: structureBuffer, definitionBuffer: definitionEditor.Buffer(), definitionEditor: definitionEditor,
@@ -966,8 +974,10 @@ func (w *mainWindow) renderSelectedSQLResult(tab *sqlWorkbenchTab) {
 		tab.failureLabel.SetLabel(sqlFailureText(*failure))
 		tab.failureLabel.SetVisible(true)
 		tab.resultLabel.SetLabel(tab.run.Summary())
+		w.showSQLNotices(tab, failure.Notices)
 		return
 	}
+	w.showSQLNotices(tab, result.Notices)
 	columns := make([]columnSpec, len(result.Columns))
 	for index, title := range result.Columns {
 		columns[index] = columnSpec{title: title, field: index, expand: true}
@@ -1718,4 +1728,10 @@ func (w *mainWindow) saveSQLReport(tab *sqlWorkbenchTab) {
 		w.setStatus("Saved SQL report to "+chooser.File().Path(), false)
 	})
 	chooser.Show()
+}
+
+// showSQLNotices shows the server's notices for the selected statement.
+func (w *mainWindow) showSQLNotices(tab *sqlWorkbenchTab, notices []string) {
+	tab.noticesLabel.SetLabel(strings.Join(notices, "\n"))
+	tab.noticesLabel.SetVisible(len(notices) > 0)
 }

@@ -507,11 +507,15 @@ func (m SQLWorkbenchModel) View() string {
 	b.WriteString(theme.HelpStyle.Render("  "+truncateSQLCell(run.outcome.EntryLabel(run.selected), max(20, m.width-24))) +
 		theme.HelpStyle.Render("  [</>] results  [v] report") + "\n")
 	visible := max(3, m.height-m.editor.Height()-13-len(run.outcome.Events))
+	var notices []string
 	if result, ok := m.SelectedResult(); ok {
-		b.WriteString(renderSQLResultTable(result, m.resultCursor[m.ActiveID()], visible))
+		notices = result.Notices
+		b.WriteString(renderSQLResultTable(result, m.resultCursor[m.ActiveID()], max(3, visible-min(len(notices), 4))))
 	} else if failure := run.outcome.Failure; failure != nil {
+		notices = failure.Notices
 		b.WriteString(renderSQLFailure(*failure, m.width))
 	}
+	b.WriteString(renderSQLNotices(notices, m.width))
 	for _, event := range run.outcome.Events {
 		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("  "+event) + "\n")
 	}
@@ -538,6 +542,21 @@ func renderSQLResultTable(result model.SQLQueryResult, cursor, visible int) stri
 		table.AddRow(cells...)
 	}
 	return table.Render(cursor, "", visible)
+}
+
+// renderSQLNotices shows the server's notices for the selected statement;
+// the report has them all.
+func renderSQLNotices(notices []string, width int) string {
+	var b strings.Builder
+	for index, notice := range notices {
+		if index == 3 && len(notices) > 4 {
+			b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  … %d more notice(s); press v for the report", len(notices)-index)) + "\n")
+			break
+		}
+		line := strings.ReplaceAll(notice, "\n", "  ")
+		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("  "+truncateSQLCell(line, max(20, width-4))) + "\n")
+	}
+	return b.String()
 }
 
 func renderSQLFailure(failure sqlworkbench.StatementFailure, width int) string {

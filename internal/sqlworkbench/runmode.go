@@ -70,7 +70,11 @@ func (p transactionPlan) event(mode RunMode) string {
 	if len(p.replaced) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("The script's own %s was replaced by e9s's transaction for this %s.", strings.Join(p.replaced, " and "), mode)
+	verb := "was"
+	if len(p.replaced) > 1 {
+		verb = "were"
+	}
+	return fmt.Sprintf("The script's own %s %s replaced by e9s's transaction for this %s.", strings.Join(p.replaced, " and "), verb, mode)
 }
 
 func startsTransaction(sql string) bool {

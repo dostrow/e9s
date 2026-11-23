@@ -57,19 +57,30 @@ func (o RunOutcome) EntryLabel(index int) string {
 	if index < len(o.Results) {
 		result := o.Results[index]
 		label := fmt.Sprintf("%d/%d  %s", index+1, total, ResultTag(result))
-		if first := FirstLine(result.SQL); first != "" {
-			label += "  " + first
+		if name := entryName(result.Heading, result.SQL); name != "" {
+			label += "  " + name
+		}
+		if len(result.Notices) > 0 {
+			label += fmt.Sprintf("  (%d notice(s))", len(result.Notices))
 		}
 		return label
 	}
 	if o.Failure != nil && index == len(o.Results) {
 		label := fmt.Sprintf("%d/%d  ERROR", o.Failure.Index+1, total)
-		if first := FirstLine(o.Failure.SQL); first != "" {
-			label += "  " + first
+		if name := entryName(o.Failure.Heading, o.Failure.SQL); name != "" {
+			label += "  " + name
 		}
 		return label
 	}
 	return ""
+}
+
+// entryName is a result's psql \echo heading, or else its first SQL line.
+func entryName(heading, sql string) string {
+	if heading = strings.TrimSpace(heading); heading != "" {
+		return strings.ReplaceAll(heading, "\n", " / ")
+	}
+	return FirstLine(sql)
 }
 
 // ResultTag is the command tag with a row count for SELECTs.

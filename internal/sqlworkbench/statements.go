@@ -10,16 +10,21 @@ type Statement struct {
 	SQL   string
 	Start int
 	End   int
+	// Heading is the text of the psql \echo commands just before the
+	// statement, which name the result that follows them.
+	Heading string
 }
 
+// SplitStatements returns the SQL statements in source. psql meta-command
+// lines separate statements but are not returned; ParseScript interprets
+// them.
 func SplitStatements(source string) []Statement {
 	var statements []Statement
-	start := 0
-	for _, end := range statementBoundaries(source) {
-		appendStatement(&statements, source, start, end)
-		start = end + 1
+	for _, segment := range scanSegments(source) {
+		if !segment.meta {
+			appendStatement(&statements, source, segment.start, segment.end)
+		}
 	}
-	appendStatement(&statements, source, start, len(source))
 	return statements
 }
 
@@ -108,8 +113,20 @@ func SQLWords(source string) []string {
 	return strings.FieldsFunc(strings.ToLower(clean), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' })
 }
 
-func statementBoundaries(source string) []int {
-	var boundaries []int
+// segment is a SQL statement (without its semicolon) or a psql
+// meta-command line.
+type segment struct {
+	start, end int
+	meta       bool
+	// inStatement marks a meta-command that follows unterminated SQL, as
+	// in "SELECT 1 \gset".
+	inStatement bool
+}
+
+func scanSegments(source string) []segment {
+	var segments []segment
+	start := 0
+	content := false // SQL other than whitespace and comments since start
 	state, blockDepth := byte(0), 0
 	dollarTag := ""
 	for index := 0; index < len(source); index++ {
@@ -154,9 +171,9 @@ func statementBoundaries(source string) []int {
 		default:
 			switch {
 			case character == '\'':
-				state = 's'
+				state, content = 's', true
 			case character == '"':
-				state = 'd'
+				state, content = 'd', true
 			case character == '-' && index+1 < len(source) && source[index+1] == '-':
 				state = 'l'
 				index++
@@ -164,16 +181,32 @@ func statementBoundaries(source string) []int {
 				state, blockDepth = 'b', 1
 				index++
 			case character == '$':
+				content = true
 				if tag := readDollarTag(source[index:]); tag != "" {
 					state, dollarTag = '$', tag
 					index += len(tag) - 1
 				}
 			case character == ';':
-				boundaries = append(boundaries, index)
+				segments = append(segments, segment{start: start, end: index})
+				start, content = index+1, false
+			case character == '\\':
+				// A psql meta-command runs to the end of its line.
+				end := strings.IndexByte(source[index:], '\n')
+				if end < 0 {
+					end = len(source)
+				} else {
+					end += index
+				}
+				segments = append(segments, segment{start: start, end: index},
+					segment{start: index, end: end, meta: true, inStatement: content})
+				start, content = end, false
+				index = end - 1
+			case !unicode.IsSpace(rune(character)):
+				content = true
 			}
 		}
 	}
-	return boundaries
+	return append(segments, segment{start: start, end: len(source)})
 }
 
 func sqlCodeOnly(source string) string {
@@ -271,6 +304,10 @@ func readDollarTag(source string) string {
 
 func appendStatement(statements *[]Statement, source string, start, end int) {
 	raw := source[start:end]
+	if strings.TrimSpace(sqlCodeOnly(raw)) == "" {
+		// Only whitespace and comments: there is nothing to run.
+		return
+	}
 	left := len(raw) - len(strings.TrimLeftFunc(raw, unicode.IsSpace))
 	right := len(raw) - len(strings.TrimRightFunc(raw, unicode.IsSpace))
 	trimmedStart, trimmedEnd := start+left, end-right

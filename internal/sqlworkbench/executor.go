@@ -84,6 +84,8 @@ type RunRequest struct {
 type StatementFailure struct {
 	Index   int // position among the run's statements; -1 before any ran
 	SQL     string
+	Heading string
+	Notices []string
 	Message string
 	Code    string // SQLSTATE, when PostgreSQL reported one
 	Line    int    // line in the submitted source, when known
@@ -104,6 +106,8 @@ type RunOutcome struct {
 	Events []string
 	// ConnectionLost reports that the session's connection is gone.
 	ConnectionLost bool
+	// TrailingHeading is psql \echo text after the script's last statement.
+	TrailingHeading string
 }
 
 func NewExecutor(options ExecutorOptions) *Executor {
@@ -140,15 +144,22 @@ func writeGuard(readOnlyErr error, globalWrites, tabWrites bool) error {
 // fails is reported in the outcome together with the results before it.
 func (e *Executor) Run(ctx context.Context, request RunRequest) (RunOutcome, error) {
 	started := time.Now()
-	outcome, err := e.run(ctx, request)
+	script, err := ParseScript(request.Source)
+	if err != nil {
+		return RunOutcome{Started: started, Mode: request.Mode}, err
+	}
+	outcome, err := e.run(ctx, request, script.Statements)
 	outcome.Started = started
 	outcome.Mode = request.Mode
+	outcome.TrailingHeading = script.TrailingHeading
+	if event := script.IgnoredEvent(); event != "" && err == nil {
+		outcome.Events = append([]string{event}, outcome.Events...)
+	}
 	return outcome, err
 }
 
-func (e *Executor) run(ctx context.Context, request RunRequest) (RunOutcome, error) {
+func (e *Executor) run(ctx context.Context, request RunRequest, statements []Statement) (RunOutcome, error) {
 	options := e.optionsSnapshot()
-	statements := SplitStatements(request.Source)
 	if len(statements) == 0 {
 		return RunOutcome{}, fmt.Errorf("query is empty")
 	}
@@ -294,6 +305,7 @@ func (e *Executor) runDataAPIStatements(ctx context.Context, base model.SQLQuery
 		}
 		result.SQL = statement.SQL
 		result.Line = StatementLine(source, statement.Start)
+		result.Heading = statement.Heading
 		outcome.Results = append(outcome.Results, result)
 	}
 }

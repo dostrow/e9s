@@ -678,6 +678,16 @@ Verification and remediation scripts can be checked before anything is kept:
 - On Data API connections both modes use a Data API transaction, which the
   Data API ends after three minutes idle.
 
+Scripts written for psql run unchanged when they use only the psql commands
+that matter for a script's output. `\echo` and `\qecho` name the result that
+follows them, in the result list and the report. `\set ON_ERROR_STOP on`,
+`\pset`, `\timing` and `\x` are ignored, and the run says so: e9s always stops
+at the first error. Any other psql command, such as `\i`, `\copy`, `\gset` or a
+`\set` variable, is refused with its line before anything runs, because running
+the SQL without it would not do what the script intends. Server notices and
+warnings, such as `RAISE NOTICE` output from a `DO` block, are shown with the
+statement that raised them and appear in the report.
+
 #### Sessions and transactions
 
 Each query tab has its own PostgreSQL connection, so a transaction belongs to
