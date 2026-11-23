@@ -189,6 +189,12 @@ func (e *Executor) run(ctx context.Context, request RunRequest, statements []Sta
 	if err := writeGuard(readOnlyErr, options.AllowWrites, request.AllowWrites); err != nil {
 		return RunOutcome{Statements: len(statements)}, err
 	}
+	// The server enforces the lock unless both the global setting and the
+	// tab allow writes.
+	allowWrites := options.AllowWrites && request.AllowWrites
+	if session := e.existingSession(tabSessionKey(request.SessionID)); session != nil && session.readOnlyTransaction.Load() && readOnlyErr != nil {
+		return RunOutcome{Statements: len(statements)}, fmt.Errorf("the open transaction in this tab was made read-only when writes were locked, and cannot be made writable again; commit or roll it back first")
+	}
 	var plan transactionPlan
 	if request.Mode != RunAsWritten {
 		var err error
@@ -229,23 +235,24 @@ func (e *Executor) run(ctx context.Context, request RunRequest, statements []Sta
 		}
 	}
 	if request.Mode != RunAsWritten {
-		outcome := session.runInTransaction(ctx, plan, request.Source, request.AllowWrites, options.MaxRows, request.Mode)
+		outcome := session.runInTransaction(ctx, plan, request.Source, allowWrites, options.MaxRows, request.Mode)
 		if outcome.ConnectionLost {
 			e.forget(key, session)
 		}
 		return outcome, nil
 	}
 	before := session.txState()
-	outcome := session.run(ctx, statements, request.Source, request.AllowWrites, options.MaxRows)
+	outcome := session.run(ctx, statements, request.Source, allowWrites, options.MaxRows)
 	if !outcome.ConnectionLost {
 		return outcome, nil
 	}
 	e.forget(key, session)
-	// Run read-only SQL again on a fresh connection, which is useful after
-	// an expired IAM token or tunnel. Never repeat SQL that may have changed
-	// data, and never when a transaction was open: its work is gone, and
-	// repeating only the later statements would run them outside it.
-	if readOnlyErr != nil || before != TxIdle || outcome.Transaction != TxIdle || ctx.Err() != nil || hasTransactionControl(statements) {
+	// Run the SQL again on a fresh connection, which is useful after an
+	// expired IAM token or tunnel, but only when it cannot have changed data:
+	// the tab was locked, so the server refused writes even from functions.
+	// Never when a transaction was open: its work is gone, and repeating the
+	// later statements would run them outside it.
+	if allowWrites || readOnlyErr != nil || before != TxIdle || outcome.Transaction != TxIdle || ctx.Err() != nil || hasTransactionControl(statements) {
 		return outcome, nil
 	}
 	resolved, err := ResolveConnection(ctx, request.Profile, options.PGPassFiles, options.AuthProvider, options.Prompt)
@@ -256,7 +263,7 @@ func (e *Executor) run(ctx context.Context, request RunRequest, statements []Sta
 	if err != nil {
 		return outcome, nil
 	}
-	retried := session.run(ctx, statements, request.Source, request.AllowWrites, options.MaxRows)
+	retried := session.run(ctx, statements, request.Source, allowWrites, options.MaxRows)
 	retried.Events = append([]string{"The connection was lost, so e9s reconnected and ran the read-only statements again."}, retried.Events...)
 	if retried.ConnectionLost {
 		e.forget(key, session)
@@ -354,7 +361,11 @@ func (e *Executor) runDataAPIInTransaction(ctx context.Context, sessionID string
 	if event := plan.event(mode); event != "" {
 		outcome.Events = append(outcome.Events, event)
 	}
-	id, err := transactions.BeginSQLDataTransaction(ctx, base)
+	// Begin is not cancelled with the run: a transaction the Data API
+	// started for a cancelled request would be left open until it timed out.
+	beginCtx, cancelBegin := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	id, err := transactions.BeginSQLDataTransaction(beginCtx, base)
+	cancelBegin()
 	if err != nil {
 		return outcome, fmt.Errorf("start the Data API transaction: %w", err)
 	}
@@ -403,16 +414,23 @@ func (e *Executor) endDataTransaction(sessionID string, commit bool) (string, er
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
 	status, err := transactions.EndSQLDataTransaction(ctx, transaction.request, commit)
+	if err != nil && commit {
+		return "", fmt.Errorf("the Data API did not confirm the commit (%w); the transaction may or may not have been committed, so check the data before running anything again", err)
+	}
 	if err != nil {
-		return "", fmt.Errorf("end the Data API transaction: %w", err)
+		return "", fmt.Errorf("the Data API did not confirm the rollback (%w); it ends the transaction after %s idle", err, DataAPITransactionTimeout)
 	}
 	return status, nil
 }
 
 // EndTransaction commits or rolls back the tab's open transaction and
 // returns PostgreSQL's command tag. COMMIT of a failed transaction reports
-// ROLLBACK.
-func (e *Executor) EndTransaction(sessionID string, commit bool) (string, error) {
+// ROLLBACK. Committing needs writes allowed, both globally and in the tab,
+// as a COMMIT statement would; rolling back never does.
+func (e *Executor) EndTransaction(sessionID string, commit, allowWrites bool) (string, error) {
+	if commit && !(e.optionsSnapshot().AllowWrites && allowWrites) {
+		return "", fmt.Errorf("committing needs writes enabled for this tab; roll the transaction back, or enable writes to commit it")
+	}
 	if e.dataTransaction(sessionID) != nil {
 		return e.endDataTransaction(sessionID, commit)
 	}

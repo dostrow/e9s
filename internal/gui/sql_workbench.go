@@ -923,9 +923,9 @@ func (w *mainWindow) endSQLTransaction(tab *sqlWorkbenchTab, commit bool) {
 	if commit {
 		label = "Committing…"
 	}
-	tabID := tab.state.ID
+	tabID, allowWrites := tab.state.ID, tab.state.AllowWrites
 	w.startSQLAction(tab, label, func(context.Context) func() {
-		tag, err := w.sqlExecutor.EndTransaction(tabID, commit)
+		tag, err := w.sqlExecutor.EndTransaction(tabID, commit, allowWrites)
 		return func() {
 			switch {
 			case err != nil:

@@ -107,13 +107,13 @@ func TestRunKeepsEachTabsTransactionInItsOwnSession(t *testing.T) {
 	if _, err := executor.ListSchemas(context.Background(), profile); err != nil {
 		t.Fatalf("catalog query during another tab's transaction: %v", err)
 	}
-	if tag, err := executor.EndTransaction("one", true); err != nil || tag != "COMMIT" {
+	if tag, err := executor.EndTransaction("one", true, true); err != nil || tag != "COMMIT" {
 		t.Fatalf("EndTransaction(commit) = %q, %v", tag, err)
 	}
 	if got := scalar(t, run(t, executor, profile, "two", "SELECT count(*) FROM "+table, false)); got != "1" {
 		t.Fatalf("committed row not visible: count = %s", got)
 	}
-	if _, err := executor.EndTransaction("one", false); err != ErrNoTransaction {
+	if _, err := executor.EndTransaction("one", false, false); err != ErrNoTransaction {
 		t.Fatalf("EndTransaction with nothing open = %v", err)
 	}
 }
@@ -135,7 +135,7 @@ func TestRunRollsBackAFailedTransactionAndKeepsEarlierResults(t *testing.T) {
 	if outcome.Transaction != TxIdle || len(outcome.Events) != 1 || !strings.Contains(outcome.Events[0], "rolled it back") {
 		t.Fatalf("failed transaction not rolled back: %#v", outcome)
 	}
-	if got := scalar(t, run(t, executor, profile, "tab", "SELECT to_regclass('"+table+"') IS NULL", false)); got != "true" {
+	if got := scalar(t, run(t, executor, profile, "tab", "SELECT to_regclass('"+table+"') IS NULL", false)); got != "t" {
 		t.Fatalf("table from the failed transaction exists: %s", got)
 	}
 }
@@ -294,7 +294,7 @@ func TestRunInTransactionLeavesItOpenForReview(t *testing.T) {
 	if _, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", Source: "SELECT 1", AllowWrites: true, Mode: RunDryRun}); err == nil {
 		t.Fatal("a dry run started inside an open transaction")
 	}
-	if _, err := executor.EndTransaction("tab", true); err != nil {
+	if _, err := executor.EndTransaction("tab", true, true); err != nil {
 		t.Fatal(err)
 	}
 	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "3" {
@@ -404,5 +404,141 @@ func TestStatementTimeoutCancelsLongStatements(t *testing.T) {
 	outcome := run(t, executor, profile, "tab", "SELECT pg_sleep(5)", false)
 	if outcome.Failure == nil || outcome.Failure.Code != "57014" || outcome.Cancelled {
 		t.Fatalf("outcome = %#v", outcome.Failure)
+	}
+}
+
+func TestValuesAreShownAsPostgreSQLRendersThem(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	outcome := run(t, executor, profile, "tab", `SELECT 'infinity'::timestamptz, interval '1 day 2 hours', int4range(1, 5),
+       ARRAY['a', 'b'], 1.50::numeric(4,2), true, NULL::text, '00000000-0000-0000-0000-000000000001'::uuid, '{"a": 1}'::jsonb`, false)
+	if outcome.Failure != nil {
+		t.Fatal(outcome.Failure.Message)
+	}
+	want := []string{"infinity", "1 day 02:00:00", "[1,5)", "{a,b}", "1.50", "t", "NULL", "00000000-0000-0000-0000-000000000001", `{"a": 1}`}
+	if got := outcome.Results[0].Rows[0]; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("values = %q, want %q", got, want)
+	}
+}
+
+// cancelBefore returns a request whose context is cancelled just before the
+// statement at index runs, so the cancel never reaches the server.
+func cancelBefore(index int, request RunRequest) (context.Context, RunRequest) {
+	ctx, cancel := context.WithCancel(context.Background())
+	request.Progress = func(p Progress) {
+		if p.Index == index {
+			cancel()
+		}
+	}
+	return ctx, request
+}
+
+func TestRunsCancelledBetweenStatementsDoNotLeaveHalfATransaction(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int)", true)
+	for _, test := range []struct {
+		mode   RunMode
+		source string
+	}{
+		{RunInTransaction, "INSERT INTO " + table + " VALUES (1);\nINSERT INTO " + table + " VALUES (2);"},
+		{RunAsWritten, "BEGIN;\nINSERT INTO " + table + " VALUES (1);\nINSERT INTO " + table + " VALUES (2);"},
+	} {
+		index := 1
+		if test.mode == RunAsWritten {
+			index = 2
+		}
+		ctx, request := cancelBefore(index, RunRequest{Profile: profile, SessionID: "tab", AllowWrites: true, Mode: test.mode, Source: test.source})
+		outcome, err := executor.Run(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !outcome.Cancelled || outcome.Transaction != TxIdle || executor.SessionStatus("tab").State != TxIdle {
+			t.Fatalf("%v: a half-run transaction was left open: %#v", test.mode, outcome)
+		}
+		if !strings.Contains(strings.Join(outcome.Events, " "), "stopped before it finished") {
+			t.Fatalf("%v: events = %q", test.mode, outcome.Events)
+		}
+		if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "0" {
+			t.Fatalf("%v: half the script was kept: count = %s", test.mode, got)
+		}
+	}
+}
+
+func TestCancellingInsideAnEarlierTransactionKeepsIt(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	run(t, executor, profile, "tab", "BEGIN", true)
+	ctx, request := cancelBefore(1, RunRequest{Profile: profile, SessionID: "tab", AllowWrites: true, Source: "SELECT 1; SELECT 2"})
+	outcome, err := executor.Run(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Transaction != TxOpen || !strings.Contains(strings.Join(outcome.Events, " "), "open before this run is still open") {
+		t.Fatalf("the transaction opened before the run should stay open: %#v", outcome)
+	}
+}
+
+func TestLostConnectionAfterACommitDoesNotClaimARollback(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int)", true)
+	run(t, executor, profile, "tab", "BEGIN; INSERT INTO "+table+" VALUES (1)", true)
+	outcome := run(t, executor, profile, "tab", "COMMIT; SELECT pg_terminate_backend(pg_backend_pid())", true)
+	if !outcome.ConnectionLost || len(outcome.Events) != 1 || outcome.Events[0] != "The connection was lost." {
+		t.Fatalf("events = %q", outcome.Events)
+	}
+	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "1" {
+		t.Fatalf("committed row: count = %s", got)
+	}
+}
+
+func TestLostConnectionDoesNotRepeatSQLThatCouldWrite(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	function := table + "_insert"
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int);\nCREATE FUNCTION "+function+
+		"() RETURNS int LANGUAGE sql AS 'INSERT INTO "+table+" VALUES (1) RETURNING value'", true)
+	outcome := run(t, executor, profile, "tab", "SELECT "+function+"(); SELECT pg_terminate_backend(pg_backend_pid())", true)
+	if !outcome.ConnectionLost {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "1" {
+		t.Fatalf("a run that could write was repeated: count = %s", got)
+	}
+}
+
+func TestServerLockFollowsTheGlobalWriteSwitchAndOpenTransactions(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	table := testTable(t, executor, profile)
+	function := table + "_insert"
+	run(t, executor, profile, "setup", "CREATE TABLE "+table+" (value int);\nCREATE FUNCTION "+function+
+		"() RETURNS int LANGUAGE sql AS 'INSERT INTO "+table+" VALUES (1) RETURNING value'", true)
+
+	// The tab allows writes but the global switch is off.
+	executor.SetPolicy(false, nil)
+	if got := scalar(t, run(t, executor, profile, "tab", "SHOW default_transaction_read_only", true)); got != "on" {
+		t.Fatalf("global writes off, but the session is not read-only: %s", got)
+	}
+	executor.SetPolicy(true, nil)
+
+	// A transaction opened while unlocked becomes read-only once the tab is
+	// locked, and cannot be committed from the locked tab.
+	run(t, executor, profile, "tab", "BEGIN", true)
+	locked := run(t, executor, profile, "tab", "SELECT "+function+"()", false)
+	if locked.Failure == nil || locked.Failure.Code != "25006" {
+		t.Fatalf("a locked tab wrote inside its open transaction: %#v", locked.Failure)
+	}
+	run(t, executor, profile, "tab", "BEGIN", true)
+	run(t, executor, profile, "tab", "SELECT 1", false)
+	if _, err := executor.Run(context.Background(), RunRequest{Profile: profile, SessionID: "tab", AllowWrites: true, Source: "INSERT INTO " + table + " VALUES (2)"}); err == nil || !strings.Contains(err.Error(), "made read-only") {
+		t.Fatalf("writing in a transaction made read-only: %v", err)
+	}
+	if _, err := executor.EndTransaction("tab", true, false); err == nil {
+		t.Fatal("a locked tab committed")
+	}
+	if _, err := executor.EndTransaction("tab", false, false); err != nil {
+		t.Fatalf("a locked tab could not roll back: %v", err)
+	}
+	if got := scalar(t, run(t, executor, profile, "other", "SELECT count(*) FROM "+table, false)); got != "0" {
+		t.Fatalf("rows were written: count = %s", got)
 	}
 }

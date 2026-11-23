@@ -58,6 +58,11 @@ func ValidateReadOnly(source string) error {
 			return fmt.Errorf("query contains an empty statement")
 		}
 		first := words[0]
+		if containsWord(words, "set_config") {
+			// set_config can turn off the session's server-side read-only
+			// default that enforces a locked tab.
+			return fmt.Errorf("set_config changes session settings and requires the per-tab write break-glass control")
+		}
 		switch first {
 		case "select", "with", "show", "values", "table", "explain":
 		case "rollback", "abort":
@@ -81,8 +86,11 @@ func ValidateReadOnly(source string) error {
 					return fmt.Errorf("%s is not allowed in a read-only CTE", strings.ToUpper(word))
 				}
 			}
+			if containsWord(words[1:], "into") {
+				return fmt.Errorf("SELECT INTO is not allowed in read-only mode")
+			}
 		case "explain":
-			if containsWord(words[1:], "analyze") {
+			if containsWord(words[1:], "analyze") || containsWord(words[1:], "analyse") {
 				return fmt.Errorf("EXPLAIN ANALYZE executes the statement and requires the per-tab write break-glass control")
 			}
 			for _, word := range words[1:] {
@@ -140,6 +148,8 @@ func scanSegments(source string) []segment {
 					state = 0
 				}
 			}
+		case 'e':
+			index, state = escapeStringStep(source, index, state)
 		case 'd':
 			if character == '"' {
 				if index+1 < len(source) && source[index+1] == '"' {
@@ -171,7 +181,7 @@ func scanSegments(source string) []segment {
 		default:
 			switch {
 			case character == '\'':
-				state, content = 's', true
+				state, content = quoteState(source, index), true
 			case character == '"':
 				state, content = 'd', true
 			case character == '-' && index+1 < len(source) && source[index+1] == '-':
@@ -182,7 +192,7 @@ func scanSegments(source string) []segment {
 				index++
 			case character == '$':
 				content = true
-				if tag := readDollarTag(source[index:]); tag != "" {
+				if tag := dollarQuoteTag(source, index); tag != "" {
 					state, dollarTag = '$', tag
 					index += len(tag) - 1
 				}
@@ -222,7 +232,7 @@ func sqlCodeOnly(source string) string {
 		if state == 0 {
 			switch {
 			case character == '\'':
-				state = 's'
+				state = quoteState(source, index)
 			case character == '"':
 				state = 'd'
 			case character == '-' && index+1 < len(source) && source[index+1] == '-':
@@ -232,7 +242,7 @@ func sqlCodeOnly(source string) string {
 				state, blockDepth = 'b', 1
 				index++
 			case character == '$':
-				if tag := readDollarTag(source[index:]); tag != "" {
+				if tag := dollarQuoteTag(source, index); tag != "" {
 					state, dollarTag = '$', tag
 					index += len(tag) - 1
 				} else {
@@ -252,6 +262,8 @@ func sqlCodeOnly(source string) string {
 					state = 0
 				}
 			}
+		case 'e':
+			index, state = escapeStringStep(source, index, state)
 		case 'd':
 			if character == '"' {
 				if index+1 < len(source) && source[index+1] == '"' {
@@ -284,6 +296,47 @@ func sqlCodeOnly(source string) string {
 		}
 	}
 	return string(result)
+}
+
+// isIdentifierByte reports a byte that can continue an identifier. Bytes of
+// multi-byte UTF-8 characters count, as PostgreSQL allows letters beyond
+// ASCII.
+func isIdentifierByte(character byte) bool {
+	return character == '_' || character == '$' || character >= 0x80 ||
+		character >= '0' && character <= '9' || character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z'
+}
+
+// quoteState is the scanner state a quote at index opens: 'e' for an
+// escape string (E'...'), where backslash escapes the next character, or
+// 's' for a standard string.
+func quoteState(source string, index int) byte {
+	if index > 0 && (source[index-1] == 'E' || source[index-1] == 'e') && (index < 2 || !isIdentifierByte(source[index-2])) {
+		return 'e'
+	}
+	return 's'
+}
+
+// escapeStringStep advances through an escape string at index.
+func escapeStringStep(source string, index int, state byte) (int, byte) {
+	switch source[index] {
+	case '\\':
+		return index + 1, state
+	case '\'':
+		if index+1 < len(source) && source[index+1] == '\'' {
+			return index + 1, state
+		}
+		return index, 0
+	}
+	return index, state
+}
+
+// dollarQuoteTag returns the tag of a dollar quote opening at index. A $
+// that continues an identifier, as in a$b, does not open one.
+func dollarQuoteTag(source string, index int) string {
+	if index > 0 && isIdentifierByte(source[index-1]) {
+		return ""
+	}
+	return readDollarTag(source[index:])
 }
 
 func readDollarTag(source string) string {

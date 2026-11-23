@@ -317,9 +317,9 @@ func (a App) endSQLTransaction(commit, confirmed bool) (App, tea.Cmd) {
 	}
 	a.sqlPending = true
 	a.loading = true
-	executor, tabID := a.sqlExecutor, tab.ID
+	executor, tabID, allowWrites := a.sqlExecutor, tab.ID, tab.AllowWrites
 	return a, func() tea.Msg {
-		tag, err := executor.EndTransaction(tabID, commit)
+		tag, err := executor.EndTransaction(tabID, commit, allowWrites)
 		return sqlTransactionEndedMsg{tabID: tabID, commit: commit, tag: tag, err: err}
 	}
 }

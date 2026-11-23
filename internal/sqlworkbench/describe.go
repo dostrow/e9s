@@ -32,7 +32,11 @@ func (o RunOutcome) Summary() string {
 		if o.Cancelled {
 			verb = "Cancelled"
 		}
-		summary = fmt.Sprintf("%s at statement %d of %d", verb, o.Failure.Index+1, o.Statements)
+		if o.Failure.Index < 0 {
+			summary = verb + " before the first statement ran"
+		} else {
+			summary = fmt.Sprintf("%s at statement %d of %d", verb, o.Failure.Index+1, o.Statements)
+		}
 		if o.Failure.Line > 0 {
 			summary += fmt.Sprintf(" (line %d)", o.Failure.Line)
 		}
@@ -45,7 +49,7 @@ func (o RunOutcome) Summary() string {
 	}
 	switch o.Mode {
 	case RunDryRun:
-		summary = "Dry run (rolled back): " + summary
+		summary = "Dry run: " + summary
 	case RunInTransaction:
 		summary = "In a transaction: " + summary
 	}
@@ -71,6 +75,9 @@ func (o RunOutcome) EntryLabel(index int) string {
 	}
 	if o.Failure != nil && index == len(o.Results) {
 		label := fmt.Sprintf("%d/%d  ERROR", o.Failure.Index+1, total)
+		if o.Failure.Index < 0 {
+			label = "ERROR before the first statement"
+		}
 		if name := entryName(o.Failure.Heading, o.Failure.SQL); name != "" {
 			label += "  " + name
 		}

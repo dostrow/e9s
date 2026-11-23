@@ -136,7 +136,7 @@ func TestDataAPIRunInTransactionStaysOpenUntilCommitted(t *testing.T) {
 	if _, err := executor.Run(context.Background(), request); err != nil || api.requests[len(api.requests)-1].TransactionID != "tx1" {
 		t.Fatalf("plain run did not join the transaction: %v %#v", err, api.requests)
 	}
-	if _, err := executor.EndTransaction("tab", true); err != nil || !api.commits[0] {
+	if _, err := executor.EndTransaction("tab", true, true); err != nil || !api.commits[0] {
 		t.Fatalf("commit: %v %v", err, api.commits)
 	}
 	if executor.SessionStatus("tab").State != TxIdle {
@@ -154,5 +154,19 @@ func TestClosingTheExecutorRollsBackDataAPITransactions(t *testing.T) {
 	executor.Close()
 	if len(api.ended) != 1 || api.commits[0] {
 		t.Fatalf("Close did not roll back: ended=%v commits=%v", api.ended, api.commits)
+	}
+}
+
+func TestSummaryAndChangesForEdgeCases(t *testing.T) {
+	early := RunOutcome{Statements: 3, Failure: &StatementFailure{Index: -1, Message: "start the transaction: boom"}}
+	if got := early.Summary(); !strings.HasPrefix(got, "Failed before the first statement ran") || early.EntryLabel(0) != "ERROR before the first statement" {
+		t.Fatalf("summary = %q, label = %q", got, early.EntryLabel(0))
+	}
+	created := RunOutcome{Results: []model.SQLQueryResult{
+		{CommandTag: "SELECT 12", RowsAffected: 12, Line: 3},
+		{CommandTag: "SELECT 4", RowsAffected: 4, Columns: []string{"n"}},
+	}}
+	if got := created.ChangeSummary(); got != "line 3: SELECT 12" {
+		t.Fatalf("ChangeSummary() = %q, want only the CREATE TABLE AS", got)
 	}
 }

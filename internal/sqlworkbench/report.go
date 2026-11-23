@@ -166,6 +166,12 @@ func (o RunOutcome) ChangeSummary() string {
 		}
 		switch words[0] {
 		case "INSERT", "UPDATE", "DELETE", "MERGE", "COPY":
+		case "SELECT":
+			// CREATE TABLE AS and SELECT INTO report SELECT n but return
+			// no rows: they wrote n rows into a table.
+			if len(result.Columns) > 0 {
+				continue
+			}
 		default:
 			// The Data API reports "N rows affected" instead of a tag.
 			if len(result.Columns) > 0 || result.RowsAffected == 0 || !strings.HasSuffix(result.CommandTag, "rows affected") {

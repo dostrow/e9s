@@ -651,9 +651,12 @@ platform or PostgreSQL default trust store.
 
 Queries are read-only by default. Data-changing SQL requires both the global
 `sql.allow_writes` setting and a separately confirmed, per-tab break-glass
-control. The tab control always returns to locked when e9s starts. A locked
-tab's session is also read-only on the server, so a function called from a
-`SELECT` cannot change data either. `ROLLBACK` is allowed in a locked tab.
+control. The tab control always returns to locked when e9s starts. Unless both
+allow writes, the tab's session is also read-only on the server, so a function
+called from a `SELECT` cannot change data either; `set_config` is refused for
+the same reason. Locking a tab with an open transaction makes that transaction
+read-only. `ROLLBACK` is allowed in a locked tab, but committing needs writes
+enabled. Values are shown as PostgreSQL renders them in text, as psql does.
 
 #### Dry runs and reports
 
@@ -703,8 +706,12 @@ and never runs inside a tab's transaction.
   released, and says so.
 - **Nothing discards a transaction silently.** Closing the tab, reconnecting
   it, or quitting e9s asks first when a transaction is open; going ahead rolls
-  it back. A lost connection is reported, and read-only SQL is run again on a
-  fresh connection only when no transaction was open.
+  it back. A lost connection is reported, and SQL is run again on a fresh
+  connection only when the tab was locked and no transaction was open. If the
+  connection is lost during `COMMIT`, e9s says the outcome is unknown.
+- **Half-finished runs are not kept.** When a run that opened a transaction
+  stops early, because a statement failed or the run was cancelled, e9s rolls
+  that transaction back rather than offer half a script for commit.
 - **Long runs can be followed and stopped.** The status line shows which
   statement is running and on which line. Cancel (the GUI's Cancel button, or
   `esc` in the TUI while a run is in progress) asks PostgreSQL to stop the

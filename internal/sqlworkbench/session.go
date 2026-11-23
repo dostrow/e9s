@@ -72,9 +72,9 @@ type directSession struct {
 	idleTimeout time.Duration
 	mu          sync.Mutex
 
-	// readOnlyDefault mirrors the session's default_transaction_read_only
-	// setting: 0 unknown, 1 on, -1 off. Guarded by mu.
-	readOnlyDefault int8
+	// readOnlyTransaction records that e9s made the open transaction
+	// read-only because its tab was locked; it cannot be made writable again.
+	readOnlyTransaction atomic.Bool
 
 	// state and since are read without mu so the UI can show them while a
 	// run holds the session.
@@ -219,7 +219,7 @@ func (s *directSession) run(ctx context.Context, statements []Statement, source 
 	defer s.mu.Unlock()
 	outcome := RunOutcome{Statements: len(statements)}
 	before := s.txState()
-	if !s.catalog && before == TxIdle {
+	if !s.catalog {
 		if err := s.applyWriteMode(ctx, allowWrites); err != nil {
 			outcome.Failure = &StatementFailure{Index: -1, Message: "prepare the session: " + describeError(err)}
 			s.settle(&outcome, before)
@@ -278,35 +278,44 @@ func (s *directSession) runInTransaction(ctx context.Context, plan transactionPl
 			outcome.Events = append(outcome.Events, "Dry run: e9s rolled the transaction back, so none of its changes were kept.")
 		}
 	}
-	s.settle(&outcome, TxOpen)
+	s.settle(&outcome, TxIdle)
 	if mode == RunInTransaction && outcome.Transaction == TxOpen {
 		outcome.Events = append(outcome.Events, "The transaction is still open. Review the results, then commit or roll it back.")
 	}
 	return outcome
 }
 
-// applyWriteMode makes the server enforce the tab's write lock as well, so a
-// function called from a SELECT cannot change data in a locked tab.
+// applyWriteMode makes the server enforce the tab's write lock as well, so
+// a function called from a SELECT cannot change data in a locked tab. It
+// runs before every run rather than trusting an earlier setting, which SQL
+// can change. An open transaction in a locked tab is made read-only; it is
+// left alone when the tab allows writes, because a transaction cannot be
+// made writable once it has run a query.
 func (s *directSession) applyWriteMode(ctx context.Context, allowWrites bool) error {
-	want := int8(1)
-	statement := "SET SESSION default_transaction_read_only = on"
-	if allowWrites {
-		want, statement = -1, "SET SESSION default_transaction_read_only = off"
-	}
-	if s.readOnlyDefault == want {
+	if s.txState() == TxOpen {
+		if allowWrites {
+			return nil
+		}
+		if _, err := s.connection.Exec(ctx, "SET LOCAL transaction_read_only = on"); err != nil {
+			return err
+		}
+		s.readOnlyTransaction.Store(true)
 		return nil
 	}
-	if _, err := s.connection.Exec(ctx, statement); err != nil {
-		s.readOnlyDefault = 0
-		return err
+	statement := "SET SESSION default_transaction_read_only = on"
+	if allowWrites {
+		statement = "SET SESSION default_transaction_read_only = off"
 	}
-	s.readOnlyDefault = want
-	return nil
+	_, err := s.connection.Exec(ctx, statement)
+	return err
 }
 
 func (s *directSession) query(ctx context.Context, sql string, maxRows int) (model.SQLQueryResult, error) {
 	started := time.Now()
-	rows, err := s.connection.Query(ctx, sql)
+	// Text format returns each value as PostgreSQL itself renders it, as
+	// psql shows it: infinity, intervals, ranges, arrays and numerics come
+	// out exactly, which a verification report depends on.
+	rows, err := s.connection.Query(ctx, sql, pgx.QueryResultFormats{pgx.TextFormatCode})
 	if err != nil {
 		return model.SQLQueryResult{}, err
 	}
@@ -322,13 +331,14 @@ func (s *directSession) query(ctx context.Context, sql string, maxRows int) (mod
 			result.Truncated = true
 			continue
 		}
-		values, err := rows.Values()
-		if err != nil {
-			return model.SQLQueryResult{}, err
-		}
+		values := rows.RawValues()
 		formatted := make([]string, len(values))
 		for index, value := range values {
-			formatted[index] = SQLValueString(value)
+			if value == nil {
+				formatted[index] = "NULL"
+			} else {
+				formatted[index] = string(value)
+			}
 		}
 		result.Rows = append(result.Rows, formatted)
 	}
@@ -343,36 +353,67 @@ func (s *directSession) query(ctx context.Context, sql string, maxRows int) (mod
 }
 
 // settle leaves the session idle or with a usable open transaction, and
-// records anything e9s did on the session's behalf.
+// records anything e9s did on the session's behalf. before is the state the
+// session was in when the run started.
 func (s *directSession) settle(outcome *RunOutcome, before TxState) {
+	status := s.connection.PgConn().TxStatus()
 	if s.connection.IsClosed() {
 		s.closed.Store(true)
 		outcome.ConnectionLost = true
-		if before == TxOpen || s.connection.PgConn().TxStatus() != 'I' {
+		switch {
+		case outcome.Failure != nil && isCommit(outcome.Failure.SQL):
+			outcome.Events = append(outcome.Events, "The connection was lost while COMMIT was running. PostgreSQL may or may not have committed the transaction: check the data before running anything again.")
+		case status != 'I':
 			outcome.Events = append(outcome.Events, "The connection was lost while a transaction was open. PostgreSQL rolled it back: none of its changes were kept.")
-		} else {
+		default:
 			outcome.Events = append(outcome.Events, "The connection was lost.")
 		}
-		s.setState(TxIdle)
+		s.endedTransaction()
 		outcome.Transaction = TxIdle
 		return
 	}
-	switch s.connection.PgConn().TxStatus() {
-	case 'E':
-		if err := s.rollback(); err != nil {
-			outcome.Events = append(outcome.Events, "The transaction failed and could not be rolled back ("+describeError(err)+"). e9s closed the connection, so PostgreSQL rolled it back.")
-			s.discardConnection()
-			outcome.ConnectionLost = true
-		} else {
-			outcome.Events = append(outcome.Events, "The transaction failed, so e9s rolled it back: none of its changes were kept and its locks were released.")
-		}
-		s.setState(TxIdle)
-	case 'T':
+	switch {
+	case status == 'E':
+		s.rollbackOnBehalf(outcome, "The transaction failed, so e9s rolled it back: none of its changes were kept and its locks were released.")
+	case status == 'T' && outcome.Failure != nil && before == TxIdle:
+		// The run opened this transaction and stopped before its last
+		// statement, for example because it was cancelled between two
+		// statements. Committing it would apply half the script.
+		s.rollbackOnBehalf(outcome, "The run stopped before it finished, so e9s rolled back the transaction it had opened: none of its changes were kept.")
+	case status == 'T':
 		s.setState(TxOpen)
+		if outcome.Failure != nil {
+			outcome.Events = append(outcome.Events, "The run stopped before it finished; the statements after the one that stopped it did not run. The transaction that was open before this run is still open.")
+		}
 	default:
-		s.setState(TxIdle)
+		s.endedTransaction()
 	}
 	outcome.Transaction = s.txState()
+}
+
+// rollbackOnBehalf rolls back the open transaction and records event, or
+// closes the connection if the rollback fails so that PostgreSQL rolls it
+// back instead.
+func (s *directSession) rollbackOnBehalf(outcome *RunOutcome, event string) {
+	if err := s.rollback(); err != nil {
+		outcome.Events = append(outcome.Events, "e9s could not roll back the transaction ("+describeError(err)+"), so it closed the connection and PostgreSQL rolled it back.")
+		s.discardConnection()
+		outcome.ConnectionLost = true
+	} else {
+		outcome.Events = append(outcome.Events, event)
+	}
+	s.endedTransaction()
+}
+
+// endedTransaction records that no transaction is open any more.
+func (s *directSession) endedTransaction() {
+	s.setState(TxIdle)
+	s.readOnlyTransaction.Store(false)
+}
+
+func isCommit(sql string) bool {
+	words := SQLWords(sql)
+	return len(words) > 0 && (words[0] == "commit" || words[0] == "end")
 }
 
 // rollback ends the open transaction with a context of its own: the run's
@@ -400,25 +441,25 @@ func (s *directSession) endTransaction(commit bool) (string, error) {
 	tag, err := s.connection.Exec(ctx, statement)
 	if s.connection.IsClosed() {
 		s.closed.Store(true)
-		s.setState(TxIdle)
+		s.endedTransaction()
+		if commit {
+			return "", fmt.Errorf("the connection was lost while committing; PostgreSQL may or may not have committed the transaction, so check the data before running anything again")
+		}
 		return "", fmt.Errorf("the connection was lost before the transaction ended, so PostgreSQL rolled it back: none of its changes were kept")
 	}
 	if err != nil {
 		if s.connection.PgConn().TxStatus() == 'E' {
 			_ = s.rollback()
 		}
-		s.setState(boolToTx(s.connection.PgConn().TxStatus() == 'T'))
+		if s.connection.PgConn().TxStatus() == 'T' {
+			s.setState(TxOpen)
+		} else {
+			s.endedTransaction()
+		}
 		return "", fmt.Errorf("%s failed: %s", statement, describeError(err))
 	}
-	s.setState(TxIdle)
+	s.endedTransaction()
 	return tag.String(), nil
-}
-
-func boolToTx(open bool) TxState {
-	if open {
-		return TxOpen
-	}
-	return TxIdle
 }
 
 func (s *directSession) discardConnection() {
