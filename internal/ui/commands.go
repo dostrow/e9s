@@ -44,6 +44,12 @@ func (p paletteItem) alt(keys ...string) paletteItem {
 	return p
 }
 
+// do runs fn instead of pressing the item's key.
+func (p paletteItem) do(fn func(App) (App, tea.Cmd)) paletteItem {
+	p.run = fn
+	return p
+}
+
 func (p paletteItem) withChildren(children func(App) []paletteItem) paletteItem {
 	p.children = children
 	return p
@@ -461,6 +467,7 @@ func (a App) viewItems(state viewState) []paletteItem {
 			act("sql.objects", "o", "Toggle database object browser").kw("catalog", "schema", "tables"),
 			act("sql.run-all", "r", "Run all statements").kw("execute"),
 			act("sql.run-current", "c", "Run statement at cursor").kw("execute"),
+			act("sql.cancel", "esc", "Cancel the running SQL (while a run is in progress)").kw("stop", "abort").do(func(a App) (App, tea.Cmd) { return a.cancelSQLRun() }),
 			act("sql.dry-run", "D", "Dry run all statements in a transaction that is rolled back").kw("test", "verify", "rollback"),
 			act("sql.run-in-transaction", "A", "Run all statements in a transaction, then choose to commit").kw("apply", "review"),
 			act("sql.reconnect", "R", "Reconnect this tab").kw("session"),

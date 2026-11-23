@@ -28,6 +28,9 @@ const (
 	// after PostgreSQL receives the cancel request before e9s gives up on
 	// the connection.
 	cancelDeadlineDelay = 10 * time.Second
+	// catalogStatementTimeout bounds object browser queries when the
+	// profile sets no statement timeout.
+	catalogStatementTimeout = 30 * time.Second
 )
 
 // TxState is a session's transaction state between runs.
@@ -146,10 +149,17 @@ func connectSession(ctx context.Context, connection ResolvedConnection, key stri
 	}
 	pgxConfig.RuntimeParams["application_name"] = "e9s-sql-workbench"
 	pgxConfig.RuntimeParams["idle_in_transaction_session_timeout"] = strconv.FormatInt(idleTimeout.Milliseconds(), 10)
+	if seconds := connection.Profile.StatementTimeoutSecs; seconds > 0 {
+		pgxConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(seconds * 1000)
+	}
 	if catalog {
 		// The object browser only reads; the server enforces that too.
 		pgxConfig.RuntimeParams["application_name"] = "e9s-sql-catalog"
 		pgxConfig.RuntimeParams["default_transaction_read_only"] = "on"
+		if connection.Profile.StatementTimeoutSecs <= 0 {
+			// Metadata queries are small; never let one hang the browser.
+			pgxConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(int(catalogStatementTimeout.Milliseconds()))
+		}
 	}
 	// Unnamed statements: a cached plan for a statement over a temporary
 	// table would fail once a later run recreated that table differently.
@@ -224,6 +234,7 @@ func (s *directSession) run(ctx context.Context, statements []Statement, source 
 func (s *directSession) runStatements(ctx context.Context, statements []Statement, source string, maxRows int, outcome *RunOutcome) {
 	s.takeNotices() // from e9s's own statements, such as its BEGIN
 	for index, statement := range statements {
+		reportProgress(ctx, index, len(statements), statement, source)
 		result, err := s.query(ctx, statement.SQL, maxRows)
 		if err != nil {
 			outcome.Failure = newStatementFailure(index, statement, source, err)

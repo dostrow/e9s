@@ -362,3 +362,47 @@ func TestServerWarningsAreKeptWithTheirStatement(t *testing.T) {
 		t.Fatalf("results = %#v", outcome.Results)
 	}
 }
+
+func TestCancellingARunStopsTheStatementAndKeepsTheSession(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	pid := backendPID(t, executor, profile, "tab")
+	ctx, cancel := context.WithCancel(context.Background())
+	var progress []Progress
+	request := RunRequest{Profile: profile, SessionID: "tab", AllowWrites: true,
+		Source: "BEGIN;\nSELECT 1;\nSELECT pg_sleep(30);\nSELECT 2;",
+		Progress: func(p Progress) {
+			progress = append(progress, p)
+			if p.Index == 2 {
+				time.AfterFunc(200*time.Millisecond, cancel)
+			}
+		}}
+	started := time.Now()
+	outcome, err := executor.Run(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("cancel took %s", elapsed)
+	}
+	if !outcome.Cancelled || outcome.Failure == nil || outcome.Failure.Index != 2 || outcome.Failure.Code != "57014" {
+		t.Fatalf("outcome = %#v failure = %#v", outcome, outcome.Failure)
+	}
+	if outcome.ConnectionLost || outcome.Transaction != TxIdle || !strings.HasPrefix(outcome.Summary(), "Cancelled at statement 3 of 4") {
+		t.Fatalf("cancel should roll back and keep the connection: %#v %q", outcome, outcome.Summary())
+	}
+	if len(progress) != 3 || progress[2].Total != 4 || progress[2].Line != 3 || progress[2].Statement != "SELECT pg_sleep(30)" {
+		t.Fatalf("progress = %#v", progress)
+	}
+	if got := backendPID(t, executor, profile, "tab"); got != pid {
+		t.Fatalf("cancelling replaced the connection: pid %s, was %s", got, pid)
+	}
+}
+
+func TestStatementTimeoutCancelsLongStatements(t *testing.T) {
+	executor, profile := newPostgresExecutor(t)
+	profile.StatementTimeoutSecs = 1
+	outcome := run(t, executor, profile, "tab", "SELECT pg_sleep(5)", false)
+	if outcome.Failure == nil || outcome.Failure.Code != "57014" || outcome.Cancelled {
+		t.Fatalf("outcome = %#v", outcome.Failure)
+	}
+}

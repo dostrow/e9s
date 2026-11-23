@@ -44,7 +44,7 @@ ROLLBACK;
 
 func TestParseScriptRefusesWhatItCannotHonour(t *testing.T) {
 	for source, want := range map[string]string{
-		"SELECT 1;\n\\i other.sql":            `line 2: e9s does not support the psql command \i`,
+		"SELECT 1;\n\\i other.sql":             `line 2: e9s does not support the psql command \i`,
 		"SELECT 1 \\gset":                      "follows a statement that has no semicolon",
 		"\\set ON_ERROR_STOP off\nSELECT 1;":   "cannot be turned off",
 		"\\set customer 42\nSELECT :customer;": "psql variables are not supported",

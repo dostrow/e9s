@@ -78,6 +78,17 @@ type RunRequest struct {
 	// AllowWrites is the tab's write break-glass control.
 	AllowWrites bool
 	Mode        RunMode
+	// Progress, if set, is called before each statement runs, on the
+	// goroutine running the SQL.
+	Progress func(Progress)
+}
+
+// Progress reports which statement a run is executing.
+type Progress struct {
+	Index     int // 0-based among the run's statements
+	Total     int
+	Line      int
+	Statement string
 }
 
 // StatementFailure describes the statement that stopped a run.
@@ -108,6 +119,8 @@ type RunOutcome struct {
 	ConnectionLost bool
 	// TrailingHeading is psql \echo text after the script's last statement.
 	TrailingHeading string
+	// Cancelled reports that the run was cancelled before it finished.
+	Cancelled bool
 }
 
 func NewExecutor(options ExecutorOptions) *Executor {
@@ -144,11 +157,17 @@ func writeGuard(readOnlyErr error, globalWrites, tabWrites bool) error {
 // fails is reported in the outcome together with the results before it.
 func (e *Executor) Run(ctx context.Context, request RunRequest) (RunOutcome, error) {
 	started := time.Now()
+	if request.Progress != nil {
+		ctx = context.WithValue(ctx, progressKey{}, request.Progress)
+	}
 	script, err := ParseScript(request.Source)
 	if err != nil {
 		return RunOutcome{Started: started, Mode: request.Mode}, err
 	}
 	outcome, err := e.run(ctx, request, script.Statements)
+	if ctx.Err() != nil && (outcome.Failure != nil || err != nil) {
+		outcome.Cancelled = true
+	}
 	outcome.Started = started
 	outcome.Mode = request.Mode
 	outcome.TrailingHeading = script.TrailingHeading
@@ -245,6 +264,17 @@ func (e *Executor) run(ctx context.Context, request RunRequest, statements []Sta
 	return retried, nil
 }
 
+// progressKey carries a run's Progress callback to the loops that execute
+// its statements.
+type progressKey struct{}
+
+// reportProgress tells the run's caller which statement is about to run.
+func reportProgress(ctx context.Context, index, total int, statement Statement, source string) {
+	if report, ok := ctx.Value(progressKey{}).(func(Progress)); ok {
+		report(Progress{Index: index, Total: total, Line: StatementLine(source, statement.Start), Statement: FirstLine(statement.SQL)})
+	}
+}
+
 func hasTransactionControl(statements []Statement) bool {
 	for _, statement := range statements {
 		if IsTransactionControl(statement.SQL) {
@@ -296,6 +326,7 @@ func (e *Executor) runDataAPI(ctx context.Context, sessionID string, base model.
 
 func (e *Executor) runDataAPIStatements(ctx context.Context, base model.SQLQueryRequest, statements []Statement, source string, options ExecutorOptions, outcome *RunOutcome) {
 	for index, statement := range statements {
+		reportProgress(ctx, index, len(statements), statement, source)
 		request := base
 		request.SQL = statement.SQL
 		result, err := options.DataAPI.ExecuteSQLData(ctx, request)
@@ -608,10 +639,10 @@ func connectionKey(connection ResolvedConnection) string {
 	encoded, _ := json.Marshal(struct {
 		Host, Database, User, SSLMode, SSLRootCert, Auth string
 		Port                                             int
-		IdleInTransactionSecs                            int
+		IdleInTransactionSecs, StatementTimeoutSecs      int
 		Tunnel                                           *config.SSMTunnel
 	}{connection.Host, connection.Database, connection.User, connection.SSLMode, connection.SSLRootCert, connection.AuthMode, connection.Port,
-		connection.Profile.IdleInTransactionSecs, connection.Profile.SSMTunnel})
+		connection.Profile.IdleInTransactionSecs, connection.Profile.StatementTimeoutSecs, connection.Profile.SSMTunnel})
 	return string(encoded)
 }
 

@@ -65,6 +65,19 @@ type sqlExecutedMsg struct {
 	err     error
 }
 
+// sqlProgressMsg reports the statement a run is executing. events delivers
+// the run's later messages.
+type sqlProgressMsg struct {
+	tabID    string
+	progress sqlworkbench.Progress
+	events   <-chan tea.Msg
+}
+
+// waitForSQLEvent delivers the next message of a running SQL run.
+func waitForSQLEvent(events <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg { return <-events }
+}
+
 type sqlReconnectedMsg struct {
 	tabID   string
 	profile string
@@ -245,12 +258,35 @@ func (a App) runSQL(mode sqlTUIRunMode) (App, tea.Cmd) {
 	}
 	a.sqlPending = true
 	a.loading = true
-	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.ID, Source: source, AllowWrites: tab.AllowWrites, Mode: mode.executorMode()}
-	executor, ctx := a.sqlExecutor, a.ctx
-	return a, func() tea.Msg {
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.sqlRunCancel = cancel
+	events := make(chan tea.Msg, 8)
+	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.ID, Source: source, AllowWrites: tab.AllowWrites, Mode: mode.executorMode(),
+		Progress: func(progress sqlworkbench.Progress) {
+			select {
+			case events <- sqlProgressMsg{tabID: tab.ID, progress: progress, events: events}:
+			default: // the display is behind; a later update will do
+			}
+		}}
+	executor := a.sqlExecutor
+	go func() {
 		outcome, err := executor.Run(ctx, request)
-		return sqlExecutedMsg{tabID: request.SessionID, outcome: outcome, err: err}
+		cancel()
+		events <- sqlExecutedMsg{tabID: request.SessionID, outcome: outcome, err: err}
+	}()
+	return a, waitForSQLEvent(events)
+}
+
+// cancelSQLRun asks PostgreSQL to stop the running statement. The run then
+// reports the cancellation and rolls back any transaction it was in.
+func (a App) cancelSQLRun() (App, tea.Cmd) {
+	if a.sqlRunCancel == nil {
+		return a, nil
 	}
+	a.sqlRunCancel()
+	a.flashMessage = "Cancelling the running SQL…"
+	a.flashExpiry = time.Now().Add(5 * time.Second)
+	return a, nil
 }
 
 // sqlTransactionOpen reports whether the active tab's session holds an open

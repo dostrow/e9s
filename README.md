@@ -705,6 +705,11 @@ and never runs inside a tab's transaction.
   it, or quitting e9s asks first when a transaction is open; going ahead rolls
   it back. A lost connection is reported, and read-only SQL is run again on a
   fresh connection only when no transaction was open.
+- **Long runs can be followed and stopped.** The status line shows which
+  statement is running and on which line. Cancel (the GUI's Cancel button, or
+  `esc` in the TUI while a run is in progress) asks PostgreSQL to stop the
+  statement; the connection stays open and any transaction is rolled back.
+  `statement_timeout_seconds` sets a per-connection limit for any statement.
 - **Forgotten transactions end on the server.** Each tab's session sets
   `idle_in_transaction_session_timeout` (300 seconds by default, or
   `idle_in_transaction_timeout_seconds` per connection), so PostgreSQL ends a
@@ -800,6 +805,7 @@ sql:
       sslmode: verify-full
       sslrootcert: ~/.postgresql/rds-ca-bundle.pem # optional PEM CA bundle
       idle_in_transaction_timeout_seconds: 300 # optional; ends sessions left in a transaction
+      statement_timeout_seconds: 0 # optional; cancels statements that run longer
 
 exclude_services: []
 ```

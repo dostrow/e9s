@@ -28,7 +28,11 @@ func (o RunOutcome) Summary() string {
 	}
 	var summary string
 	if o.Failure != nil {
-		summary = fmt.Sprintf("Failed at statement %d of %d", o.Failure.Index+1, o.Statements)
+		verb := "Failed"
+		if o.Cancelled {
+			verb = "Cancelled"
+		}
+		summary = fmt.Sprintf("%s at statement %d of %d", verb, o.Failure.Index+1, o.Statements)
 		if o.Failure.Line > 0 {
 			summary += fmt.Sprintf(" (line %d)", o.Failure.Line)
 		}

@@ -660,6 +660,7 @@ type mainWindow struct {
 	sqlRunAllButton             *gtk.Button
 	sqlDryRunButton             *gtk.Button
 	sqlRunInTransactionButton   *gtk.Button
+	sqlCancelButton             *gtk.Button
 	sqlReconnectButton          *gtk.Button
 	sqlExportButton             *gtk.Button
 	sqlWritesButton             *gtk.ToggleButton

@@ -252,6 +252,7 @@ type App struct {
 	sqlPendingRun              sqlTUIRunMode
 	sqlPendingProfile          string
 	sqlConfirmTab              string // the SQL tab a pending confirmation acts on
+	sqlRunCancel               context.CancelFunc
 	regionPicker               views.RegionPickerModel
 	runbookActions             []runbook.ConfiguredAction
 	runbooksView               views.RunbooksModel
@@ -1685,9 +1686,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.flashExpiry = time.Now().Add(5 * time.Second)
 		return a, a.refreshCurrentView()
 
+	case sqlProgressMsg:
+		a.sqlWorkbenchView.SetStatus(fmt.Sprintf("Running statement %d of %d (line %d): %s  —  esc cancels",
+			msg.progress.Index+1, msg.progress.Total, msg.progress.Line, msg.progress.Statement))
+		return a, waitForSQLEvent(msg.events)
+
 	case sqlExecutedMsg:
 		a.sqlPending = false
 		a.loading = false
+		a.sqlRunCancel = nil
 		a.sqlWorkbenchView.SetSessionFor(msg.tabID, a.sqlExecutor.SessionStatus(msg.tabID))
 		if msg.err != nil {
 			a.err = msg.err
@@ -2208,6 +2215,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.sqlWorkbenchView, cmd = a.sqlWorkbenchView.Update(msg)
 			return a, cmd
+		}
+		if a.state == viewSQLWorkbench && a.sqlRunCancel != nil && msg.String() == "esc" {
+			// While SQL runs, esc cancels it rather than leaving the tab.
+			return a.cancelSQLRun()
 		}
 		if a.state == viewSQLWorkbench && !a.isFiltering() && msg.String() == "R" {
 			// Reconnect, not the global refresh: a workbench has nothing to

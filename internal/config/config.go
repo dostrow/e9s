@@ -78,6 +78,9 @@ type SQLConnection struct {
 	// it sits in an open transaction this long, so a forgotten transaction
 	// cannot hold locks indefinitely. Zero uses the default of 300 seconds.
 	IdleInTransactionSecs int `yaml:"idle_in_transaction_timeout_seconds,omitempty"`
+	// StatementTimeoutSecs cancels any statement that runs longer. Zero
+	// leaves the server's setting.
+	StatementTimeoutSecs int `yaml:"statement_timeout_seconds,omitempty"`
 }
 
 type SSMTunnel struct {
@@ -408,6 +411,9 @@ func (c Config) Validate() error {
 		}
 		if connection.ConnectSecs < 0 {
 			return fmt.Errorf("sql.connections[%d].connect_timeout_seconds cannot be negative", index)
+		}
+		if connection.StatementTimeoutSecs < 0 {
+			return fmt.Errorf("sql.connections[%d].statement_timeout_seconds cannot be negative", index)
 		}
 		if connection.IdleInTransactionSecs < 0 {
 			return fmt.Errorf("sql.connections[%d].idle_in_transaction_timeout_seconds cannot be negative", index)

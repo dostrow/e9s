@@ -56,14 +56,22 @@ func sqlTestApp(t *testing.T) App {
 		sqlWorkbenchView: workbench, sqlStatePath: filepath.Join(t.TempDir(), "sql.json")}
 }
 
-// finish runs a command's message back through the app, as Bubble Tea would.
+// finish runs a command's messages back through the app, as Bubble Tea
+// would, until a run's progress gives way to its result.
 func finish(t *testing.T, a App, cmd tea.Cmd) App {
 	t.Helper()
-	if cmd == nil {
-		t.Fatal("expected a command")
+	for {
+		if cmd == nil {
+			t.Fatal("expected a command")
+		}
+		msg := cmd()
+		updated, next := a.Update(msg)
+		a = updated.(App)
+		if _, progress := msg.(sqlProgressMsg); !progress {
+			return a
+		}
+		cmd = next
 	}
-	model, _ := a.Update(cmd())
-	return model.(App)
 }
 
 func runTabSQL(t *testing.T, a App, source string) App {
@@ -186,5 +194,42 @@ func TestSQLTabRunInTransactionAsksToCommit(t *testing.T) {
 	a = finish(t, model.(App), cmd)
 	if a.sqlWorkbenchView.Session().State != sqlworkbench.TxIdle || !strings.Contains(a.flashMessage, "COMMIT") {
 		t.Fatalf("commit: session=%#v flash=%q", a.sqlWorkbenchView.Session(), a.flashMessage)
+	}
+}
+
+func TestSQLTabShowsProgressAndCancelsWithEsc(t *testing.T) {
+	a := sqlTestApp(t)
+	a.sqlWorkbenchView.SetQuery("SELECT 1;\nSELECT pg_sleep(30);")
+	next, cmd := a.runSQL(sqlTUIRunAll)
+	a = next
+	sawProgress := false
+	for {
+		msg := cmd()
+		if progress, ok := msg.(sqlProgressMsg); ok && progress.progress.Index == 1 {
+			sawProgress = true
+			model, _ := a.Update(msg)
+			a = model.(App)
+			if !strings.Contains(a.sqlWorkbenchView.View(), "Running statement 2 of 2 (line 2): SELECT pg_sleep(30)") {
+				t.Fatalf("progress not shown:\n%s", a.sqlWorkbenchView.View())
+			}
+			time.Sleep(100 * time.Millisecond)
+			model, _ = a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			a = model.(App)
+			if a.state != viewSQLWorkbench {
+				t.Fatal("esc left the workbench instead of cancelling the run")
+			}
+		}
+		model, nextCmd := a.Update(msg)
+		a = model.(App)
+		if _, done := msg.(sqlExecutedMsg); done {
+			break
+		}
+		cmd = nextCmd
+	}
+	if !sawProgress {
+		t.Fatal("no progress was reported for the second statement")
+	}
+	if !strings.Contains(a.sqlWorkbenchView.View(), "Cancelled at statement 2 of 2") || a.sqlRunCancel != nil {
+		t.Fatalf("cancelled run not reported:\n%s", a.sqlWorkbenchView.View())
 	}
 }

@@ -130,6 +130,16 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlRunInTransactionButton = gtk.NewButtonWithLabel("Run in transaction…")
 	w.sqlRunInTransactionButton.SetTooltipText("Run every statement inside a transaction, review the results, then commit or roll back")
 	w.sqlRunInTransactionButton.ConnectClicked(func() { w.runActiveSQL(sqlRunTransaction) })
+	w.sqlCancelButton = gtk.NewButtonWithLabel("Cancel")
+	w.sqlCancelButton.AddCSSClass("destructive-action")
+	w.sqlCancelButton.SetTooltipText("Ask PostgreSQL to stop the running statement; an open transaction is rolled back")
+	w.sqlCancelButton.SetVisible(false)
+	w.sqlCancelButton.ConnectClicked(func() {
+		if w.sqlActionCancel != nil {
+			w.sqlActionCancel()
+			w.setStatus("Cancelling the running SQL…", false)
+		}
+	})
 	w.sqlWritesButton = gtk.NewToggleButtonWithLabel("Writes locked")
 	w.sqlWritesButton.AddCSSClass("destructive-action")
 	w.sqlWritesButton.ConnectToggled(w.toggleSQLWrites)
@@ -148,6 +158,7 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	toolbar.Append(w.sqlRunAllButton)
 	toolbar.Append(w.sqlDryRunButton)
 	toolbar.Append(w.sqlRunInTransactionButton)
+	toolbar.Append(w.sqlCancelButton)
 	toolbar.Append(w.sqlWritesButton)
 	toolbar.Append(w.sqlExportButton)
 
@@ -742,7 +753,8 @@ func (w *mainWindow) runActiveSQL(mode sqlRunMode) {
 	tab.state.Query = tab.editor.Text()
 	tab.state.UpdatedAt = time.Now()
 	w.saveSQLStateNow()
-	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.state.ID, Source: source, AllowWrites: tab.state.AllowWrites, Mode: mode.executorMode()}
+	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.state.ID, Source: source, AllowWrites: tab.state.AllowWrites, Mode: mode.executorMode(),
+		Progress: w.sqlProgressReporter()}
 	label := "Running SQL on " + profile.Name + "…"
 	if request.Mode != sqlworkbench.RunAsWritten {
 		label = "Running SQL on " + profile.Name + " (" + request.Mode.String() + ")…"
@@ -796,14 +808,31 @@ func (w *mainWindow) reviewSQLTransaction(tab *sqlWorkbenchTab) {
 	dialog.Present()
 }
 
+// sqlProgressReporter shows which statement a run is executing, at most a
+// few times a second so a long script cannot flood the main loop.
+func (w *mainWindow) sqlProgressReporter() func(sqlworkbench.Progress) {
+	var last time.Time
+	return func(progress sqlworkbench.Progress) {
+		if now := time.Now(); now.Sub(last) >= 200*time.Millisecond || progress.Index == 0 {
+			last = now
+			text := fmt.Sprintf("Running statement %d of %d (line %d): %s", progress.Index+1, progress.Total, progress.Line, progress.Statement)
+			glib.IdleAdd(func() {
+				if w.sqlActionPending {
+					w.setStatus(text, false)
+				}
+			})
+		}
+	}
+}
+
 // startSQLAction runs work for a tab off the UI thread, then applies its
 // result. SQL actions have a context of their own: a page change or refresh
 // elsewhere in the window must not cancel a script partway through.
 func (w *mainWindow) startSQLAction(tab *sqlWorkbenchTab, label string, work func(context.Context) func()) {
 	w.sqlActionPending = true
-	w.updateSQLControls()
 	ctx, cancel := context.WithCancel(w.ctx)
 	w.sqlActionCancel = cancel
+	w.updateSQLControls()
 	w.spinner.Start()
 	w.setStatus(label, false)
 	go func() {
@@ -1268,6 +1297,9 @@ func (w *mainWindow) updateSQLControls() {
 	if w.sqlExportButton != nil {
 		w.sqlExportButton.SetSensitive(enabled && sqlTabHasExportableResult(tab))
 	}
+	if w.sqlCancelButton != nil {
+		w.sqlCancelButton.SetVisible(w.sqlActionCancel != nil)
+	}
 	if w.sqlWritesButton != nil {
 		w.sqlWritesUpdating = true
 		w.sqlWritesButton.SetSensitive(enabled)
@@ -1478,6 +1510,8 @@ func (w *mainWindow) manageSQLConnections() {
 	connectTimeout.SetValue(15)
 	idleTransactionTimeout := gtk.NewSpinButtonWithRange(0, 86400, 30)
 	idleTransactionTimeout.SetValue(0)
+	statementTimeout := gtk.NewSpinButtonWithRange(0, 86400, 10)
+	statementTimeout.SetValue(0)
 	ssmInstance := gtk.NewEntry()
 	ssmInstance.SetPlaceholderText("Blank disables SSM port forwarding")
 	ssmHost := gtk.NewEntry()
@@ -1501,6 +1535,7 @@ func (w *mainWindow) manageSQLConnections() {
 	content.Append(sslRootCertRow)
 	content.Append(settingsNote("For verify-full, choose a PEM CA/root-certificate bundle only when the database certificate is not trusted by the platform or PostgreSQL default trust store."))
 	content.Append(settingsRow("Connect timeout (seconds; 0 uses driver default)", connectTimeout))
+	content.Append(settingsRow("Statement timeout (seconds; 0 leaves the server setting)", statementTimeout))
 	content.Append(settingsRow("Idle transaction timeout (seconds; 0 uses 300)", idleTransactionTimeout))
 	content.Append(settingsNote("PostgreSQL ends a query tab's session when it sits this long in an open transaction, rolling the transaction back, so a forgotten transaction cannot hold locks indefinitely."))
 	content.Append(settingsNote("Optional SSM tunnel. e9s runs the AWS CLI start-session command and keeps that process scoped to the database connection."))
@@ -1541,6 +1576,7 @@ func (w *mainWindow) manageSQLConnections() {
 		sslRootCert.SetText(profile.SSLRootCert)
 		connectTimeout.SetValue(float64(profile.ConnectSecs))
 		idleTransactionTimeout.SetValue(float64(profile.IdleInTransactionSecs))
+		statementTimeout.SetValue(float64(profile.StatementTimeoutSecs))
 		if profile.SSMTunnel == nil {
 			ssmInstance.SetText("")
 			ssmHost.SetText("")
@@ -1618,6 +1654,7 @@ func (w *mainWindow) manageSQLConnections() {
 			SecretARN: strings.TrimSpace(secretARN.Text()), ResourceARN: strings.TrimSpace(resourceARN.Text()),
 			SSLMode: settingsChoiceValue(sslModes, sslMode.Selected()), SSLRootCert: strings.TrimSpace(sslRootCert.Text()),
 			ConnectSecs: connectTimeout.ValueAsInt(), IdleInTransactionSecs: idleTransactionTimeout.ValueAsInt(),
+			StatementTimeoutSecs: statementTimeout.ValueAsInt(),
 		}
 		if instance := strings.TrimSpace(ssmInstance.Text()); instance != "" {
 			profile.SSMTunnel = &config.SSMTunnel{InstanceID: instance, RemoteHost: strings.TrimSpace(ssmHost.Text()),
