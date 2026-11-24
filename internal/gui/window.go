@@ -662,6 +662,11 @@ type mainWindow struct {
 	sqlRunInTransactionButton   *gtk.Button
 	sqlCancelButton             *gtk.Button
 	sqlReconnectButton          *gtk.Button
+	sqlBrowseButton             *gtk.Button
+	sqlTabMenu                  *sqlMenu
+	sqlTabMenuTarget            *sqlWorkbenchTab
+	sqlProfileMenu              *sqlMenu
+	sqlProfileMenuTarget        string
 	sqlExportButton             *gtk.Button
 	sqlWritesButton             *gtk.ToggleButton
 	taskDefinitionBuffer        *gtk.TextBuffer

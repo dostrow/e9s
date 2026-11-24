@@ -5,7 +5,9 @@ package gui
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/dostrow/e9s/internal/config"
 	"github.com/dostrow/e9s/internal/model"
 	"github.com/dostrow/e9s/internal/sqlworkbench"
@@ -123,5 +125,43 @@ func TestSQLTabSelectedResultExcludesTheFailure(t *testing.T) {
 	tab.selectedResult = 0
 	if _, ok := sqlTabSelectedResult(tab); !ok {
 		t.Fatal("the earlier result should be selectable")
+	}
+}
+
+func TestChooseSQLBrowserTabPrefersTheActiveThenTheMostRecentTab(t *testing.T) {
+	now := time.Now()
+	tabs := []sqlBrowserCandidate{
+		{profile: "prod", lastUsed: now.Add(-3 * time.Minute)},
+		{profile: "staging", lastUsed: now},
+		{profile: "prod", lastUsed: now.Add(-time.Minute)},
+		{profile: "prod", lastUsed: now.Add(-2 * time.Minute)},
+	}
+	for _, test := range []struct {
+		name    string
+		active  int
+		profile string
+		want    int
+	}{
+		{"the active tab when it is on the connection", 3, "prod", 3},
+		{"the connection's most recently used tab otherwise", 1, "prod", 2},
+		{"the most recent tab when no tab is active", -1, "prod", 2},
+		{"the only tab on the connection", 0, "staging", 1},
+		{"none when the connection has no tab", 0, "analytics", -1},
+	} {
+		if got := chooseSQLBrowserTab(tabs, test.active, test.profile); got != test.want {
+			t.Errorf("%s: got %d, want %d", test.name, got, test.want)
+		}
+	}
+	if got := chooseSQLBrowserTab(nil, 0, "prod"); got != -1 {
+		t.Errorf("no tabs: got %d", got)
+	}
+}
+
+func TestContextMenuKeys(t *testing.T) {
+	if !isContextMenuKey(gdk.KEY_Menu, 0) || !isContextMenuKey(gdk.KEY_F10, gdk.ShiftMask) {
+		t.Fatal("Menu and Shift+F10 should open a context menu")
+	}
+	if isContextMenuKey(gdk.KEY_F10, 0) || isContextMenuKey(gdk.KEY_Return, gdk.ShiftMask) {
+		t.Fatal("F10 alone or Shift+Return should not open a context menu")
 	}
 }

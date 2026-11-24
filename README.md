@@ -623,8 +623,18 @@ TUI, and export the selected result set to CSV. When a statement fails, the run
 stops there and shows the error, the line it starts on, and the results of the
 statements before it.
 
-The GTK Browser Pane becomes a lazy PostgreSQL object explorer for the active
-query tab. Expand schemas and then tables, views, materialized views,
+In the GTK frontend, double-clicking a saved connection opens a query tab and
+leaves the connection list in place. To browse a connection's database objects,
+right-click the connection (or press the Menu key or Shift+F10) and choose
+*Browse database objects*; the same item is on a query tab's right-click menu,
+and the toolbar's *Browse objects* button shows the active tab's objects. The
+browser belongs to a query tab, because inserting names and previewing rows act
+on that tab: browsing from a connection uses the active tab when it is on that
+connection, otherwise the connection's most recently used tab, and opens a tab
+only when the connection has none. Back returns to the connection list.
+
+The object browser is a lazy PostgreSQL object explorer in the Browser Pane.
+Expand schemas and then tables, views, materialized views,
 sequences, or functions; tables and views expand one level further into their
 columns. Selecting an object exposes Structure and Definition beside query
 Results. Object and column names can be inserted with toolbar actions or

@@ -60,6 +60,8 @@ type sqlWorkbenchTab struct {
 	definitionButton      *gtk.Button
 	refreshObjectButton   *gtk.Button
 	explorer              sqlObjectExplorer
+	// lastActive is when the tab was last opened or switched to.
+	lastActive time.Time
 }
 
 type sqlObjectRowKind int
@@ -143,6 +145,9 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlWritesButton = gtk.NewToggleButtonWithLabel("Writes locked")
 	w.sqlWritesButton.AddCSSClass("destructive-action")
 	w.sqlWritesButton.ConnectToggled(w.toggleSQLWrites)
+	w.sqlBrowseButton = gtk.NewButtonWithLabel("Browse objects")
+	w.sqlBrowseButton.SetTooltipText("Show the active tab's database objects in the Browser Pane (also on a connection's or tab's right-click menu)")
+	w.sqlBrowseButton.ConnectClicked(w.browseActiveSQLObjects)
 	w.sqlExportButton = gtk.NewButtonWithLabel("Export CSV…")
 	w.sqlExportButton.ConnectClicked(w.exportActiveSQLResult)
 
@@ -153,6 +158,7 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	toolbar.Append(rename)
 	toolbar.Append(closeTab)
 	toolbar.Append(w.sqlReconnectButton)
+	toolbar.Append(w.sqlBrowseButton)
 	toolbar.Append(w.sqlRunSelectionButton)
 	toolbar.Append(w.sqlRunCurrentButton)
 	toolbar.Append(w.sqlRunAllButton)
@@ -177,6 +183,7 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlNotebook.ConnectSwitchPage(func(_ gtk.Widgetter, _ uint) {
 		if tab := w.activeSQLTab(); tab != nil {
 			w.sqlState.ActiveTabID = tab.state.ID
+			tab.lastActive = time.Now()
 			if w.currentPage == pageSQLObjects {
 				w.showSQLObjectBrowser(tab)
 			}
@@ -197,6 +204,8 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	pane.Append(toolbar)
 	pane.Append(w.sqlPaneStack)
 	w.sqlPane = pane
+	w.installSQLProfileContextMenu()
+	w.installSQLTabContextMenu()
 	w.restoreSQLTabs()
 	w.updateSQLControls()
 	return pane
@@ -272,7 +281,7 @@ func (w *mainWindow) selectSQLProfileRow() {
 	profile := w.filteredSQLProfiles[position]
 	w.selectedSQLProfile = profile.Name
 	w.setBreadcrumb("SQL Workbench / Connections / " + profile.Name)
-	w.setStatus("Selected SQL connection "+profile.Name+"; double-click to open a query tab", false)
+	w.setStatus("Selected SQL connection "+profile.Name+"; double-click to open a query tab, or right-click to browse its objects", false)
 }
 
 func (w *mainWindow) openSQLProfileAt(position uint) {
@@ -537,11 +546,9 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	w.updateSQLTabTitle(tab)
 	w.sqlNotebook.SetCurrentPage(page)
 	w.sqlState.ActiveTabID = tab.state.ID
+	tab.lastActive = time.Now()
 	w.scheduleSQLStateSave()
 	w.updateSQLControls()
-	if moduleForPage(w.currentPage) == moduleSQLWorkbench {
-		w.showSQLObjectBrowser(tab)
-	}
 	glib.IdleAdd(func() {
 		if view, ok := editor.Widget().(*gtk.TextView); ok {
 			view.GrabFocus()
@@ -558,6 +565,7 @@ func (w *mainWindow) sqlTabLabel(tab *sqlWorkbenchTab) *gtk.Box {
 	closeButton.SetTooltipText("Close this query tab")
 	closeButton.ConnectClicked(func() { w.closeSQLTab(tab) })
 	box.Append(closeButton)
+	w.attachSQLTabMenu(tab, box)
 	return box
 }
 
@@ -1293,6 +1301,11 @@ func (w *mainWindow) updateSQLControls() {
 		if button != nil {
 			button.SetSensitive(enabled)
 		}
+	}
+	if w.sqlBrowseButton != nil {
+		// The browser has its own connection, so it stays available while
+		// a run is in progress.
+		w.sqlBrowseButton.SetSensitive(tab != nil)
 	}
 	if w.sqlExportButton != nil {
 		w.sqlExportButton.SetSensitive(enabled && sqlTabHasExportableResult(tab))
