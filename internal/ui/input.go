@@ -49,6 +49,7 @@ const (
 	InputTofuSaveName
 	InputSQLPassword
 	InputSQLExport
+	InputSQLReport
 	InputSQLRename
 )
 

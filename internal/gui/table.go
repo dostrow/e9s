@@ -27,6 +27,9 @@ type stringTable struct {
 	rows           []string
 	cellActivated  func(position uint, field int)
 	dragText       func(position uint) string
+	// contextMenu is called when a row is right-clicked, after the row is
+	// selected, with the click's coordinates in the table view.
+	contextMenu func(position uint, x, y float64)
 }
 
 func newStringTable(columns []columnSpec) *stringTable {
@@ -182,6 +185,22 @@ func (t *stringTable) textColumn(spec columnSpec) *gtk.ColumnViewColumn {
 				}
 			})
 			label.AddController(click)
+		}
+		if t.contextMenu != nil {
+			secondary := gtk.NewGestureClick()
+			secondary.SetButton(gdk.BUTTON_SECONDARY)
+			secondary.ConnectPressed(func(_ int, x, y float64) {
+				position := cell.Position()
+				if position == gtk.InvalidListPosition {
+					return
+				}
+				if t.selection != nil {
+					t.selection.SetSelected(position)
+				}
+				x, y = translatePoint(label, t.view, x, y)
+				t.contextMenu(position, x, y)
+			})
+			label.AddController(secondary)
 		}
 		if t.dragText != nil {
 			drag := gtk.NewDragSource()

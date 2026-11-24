@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -22,8 +23,11 @@ type SQLWorkbenchModel struct {
 	active       int
 	editor       textarea.Model
 	editing      bool
-	results      map[string][]model.SQLQueryResult
+	runs         map[string]*sqlTabRun
+	sessions     map[string]sqlworkbench.SessionStatus
 	resultCursor map[string]int
+	reportView   bool
+	reportOffset map[string]int
 	catalogs     map[string]*SQLCatalogModel
 	status       string
 	width        int
@@ -38,7 +42,8 @@ func NewSQLWorkbench(tabs []sqlworkbench.TabState, activeID string) SQLWorkbench
 	editor.Blur()
 	m := SQLWorkbenchModel{
 		tabs: append([]sqlworkbench.TabState(nil), tabs...), editor: editor,
-		results: make(map[string][]model.SQLQueryResult), resultCursor: make(map[string]int), catalogs: make(map[string]*SQLCatalogModel),
+		runs: make(map[string]*sqlTabRun), sessions: make(map[string]sqlworkbench.SessionStatus),
+		resultCursor: make(map[string]int), reportOffset: make(map[string]int), catalogs: make(map[string]*SQLCatalogModel),
 	}
 	for index := range m.tabs {
 		m.tabs[index].AllowWrites = false
@@ -75,6 +80,10 @@ func (m SQLWorkbenchModel) Update(msg tea.Msg) (SQLWorkbenchModel, tea.Cmd) {
 		m.storeActiveQuery()
 		return m, cmd
 	}
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && m.reportView {
+		m.scrollReport(keyMsg.String())
+		return m, nil
+	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		id := m.ActiveID()
 		switch keyMsg.String() {
@@ -85,11 +94,15 @@ func (m SQLWorkbenchModel) Update(msg tea.Msg) (SQLWorkbenchModel, tea.Cmd) {
 		case "g":
 			m.resultCursor[id] = 0
 		case "G":
-			if result, ok := m.LastResult(); ok {
+			if result, ok := m.SelectedResult(); ok {
 				m.resultCursor[id] = max(0, len(result.Rows)-1)
 			}
+		case "<":
+			m.MoveResult(-1)
+		case ">":
+			m.MoveResult(1)
 		}
-		if result, ok := m.LastResult(); ok {
+		if result, ok := m.SelectedResult(); ok {
 			m.resultCursor[id] = min(m.resultCursor[id], max(0, len(result.Rows)-1))
 		}
 	}
@@ -128,7 +141,9 @@ func (m *SQLWorkbenchModel) CloseActive() {
 		return
 	}
 	id := m.ActiveID()
-	delete(m.results, id)
+	delete(m.runs, id)
+	delete(m.sessions, id)
+	delete(m.reportOffset, id)
 	delete(m.resultCursor, id)
 	delete(m.catalogs, id)
 	m.tabs = append(m.tabs[:m.active], m.tabs[m.active+1:]...)
@@ -241,21 +256,104 @@ func (m *SQLWorkbenchModel) ToggleWrites() bool {
 	return false
 }
 
+// SetResults shows results that did not come from a tab run, such as an
+// object preview.
 func (m *SQLWorkbenchModel) SetResults(results []model.SQLQueryResult) {
-	m.SetResultsFor(m.ActiveID(), results)
+	m.SetRunFor(m.ActiveID(), sqlworkbench.RunOutcome{Statements: len(results), Results: results})
 }
 
-func (m *SQLWorkbenchModel) SetResultsFor(id string, results []model.SQLQueryResult) {
+// SetRunFor shows a run's outcome in a tab. It opens on the failed
+// statement when there is one, otherwise on the last result.
+func (m *SQLWorkbenchModel) SetRunFor(id string, outcome sqlworkbench.RunOutcome) {
 	if id == "" {
 		return
 	}
-	m.results[id] = results
+	run := &sqlTabRun{outcome: outcome}
+	run.selected = max(0, run.entries()-1)
+	m.runs[id] = run
 	m.resultCursor[id] = 0
-	rows := 0
-	for _, result := range results {
-		rows += len(result.Rows)
+	m.reportOffset[id] = 0
+	if id == m.ActiveID() {
+		m.status = run.summary()
 	}
-	m.status = fmt.Sprintf("Executed %d statement(s); %d result row(s)", len(results), rows)
+}
+
+// SetSessionFor records a tab's session state for its header.
+func (m *SQLWorkbenchModel) SetSessionFor(id string, status sqlworkbench.SessionStatus) {
+	if id != "" {
+		m.sessions[id] = status
+	}
+}
+
+// Session returns the last recorded session state of the active tab.
+func (m SQLWorkbenchModel) Session() sqlworkbench.SessionStatus {
+	return m.sessions[m.ActiveID()]
+}
+
+// ToggleReport switches the result area between the selected result set and
+// the run's full report. It reports whether the report is now shown.
+func (m *SQLWorkbenchModel) ToggleReport() bool {
+	m.reportView = !m.reportView
+	return m.reportView
+}
+
+func (m SQLWorkbenchModel) ReportView() bool { return m.reportView }
+
+// Report renders the active tab's run as a report.
+func (m SQLWorkbenchModel) Report(context sqlworkbench.ReportContext) (string, bool) {
+	run := m.runs[m.ActiveID()]
+	if run == nil || run.entries() == 0 {
+		return "", false
+	}
+	if context.Started.IsZero() {
+		context.Started = run.outcome.Started
+	}
+	return sqlworkbench.FormatReport(run.outcome, context), true
+}
+
+func (m *SQLWorkbenchModel) reportContext() sqlworkbench.ReportContext {
+	tab, _ := m.ActiveTabValue()
+	return sqlworkbench.ReportContext{Connection: tab.ProfileName, Tab: strings.TrimSpace(tab.Title)}
+}
+
+func (m *SQLWorkbenchModel) scrollReport(key string) {
+	id := m.ActiveID()
+	report, ok := m.Report(m.reportContext())
+	if !ok {
+		return
+	}
+	last := max(0, strings.Count(report, "\n")-1)
+	page := max(1, m.reportHeight()-1)
+	switch key {
+	case "j", "down":
+		m.reportOffset[id]++
+	case "k", "up":
+		m.reportOffset[id]--
+	case "ctrl+d", "pgdown", " ":
+		m.reportOffset[id] += page
+	case "ctrl+u", "pgup":
+		m.reportOffset[id] -= page
+	case "g":
+		m.reportOffset[id] = 0
+	case "G":
+		m.reportOffset[id] = last
+	}
+	m.reportOffset[id] = min(max(0, m.reportOffset[id]), last)
+}
+
+func (m SQLWorkbenchModel) reportHeight() int { return max(3, m.height-m.editor.Height()-11) }
+
+// MoveResult selects another entry of the active tab's run.
+func (m *SQLWorkbenchModel) MoveResult(delta int) {
+	run := m.runs[m.ActiveID()]
+	if run == nil || run.entries() == 0 {
+		return
+	}
+	next := min(max(0, run.selected+delta), run.entries()-1)
+	if next != run.selected {
+		run.selected = next
+		m.resultCursor[m.ActiveID()] = 0
+	}
 }
 
 func (m *SQLWorkbenchModel) SetStatus(status string) { m.status = status }
@@ -293,6 +391,12 @@ func (m SQLWorkbenchModel) ActiveTabValue() (sqlworkbench.TabState, bool) {
 
 func (m SQLWorkbenchModel) Query() string { return m.editor.Value() }
 
+// SetQuery replaces the active tab's query text.
+func (m *SQLWorkbenchModel) SetQuery(query string) {
+	m.editor.SetValue(query)
+	m.storeActiveQuery()
+}
+
 func (m SQLWorkbenchModel) CursorByteOffset() int {
 	value := m.editor.Value()
 	lines := strings.Split(value, "\n")
@@ -307,12 +411,14 @@ func (m SQLWorkbenchModel) CursorByteOffset() int {
 	return min(offset, len(value))
 }
 
-func (m SQLWorkbenchModel) LastResult() (model.SQLQueryResult, bool) {
-	results := m.results[m.ActiveID()]
-	if len(results) == 0 {
+// SelectedResult returns the result set selected in the active tab's run.
+// It reports false when nothing ran or the failed statement is selected.
+func (m SQLWorkbenchModel) SelectedResult() (model.SQLQueryResult, bool) {
+	run := m.runs[m.ActiveID()]
+	if run == nil || run.selected >= len(run.outcome.Results) {
 		return model.SQLQueryResult{}, false
 	}
-	return results[len(results)-1], true
+	return run.outcome.Results[run.selected], true
 }
 
 func (m *SQLWorkbenchModel) storeActiveQuery() {
@@ -363,6 +469,10 @@ func (m SQLWorkbenchModel) View() string {
 	if m.editing {
 		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("  EDITING — esc returns to commands"))
 	}
+	if transaction := m.Session().Describe(time.Now()); transaction != "" {
+		b.WriteString("  " + lipgloss.NewStyle().Bold(true).Foreground(theme.ColorRed).Render("● "+transaction) +
+			theme.HelpStyle.Render("  [C] commit  [B] roll back"))
+	}
 	b.WriteString("\n")
 	border := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lock).Padding(0, 1)
 	editorWidth := max(10, m.width-4)
@@ -375,13 +485,49 @@ func (m SQLWorkbenchModel) View() string {
 	}
 	b.WriteString(editorPanel)
 	b.WriteString("\n")
-	result, ok := m.LastResult()
-	if !ok {
+	run := m.runs[m.ActiveID()]
+	if run == nil || run.entries() == 0 {
 		b.WriteString(theme.HelpStyle.Render("  No result loaded for this tab."))
 		if m.status != "" {
 			b.WriteString("  " + m.status)
 		}
 		return b.String()
+	}
+	if m.reportView {
+		report, _ := m.Report(m.reportContext())
+		lines := strings.Split(strings.TrimSuffix(report, "\n"), "\n")
+		offset := min(m.reportOffset[m.ActiveID()], max(0, len(lines)-1))
+		end := min(len(lines), offset+m.reportHeight())
+		b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  Report, lines %d-%d of %d  [v] results  [X] save", offset+1, end, len(lines))) + "\n")
+		for _, line := range lines[offset:end] {
+			b.WriteString("  " + truncateSQLCell(line, max(20, m.width-4)) + "\n")
+		}
+		return b.String()
+	}
+	b.WriteString(theme.HelpStyle.Render("  "+truncateSQLCell(run.outcome.EntryLabel(run.selected), max(20, m.width-24))) +
+		theme.HelpStyle.Render("  [</>] results  [v] report") + "\n")
+	visible := max(3, m.height-m.editor.Height()-13-len(run.outcome.Events))
+	var notices []string
+	if result, ok := m.SelectedResult(); ok {
+		notices = result.Notices
+		b.WriteString(renderSQLResultTable(result, m.resultCursor[m.ActiveID()], max(3, visible-min(len(notices), 4))))
+	} else if failure := run.outcome.Failure; failure != nil {
+		notices = failure.Notices
+		b.WriteString(renderSQLFailure(*failure, m.width))
+	}
+	b.WriteString(renderSQLNotices(notices, m.width))
+	for _, event := range run.outcome.Events {
+		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("  "+event) + "\n")
+	}
+	if m.status != "" {
+		b.WriteString(theme.HelpStyle.Render("  " + m.status))
+	}
+	return b.String()
+}
+
+func renderSQLResultTable(result model.SQLQueryResult, cursor, visible int) string {
+	if len(result.Columns) == 0 {
+		return theme.HelpStyle.Render("  "+sqlworkbench.ResultTag(result)+" — no result set") + "\n"
 	}
 	columns := make([]components.Column, len(result.Columns))
 	for index, title := range result.Columns {
@@ -395,14 +541,43 @@ func (m SQLWorkbenchModel) View() string {
 		}
 		table.AddRow(cells...)
 	}
-	visible := max(3, m.height-m.editor.Height()-12)
-	b.WriteString(table.Render(m.resultCursor[m.ActiveID()], "", visible))
-	status := m.status
-	if result.Truncated {
-		status += fmt.Sprintf(" • truncated at %d rows", sqlworkbench.DefaultMaxRows)
+	return table.Render(cursor, "", visible)
+}
+
+// renderSQLNotices shows the server's notices for the selected statement;
+// the report has them all.
+func renderSQLNotices(notices []string, width int) string {
+	var b strings.Builder
+	for index, notice := range notices {
+		if index == 3 && len(notices) > 4 {
+			b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("  … %d more notice(s); press v for the report", len(notices)-index)) + "\n")
+			break
+		}
+		line := strings.ReplaceAll(notice, "\n", "  ")
+		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorYellow).Render("  "+truncateSQLCell(line, max(20, width-4))) + "\n")
 	}
-	if status != "" {
-		b.WriteString(theme.HelpStyle.Render("  " + status))
+	return b.String()
+}
+
+func renderSQLFailure(failure sqlworkbench.StatementFailure, width int) string {
+	var b strings.Builder
+	heading := fmt.Sprintf("Statement %d failed", failure.Index+1)
+	if failure.Line > 0 {
+		heading += fmt.Sprintf(" at line %d", failure.Line)
+	}
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(theme.ColorRed).Render("  "+heading) + "\n")
+	for _, line := range strings.Split(failure.Message, "\n") {
+		b.WriteString(lipgloss.NewStyle().Foreground(theme.ColorRed).Render("  "+truncateSQLCell(line, max(20, width-4))) + "\n")
+	}
+	if failure.SQL != "" {
+		lines := strings.Split(failure.SQL, "\n")
+		for index, line := range lines {
+			if index == 6 {
+				b.WriteString(theme.HelpStyle.Render(fmt.Sprintf("    … %d more line(s)", len(lines)-index)) + "\n")
+				break
+			}
+			b.WriteString(theme.HelpStyle.Render("    "+truncateSQLCell(line, max(20, width-6))) + "\n")
+		}
 	}
 	return b.String()
 }
@@ -414,3 +589,13 @@ func truncateSQLCell(value string, width int) string {
 	runes := []rune(value)
 	return string(runes[:max(1, width-1)]) + "…"
 }
+
+// sqlTabRun is a tab's latest run and the entry selected in it.
+type sqlTabRun struct {
+	outcome  sqlworkbench.RunOutcome
+	selected int
+}
+
+func (r *sqlTabRun) entries() int { return r.outcome.EntryCount() }
+
+func (r *sqlTabRun) summary() string { return r.outcome.Summary() }

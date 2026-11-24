@@ -16,9 +16,20 @@ type SQLQueryRequest struct {
 	Database    string
 	SQL         string
 	MaxRows     int
+	// TransactionID runs the statement inside a Data API transaction.
+	TransactionID string
 }
 
 type SQLQueryResult struct {
+	// SQL is the statement that produced this result, as it was sent.
+	SQL string
+	// Line is the line of the submitted source the statement starts on.
+	Line int
+	// Heading is the psql \echo text that named this result in its script.
+	Heading string
+	// Notices are the server's NOTICE and WARNING messages for the
+	// statement, such as those from RAISE NOTICE.
+	Notices      []string
 	Columns      []string
 	Rows         [][]string
 	CommandTag   string

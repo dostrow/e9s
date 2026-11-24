@@ -19,10 +19,14 @@ func (c *Client) ExecuteSQLData(ctx context.Context, request model.SQLQueryReque
 		return model.SQLQueryResult{}, fmt.Errorf("RDS Data API client is unavailable")
 	}
 	started := time.Now()
-	output, err := c.RDSData.ExecuteStatement(ctx, &rdsdata.ExecuteStatementInput{
+	input := &rdsdata.ExecuteStatementInput{
 		ResourceArn: awssdk.String(request.ResourceARN), SecretArn: awssdk.String(request.SecretARN),
 		Database: awssdk.String(request.Database), Sql: awssdk.String(request.SQL), IncludeResultMetadata: true,
-	})
+	}
+	if request.TransactionID != "" {
+		input.TransactionId = awssdk.String(request.TransactionID)
+	}
+	output, err := c.RDSData.ExecuteStatement(ctx, input)
 	if err != nil {
 		return model.SQLQueryResult{}, err
 	}
@@ -55,6 +59,48 @@ func (c *Client) ExecuteSQLData(ctx context.Context, request model.SQLQueryReque
 		result.CommandTag = fmt.Sprintf("%d rows affected", result.RowsAffected)
 	}
 	return result, nil
+}
+
+// BeginSQLDataTransaction starts a Data API transaction that later
+// statements join through SQLQueryRequest.TransactionID.
+func (c *Client) BeginSQLDataTransaction(ctx context.Context, request model.SQLQueryRequest) (string, error) {
+	if c.RDSData == nil {
+		return "", fmt.Errorf("RDS Data API client is unavailable")
+	}
+	output, err := c.RDSData.BeginTransaction(ctx, &rdsdata.BeginTransactionInput{
+		ResourceArn: awssdk.String(request.ResourceARN), SecretArn: awssdk.String(request.SecretARN),
+		Database: awssdk.String(request.Database),
+	})
+	if err != nil {
+		return "", err
+	}
+	return awssdk.ToString(output.TransactionId), nil
+}
+
+// EndSQLDataTransaction commits or rolls back request.TransactionID and
+// returns the Data API's transaction status.
+func (c *Client) EndSQLDataTransaction(ctx context.Context, request model.SQLQueryRequest, commit bool) (string, error) {
+	if c.RDSData == nil {
+		return "", fmt.Errorf("RDS Data API client is unavailable")
+	}
+	if commit {
+		output, err := c.RDSData.CommitTransaction(ctx, &rdsdata.CommitTransactionInput{
+			ResourceArn: awssdk.String(request.ResourceARN), SecretArn: awssdk.String(request.SecretARN),
+			TransactionId: awssdk.String(request.TransactionID),
+		})
+		if err != nil {
+			return "", err
+		}
+		return awssdk.ToString(output.TransactionStatus), nil
+	}
+	output, err := c.RDSData.RollbackTransaction(ctx, &rdsdata.RollbackTransactionInput{
+		ResourceArn: awssdk.String(request.ResourceARN), SecretArn: awssdk.String(request.SecretARN),
+		TransactionId: awssdk.String(request.TransactionID),
+	})
+	if err != nil {
+		return "", err
+	}
+	return awssdk.ToString(output.TransactionStatus), nil
 }
 
 func dataAPIFieldString(field types.Field) string {

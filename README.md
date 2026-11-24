@@ -617,11 +617,24 @@ SQL Workbench provides connection-scoped PostgreSQL query tabs in both the GTK
 and terminal frontends. Query text and tab names are restored after restart;
 results and credentials remain process-local. The GUI can run the selected
 text, the statement at the cursor, or the full tab. The TUI supports the latter
-two operations from its inline multiline editor. Both frontends can reconnect
-lost sessions and export the latest result to CSV.
+two operations from its inline multiline editor. Every statement of a run keeps
+its result: choose one from the GUI's result list or with `<` and `>` in the
+TUI, and export the selected result set to CSV. When a statement fails, the run
+stops there and shows the error, the line it starts on, and the results of the
+statements before it.
 
-The GTK Browser Pane becomes a lazy PostgreSQL object explorer for the active
-query tab. Expand schemas and then tables, views, materialized views,
+In the GTK frontend, double-clicking a saved connection opens a query tab and
+leaves the connection list in place. To browse a connection's database objects,
+right-click the connection (or press the Menu key or Shift+F10) and choose
+*Browse database objects*; the same item is on a query tab's right-click menu,
+and the toolbar's *Browse objects* button shows the active tab's objects. The
+browser belongs to a query tab, because inserting names and previewing rows act
+on that tab: browsing from a connection uses the active tab when it is on that
+connection, otherwise the connection's most recently used tab, and opens a tab
+only when the connection has none. Back returns to the connection list.
+
+The object browser is a lazy PostgreSQL object explorer in the Browser Pane.
+Expand schemas and then tables, views, materialized views,
 sequences, or functions; tables and views expand one level further into their
 columns. Selecting an object exposes Structure and Definition beside query
 Results. Object and column names can be inserted with toolbar actions or
@@ -648,7 +661,79 @@ platform or PostgreSQL default trust store.
 
 Queries are read-only by default. Data-changing SQL requires both the global
 `sql.allow_writes` setting and a separately confirmed, per-tab break-glass
-control. The tab control always returns to locked when e9s starts.
+control. The tab control always returns to locked when e9s starts. Unless both
+allow writes, the tab's session is also read-only on the server, so a function
+called from a `SELECT` cannot change data either; `set_config` is refused for
+the same reason. Locking a tab with an open transaction makes that transaction
+read-only. `ROLLBACK` is allowed in a locked tab, but committing needs writes
+enabled. Values are shown as PostgreSQL renders them in text, as psql does.
+
+#### Dry runs and reports
+
+Verification and remediation scripts can be checked before anything is kept:
+
+- **Dry run** (`D` in the TUI) runs the whole tab inside a transaction that e9s
+  always rolls back. Temporary tables, row locks and changes all end with it.
+- **Run in transaction** (`A`) runs the whole tab inside a transaction and then
+  asks whether to commit, listing the rows each statement changed. Keep it open
+  to review the results first, then commit or roll back.
+- A script written for psql often brackets itself with `BEGIN` and a final
+  `ROLLBACK` or `COMMIT`. Both modes use the script's `BEGIN`, including any
+  isolation level, and drop its final `COMMIT` or `ROLLBACK`, because e9s
+  decides how the transaction ends. A `COMMIT`, `ROLLBACK` or `BEGIN` anywhere
+  else would end e9s's transaction early, so the run is refused and the line is
+  named; savepoints are fine.
+- The **Report** shows the whole run as text in the style of psql: each
+  statement with its line, its result table or command tag, the failure, and
+  anything e9s did on the session's behalf. Open it with the GUI's Report tab
+  or `v` in the TUI, and save it to a file (`X` in the TUI) to keep a record of
+  a verification run.
+- On Data API connections both modes use a Data API transaction, which the
+  Data API ends after three minutes idle.
+
+Scripts written for psql run unchanged when they use only the psql commands
+that matter for a script's output. `\echo` and `\qecho` name the result that
+follows them, in the result list and the report. `\set ON_ERROR_STOP on`,
+`\pset`, `\timing` and `\x` are ignored, and the run says so: e9s always stops
+at the first error. Any other psql command, such as `\i`, `\copy`, `\gset` or a
+`\set` variable, is refused with its line before anything runs, because running
+the SQL without it would not do what the script intends. Server notices and
+warnings, such as `RAISE NOTICE` output from a `DO` block, are shown with the
+statement that raised them and appear in the report.
+
+#### Sessions and transactions
+
+Each query tab has its own PostgreSQL connection, so a transaction belongs to
+the tab that opened it: other tabs on the same connection profile cannot see or
+disturb it. The object browser uses a separate read-only connection per profile
+and never runs inside a tab's transaction.
+
+- **Open transactions are shown.** After `BEGIN`, the tab shows how long the
+  transaction has been open, with Commit (which asks first) and Roll back. In
+  the TUI these are `C` and `B`.
+- **Failed transactions are rolled back.** When a statement fails inside a
+  transaction, e9s rolls the transaction back at once, so its locks are
+  released, and says so.
+- **Nothing discards a transaction silently.** Closing the tab, reconnecting
+  it, or quitting e9s asks first when a transaction is open; going ahead rolls
+  it back. A lost connection is reported, and SQL is run again on a fresh
+  connection only when the tab was locked and no transaction was open. If the
+  connection is lost during `COMMIT`, e9s says the outcome is unknown.
+- **Half-finished runs are not kept.** When a run that opened a transaction
+  stops early, because a statement failed or the run was cancelled, e9s rolls
+  that transaction back rather than offer half a script for commit.
+- **Long runs can be followed and stopped.** The status line shows which
+  statement is running and on which line. Cancel (the GUI's Cancel button, or
+  `esc` in the TUI while a run is in progress) asks PostgreSQL to stop the
+  statement; the connection stays open and any transaction is rolled back.
+  `statement_timeout_seconds` sets a per-connection limit for any statement.
+- **Forgotten transactions end on the server.** Each tab's session sets
+  `idle_in_transaction_session_timeout` (300 seconds by default, or
+  `idle_in_transaction_timeout_seconds` per connection), so PostgreSQL ends a
+  session left idle in a transaction and rolls it back.
+- **Data API connections** run each statement on its own, so e9s refuses
+  `BEGIN`, `COMMIT` and other transaction control there rather than let them do
+  nothing; use Dry run or Run in transaction instead.
 
 ## Configuration
 
@@ -736,6 +821,8 @@ sql:
       pgpass_file: ~/.pgpass-reporting # optional per-profile first choice
       sslmode: verify-full
       sslrootcert: ~/.postgresql/rds-ca-bundle.pem # optional PEM CA bundle
+      idle_in_transaction_timeout_seconds: 300 # optional; ends sessions left in a transaction
+      statement_timeout_seconds: 0 # optional; cancels statements that run longer
 
 exclude_services: []
 ```

@@ -44,6 +44,12 @@ func (p paletteItem) alt(keys ...string) paletteItem {
 	return p
 }
 
+// do runs fn instead of pressing the item's key.
+func (p paletteItem) do(fn func(App) (App, tea.Cmd)) paletteItem {
+	p.run = fn
+	return p
+}
+
 func (p paletteItem) withChildren(children func(App) []paletteItem) paletteItem {
 	p.children = children
 	return p
@@ -461,13 +467,22 @@ func (a App) viewItems(state viewState) []paletteItem {
 			act("sql.objects", "o", "Toggle database object browser").kw("catalog", "schema", "tables"),
 			act("sql.run-all", "r", "Run all statements").kw("execute"),
 			act("sql.run-current", "c", "Run statement at cursor").kw("execute"),
-			act("sql.reconnect", "R", "Reconnect"),
+			act("sql.cancel", "esc", "Cancel the running SQL (while a run is in progress)").kw("stop", "abort").do(func(a App) (App, tea.Cmd) { return a.cancelSQLRun() }),
+			act("sql.dry-run", "D", "Dry run all statements in a transaction that is rolled back").kw("test", "verify", "rollback"),
+			act("sql.run-in-transaction", "A", "Run all statements in a transaction, then choose to commit").kw("apply", "review"),
+			act("sql.reconnect", "R", "Reconnect this tab").kw("session"),
 			act("sql.previous-tab", "[", "Previous tab"),
 			act("sql.next-tab", "]", "Next tab"),
 			act("sql.connections", "n", "Connection browser / new tab"),
 			act("sql.rename-tab", "t", "Rename tab"),
 			act("sql.close-tab", "d", "Close tab"),
-			act("sql.export-csv", "x", "Export latest result as CSV").kw("save"),
+			act("sql.previous-result", "<", "Previous result set of the run"),
+			act("sql.next-result", ">", "Next result set of the run"),
+			act("sql.commit", "C", "Commit the open transaction").danger().kw("transaction"),
+			act("sql.rollback", "B", "Roll back the open transaction").kw("transaction", "abort", "discard"),
+			act("sql.export-csv", "x", "Export selected result as CSV").kw("save"),
+			act("sql.report", "v", "Toggle the run report").kw("output", "psql"),
+			act("sql.save-report", "X", "Save the run report").kw("export", "file"),
 			act("sql.toggle-writes", "w", "Toggle per-tab write break-glass").danger().kw("write", "unsafe"),
 			act("sql.catalog-expand", "enter", "Expand selected schema, category, table, or view in object browser"),
 			act("sql.insert-name", "i", "Insert selected object name"),

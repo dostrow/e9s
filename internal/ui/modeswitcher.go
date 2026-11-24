@@ -16,9 +16,9 @@ type ModeSwitchSelectedMsg struct {
 }
 
 type ModeSwitcherModel struct {
-	Active bool
-	tabs   []ModeTab
-	cursor int
+	Active  bool
+	tabs    []ModeTab
+	cursor  int
 	current topMode
 }
 
@@ -79,7 +79,8 @@ func (m ModeSwitcherModel) Update(msg tea.Msg) (ModeSwitcherModel, tea.Cmd) {
 				return ModeSaveDefaultMsg{Mode: mode}
 			}
 		case "q":
-			return m, tea.Quit
+			m.Active = false
+			return m, func() tea.Msg { return QuitRequestedMsg{} }
 		case "esc", "`":
 			m.Active = false
 			return m, nil
@@ -125,3 +126,7 @@ func (m ModeSwitcherModel) View() string {
 
 	return box
 }
+
+// QuitRequestedMsg asks the application to quit through its usual checks,
+// such as confirming that open SQL transactions may be rolled back.
+type QuitRequestedMsg struct{}

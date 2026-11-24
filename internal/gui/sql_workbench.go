@@ -33,7 +33,20 @@ type sqlWorkbenchTab struct {
 	resultTable           *stringTable
 	resultScroll          *gtk.ScrolledWindow
 	resultLabel           *gtk.Label
-	results               []model.SQLQueryResult
+	resultChooser         *gtk.DropDown
+	resultChoices         *gtk.StringList
+	choosingResult        bool
+	failureLabel          *gtk.Label
+	eventsLabel           *gtk.Label
+	noticesLabel          *gtk.Label
+	run                   sqlworkbench.RunOutcome
+	selectedResult        int
+	transactionBar        *gtk.Box
+	transactionLabel      *gtk.Label
+	commitButton          *gtk.Button
+	rollbackButton        *gtk.Button
+	transactionTimer      glib.SourceHandle
+	reportBuffer          *gtk.TextBuffer
 	contextNotebook       *gtk.Notebook
 	structureBuffer       *gtk.TextBuffer
 	definitionBuffer      *gtk.TextBuffer
@@ -47,6 +60,8 @@ type sqlWorkbenchTab struct {
 	definitionButton      *gtk.Button
 	refreshObjectButton   *gtk.Button
 	explorer              sqlObjectExplorer
+	// lastActive is when the tab was last opened or switched to.
+	lastActive time.Time
 }
 
 type sqlObjectRowKind int
@@ -111,9 +126,28 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlRunAllButton = gtk.NewButtonWithLabel("Run all")
 	w.sqlRunAllButton.SetTooltipText("Run every statement in this query tab, in order")
 	w.sqlRunAllButton.ConnectClicked(func() { w.runActiveSQL(sqlRunAll) })
+	w.sqlDryRunButton = gtk.NewButtonWithLabel("Dry run")
+	w.sqlDryRunButton.SetTooltipText("Run every statement inside a transaction that is always rolled back, so nothing is kept")
+	w.sqlDryRunButton.ConnectClicked(func() { w.runActiveSQL(sqlRunDry) })
+	w.sqlRunInTransactionButton = gtk.NewButtonWithLabel("Run in transaction…")
+	w.sqlRunInTransactionButton.SetTooltipText("Run every statement inside a transaction, review the results, then commit or roll back")
+	w.sqlRunInTransactionButton.ConnectClicked(func() { w.runActiveSQL(sqlRunTransaction) })
+	w.sqlCancelButton = gtk.NewButtonWithLabel("Cancel")
+	w.sqlCancelButton.AddCSSClass("destructive-action")
+	w.sqlCancelButton.SetTooltipText("Ask PostgreSQL to stop the running statement; an open transaction is rolled back")
+	w.sqlCancelButton.SetVisible(false)
+	w.sqlCancelButton.ConnectClicked(func() {
+		if w.sqlActionCancel != nil {
+			w.sqlActionCancel()
+			w.setStatus("Cancelling the running SQL…", false)
+		}
+	})
 	w.sqlWritesButton = gtk.NewToggleButtonWithLabel("Writes locked")
 	w.sqlWritesButton.AddCSSClass("destructive-action")
 	w.sqlWritesButton.ConnectToggled(w.toggleSQLWrites)
+	w.sqlBrowseButton = gtk.NewButtonWithLabel("Browse objects")
+	w.sqlBrowseButton.SetTooltipText("Show the active tab's database objects in the Browser Pane (also on a connection's or tab's right-click menu)")
+	w.sqlBrowseButton.ConnectClicked(w.browseActiveSQLObjects)
 	w.sqlExportButton = gtk.NewButtonWithLabel("Export CSV…")
 	w.sqlExportButton.ConnectClicked(w.exportActiveSQLResult)
 
@@ -124,9 +158,13 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	toolbar.Append(rename)
 	toolbar.Append(closeTab)
 	toolbar.Append(w.sqlReconnectButton)
+	toolbar.Append(w.sqlBrowseButton)
 	toolbar.Append(w.sqlRunSelectionButton)
 	toolbar.Append(w.sqlRunCurrentButton)
 	toolbar.Append(w.sqlRunAllButton)
+	toolbar.Append(w.sqlDryRunButton)
+	toolbar.Append(w.sqlRunInTransactionButton)
+	toolbar.Append(w.sqlCancelButton)
 	toolbar.Append(w.sqlWritesButton)
 	toolbar.Append(w.sqlExportButton)
 
@@ -145,6 +183,7 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	w.sqlNotebook.ConnectSwitchPage(func(_ gtk.Widgetter, _ uint) {
 		if tab := w.activeSQLTab(); tab != nil {
 			w.sqlState.ActiveTabID = tab.state.ID
+			tab.lastActive = time.Now()
 			if w.currentPage == pageSQLObjects {
 				w.showSQLObjectBrowser(tab)
 			}
@@ -165,6 +204,8 @@ func (w *mainWindow) buildSQLWorkbenchPane() *gtk.Box {
 	pane.Append(toolbar)
 	pane.Append(w.sqlPaneStack)
 	w.sqlPane = pane
+	w.installSQLProfileContextMenu()
+	w.installSQLTabContextMenu()
 	w.restoreSQLTabs()
 	w.updateSQLControls()
 	return pane
@@ -240,7 +281,7 @@ func (w *mainWindow) selectSQLProfileRow() {
 	profile := w.filteredSQLProfiles[position]
 	w.selectedSQLProfile = profile.Name
 	w.setBreadcrumb("SQL Workbench / Connections / " + profile.Name)
-	w.setStatus("Selected SQL connection "+profile.Name+"; double-click to open a query tab", false)
+	w.setStatus("Selected SQL connection "+profile.Name+"; double-click to open a query tab, or right-click to browse its objects", false)
 }
 
 func (w *mainWindow) openSQLProfileAt(position uint) {
@@ -312,11 +353,58 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	resultScroll.SetVisible(false)
 	resultLabel := gtk.NewLabel("No query has been run in this tab.")
 	resultLabel.SetXAlign(0)
+	resultLabel.SetHExpand(true)
 	resultLabel.AddCSSClass("muted")
+	// One entry per statement of the last run, so a script's earlier result
+	// sets stay reachable after later statements run.
+	resultChoices := gtk.NewStringList(nil)
+	resultChooser := gtk.NewDropDown(resultChoices, nil)
+	resultChooser.SetTooltipText("Every statement of the last run, in order")
+	resultChooser.SetVisible(false)
+	resultHeader := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	resultHeader.Append(resultChooser)
+	resultHeader.Append(resultLabel)
+	failureLabel := gtk.NewLabel("")
+	failureLabel.SetXAlign(0)
+	failureLabel.SetYAlign(0)
+	failureLabel.SetWrap(true)
+	failureLabel.SetSelectable(true)
+	failureLabel.AddCSSClass("error")
+	failureLabel.SetVisible(false)
+	eventsLabel := gtk.NewLabel("")
+	eventsLabel.SetXAlign(0)
+	eventsLabel.SetWrap(true)
+	eventsLabel.AddCSSClass("semantic-warning")
+	eventsLabel.SetVisible(false)
+	noticesLabel := gtk.NewLabel("")
+	noticesLabel.SetXAlign(0)
+	noticesLabel.SetWrap(true)
+	noticesLabel.SetSelectable(true)
+	noticesLabel.AddCSSClass("muted")
+	noticesLabel.SetVisible(false)
 	resultBox := gtk.NewBox(gtk.OrientationVertical, 6)
 	resultBox.SetMarginTop(6)
-	resultBox.Append(resultLabel)
+	resultBox.Append(resultHeader)
+	resultBox.Append(eventsLabel)
+	resultBox.Append(failureLabel)
+	resultBox.Append(noticesLabel)
 	resultBox.Append(resultScroll)
+
+	transactionLabel := gtk.NewLabel("")
+	transactionLabel.SetXAlign(0)
+	transactionLabel.SetHExpand(true)
+	transactionLabel.AddCSSClass("semantic-error")
+	commitButton := gtk.NewButtonWithLabel("Commit…")
+	commitButton.AddCSSClass("destructive-action")
+	commitButton.SetTooltipText("Make the open transaction's changes permanent")
+	rollbackButton := gtk.NewButtonWithLabel("Roll back")
+	rollbackButton.SetTooltipText("Discard the open transaction's changes and release its locks")
+	transactionBar := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	transactionBar.AddCSSClass("log-toolbar")
+	transactionBar.Append(transactionLabel)
+	transactionBar.Append(rollbackButton)
+	transactionBar.Append(commitButton)
+	transactionBar.SetVisible(false)
 
 	structureBuffer := gtk.NewTextBuffer(nil)
 	structureBuffer.SetText("Select a table, view, sequence, or function in the Browser Pane.")
@@ -353,6 +441,27 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	contextNotebook.AppendPage(resultBox, gtk.NewLabel("Results"))
 	contextNotebook.AppendPage(structureScroll, gtk.NewLabel("Structure"))
 	contextNotebook.AppendPage(definitionScroll, gtk.NewLabel("Definition"))
+	reportBuffer := gtk.NewTextBuffer(nil)
+	reportBuffer.SetText("Run SQL in this tab to see a report of every statement.")
+	reportView := gtk.NewTextViewWithBuffer(reportBuffer)
+	reportView.SetEditable(false)
+	reportView.SetCursorVisible(true)
+	reportView.SetMonospace(true)
+	reportView.AddCSSClass("inspector")
+	reportScroll := gtk.NewScrolledWindow()
+	reportScroll.SetHExpand(true)
+	reportScroll.SetVExpand(true)
+	reportScroll.SetChild(reportView)
+	saveReportButton := gtk.NewButtonWithLabel("Save report…")
+	copyReportButton := gtk.NewButtonWithLabel("Copy report")
+	reportToolbar := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	reportToolbar.AddCSSClass("log-toolbar")
+	reportToolbar.Append(saveReportButton)
+	reportToolbar.Append(copyReportButton)
+	reportBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	reportBox.Append(reportToolbar)
+	reportBox.Append(reportScroll)
+	contextNotebook.AppendPage(reportBox, gtk.NewLabel("Report"))
 
 	previewButton := gtk.NewButtonWithLabel("Preview 100 rows")
 	generateButton := gtk.NewButtonWithLabel("Generate SELECT")
@@ -374,6 +483,7 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	objectToolbar.Append(refreshObjectButton)
 	objectToolbar.SetVisible(false)
 	lowerBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	lowerBox.Append(transactionBar)
 	lowerBox.Append(objectToolbar)
 	lowerBox.Append(contextNotebook)
 
@@ -387,6 +497,9 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	tab := &sqlWorkbenchTab{
 		state: state, editor: editor, page: split, tabLabel: gtk.NewLabel(""),
 		resultTable: resultTable, resultScroll: resultScroll, resultLabel: resultLabel,
+		resultChooser: resultChooser, resultChoices: resultChoices, failureLabel: failureLabel, eventsLabel: eventsLabel, noticesLabel: noticesLabel,
+		transactionBar: transactionBar, transactionLabel: transactionLabel, commitButton: commitButton, rollbackButton: rollbackButton,
+		reportBuffer:    reportBuffer,
 		contextNotebook: contextNotebook, structureBuffer: structureBuffer, definitionBuffer: definitionEditor.Buffer(), definitionEditor: definitionEditor,
 		objectToolbar: objectToolbar, previewButton: previewButton, generateButton: generateButton,
 		insertNameButton: insertNameButton, insertQualifiedButton: insertQualifiedButton,
@@ -397,6 +510,22 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 		w.showSQLResultCell(tab, int(position), field)
 	}
 	w.installSQLResultContextMenu(tab)
+	resultChooser.NotifyProperty("selected", func() {
+		if tab.choosingResult {
+			return
+		}
+		tab.selectedResult = int(resultChooser.Selected())
+		w.renderSelectedSQLResult(tab)
+	})
+	commitButton.ConnectClicked(func() { w.confirmCommitSQLTransaction(tab) })
+	saveReportButton.ConnectClicked(func() { w.saveSQLReport(tab) })
+	copyReportButton.ConnectClicked(func() {
+		if report, ok := w.sqlReport(tab); ok {
+			w.window.Clipboard().SetText(report)
+			w.setStatus("Copied the SQL run report", false)
+		}
+	})
+	rollbackButton.ConnectClicked(func() { w.endSQLTransaction(tab, false) })
 	previewButton.ConnectClicked(func() { w.previewSQLObject(tab) })
 	generateButton.ConnectClicked(func() { w.generateSQLSelect(tab) })
 	insertNameButton.ConnectClicked(func() { w.insertSQLBrowserSelection(tab, false) })
@@ -417,11 +546,9 @@ func (w *mainWindow) openSQLTab(profile config.SQLConnection, state sqlworkbench
 	w.updateSQLTabTitle(tab)
 	w.sqlNotebook.SetCurrentPage(page)
 	w.sqlState.ActiveTabID = tab.state.ID
+	tab.lastActive = time.Now()
 	w.scheduleSQLStateSave()
 	w.updateSQLControls()
-	if moduleForPage(w.currentPage) == moduleSQLWorkbench {
-		w.showSQLObjectBrowser(tab)
-	}
 	glib.IdleAdd(func() {
 		if view, ok := editor.Widget().(*gtk.TextView); ok {
 			view.GrabFocus()
@@ -438,6 +565,7 @@ func (w *mainWindow) sqlTabLabel(tab *sqlWorkbenchTab) *gtk.Box {
 	closeButton.SetTooltipText("Close this query tab")
 	closeButton.ConnectClicked(func() { w.closeSQLTab(tab) })
 	box.Append(closeButton)
+	w.attachSQLTabMenu(tab, box)
 	return box
 }
 
@@ -454,10 +582,20 @@ func (w *mainWindow) activeSQLTab() *sqlWorkbenchTab {
 
 func (w *mainWindow) closeActiveSQLTab() { w.closeSQLTab(w.activeSQLTab()) }
 
+// closeSQLTab closes a tab and its connection, asking first when that would
+// discard an open transaction.
 func (w *mainWindow) closeSQLTab(tab *sqlWorkbenchTab) {
 	if tab == nil || w.sqlActionPending {
 		return
 	}
+	if w.sqlTransactionOpen(tab) {
+		w.confirmDiscardSQLTransaction(tab, "Close "+w.sqlTabName(tab)+"?", "Close tab", func() { w.closeSQLTabNow(tab) })
+		return
+	}
+	w.closeSQLTabNow(tab)
+}
+
+func (w *mainWindow) closeSQLTabNow(tab *sqlWorkbenchTab) {
 	index := -1
 	for candidate, existing := range w.sqlTabs {
 		if existing == tab {
@@ -473,6 +611,9 @@ func (w *mainWindow) closeSQLTab(tab *sqlWorkbenchTab) {
 	}
 	if tab.explorer.catalogCancel != nil {
 		tab.explorer.catalogCancel()
+	}
+	if w.sqlExecutor != nil {
+		w.sqlExecutor.CloseSession(tab.state.ID)
 	}
 	w.sqlNotebook.RemovePage(index)
 	w.sqlTabs = append(w.sqlTabs[:index], w.sqlTabs[index+1:]...)
@@ -559,7 +700,20 @@ const (
 	sqlRunSelection sqlRunMode = iota
 	sqlRunCurrent
 	sqlRunAll
+	sqlRunDry
+	sqlRunTransaction
 )
+
+func (m sqlRunMode) executorMode() sqlworkbench.RunMode {
+	switch m {
+	case sqlRunDry:
+		return sqlworkbench.RunDryRun
+	case sqlRunTransaction:
+		return sqlworkbench.RunInTransaction
+	default:
+		return sqlworkbench.RunAsWritten
+	}
+}
 
 func (w *mainWindow) runSelectedOrCurrentSQL() {
 	tab := w.activeSQLTab()
@@ -607,53 +761,260 @@ func (w *mainWindow) runActiveSQL(mode sqlRunMode) {
 	tab.state.Query = tab.editor.Text()
 	tab.state.UpdatedAt = time.Now()
 	w.saveSQLStateNow()
-	w.sqlActionPending = true
-	w.sqlActionGeneration++
-	actionGeneration := w.sqlActionGeneration
-	w.updateSQLControls()
-	ctx, generation := w.startRequest("Running SQL on " + profile.Name + "…")
-	go func() {
-		results, err := w.sqlExecutor.Execute(ctx, profile, source, tab.state.AllowWrites)
-		glib.IdleAdd(func() {
-			if actionGeneration != w.sqlActionGeneration {
-				return
-			}
-			w.sqlActionPending = false
-			w.updateSQLControls()
-			if ctx.Err() != nil || generation != w.generation {
-				return
-			}
-			w.requestPending = false
-			w.spinner.Stop()
-			w.setWorkspaceBusy("", false)
+	request := sqlworkbench.RunRequest{Profile: profile, SessionID: tab.state.ID, Source: source, AllowWrites: tab.state.AllowWrites, Mode: mode.executorMode(),
+		Progress: w.sqlProgressReporter()}
+	label := "Running SQL on " + profile.Name + "…"
+	if request.Mode != sqlworkbench.RunAsWritten {
+		label = "Running SQL on " + profile.Name + " (" + request.Mode.String() + ")…"
+	}
+	w.startSQLAction(tab, label, func(ctx context.Context) func() {
+		outcome, err := w.sqlExecutor.Run(ctx, request)
+		return func() {
 			if err != nil {
 				w.setStatus("SQL query failed: "+err.Error(), true)
 				return
 			}
-			tab.results = results
+			tab.run = outcome
 			w.renderSQLResults(tab)
-			w.updateSQLControls()
-			rows := 0
-			for _, result := range results {
-				rows += len(result.Rows)
+			w.setStatus(outcome.Summary(), outcome.Failure != nil)
+			if outcome.Mode == sqlworkbench.RunInTransaction && outcome.Transaction == sqlworkbench.TxOpen {
+				w.updateSQLTransactionBar(tab)
+				w.reviewSQLTransaction(tab)
 			}
-			w.setStatus(fmt.Sprintf("Executed %d statement(s); %d result row(s)", len(results), rows), false)
+		}
+	})
+}
+
+// reviewSQLTransaction offers to end a transactional run's open
+// transaction, listing what it changed. Keeping it open leaves the
+// transaction bar's Commit and Roll back.
+func (w *mainWindow) reviewSQLTransaction(tab *sqlWorkbenchTab) {
+	changes := tab.run.ChangeSummary()
+	if changes == "" {
+		changes = "No statement reported changed rows."
+	} else {
+		changes = "Changes: " + changes
+	}
+	const keepOpen = 1
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageQuestion, gtk.ButtonsNone)
+	dialog.SetTitle("Review transaction")
+	dialog.SetMarkup("The run in <b>" + glib.MarkupEscapeText(w.sqlTabName(tab)) + "</b> succeeded. Commit its transaction?")
+	dialog.SetObjectProperty("secondary-text", changes+"\n\nKeep it open to review the results first; it holds its locks until it ends.")
+	dialog.AddButton("Roll back", int(gtk.ResponseReject))
+	dialog.AddButton("Keep open", keepOpen)
+	dialog.AddButton("Commit", int(gtk.ResponseAccept))
+	dialog.SetDefaultResponse(keepOpen)
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		switch response {
+		case int(gtk.ResponseAccept):
+			w.endSQLTransaction(tab, true)
+		case int(gtk.ResponseReject):
+			w.endSQLTransaction(tab, false)
+		}
+	})
+	dialog.Present()
+}
+
+// sqlProgressReporter shows which statement a run is executing, at most a
+// few times a second so a long script cannot flood the main loop.
+func (w *mainWindow) sqlProgressReporter() func(sqlworkbench.Progress) {
+	var last time.Time
+	return func(progress sqlworkbench.Progress) {
+		if now := time.Now(); now.Sub(last) >= 200*time.Millisecond || progress.Index == 0 {
+			last = now
+			text := fmt.Sprintf("Running statement %d of %d (line %d): %s", progress.Index+1, progress.Total, progress.Line, progress.Statement)
+			glib.IdleAdd(func() {
+				if w.sqlActionPending {
+					w.setStatus(text, false)
+				}
+			})
+		}
+	}
+}
+
+// startSQLAction runs work for a tab off the UI thread, then applies its
+// result. SQL actions have a context of their own: a page change or refresh
+// elsewhere in the window must not cancel a script partway through.
+func (w *mainWindow) startSQLAction(tab *sqlWorkbenchTab, label string, work func(context.Context) func()) {
+	w.sqlActionPending = true
+	ctx, cancel := context.WithCancel(w.ctx)
+	w.sqlActionCancel = cancel
+	w.updateSQLControls()
+	w.spinner.Start()
+	w.setStatus(label, false)
+	go func() {
+		apply := work(ctx)
+		glib.IdleAdd(func() {
+			cancel()
+			w.sqlActionCancel = nil
+			w.sqlActionPending = false
+			w.spinner.Stop()
+			if w.sqlTabIsOpen(tab) {
+				apply()
+				w.updateSQLTransactionBar(tab)
+			}
+			w.updateSQLControls()
 		})
 	}()
 }
 
-func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
-	if tab == nil || len(tab.results) == 0 {
-		if tab != nil {
-			tab.resultScroll.SetVisible(false)
-			tab.resultLabel.SetLabel("The query completed without a result set.")
+func (w *mainWindow) sqlTabIsOpen(tab *sqlWorkbenchTab) bool {
+	for _, existing := range w.sqlTabs {
+		if existing == tab {
+			return true
 		}
+	}
+	return false
+}
+
+func (w *mainWindow) sqlTabName(tab *sqlWorkbenchTab) string {
+	if title := strings.TrimSpace(tab.state.Title); title != "" {
+		return title
+	}
+	return tab.state.ProfileName
+}
+
+func (w *mainWindow) sqlTransactionOpen(tab *sqlWorkbenchTab) bool {
+	return tab != nil && w.sqlExecutor != nil && w.sqlExecutor.SessionStatus(tab.state.ID).State == sqlworkbench.TxOpen
+}
+
+// updateSQLTransactionBar shows the tab's open transaction, refreshing its
+// age every second while it stays open.
+func (w *mainWindow) updateSQLTransactionBar(tab *sqlWorkbenchTab) bool {
+	if tab == nil || w.sqlExecutor == nil {
+		return false
+	}
+	text := w.sqlExecutor.SessionStatus(tab.state.ID).Describe(time.Now())
+	tab.transactionLabel.SetLabel("● " + text)
+	tab.transactionBar.SetVisible(text != "")
+	tab.commitButton.SetSensitive(!w.sqlActionPending)
+	tab.rollbackButton.SetSensitive(!w.sqlActionPending)
+	open := text != ""
+	if open && tab.transactionTimer == 0 {
+		tab.transactionTimer = glib.TimeoutSecondsAdd(1, func() bool {
+			if !w.sqlTabIsOpen(tab) || !w.updateSQLTransactionBar(tab) {
+				tab.transactionTimer = 0
+				return false
+			}
+			return true
+		})
+	}
+	return open
+}
+
+func (w *mainWindow) confirmCommitSQLTransaction(tab *sqlWorkbenchTab) {
+	if !w.sqlTransactionOpen(tab) || w.sqlActionPending {
 		return
 	}
-	result := tab.results[len(tab.results)-1]
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Commit transaction")
+	dialog.SetMarkup("Commit the open transaction in <b>" + glib.MarkupEscapeText(w.sqlTabName(tab)) + "</b>?")
+	dialog.SetObjectProperty("secondary-text", "Its changes become permanent and visible to other sessions.")
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Commit", int(gtk.ResponseAccept))
+	dialog.SetDefaultResponse(int(gtk.ResponseCancel))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseAccept) {
+			w.endSQLTransaction(tab, true)
+		}
+	})
+	dialog.Present()
+}
+
+func (w *mainWindow) endSQLTransaction(tab *sqlWorkbenchTab, commit bool) {
+	if !w.sqlTransactionOpen(tab) || w.sqlActionPending {
+		return
+	}
+	label := "Rolling back…"
+	if commit {
+		label = "Committing…"
+	}
+	tabID, allowWrites := tab.state.ID, tab.state.AllowWrites
+	w.startSQLAction(tab, label, func(context.Context) func() {
+		tag, err := w.sqlExecutor.EndTransaction(tabID, commit, allowWrites)
+		return func() {
+			switch {
+			case err != nil:
+				w.setStatus(err.Error(), true)
+			case commit && tag != "COMMIT":
+				w.setStatus("The transaction had failed, so PostgreSQL rolled it back instead of committing ("+tag+")", true)
+			default:
+				w.setStatus("Transaction ended: "+tag, false)
+			}
+		}
+	})
+}
+
+// confirmDiscardSQLTransaction asks before an action that ends the tab's
+// connection and so rolls back its open transaction.
+func (w *mainWindow) confirmDiscardSQLTransaction(tab *sqlWorkbenchTab, question, action string, proceed func()) {
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Open transaction")
+	dialog.SetMarkup(glib.MarkupEscapeText(question))
+	dialog.SetObjectProperty("secondary-text", w.sqlTabName(tab)+" has an open transaction. Continuing rolls it back: none of its changes are kept.")
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton(action, int(gtk.ResponseAccept))
+	dialog.SetDefaultResponse(int(gtk.ResponseCancel))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseAccept) {
+			proceed()
+		}
+	})
+	dialog.Present()
+}
+
+// renderSQLResults lists every entry of the tab's run and opens the failed
+// statement, if there is one, or else the last result.
+func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
+	if tab == nil {
+		return
+	}
+	labels := make([]string, tab.run.EntryCount())
+	for index := range labels {
+		labels[index] = tab.run.EntryLabel(index)
+	}
+	tab.choosingResult = true
+	tab.resultChoices.Splice(0, tab.resultChoices.NItems(), labels)
+	tab.selectedResult = max(0, len(labels)-1)
+	if len(labels) > 0 {
+		tab.resultChooser.SetSelected(uint(tab.selectedResult))
+	}
+	tab.choosingResult = false
+	tab.resultChooser.SetVisible(len(labels) > 1)
+	tab.eventsLabel.SetLabel(strings.Join(tab.run.Events, "\n"))
+	tab.eventsLabel.SetVisible(len(tab.run.Events) > 0)
+	if report, ok := w.sqlReport(tab); ok {
+		tab.reportBuffer.SetText(report)
+	}
+	w.renderSelectedSQLResult(tab)
+	w.updateSQLControls()
+}
+
+func (w *mainWindow) renderSelectedSQLResult(tab *sqlWorkbenchTab) {
 	// Hide before changing the schema so a result without columns is never
 	// allocated in GtkColumnView's transient zero-width state.
 	tab.resultScroll.SetVisible(false)
+	tab.failureLabel.SetVisible(false)
+	if tab.contextNotebook.CurrentPage() != sqlReportPage {
+		tab.contextNotebook.SetCurrentPage(0)
+	}
+	if tab.run.EntryCount() == 0 {
+		tab.resultLabel.SetLabel("The query completed without a result set.")
+		return
+	}
+	result, ok := sqlTabSelectedResult(tab)
+	if !ok {
+		failure := tab.run.Failure
+		tab.failureLabel.SetLabel(sqlFailureText(*failure))
+		tab.failureLabel.SetVisible(true)
+		tab.resultLabel.SetLabel(tab.run.Summary())
+		w.showSQLNotices(tab, failure.Notices)
+		return
+	}
+	w.showSQLNotices(tab, result.Notices)
 	columns := make([]columnSpec, len(result.Columns))
 	for index, title := range result.Columns {
 		columns[index] = columnSpec{title: title, field: index, expand: true}
@@ -671,15 +1032,37 @@ func (w *mainWindow) renderSQLResults(tab *sqlWorkbenchTab) {
 	if len(columns) > 0 {
 		tab.resultScroll.SetVisible(true)
 	}
-	status := fmt.Sprintf("%s • %d row(s) • %d ms", valueOrDash(result.CommandTag), len(result.Rows), result.DurationMS)
-	if len(tab.results) > 1 {
-		status = fmt.Sprintf("Statement %d of %d • %s", len(tab.results), len(tab.results), status)
-	}
-	if result.Truncated {
-		status += fmt.Sprintf(" • truncated at %d rows", sqlworkbench.DefaultMaxRows)
+	status := fmt.Sprintf("%s • %d row(s) • %d ms", sqlworkbench.ResultTag(result), len(result.Rows), result.DurationMS)
+	if len(columns) == 0 {
+		status = fmt.Sprintf("%s • no result set • %d ms", sqlworkbench.ResultTag(result), result.DurationMS)
 	}
 	tab.resultLabel.SetLabel(status)
-	tab.contextNotebook.SetCurrentPage(0)
+}
+
+// sqlFailureText describes a failed statement and shows its start.
+func sqlFailureText(failure sqlworkbench.StatementFailure) string {
+	heading := fmt.Sprintf("Statement %d failed", failure.Index+1)
+	if failure.Line > 0 {
+		heading += fmt.Sprintf(" at line %d", failure.Line)
+	}
+	text := heading + "\n" + failure.Message
+	if failure.SQL != "" {
+		lines := strings.Split(failure.SQL, "\n")
+		if len(lines) > 12 {
+			lines = append(lines[:12], fmt.Sprintf("… %d more line(s)", len(lines)-12))
+		}
+		text += "\n\n" + strings.Join(lines, "\n")
+	}
+	return text
+}
+
+// sqlTabSelectedResult returns the selected result set of the tab's run. It
+// reports false when nothing ran or the failed statement is selected.
+func sqlTabSelectedResult(tab *sqlWorkbenchTab) (model.SQLQueryResult, bool) {
+	if tab == nil || tab.selectedResult < 0 || tab.selectedResult >= len(tab.run.Results) {
+		return model.SQLQueryResult{}, false
+	}
+	return tab.run.Results[tab.selectedResult], true
 }
 
 func (w *mainWindow) installSQLResultContextMenu(tab *sqlWorkbenchTab) {
@@ -729,11 +1112,12 @@ func (w *mainWindow) installSQLResultContextMenu(tab *sqlWorkbenchTab) {
 }
 
 func (w *mainWindow) copySelectedSQLResultRows(tab *sqlWorkbenchTab, includeHeaders bool) {
-	if tab == nil || len(tab.results) == 0 {
+	result, ok := sqlTabSelectedResult(tab)
+	if !ok {
 		return
 	}
 	positions := tab.resultTable.selectedPositions()
-	text, rows, err := formatSQLResultRows(tab.results[len(tab.results)-1], positions, includeHeaders)
+	text, rows, err := formatSQLResultRows(result, positions, includeHeaders)
 	if err != nil {
 		w.setStatus("Copying SQL result rows failed: "+err.Error(), true)
 		return
@@ -777,10 +1161,11 @@ func formatSQLResultRows(result model.SQLQueryResult, positions []int, includeHe
 }
 
 func (w *mainWindow) showSQLResultCell(tab *sqlWorkbenchTab, row, field int) {
-	if tab == nil || len(tab.results) == 0 {
+	result, ok := sqlTabSelectedResult(tab)
+	if !ok {
 		return
 	}
-	column, value, ok := sqlResultCell(tab.results[len(tab.results)-1], row, field)
+	column, value, ok := sqlResultCell(result, row, field)
 	if !ok {
 		return
 	}
@@ -840,6 +1225,8 @@ func sqlResultCell(result model.SQLQueryResult, row, field int) (string, string,
 	return result.Columns[field], result.Rows[row][field], true
 }
 
+// reconnectActiveSQLTab replaces the tab's connection, asking first when
+// that would discard an open transaction.
 func (w *mainWindow) reconnectActiveSQLTab() {
 	tab := w.activeSQLTab()
 	if tab == nil || w.sqlActionPending || w.sqlExecutor == nil {
@@ -850,32 +1237,24 @@ func (w *mainWindow) reconnectActiveSQLTab() {
 		w.setStatus("SQL connection profile "+tab.state.ProfileName+" is no longer configured", true)
 		return
 	}
-	w.sqlActionPending = true
-	w.sqlActionGeneration++
-	actionGeneration := w.sqlActionGeneration
-	w.updateSQLControls()
-	ctx, generation := w.startRequest("Reconnecting to " + profile.Name + "…")
-	go func() {
-		err := w.sqlExecutor.Reconnect(ctx, profile)
-		glib.IdleAdd(func() {
-			if actionGeneration != w.sqlActionGeneration {
-				return
+	reconnect := func() {
+		tabID := tab.state.ID
+		w.startSQLAction(tab, "Reconnecting to "+profile.Name+"…", func(ctx context.Context) func() {
+			err := w.sqlExecutor.Reconnect(ctx, profile, tabID, true)
+			return func() {
+				if err != nil {
+					w.setStatus("SQL reconnect failed: "+err.Error(), true)
+					return
+				}
+				w.setStatus("Connected to "+profile.Name, false)
 			}
-			w.sqlActionPending = false
-			w.updateSQLControls()
-			if ctx.Err() != nil || generation != w.generation {
-				return
-			}
-			w.requestPending = false
-			w.spinner.Stop()
-			w.setWorkspaceBusy("", false)
-			if err != nil {
-				w.setStatus("SQL reconnect failed: "+err.Error(), true)
-				return
-			}
-			w.setStatus("Connected to "+profile.Name, false)
 		})
-	}()
+	}
+	if w.sqlTransactionOpen(tab) {
+		w.confirmDiscardSQLTransaction(tab, "Reconnect "+w.sqlTabName(tab)+"?", "Reconnect", reconnect)
+		return
+	}
+	reconnect()
 }
 
 func (w *mainWindow) toggleSQLWrites() {
@@ -918,13 +1297,21 @@ func (w *mainWindow) toggleSQLWrites() {
 func (w *mainWindow) updateSQLControls() {
 	tab := w.activeSQLTab()
 	enabled := tab != nil && !w.sqlActionPending
-	for _, button := range []*gtk.Button{w.sqlRunSelectionButton, w.sqlRunCurrentButton, w.sqlRunAllButton, w.sqlReconnectButton} {
+	for _, button := range []*gtk.Button{w.sqlRunSelectionButton, w.sqlRunCurrentButton, w.sqlRunAllButton, w.sqlDryRunButton, w.sqlRunInTransactionButton, w.sqlReconnectButton} {
 		if button != nil {
 			button.SetSensitive(enabled)
 		}
 	}
+	if w.sqlBrowseButton != nil {
+		// The browser has its own connection, so it stays available while
+		// a run is in progress.
+		w.sqlBrowseButton.SetSensitive(tab != nil)
+	}
 	if w.sqlExportButton != nil {
 		w.sqlExportButton.SetSensitive(enabled && sqlTabHasExportableResult(tab))
+	}
+	if w.sqlCancelButton != nil {
+		w.sqlCancelButton.SetVisible(w.sqlActionCancel != nil)
 	}
 	if w.sqlWritesButton != nil {
 		w.sqlWritesUpdating = true
@@ -942,10 +1329,8 @@ func (w *mainWindow) updateSQLControls() {
 }
 
 func sqlTabHasExportableResult(tab *sqlWorkbenchTab) bool {
-	if tab == nil || len(tab.results) == 0 {
-		return false
-	}
-	return len(tab.results[len(tab.results)-1].Columns) > 0
+	result, ok := sqlTabSelectedResult(tab)
+	return ok && len(result.Columns) > 0
 }
 
 func (w *mainWindow) exportActiveSQLResult() {
@@ -954,7 +1339,7 @@ func (w *mainWindow) exportActiveSQLResult() {
 		w.setStatus("Run a query that returns columns before exporting CSV", true)
 		return
 	}
-	result := tab.results[len(tab.results)-1]
+	result, _ := sqlTabSelectedResult(tab)
 	chooser := gtk.NewFileChooserNative("Export SQL results", &w.window.Window, gtk.FileChooserActionSave, "Export", "Cancel")
 	chooser.SetModal(true)
 	chooser.SetCurrentName("query-results.csv")
@@ -1136,6 +1521,10 @@ func (w *mainWindow) manageSQLConnections() {
 	sslRootCertControl.Append(sslRootCertBrowse)
 	connectTimeout := gtk.NewSpinButtonWithRange(0, 300, 1)
 	connectTimeout.SetValue(15)
+	idleTransactionTimeout := gtk.NewSpinButtonWithRange(0, 86400, 30)
+	idleTransactionTimeout.SetValue(0)
+	statementTimeout := gtk.NewSpinButtonWithRange(0, 86400, 10)
+	statementTimeout.SetValue(0)
 	ssmInstance := gtk.NewEntry()
 	ssmInstance.SetPlaceholderText("Blank disables SSM port forwarding")
 	ssmHost := gtk.NewEntry()
@@ -1159,6 +1548,9 @@ func (w *mainWindow) manageSQLConnections() {
 	content.Append(sslRootCertRow)
 	content.Append(settingsNote("For verify-full, choose a PEM CA/root-certificate bundle only when the database certificate is not trusted by the platform or PostgreSQL default trust store."))
 	content.Append(settingsRow("Connect timeout (seconds; 0 uses driver default)", connectTimeout))
+	content.Append(settingsRow("Statement timeout (seconds; 0 leaves the server setting)", statementTimeout))
+	content.Append(settingsRow("Idle transaction timeout (seconds; 0 uses 300)", idleTransactionTimeout))
+	content.Append(settingsNote("PostgreSQL ends a query tab's session when it sits this long in an open transaction, rolling the transaction back, so a forgotten transaction cannot hold locks indefinitely."))
 	content.Append(settingsNote("Optional SSM tunnel. e9s runs the AWS CLI start-session command and keeps that process scoped to the database connection."))
 	content.Append(settingsRow("SSM managed instance ID", ssmInstance))
 	content.Append(settingsRow("SSM remote host override", ssmHost))
@@ -1196,6 +1588,8 @@ func (w *mainWindow) manageSQLConnections() {
 		sslMode.SetSelected(uint(settingsChoiceIndex(sslModes, firstValue(profile.SSLMode, "verify-full"))))
 		sslRootCert.SetText(profile.SSLRootCert)
 		connectTimeout.SetValue(float64(profile.ConnectSecs))
+		idleTransactionTimeout.SetValue(float64(profile.IdleInTransactionSecs))
+		statementTimeout.SetValue(float64(profile.StatementTimeoutSecs))
 		if profile.SSMTunnel == nil {
 			ssmInstance.SetText("")
 			ssmHost.SetText("")
@@ -1272,7 +1666,8 @@ func (w *mainWindow) manageSQLConnections() {
 			Auth: settingsChoiceValue(authModes, auth.Selected()), PGPassFile: strings.TrimSpace(pgpass.Text()),
 			SecretARN: strings.TrimSpace(secretARN.Text()), ResourceARN: strings.TrimSpace(resourceARN.Text()),
 			SSLMode: settingsChoiceValue(sslModes, sslMode.Selected()), SSLRootCert: strings.TrimSpace(sslRootCert.Text()),
-			ConnectSecs: connectTimeout.ValueAsInt(),
+			ConnectSecs: connectTimeout.ValueAsInt(), IdleInTransactionSecs: idleTransactionTimeout.ValueAsInt(),
+			StatementTimeoutSecs: statementTimeout.ValueAsInt(),
 		}
 		if instance := strings.TrimSpace(ssmInstance.Text()); instance != "" {
 			profile.SSMTunnel = &config.SSMTunnel{InstanceID: instance, RemoteHost: strings.TrimSpace(ssmHost.Text()),
@@ -1313,4 +1708,80 @@ func settingsChoiceValue(choices []settingsChoice, selected uint) string {
 		return choices[selected].value
 	}
 	return ""
+}
+
+// confirmCloseWithOpenSQLTransactions keeps the window open and asks first
+// when closing it would roll back open transactions. It returns true to stop
+// the close.
+func (w *mainWindow) confirmCloseWithOpenSQLTransactions() bool {
+	if w.sqlCloseConfirmed || w.sqlExecutor == nil {
+		return false
+	}
+	open := w.sqlExecutor.OpenTransactions()
+	if len(open) == 0 {
+		return false
+	}
+	dialog := gtk.NewMessageDialog(&w.window.Window, gtk.DialogModal, gtk.MessageWarning, gtk.ButtonsNone)
+	dialog.SetTitle("Open transactions")
+	dialog.SetMarkup(fmt.Sprintf("Quit with %d open SQL transaction(s)?", len(open)))
+	dialog.SetObjectProperty("secondary-text", "Quitting rolls them back: none of their changes are kept.")
+	dialog.AddButton("Cancel", int(gtk.ResponseCancel))
+	dialog.AddButton("Quit", int(gtk.ResponseAccept))
+	dialog.SetDefaultResponse(int(gtk.ResponseCancel))
+	dialog.ConnectResponse(func(response int) {
+		dialog.Destroy()
+		if response == int(gtk.ResponseAccept) {
+			w.sqlCloseConfirmed = true
+			w.window.Close()
+		}
+	})
+	dialog.Present()
+	return true
+}
+
+// sqlReportPage is the Report page of a tab's context notebook.
+const sqlReportPage = 3
+
+// sqlReport renders the tab's last run as a report.
+func (w *mainWindow) sqlReport(tab *sqlWorkbenchTab) (string, bool) {
+	if tab == nil || tab.run.EntryCount() == 0 {
+		return "", false
+	}
+	context := sqlworkbench.ReportContext{Connection: tab.state.ProfileName, Tab: strings.TrimSpace(tab.state.Title), Started: tab.run.Started}
+	if profile, found := w.sqlProfileNamed(tab.state.ProfileName); found {
+		context.Database = profile.Database
+	}
+	return sqlworkbench.FormatReport(tab.run, context), true
+}
+
+func (w *mainWindow) saveSQLReport(tab *sqlWorkbenchTab) {
+	report, ok := w.sqlReport(tab)
+	if !ok {
+		w.setStatus("Run SQL in this tab before saving a report", true)
+		return
+	}
+	chooser := gtk.NewFileChooserNative("Save SQL report", &w.window.Window, gtk.FileChooserActionSave, "Save", "Cancel")
+	chooser.SetModal(true)
+	chooser.SetCurrentName("sql-report-" + time.Now().Format("20060102-150405") + ".txt")
+	if w.options.Config != nil {
+		_ = chooser.SetCurrentFolder(gio.NewFileForPath(w.options.Config.SaveDir()))
+	}
+	chooser.ConnectResponse(func(response int) {
+		defer chooser.Destroy()
+		if response != int(gtk.ResponseAccept) || chooser.File() == nil || chooser.File().Path() == "" {
+			return
+		}
+		if err := os.WriteFile(chooser.File().Path(), []byte(report), 0o600); err != nil {
+			w.setStatus("Save SQL report: "+err.Error(), true)
+			return
+		}
+		w.setStatus("Saved SQL report to "+chooser.File().Path(), false)
+	})
+	chooser.Show()
+}
+
+// showSQLNotices shows the server's notices for the selected statement.
+func (w *mainWindow) showSQLNotices(tab *sqlWorkbenchTab, notices []string) {
+	tab.noticesLabel.SetLabel(strings.Join(notices, "\n"))
+	tab.noticesLabel.SetVisible(len(notices) > 0)
 }
